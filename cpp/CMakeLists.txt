@@ -84,7 +84,7 @@ endif()
 
 # FIXME: not cross-platform compatible
 # Create and install dolfinx.conf file
-configure_file(${DOLFINX_MPC_SOURCE_DIR}/cmake/templates/dolfinx_mpc.conf.in
+configure_file(${DOLFINX_MPC_SOURCE_DIR}/cmake/dolfinx_mpc.conf.in
                ${CMAKE_BINARY_DIR}/dolfinx_mpc.conf @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/dolfinx_mpc.conf
         DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc

@@ -44,11 +44,6 @@ set_source_files_properties(common/defines.cpp PROPERTIES
 #------------------------------------------------------------------------------
 # Set compiler options and definitions
 
-# Set 'Developer' build type flags
-# target_compile_options(dolfinx PRIVATE $<$<CONFIG:Developer>:${DOLFINX_CXX_DEVELOPER_FLAGS}>)
-
-# Set debug definitions (private)
-# target_compile_definitions(dolfinx PRIVATE $<$<OR:$<CONFIG:Debug>,$<CONFIG:Developer>>:DEBUG>)
 
 # Add version to definitions (public)
 target_compile_definitions(dolfinx_mpc PUBLIC DOLFINX_MPC_VERSION="${DOLFINX_MPC_VERSION}")
@@ -56,22 +51,8 @@ target_compile_definitions(dolfinx_mpc PUBLIC DOLFINX_MPC_VERSION="${DOLFINX_MPC
 #------------------------------------------------------------------------------
 # Add include directories and libraries of required packages
 
-# UFC
-target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${UFC_INCLUDE_DIRS})
 
-# DOLFIN uses Eigen data structures for dense linear algebra operations. Eigen
-# performs 'ideal' memory alignment based around the -march flag passed to the
-# compiler.  However, because Python DOLFIN JIT compiles code at runtime, it is
-# possible for the user to build shared objects with incompatible alignment
-# (ABI) if they use a different -march flag than that used to originally build
-# DOLFIN. DOLFINX_EIGEN_MAX_ALIGN_BYTES can be used to force alignment.
-# See: https://eigen.tuxfamily.org/dox/TopicPreprocessorDirectives.html
-# See: https://github.com/FEniCS/dolfinx/pull/143
-
-# Note: The name EIGEN_MAX_ALIGN_BYTES is confusing. In practice, Eigen
-# computes the ideal alignment based around -march.  If the ideal alignment is
-# greater than EIGEN_MAX_ALIGN_BYTES, the ideal alignment is used. If the ideal
-# alignment is less, then EIGEN_MAX_ALIGN_BYTES is used for alignment.
+# See DOLFINX for explanation of this variable
 set(DOLFINX_EIGEN_MAX_ALIGN_BYTES "32" CACHE STRING "\
 Minimum alignment in bytes used for Eigen data structures. Set to 32 for \
 compatibility with AVX user-compiled code and 64 for AVX-512 user-compiled \
@@ -85,54 +66,13 @@ of this variable will be used by Eigen for the alignment of all data structures.
 target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${EIGEN3_INCLUDE_DIR})
 target_compile_definitions(dolfinx_mpc PUBLIC "EIGEN_MAX_ALIGN_BYTES=${DOLFINX_EIGEN_MAX_ALIGN_BYTES}")
 
-# Boost
-target_link_libraries(dolfinx_mpc PUBLIC Boost::boost)
-foreach (BOOST_PACKAGE ${DOLFINX_BOOST_COMPONENTS_PUBLIC})
-  target_link_libraries(dolfinx_mpc PUBLIC "Boost::${BOOST_PACKAGE}")
-endforeach()
-foreach (BOOST_PACKAGE ${DOLFINX_BOOST_COMPONENTS_PRIVATE})
-  target_link_libraries(dolfinx_mpc PRIVATE "Boost::${BOOST_PACKAGE}")
-endforeach()
 
 # MPI
 target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
 
-# PETSc
+# petsc
 target_link_libraries(dolfinx_mpc PUBLIC PETSC::petsc)
 target_link_libraries(dolfinx_mpc PRIVATE PETSC::petsc_static)
-
-# HDF5
-target_compile_definitions(dolfinx_mpc PUBLIC ${HDF5_DEFINITIONS})
-target_link_libraries(dolfinx_mpc PUBLIC ${HDF5_C_LIBRARIES})
-target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${HDF5_INCLUDE_DIRS})
-
-# SCOTCH
-target_link_libraries(dolfinx_mpc PRIVATE ${SCOTCH_LIBRARIES})
-target_include_directories(dolfinx_mpc SYSTEM PRIVATE ${SCOTCH_INCLUDE_DIRS})
-
-#------------------------------------------------------------------------------
-# Optional packages
-
-# SLEPC
-if (DOLFINX_ENABLE_SLEPC AND SLEPC_FOUND)
-  target_compile_definitions(dolfinx_mpc PUBLIC HAS_SLEPC)
-  target_link_libraries(dolfinx_mpc PUBLIC SLEPC::slepc)
-  target_link_libraries(dolfinx_mpc PRIVATE SLEPC::slepc_static)
-endif()
-
-# ParMETIS
-if (DOLFINX_ENABLE_PARMETIS AND PARMETIS_FOUND)
-  target_compile_definitions(dolfinx_mpc PUBLIC HAS_PARMETIS)
-  target_link_libraries(dolfinx_mpc PRIVATE ${PARMETIS_LIBRARIES})
-  target_include_directories(dolfinx_mpc SYSTEM PRIVATE ${PARMETIS_INCLUDE_DIRS})
-endif()
-
-# KaHIP
-if (DOLFINX_ENABLE_KAHIP AND KAHIP_FOUND)
-  target_compile_definitions(dolfinx_mpc PUBLIC HAS_KAHIP)
-  target_link_libraries(dolfinx_mpc PRIVATE ${KAHIP_LIBRARIES})
-  target_include_directories(dolfinx_mpc SYSTEM PRIVATE ${KAHIP_INCLUDE_DIRS})
-endif()
 
 #------------------------------------------------------------------------------
 # Install dolfinx library and header files
@@ -161,15 +101,13 @@ write_basic_package_version_file(${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConf
   VERSION ${DOLFINX_MPC_VERSION}
   COMPATIBILITY ExactVersion)
 
-configure_package_config_file(${DOLFINX_MPC_SOURCE_DIR}/cmake/templates/DOLFINX_MPCConfig.cmake.in
+configure_package_config_file(${DOLFINX_MPC_SOURCE_DIR}/cmake/DOLFINX_MPCConfig.cmake.in
 ${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConfig.cmake
 INSTALL_DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc/cmake)
 
 # Install CMake helper files
 install(
   FILES
-  ${CMAKE_SOURCE_DIR}/cmake/modules/FindPETSc.cmake
-  ${CMAKE_SOURCE_DIR}/cmake/modules/FindSLEPc.cmake
   ${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConfig.cmake
   ${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc/cmake
@@ -273,7 +211,7 @@ endforeach()
 get_target_property(BOOST_INCLUDE_DIR Boost::boost INTERFACE_INCLUDE_DIRECTORIES)
 
 # Configure and install pkg-config file
-configure_file(${DOLFINX_MPC_SOURCE_DIR}/cmake/templates/dolfinx_mpc.pc.in ${CMAKE_BINARY_DIR}/dolfinx_mpc.pc @ONLY)
+configure_file(${DOLFINX_MPC_SOURCE_DIR}/cmake/dolfinx_mpc.pc.in ${CMAKE_BINARY_DIR}/dolfinx_mpc.pc @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/dolfinx_mpc.pc
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
   COMPONENT Development
