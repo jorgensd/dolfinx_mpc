@@ -1,0 +1,3 @@
+// the configured options and settings for Tutorial
+#define DolfinxMPC_VERSION_MAJOR @DolfinxMPC_VERSION_MAJOR@
+#define DolfinxMPC_VERSION_MINOR @DolfinxMPC_VERSION_MINOR@
