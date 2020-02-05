@@ -31,19 +31,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 #------------------------------------------------------------------------------
 # General configuration
 
-# Set location of our FindFoo.cmake modules
-set(CMAKE_MODULE_PATH "${DOLFINX_MPC_SOURCE_DIR}/cmake/modules")
-
 # Make sure CMake uses the correct DOLFINConfig.cmake for tests and demos
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${CMAKE_CURRENT_BINARY_DIR}/dolfinx_mpc)
 
 #------------------------------------------------------------------------------
-# Configurable options for how we want to build
+# configurable options for how we want to build
 
 include(FeatureSummary)
 
-option(BUILD_SHARED_LIBS "Build DOLFIN with shared libraries." ON)
-add_feature_info(BUILD_SHARED_LIBS BUILD_SHARED_LIBS "Build DOLFIN with shared libraries.")
+option(BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries." ON)
+add_feature_info(BUILD_SHARED_LIBS BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries.")
 
 # Add shared library paths so shared libs in non-system paths are found
 option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath." ON)
@@ -67,25 +64,3 @@ feature_summary(WHAT ALL)
 # Installation of DOLFIN_MPC library
 
 add_subdirectory(dolfinx_mpc)
-
-# Add executable
-add_executable(Test test/main.cpp)
-target_link_libraries(Test PUBLIC dolfinx dolfinx_mpc)
-
-#------------------------------------------------------------------------------
-# Generate and install helper file dolfinx_mpc.conf
-
-# FIXME: Can CMake provide the library path name variable?
-if (APPLE)
-  set(OS_LIBRARY_PATH_NAME "DYLD_LIBRARY_PATH")
-else()
-  set(OS_LIBRARY_PATH_NAME "LD_LIBRARY_PATH")
-endif()
-
-# FIXME: not cross-platform compatible
-# Create and install dolfinx.conf file
-configure_file(${DOLFINX_MPC_SOURCE_DIR}/cmake/dolfinx_mpc.conf.in
-               ${CMAKE_BINARY_DIR}/dolfinx_mpc.conf @ONLY)
-install(FILES ${CMAKE_BINARY_DIR}/dolfinx_mpc.conf
-        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc
-        COMPONENT Development)
