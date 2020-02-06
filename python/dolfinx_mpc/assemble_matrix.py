@@ -4,6 +4,7 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 from .numba_setup import *
+import numba
 import dolfinx
 import numpy
 from numba.typed import List
@@ -261,7 +262,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     #     for i in range(len(bcs)):
     #         if bcs[i]:
     #             bc_row = np.array([i],dtype=np.int32)
-    #             ierr_bc = set_values(A, 1, ffi.from_buffer(bc_row), 1, ffi.from_buffer(bc_row), ffi.from_buffer(bc_value), mode)
+    #             ierr_bc = set_values(A, 1, ffi.from_buffer(bc_row), 1,
+    #                                  ffi.from_buffer(bc_row), ffi.from_buffer(bc_value), mode)
     #             assert(ierr_bc == 0)
 
     # insert zero dirchlet to freeze slave dofs for back substitution

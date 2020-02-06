@@ -24,7 +24,8 @@ class MultiPointConstraint(cpp.mpc.MultiPointConstraint):
             for master in master_slave_map[slave]:
                 masters.append(master)
                 coefficients.append(master_slave_map[slave][master])
-        # Add additional element to indicate end of list (to determine number of master dofs later on)
+        # Add additional element to indicate end of list
+        # (to determine number of master dofs later on)
         offsets.append(len(masters))
         # Extract cpp function space
         try:
