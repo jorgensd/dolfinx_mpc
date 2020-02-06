@@ -1,31 +1,11 @@
-# Copyright (C) 2017 Chris N. Richardson and Garth N. Wells
+# Copyright (C) 2020 Jørgen Schartum Dokken
 #
-# This file is part of DOLFINX (https://www.fenicsproject.org)
+# This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
-"""Main module for DOLFINX"""
+"""Main module for DOLFINX_MPC"""
 
 # flake8: noqa
-
-# Store dl open flags to restore them after import
-import sys
-stored_dlopen_flags = sys.getdlopenflags()
-
-# Developer note: below is related to OpenMPI
-# Fix dlopen flags (may need reorganising)
-if "linux" in sys.platform:
-    # FIXME: What with other platforms?
-    try:
-        from ctypes import RTLD_NOW, RTLD_GLOBAL
-    except ImportError:
-        RTLD_NOW = 2
-        RTLD_GLOBAL = 256
-    sys.setdlopenflags(RTLD_NOW | RTLD_GLOBAL)
-del sys
-
-# Reset dl open flags
-# sys.setdlopenflags(stored_dlopen_flags)
-# del sys
 
 from .multipointconstraint import MultiPointConstraint
 
