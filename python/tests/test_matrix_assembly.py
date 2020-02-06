@@ -1,5 +1,6 @@
 import dolfinx
 import dolfinx_mpc
+import numba
 from numba.typed import List
 import numpy as np
 import ufl
@@ -21,7 +22,7 @@ def slave_dofs(x):
 def test_mpc_assembly():
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 3, 3)
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5,3)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
     # Unpack mesh and dofmap data
     c = mesh.topology.connectivity(2, 0).connections()
@@ -108,28 +109,52 @@ def test_mpc_assembly():
 
         A2.assemble()
 
+    # Transfer A2 to numpy matrix for comparison with globally built matrix
+    A_mpc_np = np.zeros((V.dim(), V.dim()))
+    for i in range(A2.getOwnershipRange()[0], A2.getOwnershipRange()[1]):
+        cols, vals = A2.getRow(i)
+        for col, val in zip(cols, vals):
+            A_mpc_np[i,col] = val
+    A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
-    print(slave_master_dict)
-    # A2.view()
-    assert(A2.norm() == 11.34150823303497)
-    return
-    print(A2.norm())
-    # K = np.array([[1,0,0,0,0,0,0,0],
-    #                [0,1,0,0,0,0,0,0],
-    #                [0,0,1,0,0,0,0,0],
-    #                [0,0,0,1,0,0,0,0],
-    #                [0,0,0,0,1,0,0,0],
-    #                [0,0,0,0,0,1,0,0],
-    #                [0,0,0,0,0,beta,0,0],
-    #                [0,0,0,0,0,0,1,0],
-    #                [0,0,0,0,0,0,0,1]])
-    # global_A = np.matmul(np.matmul(K.T,A1[:,:]),K)
-    # print(global_A)
-    # print(A2[:,:])
-    # for local, glob in zip([0,1,2,3,4,5,7,8],[0,1,2,3,4,5,6,7]):
-    #     for local2, glob2 in zip([0,1,2,3,4,5,7,8],[0,1,2,3,4,5,6,7]):
-    #         assert(A2[local,local2] == global_A[glob, glob2])
-    # # print(reduced)
-    # assert np.max(d-reduced) <= 1e-6
-    # print(A1.view())
-    # print(A2.view())
+    # Build global K matrix from slave_master_dict
+    K = np.zeros((V.dim(), V.dim()-len(slave_master_dict.keys())))
+    for i in range(K.shape[0]):
+        if i in slave_master_dict.keys():
+            for master in slave_master_dict[i].keys():
+                l = sum(master>np.array(list(slave_master_dict.keys())))
+                K[i, master - l] = slave_master_dict[i][master]
+        else:
+            l = sum(i>np.array(list(slave_master_dict.keys())))
+            K[i, i-l] = 1
+
+
+    # Transfer original matrix to numpy
+    A_global = np.zeros((V.dim(), V.dim()))
+    for i in range(A1.getOwnershipRange()[0], A1.getOwnershipRange()[1]):
+        cols, vals = A1.getRow(i)
+        for col, val in zip(cols, vals):
+            A_global[i,col] = val
+    A_global = sum(dolfinx.MPI.comm_world.allgather(A_global))
+
+    # Compute globally reduced system and compare norms with A2
+    reduced_A = np.matmul(np.matmul(K.T,A_global),K)
+    assert(np.isclose(np.linalg.norm(reduced_A), A2.norm()))
+
+    # Pad globally reduced system with 0 rows and columns for each slave entry
+    A_numpy_padded = np.zeros((V.dim(),V.dim()))
+    l = 0
+    for i in range(V.dim()):
+        if i in slave_master_dict.keys():
+            l += 1
+            continue
+        m = 0
+        for j in range(V.dim()):
+            if j in slave_master_dict.keys():
+                m += 1
+                continue
+            else:
+                A_numpy_padded[i, j] = reduced_A[i-l, j-m]
+
+    # Check that all entities are close
+    assert np.allclose(A_mpc_np, A_numpy_padded)
