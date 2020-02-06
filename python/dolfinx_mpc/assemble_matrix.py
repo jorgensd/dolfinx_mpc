@@ -4,14 +4,71 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 from .numba_setup import *
-
+import dolfinx
+import numpy
+from numba.typed import List
 # See https://github.com/numba/numba/issues/4036 for why we need 'sink'
 @numba.njit
 def sink(*args):
     pass
 
+
+def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
+    # Get data from function space
+    assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
+    V =  form.arguments()[0].ufl_function_space()
+    dofmap = V.dofmap
+    dofs = dofmap.dof_array
+    indexmap = dofmap.index_map
+    ghost_info = (indexmap.local_range, indexmap.indices(True))
+
+    # Get data from mesh
+    c2v = V.mesh.topology.connectivity(V.mesh.topology.dim,0)
+    c = c2v.connections()
+    pos = c2v.pos()
+    geom = V.mesh.geometry.points
+
+    # Generate ufc_form
+    ufc_form = dolfinx.jit.ffcx_jit(form)
+    kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
+
+    # Generate matrix with MPC sparsity pattern
+    A = multipointconstraint.generate_petsc_matrix(dolfinx.Form(form)._cpp_object)
+    A.zeroEntries()
+
+    # Unravel data from MPC
+    slave_cells = np.array(multipointconstraint.slave_cells())
+    masters, coefficients = multipointconstraint.masters_and_coefficients()
+    cell_to_slave, cell_to_slave_offset = multipointconstraint.cell_to_slave_mapping()
+    slaves = multipointconstraint.slaves()
+    offsets = multipointconstraint.master_offsets()
+    # Wrapping for numba to be able to do "if i in slave_cells"
+    if len(slave_cells)==0:
+        sc_nb = List.empty_list(numba.types.int64)
+    else:
+        sc_nb = List()
+    [sc_nb.append(sc) for sc in slave_cells]
+
+    # Can be empty list locally, so has to be wrapped to be used with numba
+    if len(cell_to_slave)==0:
+        c2s_nb = List.empty_list(numba.types.int64)
+    else:
+        c2s_nb = List()
+    [c2s_nb.append(c2s) for c2s in cell_to_slave]
+    if len(cell_to_slave_offset)==0:
+        c2so_nb = List.empty_list(numba.types.int64)
+    else:
+        c2so_nb = List()
+    [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
+
+    mpc_data = (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb)
+    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, dofs, mpc_data, ghost_info, bcs)
+    A.assemble()
+    return A
+
+
 @numba.njit
-def assemble_matrix_mpc(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
+def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     # FIXME: Need to add structures to reverse engineer number of dofs in local matrix
     (slaves, masters, coefficients, offsets, slave_cells,cell_to_slave, cell_to_slave_offset)  = mpc
     (local_range, global_indices) = ghost_info

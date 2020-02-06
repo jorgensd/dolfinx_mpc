@@ -104,7 +104,7 @@ def test_mpc_assembly():
     for i in range(2):
         with b_func.vector.localForm() as b:
             b.set(0.0)
-            dolfinx_mpc.assemble_vector_mpc(np.asarray(b), kernel, (c, pos), geom, dofs,
+            dolfinx_mpc.assemble_vector_numba(np.asarray(b), kernel, (c, pos), geom, dofs,
                                             (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb), ghost_info, (bcs, values))
 
     b_func.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)

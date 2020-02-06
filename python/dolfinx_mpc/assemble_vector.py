@@ -7,7 +7,7 @@ from .numba_setup import *
 
 
 @numba.njit
-def assemble_vector_mpc(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
+def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     """Assemble provided FFC/UFC kernel over a mesh into the array b"""
     (bcs, values) = bcs
     (slaves, masters, coefficients, offsets, slave_cells,cell_to_slave, cell_to_slave_offset)  = mpc
