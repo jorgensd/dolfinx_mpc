@@ -8,5 +8,5 @@
 # flake8: noqa
 
 from .multipointconstraint import MultiPointConstraint
-
+from .assemble_matrix import assemble_matrix_mpc
 import dolfinx.cpp
