@@ -3,7 +3,6 @@ import dolfinx_mpc
 from numba.typed import List
 import numpy as np
 import ufl
-import time
 
 def master_dofs(x):
     logical = np.logical_and(np.logical_or(np.isclose(x[:,0],0),np.isclose(x[:,0],1)),np.isclose(x[:,1],1))
@@ -18,15 +17,6 @@ def slave_dofs(x):
         return np.argwhere(logical)[0]
     except IndexError:
         return []
-def bc0(x):
-    return np.logical_and(np.isclose(x[:,1], 0),np.isclose(x[:,1], 0))
-
-def bc_value(bcs, x):
-    vals = np.zeros(len(bcs))
-    for i in range(len(bcs)):
-        if bcs[i]:
-            vals[i] = 0
-    return vals
 
 def test_mpc_assembly():
 
@@ -62,65 +52,20 @@ def test_mpc_assembly():
         for master, coeff in zip(masters,coeffs):
             slave_master_dict[slave][master] = coeff
 
-    # Define bcs
-    bcs = np.array([])#bc0(dof_coords)
-    values = np.array([]) # values = bc_value(bcs, dof_coords)
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    x = ufl.SpatialCoordinate(mesh)
-    f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
     a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
-    l = ufl.inner(f, v)*ufl.dx
 
-    # Timing assembly of matrix with C++
-    start = time.time()
+    # Generating normal matrix for comparison
     A1 = dolfinx.fem.assemble_matrix(a)
-    # end = time.time()
     A1.assemble()
-
-    # print()
-    # print("--"*10)
-    # print("Matrix Time (C++, pass 1):", end - start)
-    # start = time.time()
-    # L1 = dolfinx.fem.assemble_vector(l)
-    # print(L1.array)
-    # end = time.time()
-    # print("Vector Time (C++, pass 1):", end - start)
-    # print("--"*10)
-    # second pass in C++
-    # A1.zeroEntries()
-    # start = time.time()
-    # dolfinx.fem.assemble_matrix(A1, a)
-    # end = time.time()
-    # A1.assemble()
-    # print("Matrix Time (C++, pass 2):", end - start)
-    # start = time.time()
-    L1 = dolfinx.fem.assemble_vector(l)
-    end = time.time()
-    # print("Vector Time (C++, pass 1):", end - start)
-
-
-    # slave_master_dict = {3:{0:0.3,2:0.5}}
-    # slave_master_dict = {0:{0:1}}
-    # slave_master_dict = {1:{0:0.1},3:{0:0.3,2:0.73}}
-    # slave_master_dict = {1:{7:0.1}}
-
 
     mpc = dolfinx_mpc.MultiPointConstraint(V, slave_master_dict)
     slave_cells = np.array(mpc.slave_cells())
-    # pattern = dolfinx.cpp.fem.create_sparsity_pattern(dolfinx.Form(a)._cpp_object)
-    #pattern.info_statistics()
-    #print("-----"*10)
-    # dolfinx.cpp.fem.create_matrix(dolfinx.Form(a)._cpp_object)
-    # pattern.info_statistics()
-    #print("-"*25)
-    # Add mpc non-zeros to sparisty pattern#
-    print(slave_master_dict)
 
+    # Add mpc non-zeros to sparisty pattern#
     A2 = mpc.generate_petsc_matrix(dolfinx.Form(a)._cpp_object)
-    A2.zeroEntries()
-    A1.assemble()
 
     # Data from mpc
     masters, coefficients = mpc.masters_and_coefficients()
@@ -148,20 +93,23 @@ def test_mpc_assembly():
         c2so_nb = List()
     [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
 
+
+    # No dirichlet condition as this is just assembly
+    bcs = np.array([])
+
+
     # Assemble using generated tabulate_tensor kernel and Numba assembler
     ufc_form = dolfinx.jit.ffcx_jit(a)
     kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
     for i in range(2):
         A2.zeroEntries()
-        start = time.time()
         dolfinx_mpc.assemble_matrix_mpc(A2.handle, kernel, (c, pos), geom, dofs,
                             (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb), ghost_info,bcs)
-        end = time.time()
-        print("Matrix Time (numba/cffi, pass {}): {}".format(i, end - start))
 
         A2.assemble()
 
 
+    print(slave_master_dict)
     # A2.view()
     assert(A2.norm() == 11.34150823303497)
     return
