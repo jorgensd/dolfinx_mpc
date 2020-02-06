@@ -1,7 +1,7 @@
 # Multi-point constraints with FEniCS_X
 
 This library contains an add-on to FEniCS_X enabling the possibilities of enforce multi-point constraints, such as
-$`u_i = \\sum_{j=0,i!=j}^n \alpha_j u_j`$.
+$`u_i = \sum_{j=0,i\neq j}^n \alpha_j u_j`$.
 
 This can be used to for instance enforce slip conditions strongly.
 To add multi-point constraints, we eliminate the "slave" degrees of freedom on an element level, keeping the symmetry of the original system.
