@@ -15,14 +15,17 @@ add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
 #------------------------------------------------------------------------------
 # Add source files to the target
 
-set(DOLFINX_MPC_DIRS mpc)
-
 install(FILES dolfinx_mpc.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development)
 
-# Add source to dolfinx target, and get sets of header files
-foreach(DIR ${DOLFINX_MPC_DIRS})
-  add_subdirectory(${DIR})
-endforeach()
+set(HEADERS_dolfin_mpc
+  ${CMAKE_CURRENT_SOURCE_DIR}/dolfinx_mpc.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/MultiPointConstraint.h
+  PARENT_SCOPE)
+
+target_sources(dolfinx_mpc PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/MultiPointConstraint.cpp
+)
+
 
 # Set target include location (for build and installed)
 target_include_directories(dolfinx_mpc PUBLIC
@@ -87,11 +90,6 @@ install(TARGETS dolfinx_mpc
 # Generate DOLFINTargets.cmake
 install(EXPORT DOLFINX_MPCTargets DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc/cmake)
 
-# Install the header files
-foreach(DIR ${DOLFINX_MPC_DIRS})
-  install(FILES ${HEADERS_${DIR}} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc/${DIR}
-    COMPONENT Development)
-endforeach()
 
 #------------------------------------------------------------------------------
 # Generate CMake config files (DOLFINX_MPCConfig{,Version}.cmake)
