@@ -63,4 +63,6 @@ feature_summary(WHAT ALL)
 #------------------------------------------------------------------------------
 # Installation of DOLFIN_MPC library
 
+# Delcare the library (target)
+
 add_subdirectory(dolfinx_mpc)

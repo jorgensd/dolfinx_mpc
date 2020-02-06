@@ -8,19 +8,13 @@ include(GNUInstallDirs)
 configure_file(DolfinxMPC.h.in DolfinxMPC.h)
 
 #------------------------------------------------------------------------------
-# Delcare the library (target)
-
 add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
 
 #------------------------------------------------------------------------------
 # Add source files to the target
 
-install(FILES dolfinx_mpc.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development)
-
-set(HEADERS_dolfin_mpc
-  ${CMAKE_CURRENT_SOURCE_DIR}/dolfinx_mpc.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/MultiPointConstraint.h
-  PARENT_SCOPE)
+install(FILES dolfinx_mpc.h  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
+install(FILES MultiPointConstraint.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
 
 target_sources(dolfinx_mpc PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/MultiPointConstraint.cpp
