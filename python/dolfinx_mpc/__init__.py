@@ -9,4 +9,6 @@
 
 from .multipointconstraint import MultiPointConstraint
 from .assemble_matrix import assemble_matrix_mpc
+from .assemble_vector import assemble_vector_mpc
+from .function import backsubstitution
 import dolfinx.cpp
