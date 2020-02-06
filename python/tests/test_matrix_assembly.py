@@ -19,6 +19,21 @@ def slave_dofs(x):
     except IndexError:
         return []
 
+def slaves_2(x):
+    logical = np.logical_and(np.isclose(x[:,0],0),np.isclose(x[:,1],0))
+    try:
+        return np.argwhere(logical)[0]
+    except IndexError:
+        return []
+
+def masters_2(x):
+    logical = np.logical_and(np.isclose(x[:,0],0),np.isclose(x[:,1],1))
+    try:
+        return np.argwhere(logical).T[0]
+    except IndexError:
+        return []
+
+
 def test_mpc_assembly():
 
     # Create mesh and function space
@@ -32,11 +47,11 @@ def test_mpc_assembly():
 
     # Find master and slave dofs from geometrical search
     dof_coords = V.tabulate_dof_coordinates()
-    masters = master_dofs(dof_coords)
     indexmap = V.dofmap.index_map
     ghost_info = (indexmap.local_range, indexmap.indices(True))
 
     # Build slaves and masters in parallel with global dof numbering scheme
+    masters = master_dofs(dof_coords)
     for i, master in enumerate(masters):
         masters[i] = masters[i]+V.dofmap.index_map.local_range[0]
     masters = dolfinx.MPI.comm_world.allgather(np.array(masters, dtype=np.int32))
@@ -51,6 +66,24 @@ def test_mpc_assembly():
     for slave in slaves:
         slave_master_dict[slave] = {}
         for master, coeff in zip(masters,coeffs):
+            slave_master_dict[slave][master] = coeff
+
+    # Second constraint
+    masters2 = masters_2(dof_coords)
+    slaves2 = slaves_2(dof_coords)
+    for i, slave in enumerate(slaves2):
+        slaves2[i] = slaves2[i]+V.dofmap.index_map.local_range[0]
+    slaves2 = dolfinx.MPI.comm_world.allgather(np.array(slaves2, dtype=np.int32))
+    slaves2 = np.hstack(slaves2)
+    for i, master in enumerate(masters2):
+        masters2[i] = masters2[i]+V.dofmap.index_map.local_range[0]
+    masters2 = dolfinx.MPI.comm_world.allgather(np.array(masters2, dtype=np.int32))
+    masters2 = np.hstack(masters2)
+
+    coeffs = [0.5,0.7]
+    for slave in slaves2:
+        slave_master_dict[slave] = {}
+        for master, coeff in zip(masters2,coeffs):
             slave_master_dict[slave][master] = coeff
 
     # Test against generated code and general assembler
