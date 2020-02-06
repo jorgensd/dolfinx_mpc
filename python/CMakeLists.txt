@@ -44,11 +44,3 @@ find_package(DOLFINX REQUIRED)
 if (DOLFINX_FOUND)
    target_include_directories(cpp PRIVATE ${DOLFINX_INCLUDE_DIR})
 endif()
-
-
-# Check for mpi4py
-find_package(MPI4PY REQUIRED)
-if (MPI4PY_FOUND)
-  target_include_directories(cpp PRIVATE ${MPI4PY_INCLUDE_DIR})
-  target_compile_definitions(cpp PRIVATE HAS_PYBIND11_MPI4PY)
-endif()
