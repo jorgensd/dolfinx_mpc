@@ -222,7 +222,7 @@ def test_slave_on_same_cell():
     for i in range(A2.getOwnershipRange()[0], A2.getOwnershipRange()[1]):
         cols, vals = A2.getRow(i)
         for col, val in zip(cols, vals):
-            A_mpc_np[i,col] = val
+            A_mpc_np[i, col] = val
     A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
     # Build global K matrix from slave_master_dict
