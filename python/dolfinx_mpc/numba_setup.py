@@ -46,37 +46,12 @@ elif not complex and scalar_size == 4:
     c_scalar_t = "float"
     numba_scalar_t = numba.types.float32
 else:
-    raise RuntimeError(
-        "Cannot translate PETSc scalar type to a C type, complex: {} size: {}.".format(complex, scalar_size))
+    raise RuntimeError("Cannot translate PETSc scalar type to a C type," +
+                       "complex: {} size: {}.".format(complex, scalar_size))
 
 
 # Load PETSc library via ctypes
 petsc_lib_name = ctypes.util.find_library("petsc")
-if petsc_lib_name is not None:
-    petsc_lib_ctypes = ctypes.CDLL(petsc_lib_name)
-else:
-    try:
-        petsc_lib_ctypes = ctypes.CDLL(os.path.join(petsc_dir, "lib", "libpetsc.so"))
-    except OSError:
-        petsc_lib_ctypes = ctypes.CDLL(os.path.join(petsc_dir, "lib", "libpetsc.dylib"))
-    except OSError:
-        print("Could not load PETSc library for CFFI (ABI mode).")
-        raise
-
-# Get the PETSc MatSetValuesLocal function via ctypes
-MatSetValues_ctypes = petsc_lib_ctypes.MatSetValues
-MatSetValuesLocal_ctypes = petsc_lib_ctypes.MatSetValuesLocal
-MatSetValuesLocal_ctypes.argtypes = (ctypes.c_void_p, ctypes_index, ctypes.POINTER(
-    ctypes_index), ctypes_index, ctypes.POINTER(ctypes_index), ctypes.c_void_p, ctypes.c_int)
-MatSetValues_ctypes.argtypes = (ctypes.c_void_p, ctypes_index, ctypes.POINTER(
-    ctypes_index), ctypes_index, ctypes.POINTER(ctypes_index), ctypes.c_void_p, ctypes.c_int)
-MatSetValuesLocal_ctypes.argtypes = (ctypes.c_void_p, ctypes_index, ctypes.POINTER(
-    ctypes_index), ctypes_index, ctypes.POINTER(ctypes_index), ctypes.c_void_p, ctypes.c_int)
-del petsc_lib_ctypes
-
-
-ADD_VALUES = PETSc.InsertMode.ADD_VALUES
-
 
 # CFFI - register complex types
 ffi = cffi.FFI()
@@ -88,20 +63,24 @@ numba.cffi_support.register_type(ffi.typeof('float _Complex'),
 
 # Get MatSetValues from PETSc available via cffi in ABI mode
 ffi.cdef("""int MatSetValues(void* mat, {0} nrow, const {0}* irow,
-                                  {0} ncol, const {0}* icol, const {1}* y, int addv);
+                             {0} ncol, const {0}* icol,
+                             const {1}* y, int addv);
 
 """.format(c_int_t, c_scalar_t))
 ffi.cdef("""int MatSetValuesLocal(void* mat, {0} nrow, const {0}* irow,
-                                  {0} ncol, const {0}* icol, const {1}* y, int addv);
+                                  {0} ncol, const {0}* icol,
+                                  const {1}* y, int addv);
 """.format(c_int_t, c_scalar_t))
 
 if petsc_lib_name is not None:
     petsc_lib_cffi = ffi.dlopen(petsc_lib_name)
 else:
     try:
-        petsc_lib_cffi = ffi.dlopen(os.path.join(petsc_dir, "lib", "libpetsc.so"))
+        petsc_lib_cffi = ffi.dlopen(os.path.join(petsc_dir, "lib",
+                                                 "libpetsc.so"))
     except OSError:
-        petsc_lib_cffi = ffi.dlopen(os.path.join(petsc_dir, "lib", "libpetsc.dylib"))
+        petsc_lib_cffi = ffi.dlopen(os.path.join(petsc_dir, "lib",
+                                                 "libpetsc.dylib"))
     except OSError:
         print("Could not load PETSc library for CFFI (ABI mode).")
         raise
@@ -145,7 +124,8 @@ numba.cffi_support.register_module(module)
 MatSetValues_api = module.lib.MatSetValues
 MatSetValuesLocal_api = module.lib.MatSetValuesLocal
 
-numba.cffi_support.register_type(module.ffi.typeof("PetscScalar"), numba_scalar_t)
+numba.cffi_support.register_type(module.ffi.typeof("PetscScalar"),
+                                 numba_scalar_t)
 set_values = MatSetValues_api
 set_values_local = MatSetValuesLocal_api
 mode = PETSc.InsertMode.ADD_VALUES
