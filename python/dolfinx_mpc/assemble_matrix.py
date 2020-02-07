@@ -202,26 +202,26 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
 
 
                     # --------------------------------Add slave rows to master column-------------------------------
-                    row_local_pos = numpy.zeros(local_pos.size, dtype=numpy.int32)
+                    global_pos = numpy.zeros(local_pos.size, dtype=numpy.int32)
                     for (h,g) in enumerate(local_pos):
                         # Map ghosts to global index and slave to master
                         if g >= local_size:
-                            row_local_pos[h] = global_indices[g]
+                            global_pos[h] = global_indices[g]
                         else:
-                            row_local_pos[h] = g + local_range[0]
-                    row_local_pos[slave_local] = cell_masters[m_0]
-                    master_row_index = numpy.array([cell_masters[m_0]],dtype=numpy.int32)
-                    ierr_row = set_values(A, 3,ffi.from_buffer(row_local_pos),  1, ffi.from_buffer(master_row_index),
+                            global_pos[h] = g + local_range[0]
+                    global_pos[slave_local] = cell_masters[m_0]
+                    m0_index[0] = cell_masters[m_0]
+                    ierr_row = set_values(A, 3,ffi.from_buffer(global_pos),  1, ffi.from_buffer(m0_index),
                                           ffi.from_buffer(A_row), mode)
                     assert(ierr_row == 0)
 
                     # --------------------------------Add slave columns to master row-------------------------------
-                    ierr_col = set_values(A, 1,ffi.from_buffer(master_row_index), 3, ffi.from_buffer(row_local_pos),
+                    ierr_col = set_values(A, 1,ffi.from_buffer(m0_index), 3, ffi.from_buffer(global_pos),
                                           ffi.from_buffer(A_col), mode)
                     assert(ierr_col == 0)
 
                     # --------------------------------Add slave contributions to A_(master,master)-----------------
-                    ierr_m0m0 = set_values(A, 1,ffi.from_buffer(master_row_index),  1, ffi.from_buffer(master_row_index),
+                    ierr_m0m0 = set_values(A, 1,ffi.from_buffer(m0_index),  1, ffi.from_buffer(m0_index),
                                           ffi.from_buffer(A_master), mode)
                     assert(ierr_m0m0 == 0)
 
@@ -232,17 +232,16 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                         A_cell0.fill(0.0)
                         A_cell0[0,0] += cell_coeffs[m_0]*cell_coeffs[m_1]*A_local_copy[slave_local,slave_local]
 
-
-                        mixed0_index = numpy.array([cell_masters[m_0]],dtype=numpy.int32)
-                        mixed1_index = numpy.array([cell_masters[m_1]],dtype=numpy.int32)
-                        ierr_cell0 = set_values(A, 1,ffi.from_buffer(mixed0_index),  1, ffi.from_buffer(mixed1_index),
+                        m0_index[0] = cell_masters[m_0]
+                        m1_index[0] = cell_masters[m_1]
+                        ierr_cell0 = set_values(A, 1,ffi.from_buffer(m0_index),  1, ffi.from_buffer(m1_index),
                                                ffi.from_buffer(A_cell0), mode)
                         assert(ierr_cell0 == 0)
                         A_cell1.fill(0.0)
                         A_cell1[0,0] += cell_coeffs[m_0]*cell_coeffs[m_1]*A_local_copy[slave_local,slave_local]
 
-                        ierr_cell1 = set_values(A, 1,ffi.from_buffer(mixed1_index),
-                                                 1, ffi.from_buffer(mixed0_index),
+                        ierr_cell1 = set_values(A, 1,ffi.from_buffer(m1_index),
+                                                 1, ffi.from_buffer(m0_index),
                                                  ffi.from_buffer(A_cell1), mode)
                         assert(ierr_cell1 == 0)
 
@@ -276,10 +275,5 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     #                             1, ffi.from_buffer(slave_pos),
     #                             ffi.from_buffer(A_slave), mode)
     #     assert(ierr_slave == 0)
-    sink(A_m0m1, A_m1m0, m0_index, m1_index,
-         A_row, row_local_pos, master_row_index,
-         A_col,
-         A_master,
-         A_cell0, mixed0_index, mixed1_index,
-         A_cell1,
-         A_local, local_pos)
+    sink(A_m0m1, A_m1m0, m0_index, m1_index, A_row, global_pos,
+         A_col, A_master, A_cell0, A_cell1, A_local, local_pos)
