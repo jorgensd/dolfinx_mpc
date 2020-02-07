@@ -4,6 +4,7 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 from .numba_setup import *
+from .numba_setup import mode, ffi, set_values_local
 import numba
 import dolfinx
 import numpy
@@ -38,7 +39,7 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     A.zeroEntries()
 
     # Unravel data from MPC
-    slave_cells = np.array(multipointconstraint.slave_cells())
+    slave_cells = numpy.array(multipointconstraint.slave_cells())
     masters, coefficients = multipointconstraint.masters_and_coefficients()
     cell_to_slave, cell_to_slave_offset = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
@@ -75,23 +76,23 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     (local_range, global_indices) = ghost_info
     local_size = local_range[1]-local_range[0]
     connections, pos = mesh
-    orientation = np.array([0], dtype=np.int32)
+    orientation = numpy.array([0], dtype=numpy.int32)
     # FIXME: Need to determine geometry, coeffs and constants from input data
-    geometry = np.zeros((3, 2))
-    coeffs = np.zeros(0, dtype=PETSc.ScalarType)
-    constants = np.zeros(0, dtype=PETSc.ScalarType)
-    A_local = np.zeros((3,3), dtype=PETSc.ScalarType)
+    geometry = numpy.zeros((3, 2))
+    coeffs = numpy.zeros(0, dtype=PETSc.ScalarType)
+    constants = numpy.zeros(0, dtype=PETSc.ScalarType)
+    A_local = numpy.zeros((3,3), dtype=PETSc.ScalarType)
 
-    A_mpc_row = np.zeros((3,1), dtype=PETSc.ScalarType) # Rows taken over by master
-    A_mpc_col = np.zeros((1,3), dtype=PETSc.ScalarType) # Columns taken over by master
-    A_mpc_master = np.zeros((1,1), dtype=PETSc.ScalarType) # Extra insertions at master diagonal
-    A_mpc_slave =  np.zeros((1,1), dtype=PETSc.ScalarType) # Setting 0 Dirichlet in original matrix for slave diagonal
-    A_mpc_mixed0 =  np.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m0, m1 for same constraint
-    A_mpc_mixed1 =  np.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m1, m0 for same constraint
-    A_mpc_m0m1 =  np.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m0, m1, master to multiple slave
-    A_mpc_m1m0 =  np.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m0, m1, master to multiple slaves
-    m0_index = np.zeros(1, dtype=np.int32)
-    m1_index = np.zeros(1, dtype=np.int32)
+    A_row = numpy.zeros((3,1), dtype=PETSc.ScalarType) # Rows taken over by master
+    A_col = numpy.zeros((1,3), dtype=PETSc.ScalarType) # Columns taken over by master
+    A_master = numpy.zeros((1,1), dtype=PETSc.ScalarType) # Extra insertions at master diagonal
+    A_slave =  numpy.zeros((1,1), dtype=PETSc.ScalarType) # Setting 0 Dirichlet in original matrix for slave diagonal
+    A_cell0 =  numpy.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m0, m1 for same constraint
+    A_cell1 =  numpy.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m1, m0 for same constraint
+    A_m0m1 =  numpy.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m0, m1, master to multiple slave
+    A_m1m0 =  numpy.zeros((1,1), dtype=PETSc.ScalarType) # Cross-master coefficients, m0, m1, master to multiple slaves
+    m0_index = numpy.zeros(1, dtype=numpy.int32)
+    m1_index = numpy.zeros(1, dtype=numpy.int32)
 
 
 
@@ -145,17 +146,17 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                         continue
 
                     # Reset local contribution matrices
-                    A_mpc_row.fill(0.0)
-                    A_mpc_col.fill(0.0)
+                    A_row.fill(0.0)
+                    A_col.fill(0.0)
 
                     # Move local contributions with correct coefficients
-                    A_mpc_row[:,0] = ce*A_local_copy[:,slave_local]
-                    A_mpc_col[0,:] = ce*A_local_copy[slave_local,:]
-                    A_mpc_master[0,0] = ce*A_mpc_row[slave_local,0]
+                    A_row[:,0] = ce*A_local_copy[:,slave_local]
+                    A_col[0,:] = ce*A_local_copy[slave_local,:]
+                    A_master[0,0] = ce*A_row[slave_local,0]
 
                     # Remove row contribution going to central addition
-                    A_mpc_col[0, slave_local] = 0
-                    A_mpc_row[slave_local,0] = 0
+                    A_col[0, slave_local] = 0
+                    A_row[slave_local,0] = 0
 
                     # Remove local contributions moved to master
                     A_local[:,slave_local] = 0
@@ -176,25 +177,32 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                         other_coefficients = coefficients[offsets[other_slave]:offsets[other_slave+1]]
                         # Find local index of other masters
                         for m_1 in range(len(other_cell_masters)):
-                            A_mpc_m0m1.fill(0)
-                            A_mpc_m1m0.fill(0)
+                            A_m0m1.fill(0)
+                            A_m1m0.fill(0)
                             other_coeff = other_coefficients[m_1]
-                            A_mpc_m0m1[0,0] = other_coeff*A_mpc_row[other_slave_local,0]
-                            A_mpc_m1m0[0,0] = other_coeff*A_mpc_col[0,other_slave_local]
-                            A_mpc_row[other_slave_local,0] = 0
-                            A_mpc_col[0,other_slave_local] = 0
-                            ierr_m0m1 = set_values(A, 1,ffi.from_buffer(m0_index),  1, ffi.from_buffer(m1_index),
-                                                   ffi.from_buffer(A_mpc_m0m1), mode)
-                            assert(ierr_m0m1 == 0)
-                            # Do not set twice if set on diagonal
+                            A_m0m1[0,0] = other_coeff*A_row[other_slave_local,0]
+                            A_m1m0[0,0] = other_coeff*A_col[0,other_slave_local]
+                            A_row[other_slave_local,0] = 0
+                            A_col[0,other_slave_local] = 0
+                            m0_index[0] = cell_masters[m_0]
+                            m1_index[0] = other_cell_masters[m_1]
                             if cell_masters[m_0] != other_cell_masters[m_1]:
+                                ierr_m0m1 = set_values(A, 1,ffi.from_buffer(m0_index),  1, ffi.from_buffer(m1_index),
+                                                       ffi.from_buffer(A_m0m1), mode)
+                                assert(ierr_m0m1 == 0)
+                            else:
+                                # Set twice if same master degree of freedom is used in two constraints
+                                ierr_m0m1 = set_values(A, 1,ffi.from_buffer(m0_index),  1, ffi.from_buffer(m1_index),
+                                                       ffi.from_buffer(A_m0m1), mode)
+                                assert(ierr_m0m1 == 0)
                                 ierr_m1m0 = set_values(A, 1,ffi.from_buffer(m1_index),  1, ffi.from_buffer(m0_index),
-                                                       ffi.from_buffer(A_mpc_m1m0), mode)
+                                                       ffi.from_buffer(A_m0m1), mode)
                                 assert(ierr_m1m0 == 0)
 
 
+
                     # --------------------------------Add slave rows to master column-------------------------------
-                    row_local_pos = np.zeros(local_pos.size, dtype=np.int32)
+                    row_local_pos = numpy.zeros(local_pos.size, dtype=numpy.int32)
                     for (h,g) in enumerate(local_pos):
                         # Map ghosts to global index and slave to master
                         if g >= local_size:
@@ -202,86 +210,76 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                         else:
                             row_local_pos[h] = g + local_range[0]
                     row_local_pos[slave_local] = cell_masters[m_0]
-                    master_row_index = np.array([cell_masters[m_0]],dtype=np.int32)
+                    master_row_index = numpy.array([cell_masters[m_0]],dtype=numpy.int32)
                     ierr_row = set_values(A, 3,ffi.from_buffer(row_local_pos),  1, ffi.from_buffer(master_row_index),
-                                          ffi.from_buffer(A_mpc_row), mode)
+                                          ffi.from_buffer(A_row), mode)
                     assert(ierr_row == 0)
 
                     # --------------------------------Add slave columns to master row-------------------------------
-                    col_local_pos = np.zeros(local_pos.size, dtype=np.int32)
-                    for (h,g) in enumerate(local_pos):
-                        if g >= local_size:
-                            col_local_pos[h] = global_indices[g]
-                        else:
-                            col_local_pos[h] = g + local_range[0]
-                    col_local_pos[slave_local] = cell_masters[m_0]
-
-                    master_col_index = np.array([cell_masters[m_0]],dtype=np.int32)
-                    ierr_col = set_values(A, 1,ffi.from_buffer(master_col_index), 3, ffi.from_buffer(col_local_pos),
-                                          ffi.from_buffer(A_mpc_col), mode)
+                    ierr_col = set_values(A, 1,ffi.from_buffer(master_row_index), 3, ffi.from_buffer(row_local_pos),
+                                          ffi.from_buffer(A_col), mode)
                     assert(ierr_col == 0)
 
-
                     # --------------------------------Add slave contributions to A_(master,master)-----------------
-                    master_index = np.array([cell_masters[m_0]],dtype=np.int32)
-                    ierr_m0m0 = set_values(A, 1,ffi.from_buffer(master_index),  1, ffi.from_buffer(master_index),
-                                          ffi.from_buffer(A_mpc_master), mode)
+                    ierr_m0m0 = set_values(A, 1,ffi.from_buffer(master_row_index),  1, ffi.from_buffer(master_row_index),
+                                          ffi.from_buffer(A_master), mode)
                     assert(ierr_m0m0 == 0)
 
 
                 # Add contributions for different masters on the same cell
                 for m_0 in range(len(cell_masters)):
                     for m_1 in range(m_0+1, len(cell_masters)):
-                        A_mpc_mixed0.fill(0.0)
-                        A_mpc_mixed0[0,0] += cell_coeffs[m_0]*cell_coeffs[m_1]*A_local_copy[slave_local,slave_local]
+                        A_cell0.fill(0.0)
+                        A_cell0[0,0] += cell_coeffs[m_0]*cell_coeffs[m_1]*A_local_copy[slave_local,slave_local]
 
 
-                        mixed0_index = np.array([cell_masters[m_0]],dtype=np.int32)
-                        mixed1_index = np.array([cell_masters[m_1]],dtype=np.int32)
-                        ierr_mixed0 = set_values(A, 1,ffi.from_buffer(mixed0_index),  1, ffi.from_buffer(mixed1_index),
-                                               ffi.from_buffer(A_mpc_mixed0), mode)
-                        assert(ierr_mixed0 == 0)
-                        A_mpc_mixed1.fill(0.0)
-                        mixed2_index = np.array([cell_masters[m_0]],dtype=np.int32)
-                        mixed3_index = np.array([cell_masters[m_1]],dtype=np.int32)
-                        A_mpc_mixed1[0,0] += cell_coeffs[m_0]*cell_coeffs[m_1]*A_local_copy[slave_local,slave_local]
+                        mixed0_index = numpy.array([cell_masters[m_0]],dtype=numpy.int32)
+                        mixed1_index = numpy.array([cell_masters[m_1]],dtype=numpy.int32)
+                        ierr_cell0 = set_values(A, 1,ffi.from_buffer(mixed0_index),  1, ffi.from_buffer(mixed1_index),
+                                               ffi.from_buffer(A_cell0), mode)
+                        assert(ierr_cell0 == 0)
+                        A_cell1.fill(0.0)
+                        A_cell1[0,0] += cell_coeffs[m_0]*cell_coeffs[m_1]*A_local_copy[slave_local,slave_local]
 
-                        ierr_mixed1 = set_values(A, 1,ffi.from_buffer(mixed3_index),  1, ffi.from_buffer(mixed2_index),
-                                             ffi.from_buffer(A_mpc_mixed1), mode)
-                        assert(ierr_mixed1 == 0)
-
+                        ierr_cell1 = set_values(A, 1,ffi.from_buffer(mixed1_index),
+                                                 1, ffi.from_buffer(mixed0_index),
+                                                 ffi.from_buffer(A_cell1), mode)
+                        assert(ierr_cell1 == 0)
 
         # Insert local contribution
-        ierr_loc = set_values_local(A, 3, ffi.from_buffer(local_pos), 3, ffi.from_buffer(local_pos), ffi.from_buffer(A_local), mode)
+        ierr_loc = set_values_local(A, 3, ffi.from_buffer(local_pos),
+                                    3, ffi.from_buffer(local_pos),
+                                    ffi.from_buffer(A_local), mode)
         assert(ierr_loc == 0)
-
 
     # Insert actual Dirichlet condition
     # if len(bcs)>1:
-    #     bc_value = np.array([[1]], dtype=PETSc.ScalarType)
+    #     bc_value = numpy.array([[1]], dtype=PETSc.ScalarType)
     #     for i in range(len(bcs)):
     #         if bcs[i]:
-    #             bc_row = np.array([i],dtype=np.int32)
+    #             bc_row = numpy.array([i],dtype=numpy.int32)
     #             ierr_bc = set_values(A, 1, ffi.from_buffer(bc_row), 1,
-    #                                  ffi.from_buffer(bc_row), ffi.from_buffer(bc_value), mode)
+    #                                  ffi.from_buffer(bc_row),
+    #                                  ffi.from_buffer(bc_value), mode)
     #             assert(ierr_bc == 0)
 
     # insert zero dirchlet to freeze slave dofs for back substitution
     # for i, slave in enumerate(slaves):
-    #     # Do not add to matrix if slave is equal to master (equivalent of empty condition)
+    #     # Do not add to matrix if slave is equal to master
+    #     # (equivalent of empty condition)
     #     cell_masters = masters[offsets[i]:offsets[i+1]]
     #     if slave in cell_masters:
     #         break
-    #     A_mpc_slave[0,0] = 1
-    #     slave_pos = np.array([slave],dtype=np.int32)
-    #     ierr_slave = set_values(A, 1,ffi.from_buffer(slave_pos),  1, ffi.from_buffer(slave_pos),
-    #                             ffi.from_buffer(A_mpc_slave), mode)
+    #     A_slave[0,0] = 1
+    #     slave_pos = numpy.array([slave],dtype=numpy.int32)
+    #     ierr_slave = set_values(A, 1,ffi.from_buffer(slave_pos),
+    #                             1, ffi.from_buffer(slave_pos),
+    #                             ffi.from_buffer(A_slave), mode)
     #     assert(ierr_slave == 0)
-    sink(A_mpc_m0m1, A_mpc_m1m0, m0_index, m1_index,
-         A_mpc_row, row_local_pos, master_row_index,
-         A_mpc_col, master_col_index, col_local_pos,
-         A_mpc_master, master_index,
-         A_mpc_mixed0, mixed0_index, mixed1_index,
-         A_mpc_mixed1, mixed2_index, mixed3_index,
-         A_local, local_pos
-    )
+    sink(A_m0m1, A_m1m0, m0_index, m1_index,
+         A_row, row_local_pos, master_row_index,
+         A_col,
+         A_master,
+         A_cell0, mixed0_index, mixed1_index,
+         A_cell1,
+         A_local, local_pos)
