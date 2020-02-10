@@ -14,14 +14,14 @@ def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     (bcs, values) = bcs
     (slaves, masters, coefficients, offsets,
      slave_cells, cell_to_slave, cell_to_slave_offset) = mpc
-    local_range, global_indices = ghost_info
+    local_range, global_indices, ghosts = ghost_info
 
     connections, pos = mesh
     orientation = numpy.array([0], dtype=numpy.int32)
     geometry = numpy.zeros((3, 2))
     coeffs = numpy.zeros(1, dtype=PETSc.ScalarType)
     constants = numpy.zeros(1, dtype=PETSc.ScalarType)
-
+    constants = numpy.ones(1, dtype=PETSc.ScalarType)
     b_local = numpy.zeros(3, dtype=PETSc.ScalarType)
     index = 0
     for i, cell in enumerate(pos[:-1]):
@@ -35,15 +35,11 @@ def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                ffi.from_buffer(constants),
                ffi.from_buffer(geometry), ffi.from_buffer(orientation),
                ffi.from_buffer(orientation))
-        if len(bcs) > 1:
-            for k in range(3):
-                if bcs[dofmap[i * 3 + k]]:
-                    b_local[k] = 0
-
-        if i not in slave_cells:
-            for j in range(3):
-                b[dofmap[i * 3 + j]] += b_local[j]
-        else:
+        # if len(bcs) > 1:
+        #     for k in range(3):
+        #         if bcs[dofmap[i * 3 + k]]:
+        #             b_local[k] = 0
+        if i in slave_cells:
             b_local_copy = b_local.copy()
             # Determine which slaves are in this cell,
             # and which global index they have in 1D arrays
@@ -79,13 +75,24 @@ def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                     for k in range(len(glob)):
                         if global_indices[glob[k]] == slaves[slave_index]:
                             c0 = cell_coeffs[m_0]
-                            b[cell_masters[m_0]] += c0*b_local_copy[k]
+                            # Map to local index
+                            local_index = -1
+                            if cell_masters[m_0] < local_range[1] and cell_masters[m_0] > local_range[0]:
+                                local_index = cell_masters[m_0]-local_range[0]
+                            else:
+                                # Inverse mapping from ghost info
+                                for q,ghost in enumerate(ghosts):
+                                    if cell_masters[m_0] == ghost:
+                                        local_index = q + local_range[1]-local_range[0]
+                                        # break
+                                        pass
+                            b[local_index] += c0*b_local_copy[k]
                             b_local[k] = 0
-            for k in range(len(glob)):
-                print(glob[k], k)
-                b[glob[k]] += b_local[k]
+        for j in range(3):
+            b[dofmap[i * 3 + j]] += b_local[j]
 
-    for k in range(len(bcs)):
-        if bcs[k]:
 
-            b[k] = values[k]
+    # for k in range(len(bcs)):
+    #     if bcs[k]:
+
+    #         b[k] = values[k]

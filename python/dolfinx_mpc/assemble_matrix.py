@@ -26,8 +26,8 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
 
     # Get data from mesh
     c2v = V.mesh.topology.connectivity(V.mesh.topology.dim, 0)
-    c = c2v.connections()
-    pos = c2v.pos()
+    c = c2v.array()
+    pos = c2v.offsets()
     geom = V.mesh.geometry.points
 
     # Generate ufc_form
