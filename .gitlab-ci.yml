@@ -14,7 +14,6 @@ test:
         - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git
         - git clone https://github.com/fenics/dolfinx.git
         - cd dolfinx
-        - git checkout dokken/expose_petscvector
         - mkdir build
         - cd build
         - cmake -G Ninja ../cpp

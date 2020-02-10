@@ -147,7 +147,7 @@ def test_mpc_assembly(masters_2):
     else:
         c2so_nb = List()
     [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
-    b_func = dolfinx.cpp.la.PETScVector(index_map).vec()
+    b_func = dolfinx.cpp.la.create_vector(index_map)
 
     ufc_form = dolfinx.jit.ffcx_jit(l)
     kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
