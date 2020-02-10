@@ -14,6 +14,7 @@
 #include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/mesh/MeshIterator.h>
+#include <dolfinx/mesh/Topology.h>
 
 using namespace dolfinx_mpc;
 
@@ -236,16 +237,16 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a) {
   // dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), index_maps);
 
   if (a.integrals().num_integrals(dolfinx::fem::FormIntegrals::Type::cell) > 0)
-    dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh,
+    dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh.topology(),
                                                 {{dofmaps[0], dofmaps[1]}});
   if (a.integrals().num_integrals(
           dolfinx::fem::FormIntegrals::Type::interior_facet) > 0)
     dolfinx::fem::SparsityPatternBuilder::interior_facets(
-        pattern, mesh, {{dofmaps[0], dofmaps[1]}});
+        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   if (a.integrals().num_integrals(
           dolfinx::fem::FormIntegrals::Type::exterior_facet) > 0)
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
-        pattern, mesh, {{dofmaps[0], dofmaps[1]}});
+        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   // pattern.info_statistics();
 
   // Loop over slave cells
