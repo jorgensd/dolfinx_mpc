@@ -4,6 +4,7 @@ import numba
 from numba.typed import List
 import numpy as np
 import ufl
+import pytest
 
 def master_dofs(x):
     dofs, vals = [],[]
@@ -38,14 +39,21 @@ def slaves_2(x):
         return []
 
 def masters_2(x):
-    logical = np.logical_and(np.isclose(x[:,0],0),np.isclose(x[:,1],1))
+    logical = np.logical_and(np.isclose(x[:,0],1),np.isclose(x[:,1],1))
     try:
-        return np.argwhere(logical).T[0], [0.5]
+        return np.argwhere(logical).T[0], [0.69]
     except IndexError:
         return [], []
 
+def masters_3(x):
+    logical = np.logical_and(np.isclose(x[:,0],0),np.isclose(x[:,1],1))
+    try:
+        return np.argwhere(logical).T[0], [0.69]
+    except IndexError:
+        return [], []
 
-def test_mpc_assembly():
+@pytest.mark.parametrize("masters_2", [masters_2, masters_3])
+def test_mpc_assembly(masters_2):
 
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5,3)
@@ -69,7 +77,6 @@ def test_mpc_assembly():
         slave_master_dict[slave] = {}
         for master, coeff in zip(masters,coeffs):
             slave_master_dict[slave][master] = coeff
-
     # Second constraint
     masters2, coeffs2 = masters_2(x)
     slaves2 = slaves_2(x)
@@ -81,13 +88,14 @@ def test_mpc_assembly():
         masters2[i] = masters2[i]+V.dofmap.index_map.local_range[0]
     masters2 = dolfinx.MPI.comm_world.allgather(np.array(masters2, dtype=np.int32))
     masters2 = np.hstack(masters2)
-    coeffs2 = dolfinx.MPI.comm_world.allgather(np.array(coeffs2, dtype=np.int32))
+    coeffs2 = dolfinx.MPI.comm_world.allgather(np.array(coeffs2, dtype=np.float32))
     coeffs2 = np.hstack(coeffs2)
 
     for slave in slaves2:
         slave_master_dict[slave] = {}
         for master, coeff in zip(masters2,coeffs2):
             slave_master_dict[slave][master] = coeff
+    print(slave_master_dict)
 
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
@@ -162,11 +170,12 @@ def test_mpc_assembly():
     # Check that all entities are close
     assert np.allclose(A_mpc_np, A_numpy_padded)
 
-
-def test_slave_on_same_cell():
+#Check if ordering of connected dofs matter
+@pytest.mark.parametrize("masters_2", [masters_2, masters_3])
+def test_slave_on_same_cell(masters_2):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1,3)
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1,4)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
     x = V.tabulate_dof_coordinates()
     # Build slaves and masters in parallel with global dof numbering scheme
@@ -262,7 +271,6 @@ def test_slave_on_same_cell():
 
     # Compute globally reduced system and compare norms with A2
     reduced_A = np.matmul(np.matmul(K.T,A_global),K)
-
     assert(np.isclose(np.linalg.norm(reduced_A), A2.norm()))
 
     # Pad globally reduced system with 0 rows and columns for each slave entry

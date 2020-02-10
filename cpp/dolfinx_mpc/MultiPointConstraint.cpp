@@ -207,24 +207,20 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a) {
       dofmaps[0]->index_map->local_range();
   for (auto global_master : _masters) {
     if ((global_master < local_range[0]) || (local_range[1] < global_master)) {
-      bool already_ghosted = false;
       for (std::int64_t gh = 0; gh < new_ghosts0.size(); gh++) {
         if (global_master == new_ghosts0[gh]) {
 
           glob_master_to_loc_ghosts[global_master] = gh;
-          already_ghosted = true;
         }
       }
-      if (!already_ghosted) {
-        new_ghosts0.conservativeResize(new_ghosts0.size() + 1);
-        new_ghosts0[num_ghosts0] = global_master;
-        new_ghosts1.conservativeResize(new_ghosts1.size() + 1);
-        new_ghosts1[num_ghosts1] = global_master;
-        glob_master_to_loc_ghosts[global_master] =
-            num_ghosts0 + index_maps[0]->size_local();
-        num_ghosts0 = num_ghosts0 + 1;
-        num_ghosts1 = num_ghosts1 + 1;
-      }
+      new_ghosts0.conservativeResize(new_ghosts0.size() + 1);
+      new_ghosts0[num_ghosts0] = global_master;
+      new_ghosts1.conservativeResize(new_ghosts1.size() + 1);
+      new_ghosts1[num_ghosts1] = global_master;
+      glob_master_to_loc_ghosts[global_master] =
+          num_ghosts0 + index_maps[0]->size_local();
+      num_ghosts0 = num_ghosts0 + 1;
+      num_ghosts1 = num_ghosts1 + 1;
     }
   }
 
@@ -290,10 +286,12 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a) {
             if (_slaves[slave_index] ==
                 unsigned(cell_dof_list[k] + local_range[0])) {
               // Check if master is a ghost
-              if (_glob_to_loc_ghosts.find(master) != _glob_to_loc_ghosts.end())
+              if (_glob_to_loc_ghosts.find(master) !=
+                  _glob_to_loc_ghosts.end()) {
                 new_master_dofs[j](0) = _glob_to_loc_ghosts[master];
-              else
+              } else {
                 new_master_dofs[j](0) = master - local_range[0];
+              }
             } else {
               master_slave_dofs[j].conservativeResize(
                   master_slave_dofs[j].size() + 1);
@@ -358,8 +356,8 @@ std::vector<std::int64_t> MultiPointConstraint::master_offsets() {
   return _offsets;
 }
 
-/// Return the global to local mapping of a master coefficient it it is not on
-/// this processor
+/// Return the global to local mapping of a master coefficient it it is not
+/// on this processor
 std::unordered_map<int, int> MultiPointConstraint::glob_to_loc_ghosts() {
   return _glob_to_loc_ghosts;
 }
