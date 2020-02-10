@@ -151,6 +151,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                 # Loop through each master dof to take individual contributions
                 for m_0 in range(len(cell_masters)):
                     ce = cell_coeffs[m_0]
+
                     # Special case if master is the same as slave,
                     # aka nothing should be done
                     if slaves[slave_index] == cell_masters[m_0]:
@@ -184,7 +185,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                         # Find local index of the other slave
                         o_slave_local = 0
                         for k in range(len(local_pos)):
-                            if local_pos[k] == slaves[other_slave]:
+                            if local_pos[k] + local_range[0] == slaves[other_slave]:
                                 o_slave_local = k
                         other_cell_masters = masters[offsets[other_slave]:
                                                      offsets[other_slave+1]]
@@ -195,15 +196,16 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                             A_m0m1.fill(0)
                             A_m1m0.fill(0)
                             o_c = o_coeffs[m_1]
+                            print(o_c, ce)
                             A_m0m1[0, 0] = o_c*A_row[o_slave_local, 0]
                             A_m1m0[0, 0] = o_c*A_col[0, o_slave_local]
                             A_row[o_slave_local, 0] = 0
                             A_col[0, o_slave_local] = 0
                             m0_index[0] = cell_masters[m_0]
                             m1_index[0] = other_cell_masters[m_1]
-                            # Set twice if same master degree of freedom
+                            # Do not set twice if same master degree of freedom
                             # is used in two constraints
-                            if cell_masters[m_0] != other_cell_masters[m_1]:
+                            if cell_masters[m_0] == other_cell_masters[m_1]:
                                 ierr_m0m1 = set_values(A, 1, ffi_fb(m0_index),
                                                        1, ffi_fb(m1_index),
                                                        ffi_fb(A_m0m1), mode)
@@ -215,7 +217,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                                 assert(ierr_m0m1 == 0)
                                 ierr_m1m0 = set_values(A, 1, ffi_fb(m1_index),
                                                        1, ffi_fb(m0_index),
-                                                       ffi_fb(A_m0m1), mode)
+                                                       ffi_fb(A_m1m0), mode)
                                 assert(ierr_m1m0 == 0)
 
                     # Add slave rows to master column

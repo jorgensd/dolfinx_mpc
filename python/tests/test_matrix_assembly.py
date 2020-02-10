@@ -6,11 +6,22 @@ import numpy as np
 import ufl
 
 def master_dofs(x):
-    logical = np.logical_and(np.logical_or(np.isclose(x[:,0],0),np.isclose(x[:,0],1)),np.isclose(x[:,1],1))
+    dofs, vals = [],[]
+    logical = np.logical_and(np.isclose(x[:,0],0),np.isclose(x[:,1],1))
     try:
-        return np.argwhere(logical).T[0]
+        dof, val = np.argwhere(logical).T[0][0], 0.43
+        dofs.append(dof)
+        vals.append(val)
     except IndexError:
-        return []
+        pass
+    logical = np.logical_and(np.isclose(x[:,0],1), np.isclose(x[:,1],1))
+    try:
+        dof, val = np.argwhere(logical).T[0][0], 0.11
+        dofs.append(dof)
+        vals.append(val)
+    except IndexError:
+        pass
+    return dofs, vals
 
 def slave_dofs(x):
     logical = np.logical_and(np.isclose(x[:,0],1),np.isclose(x[:,1],0))
@@ -29,9 +40,9 @@ def slaves_2(x):
 def masters_2(x):
     logical = np.logical_and(np.isclose(x[:,0],0),np.isclose(x[:,1],1))
     try:
-        return np.argwhere(logical).T[0]
+        return np.argwhere(logical).T[0], [0.5]
     except IndexError:
-        return []
+        return [], []
 
 
 def test_mpc_assembly():
@@ -41,25 +52,26 @@ def test_mpc_assembly():
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
     x = V.tabulate_dof_coordinates()
     # Build slaves and masters in parallel with global dof numbering scheme
-    masters = master_dofs(x)
+    masters, coeffs = master_dofs(x)
     for i, master in enumerate(masters):
         masters[i] = masters[i]+V.dofmap.index_map.local_range[0]
     masters = dolfinx.MPI.comm_world.allgather(np.array(masters, dtype=np.int32))
+    coeffs = dolfinx.MPI.comm_world.allgather(np.array(coeffs, dtype=np.float32))
     masters = np.hstack(masters)
+    coeffs = np.hstack(coeffs)
     slaves = slave_dofs(x)
     for i, slave in enumerate(slaves):
         slaves[i] = slaves[i]+V.dofmap.index_map.local_range[0]
     slaves = dolfinx.MPI.comm_world.allgather(np.array(slaves, dtype=np.int32))
     slaves = np.hstack(slaves)
     slave_master_dict = {}
-    coeffs = [0.11,0.43]
     for slave in slaves:
         slave_master_dict[slave] = {}
         for master, coeff in zip(masters,coeffs):
             slave_master_dict[slave][master] = coeff
 
     # Second constraint
-    masters2 = masters_2(x)
+    masters2, coeffs2 = masters_2(x)
     slaves2 = slaves_2(x)
     for i, slave in enumerate(slaves2):
         slaves2[i] = slaves2[i]+V.dofmap.index_map.local_range[0]
@@ -69,11 +81,12 @@ def test_mpc_assembly():
         masters2[i] = masters2[i]+V.dofmap.index_map.local_range[0]
     masters2 = dolfinx.MPI.comm_world.allgather(np.array(masters2, dtype=np.int32))
     masters2 = np.hstack(masters2)
+    coeffs2 = dolfinx.MPI.comm_world.allgather(np.array(coeffs2, dtype=np.int32))
+    coeffs2 = np.hstack(coeffs2)
 
-    coeffs = [0.5,0.7]
     for slave in slaves2:
         slave_master_dict[slave] = {}
-        for master, coeff in zip(masters2,coeffs):
+        for master, coeff in zip(masters2,coeffs2):
             slave_master_dict[slave][master] = coeff
 
     # Test against generated code and general assembler
@@ -127,7 +140,6 @@ def test_mpc_assembly():
         for col, val in zip(cols, vals):
             A_global[i,col] = val
     A_global = sum(dolfinx.MPI.comm_world.allgather(A_global))
-
     # Compute globally reduced system and compare norms with A2
     reduced_A = np.matmul(np.matmul(K.T,A_global),K)
     assert(np.isclose(np.linalg.norm(reduced_A), A2.norm()))
@@ -158,25 +170,27 @@ def test_slave_on_same_cell():
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
     x = V.tabulate_dof_coordinates()
     # Build slaves and masters in parallel with global dof numbering scheme
-    masters = master_dofs(x)
+    masters, coeffs = master_dofs(x)
     for i, master in enumerate(masters):
         masters[i] = masters[i]+V.dofmap.index_map.local_range[0]
     masters = dolfinx.MPI.comm_world.allgather(np.array(masters, dtype=np.int32))
+    coeffs = dolfinx.MPI.comm_world.allgather(np.array(coeffs, dtype=np.float32))
     masters = np.hstack(masters)
+    coeffs = np.hstack(coeffs)
     slaves = slave_dofs(x)
     for i, slave in enumerate(slaves):
         slaves[i] = slaves[i]+V.dofmap.index_map.local_range[0]
     slaves = dolfinx.MPI.comm_world.allgather(np.array(slaves, dtype=np.int32))
     slaves = np.hstack(slaves)
     slave_master_dict = {}
-    coeffs = [0.11,0.43]
     for slave in slaves:
         slave_master_dict[slave] = {}
         for master, coeff in zip(masters,coeffs):
             slave_master_dict[slave][master] = coeff
 
     # Second constraint
-    masters2 = masters_2(x)
+    masters2, coeffs2 = masters_2(x)
+
     slaves2 = slaves_2(x)
     for i, slave in enumerate(slaves2):
         slaves2[i] = slaves2[i]+V.dofmap.index_map.local_range[0]
@@ -186,11 +200,11 @@ def test_slave_on_same_cell():
         masters2[i] = masters2[i]+V.dofmap.index_map.local_range[0]
     masters2 = dolfinx.MPI.comm_world.allgather(np.array(masters2, dtype=np.int32))
     masters2 = np.hstack(masters2)
-
-    coeffs = [0.5,0.7]
+    coeffs2 = dolfinx.MPI.comm_world.allgather(np.array(coeffs2, dtype=np.float32))
+    coeffs2 = np.hstack(coeffs2)
     for slave in slaves2:
         slave_master_dict[slave] = {}
-        for master, coeff in zip(masters2,coeffs):
+        for master, coeff in zip(masters2,coeffs2):
             slave_master_dict[slave][master] = coeff
 
     # Test against generated code and general assembler
@@ -219,6 +233,8 @@ def test_slave_on_same_cell():
 
     # Transfer A2 to numpy matrix for comparison with globally built matrix
     A_mpc_np = np.zeros((V.dim(), V.dim()))
+
+
     for i in range(A2.getOwnershipRange()[0], A2.getOwnershipRange()[1]):
         cols, vals = A2.getRow(i)
         for col, val in zip(cols, vals):
@@ -235,7 +251,6 @@ def test_slave_on_same_cell():
         else:
             l = sum(i>np.array(list(slave_master_dict.keys())))
             K[i, i-l] = 1
-
 
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))
