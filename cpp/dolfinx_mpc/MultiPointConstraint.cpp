@@ -26,7 +26,7 @@ MultiPointConstraint::MultiPointConstraint(
       _coefficients(coefficients), _offsets(offsets), _slave_cells(),
       _normal_cells(), _offsets_cell_to_slave(), _cell_to_slave(),
       _master_cells(), _offsets_cell_to_master(), _cell_to_master(),
-      _glob_to_loc_ghosts() {
+      _glob_to_loc_ghosts(), _pattern() {
   find_slave_cells();
 }
 
@@ -207,24 +207,28 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a) {
   std::array<std::int64_t, 2> local_range =
       dofmaps[0]->index_map->local_range();
   for (auto global_master : _masters) {
-    if ((global_master < local_range[0]) || (local_range[1] < global_master)) {
+    if ((global_master < local_range[0]) || (local_range[1] <= global_master)) {
+      bool already_ghosted = false;
+
       for (std::int64_t gh = 0; gh < new_ghosts0.size(); gh++) {
         if (global_master == new_ghosts0[gh]) {
-
-          glob_master_to_loc_ghosts[global_master] = gh;
+          already_ghosted = true;
+          glob_master_to_loc_ghosts[global_master] =
+              gh + index_maps[0]->size_local();
         }
       }
-      new_ghosts0.conservativeResize(new_ghosts0.size() + 1);
-      new_ghosts0[num_ghosts0] = global_master;
-      new_ghosts1.conservativeResize(new_ghosts1.size() + 1);
-      new_ghosts1[num_ghosts1] = global_master;
-      glob_master_to_loc_ghosts[global_master] =
-          num_ghosts0 + index_maps[0]->size_local();
-      num_ghosts0 = num_ghosts0 + 1;
-      num_ghosts1 = num_ghosts1 + 1;
+      if (!already_ghosted) {
+        new_ghosts0.conservativeResize(new_ghosts0.size() + 1);
+        new_ghosts0[num_ghosts0] = global_master;
+        new_ghosts1.conservativeResize(new_ghosts1.size() + 1);
+        new_ghosts1[num_ghosts1] = global_master;
+        glob_master_to_loc_ghosts[global_master] =
+            num_ghosts0 + index_maps[0]->size_local();
+        num_ghosts0 = num_ghosts0 + 1;
+        num_ghosts1 = num_ghosts1 + 1;
+      }
     }
   }
-
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
   new_maps[0] = std::make_shared<dolfinx::common::IndexMap>(
       mesh.mpi_comm(), index_maps[0]->size_local(), new_ghosts0,
@@ -233,20 +237,21 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a) {
       mesh.mpi_comm(), index_maps[1]->size_local(), new_ghosts1,
       index_maps[1]->block_size);
   // create and build sparsity pattern
-  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
+  _pattern =
+      std::make_shared<dolfinx::la::SparsityPattern>(mesh.mpi_comm(), new_maps);
   // dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), index_maps);
 
   if (a.integrals().num_integrals(dolfinx::fem::FormIntegrals::Type::cell) > 0)
-    dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh.topology(),
+    dolfinx::fem::SparsityPatternBuilder::cells(*_pattern, mesh.topology(),
                                                 {{dofmaps[0], dofmaps[1]}});
   if (a.integrals().num_integrals(
           dolfinx::fem::FormIntegrals::Type::interior_facet) > 0)
     dolfinx::fem::SparsityPatternBuilder::interior_facets(
-        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+        *_pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   if (a.integrals().num_integrals(
           dolfinx::fem::FormIntegrals::Type::exterior_facet) > 0)
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
-        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+        *_pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   // pattern.info_statistics();
 
   // Loop over slave cells
@@ -302,8 +307,8 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a) {
           }
         }
 
-        pattern.insert_local(new_master_dofs[0], master_slave_dofs[1]);
-        pattern.insert_local(master_slave_dofs[0], new_master_dofs[1]);
+        _pattern->insert_local(new_master_dofs[0], master_slave_dofs[1]);
+        _pattern->insert_local(master_slave_dofs[0], new_master_dofs[1]);
       }
     }
   }
@@ -331,21 +336,26 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a) {
           } else {
             other_master_dof[0] = other_master - local_range[0];
           }
-          pattern.insert_local(local_master_dof, other_master_dof);
-          pattern.insert_local(other_master_dof, local_master_dof);
+          _pattern->insert_local(local_master_dof, other_master_dof);
+          _pattern->insert_local(other_master_dof, local_master_dof);
         }
       }
     }
   }
 
   // pattern.info_statistics();
-  pattern.assemble();
-  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern);
+  _pattern->assemble();
+  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), *_pattern);
 
   return A;
 }
 
 std::vector<std::int64_t> MultiPointConstraint::slaves() { return _slaves; }
+
+std::shared_ptr<dolfinx::la::SparsityPattern>
+MultiPointConstraint::sparsity_pattern() {
+  return _pattern;
+}
 
 std::pair<std::vector<std::int64_t>, std::vector<double>>
 MultiPointConstraint::masters_and_coefficients() {

@@ -62,6 +62,9 @@ namespace dolfinx_mpc
   /// Return array of slave coefficients
   std::vector<std::int64_t> slaves();
 
+  /// Return sparsity pattern for modified matrix
+  std::shared_ptr<dolfinx::la::SparsityPattern> sparsity_pattern();
+
   /// Return master offset data
   std::vector<std::int64_t> master_offsets();
 
@@ -90,6 +93,7 @@ namespace dolfinx_mpc
 	std::vector<std::int64_t> _offsets_cell_to_master;
 	std::vector<std::int64_t> _cell_to_master;
 	std::unordered_map<int, int> _glob_to_loc_ghosts;
+	std::shared_ptr<dolfinx::la::SparsityPattern> _pattern;
    };
 
 }
