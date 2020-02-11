@@ -6,6 +6,7 @@ import ufl
 from petsc4py import PETSc
 import numba
 import pytest
+import time
 
 def master_dofs(x):
     dofs, vals = [],[]
@@ -105,17 +106,48 @@ def test_mpc_assembly(masters_2):
     x = ufl.SpatialCoordinate(mesh)
     f = dolfinx.Constant(mesh, 1)
     # f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
+    a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
     l = ufl.inner(f, v)*ufl.dx
-
+    # Generate reference matrices
+    A1 = dolfinx.fem.assemble_matrix(a)
+    A1.assemble()
     L1 = dolfinx.fem.assemble_vector(l)
     L1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+
     mpc = dolfinx_mpc.MultiPointConstraint(V, slave_master_dict)
+
+    # Setup MPC system
+    for i in range(2):
+        start = time.time()
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        end = time.time()
+        print("Runtime: {0:.2e}".format(end-start))
+    mf = dolfinx.MeshFunction("size_t", mesh, 1, 0)
+    def boundary(x):
+        return np.full(x.shape[1], True)
+    mf.mark(boundary, 1)
 
     for i in range(2):
         b = dolfinx_mpc.assemble_vector(l, mpc)
-
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
+
+    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver.setType(PETSc.KSP.Type.PREONLY)
+    solver.getPC().setType(PETSc.PC.Type.LU)
+    solver.setOperators(A)
+
+    # Solve
+    t0 = time.time()
+    uh = b.copy()
+    uh.set(0)
+    solver.solve(b, uh)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+
+    if dolfinx.MPI.comm_world.rank==0:
+        print(slave_master_dict)
+
+    mpc.backsubstitution(uh, V.dofmap)
     K = np.zeros((V.dim(), V.dim()-len(slave_master_dict.keys())))
     vec = np.zeros(V.dim())
     mpc_vec = np.zeros(V.dim())
@@ -136,11 +168,24 @@ def test_mpc_assembly(masters_2):
     reduced_L = np.dot(K.T,vec)
 
     l = 0
-    if dolfinx.MPI.comm_world.rank==0:
-        print(slave_master_dict)
+
     for i in range(V.dim()):
         if i in slave_master_dict.keys():
             l+= 1
             continue
-
         assert(np.isclose(reduced_L[i-l], mpc_vec[i]))
+
+    # Transfer original matrix to numpy
+    A_global = np.zeros((V.dim(), V.dim()))
+    for i in range(A1.getOwnershipRange()[0], A1.getOwnershipRange()[1]):
+        cols, vals = A1.getRow(i)
+        for col, val in zip(cols, vals):
+            A_global[i,col] = val
+    A_global = sum(dolfinx.MPI.comm_world.allgather(A_global))
+
+    # Compute globally reduced system and compare norms with A2
+    reduced_A = np.matmul(np.matmul(K.T,A_global),K)
+    d = np.linalg.solve(reduced_A, reduced_L)
+    uh_numpy = np.dot(K,d)
+
+    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])

@@ -3,7 +3,7 @@
 # This file is part of DOLFIN (https://www.fenicsproject.org)
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
-from .numba_setup import mode, set_values_local, set_values, ffi, PETSc
+from .numba_setup import mode, set_values_local, set_values, ffi, PETSc, insert
 import numba
 import dolfinx
 import numpy
@@ -42,9 +42,12 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     # Unravel data from MPC
     slave_cells = numpy.array(multipointconstraint.slave_cells())
     masters, coefficients = multipointconstraint.masters_and_coefficients()
+    # Suppress numba warning
+    masters, coefficients = numpy.array(masters), numpy.array(coefficients)
     cell_to_slave, c_to_s_off = multipointconstraint.cell_to_slave_mapping()
-    slaves = multipointconstraint.slaves()
-    offsets = multipointconstraint.master_offsets()
+    slaves = numpy.array(multipointconstraint.slaves())
+    offsets = numpy.array(multipointconstraint.master_offsets())
+
     # Wrapping for numba to be able to do "if i in slave_cells"
     if len(slave_cells) == 0:
         sc_nb = List.empty_list(numba.types.int64)
@@ -68,8 +71,26 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     assemble_matrix_numba(A.handle, kernel, (c, pos), geom,
                           dofs, mpc_data, ghost_info, bcs)
     A.assemble()
+    # Freeze slave dofs similar to setting zero dirichlet
+    # Setting 0 Dirichlet in original matrix for slave diagonal
+    freeze_slave_dofs(A.handle, slaves, masters,offsets)
+    A.assemble()
     return A
 
+@numba.njit
+def freeze_slave_dofs(A, slaves, masters, offsets):
+    ffi_fb = ffi.from_buffer
+    A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
+    for i, slave in enumerate(slaves):
+        cell_masters = masters[offsets[i]:offsets[i+1]]
+        A_slave[0,0] = 1
+        slave_pos = numpy.array([slave],dtype=numpy.int32)
+        # This is done on every processors, thats why we use PETSC.InsertMode.INSERT
+        ierr_slave = set_values(A, 1,ffi_fb(slave_pos),
+                                1, ffi_fb(slave_pos),
+                                ffi_fb(A_slave), insert)
+        assert(ierr_slave == 0)
+    sink(A_slave, slave_pos)
 
 @numba.njit
 def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
@@ -92,8 +113,6 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     A_col = numpy.zeros((1, 3), dtype=PETSc.ScalarType)
     # Extra insertions at master diagonal
     A_master = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
-    # Setting 0 Dirichlet in original matrix for slave diagonal
-    # A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
     # Cross-master coefficients, m0, m1 for same constraint
     A_c0 = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
     A_c1 = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
@@ -282,18 +301,5 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     #                                  ffi_fb(bc_value), mode)
     #             assert(ierr_bc == 0)
 
-    # insert zero dirchlet to freeze slave dofs for back substitution
-    # for i, slave in enumerate(slaves):
-    #     # Do not add to matrix if slave is equal to master
-    #     # (equivalent of empty condition)
-    #     cell_masters = masters[offsets[i]:offsets[i+1]]
-    #     if slave in cell_masters:
-    #         break
-    #     A_slave[0,0] = 1
-    #     slave_pos = numpy.array([slave],dtype=numpy.int32)
-    #     ierr_slave = set_values(A, 1,ffi_fb(slave_pos),
-    #                             1, ffi_fb(slave_pos),
-    #                             ffi_fb(A_slave), mode)
-    #     assert(ierr_slave == 0)
     sink(A_m0m1, A_m1m0, m0_index, m1_index, A_row, global_pos,
          A_col, A_master, A_c0, A_c1, A_local, local_pos)

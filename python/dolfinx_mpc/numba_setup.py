@@ -129,3 +129,4 @@ numba.cffi_support.register_type(module.ffi.typeof("PetscScalar"),
 set_values = MatSetValues_api
 set_values_local = MatSetValuesLocal_api
 mode = PETSc.InsertMode.ADD_VALUES
+insert = PETSc.InsertMode.INSERT_VALUES

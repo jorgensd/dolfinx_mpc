@@ -9,6 +9,5 @@
 
 from .multipointconstraint import MultiPointConstraint
 from .assemble_matrix import assemble_matrix_numba, assemble_matrix
-from .assemble_vector import assemble_vector_numba
-from .function import backsubstitution
+from .assemble_vector import assemble_vector_numba, assemble_vector
 import dolfinx.cpp

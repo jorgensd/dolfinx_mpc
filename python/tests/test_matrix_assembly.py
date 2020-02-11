@@ -150,13 +150,13 @@ def test_mpc_assembly(masters_2):
     A_global = sum(dolfinx.MPI.comm_world.allgather(A_global))
     # Compute globally reduced system and compare norms with A2
     reduced_A = np.matmul(np.matmul(K.T,A_global),K)
-    assert(np.isclose(np.linalg.norm(reduced_A), A2.norm()))
 
     # Pad globally reduced system with 0 rows and columns for each slave entry
     A_numpy_padded = np.zeros((V.dim(),V.dim()))
     l = 0
     for i in range(V.dim()):
         if i in slave_master_dict.keys():
+            A_numpy_padded[i,i] = 1
             l += 1
             continue
         m = 0
@@ -271,13 +271,13 @@ def test_slave_on_same_cell(masters_2):
 
     # Compute globally reduced system and compare norms with A2
     reduced_A = np.matmul(np.matmul(K.T,A_global),K)
-    assert(np.isclose(np.linalg.norm(reduced_A), A2.norm()))
 
     # Pad globally reduced system with 0 rows and columns for each slave entry
     A_numpy_padded = np.zeros((V.dim(),V.dim()))
     l = 0
     for i in range(V.dim()):
         if i in slave_master_dict.keys():
+            A_numpy_padded[i,i] = 1
             l += 1
             continue
         m = 0
@@ -287,6 +287,5 @@ def test_slave_on_same_cell(masters_2):
                 continue
             else:
                 A_numpy_padded[i, j] = reduced_A[i-l, j-m]
-
     # Check that all entities are close
     assert np.allclose(A_mpc_np, A_numpy_padded)
