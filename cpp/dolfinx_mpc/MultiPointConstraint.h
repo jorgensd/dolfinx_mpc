@@ -62,8 +62,8 @@ namespace dolfinx_mpc
   /// Return array of slave coefficients
   std::vector<std::int64_t> slaves();
 
-  /// Return sparsity pattern for modified matrix
-  std::shared_ptr<dolfinx::la::SparsityPattern> sparsity_pattern();
+  /// Return the index_map for the test and trial space
+  std::shared_ptr<dolfinx::common::IndexMap> index_map();
 
   /// Return master offset data
   std::vector<std::int64_t> master_offsets();
@@ -79,6 +79,11 @@ namespace dolfinx_mpc
   /// Return the global to local mapping of a master coefficient it it is not on this processor
   std::unordered_map<int, int> glob_to_loc_ghosts();
 
+
+  /// Generate indexmap including MPC ghosts
+  std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();
+
+
   private:
 	std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
 	std::vector<std::int64_t> _slaves;
@@ -93,7 +98,8 @@ namespace dolfinx_mpc
 	std::vector<std::int64_t> _offsets_cell_to_master;
 	std::vector<std::int64_t> _cell_to_master;
 	std::unordered_map<int, int> _glob_to_loc_ghosts;
-	std::shared_ptr<dolfinx::la::SparsityPattern> _pattern;
+	std::unordered_map<int, int> _glob_master_to_loc_ghosts;
+   	std::shared_ptr<dolfinx::common::IndexMap> _index_map;
    };
 
 }
