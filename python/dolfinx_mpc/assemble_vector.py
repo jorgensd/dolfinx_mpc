@@ -24,9 +24,10 @@ def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]),numpy.array
     masters, coefficients = multipointconstraint.masters_and_coefficients()
     cell_to_slave, cell_to_slave_offset = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
-    offsets = multipointconstraint.master_offsets()
+    offsets = numpy.array(multipointconstraint.master_offsets())
     slave_cells = numpy.array(multipointconstraint.slave_cells())
-
+    masters = numpy.array(masters)
+    coefficients = numpy.array(coefficients)
 
     # Get index map and ghost info
     index_map = multipointconstraint.index_map()
@@ -39,6 +40,7 @@ def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]),numpy.array
     else:
         sc_nb = List()
     [sc_nb.append(sc) for sc in slave_cells]
+
 
     # Can be empty list locally, so has to be wrapped to be used with numba
     if len(cell_to_slave)==0:
@@ -132,7 +134,7 @@ def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                             c0 = cell_coeffs[m_0]
                             # Map to local index
                             local_index = -1
-                            if cell_masters[m_0] < local_range[1] and cell_masters[m_0] > local_range[0]:
+                            if cell_masters[m_0] < local_range[1] and cell_masters[m_0] >= local_range[0]:
                                 local_index = cell_masters[m_0]-local_range[0]
                             else:
                                 # Inverse mapping from ghost info
@@ -141,6 +143,7 @@ def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                                         local_index = q + local_range[1]-local_range[0]
                                         # break
                                         pass
+                            assert local_index != -1
                             b[local_index] += c0*b_local_copy[k]
                             b_local[k] = 0
         for j in range(3):

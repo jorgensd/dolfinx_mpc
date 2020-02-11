@@ -42,9 +42,12 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     # Unravel data from MPC
     slave_cells = numpy.array(multipointconstraint.slave_cells())
     masters, coefficients = multipointconstraint.masters_and_coefficients()
+    # Suppress numba warning
+    masters, coefficients = numpy.array(masters), numpy.array(coefficients)
     cell_to_slave, c_to_s_off = multipointconstraint.cell_to_slave_mapping()
-    slaves = multipointconstraint.slaves()
-    offsets = multipointconstraint.master_offsets()
+    slaves = numpy.array(multipointconstraint.slaves())
+    offsets = numpy.array(multipointconstraint.master_offsets())
+
     # Wrapping for numba to be able to do "if i in slave_cells"
     if len(slave_cells) == 0:
         sc_nb = List.empty_list(numba.types.int64)
@@ -79,11 +82,7 @@ def freeze_slave_dofs(A, slaves, masters, offsets):
     ffi_fb = ffi.from_buffer
     A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
     for i, slave in enumerate(slaves):
-        # Do not add to matrix if slave is equal to master
-        # (equivalent of empty condition)
         cell_masters = masters[offsets[i]:offsets[i+1]]
-        if slave in cell_masters:
-            break
         A_slave[0,0] = 1
         slave_pos = numpy.array([slave],dtype=numpy.int32)
         # This is done on every processors, thats why we use PETSC.InsertMode.INSERT
