@@ -126,7 +126,9 @@ def test_mpc_assembly(masters_2):
 
     # Assemble matrix to obtain sparsitypattern
     A2 = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    index_map = mpc.sparsity_pattern().index_map(0)
+
+    # Get index map and ghost info
+    index_map = mpc.index_map()
     ghost_info = (index_map.local_range, index_map.indices(True),index_map.ghosts)
 
     # Wrapping for numba to be able to do "if i in slave_cells"

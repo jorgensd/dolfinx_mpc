@@ -32,8 +32,7 @@ void mpc(py::module &m) {
       .def("masters_and_coefficients",
            &dolfinx_mpc::MultiPointConstraint::masters_and_coefficients)
       .def("slaves", &dolfinx_mpc::MultiPointConstraint::slaves)
-      .def("sparsity_pattern",
-           &dolfinx_mpc::MultiPointConstraint::sparsity_pattern)
+      .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
       .def("master_offsets", &dolfinx_mpc::MultiPointConstraint::master_offsets)
       .def(
           "generate_petsc_matrix",
