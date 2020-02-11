@@ -6,7 +6,62 @@
 from .numba_setup import ffi, PETSc
 import numba
 import numpy
+from numba.typed import List
+import dolfinx
 
+
+def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]),numpy.array([])]):
+    bc_dofs, bc_values = bcs
+    V = form.arguments()[0].ufl_function_space()
+
+    # Unpack mesh and dofmap data
+    c = V.mesh.topology.connectivity(2, 0).array()
+    pos = V.mesh.topology.connectivity(2, 0).offsets()
+    geom = V.mesh.geometry.points
+    dofs = V.dofmap.dof_array
+
+    # Data from multipointconstraint
+    masters, coefficients = multipointconstraint.masters_and_coefficients()
+    cell_to_slave, cell_to_slave_offset = multipointconstraint.cell_to_slave_mapping()
+    slaves = multipointconstraint.slaves()
+    offsets = multipointconstraint.master_offsets()
+    slave_cells = numpy.array(multipointconstraint.slave_cells())
+
+
+    # Get index map and ghost info
+    index_map = multipointconstraint.index_map()
+    ghost_info = (index_map.local_range, index_map.indices(True),index_map.ghosts)
+
+
+    # Wrapping for numba to be able to do "if i in slave_cells"
+    if len(slave_cells)==0:
+        sc_nb = List.empty_list(numba.types.int64)
+    else:
+        sc_nb = List()
+    [sc_nb.append(sc) for sc in slave_cells]
+
+    # Can be empty list locally, so has to be wrapped to be used with numba
+    if len(cell_to_slave)==0:
+        c2s_nb = List.empty_list(numba.types.int64)
+    else:
+        c2s_nb = List()
+    [c2s_nb.append(c2s) for c2s in cell_to_slave]
+    if len(cell_to_slave_offset)==0:
+        c2so_nb = List.empty_list(numba.types.int64)
+    else:
+        c2so_nb = List()
+    [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
+
+    vector = dolfinx.cpp.la.create_vector(index_map)
+
+    ufc_form = dolfinx.jit.ffcx_jit(form)
+    kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
+    with vector.localForm() as b:
+        b.set(0.0)
+        assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, dofs,
+                              (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb), ghost_info,
+                              (bc_dofs, bc_values))
+    return vector
 
 @numba.njit
 def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
