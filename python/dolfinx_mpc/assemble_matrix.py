@@ -66,11 +66,13 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     else:
         c2so_nb = List()
     [c2so_nb.append(c2so) for c2so in c_to_s_off]
-
+    num_dofs_per_element = dofmap.dof_layout.num_dofs
+    gdim = V.mesh.geometry.dim
     mpc_data = (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb)
-    assemble_matrix_numba(A.handle, kernel, (c, pos), geom,
-                          dofs, mpc_data, ghost_info, bcs)
+    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
+                          dofs, num_dofs_per_element, mpc_data, ghost_info, bcs)
     A.assemble()
+
     # Freeze slave dofs similar to setting zero dirichlet
     # Setting 0 Dirichlet in original matrix for slave diagonal
     freeze_slave_dofs(A.handle, slaves, masters,offsets)
@@ -93,7 +95,7 @@ def freeze_slave_dofs(A, slaves, masters, offsets):
     sink(A_slave, slave_pos)
 
 @numba.njit
-def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
+def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element, mpc, ghost_info, bcs):
     ffi_fb = ffi.from_buffer
 
     (slaves, masters, coefficients, offsets, slave_cells,
@@ -102,15 +104,15 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     local_size = local_range[1]-local_range[0]
     connections, pos = mesh
     orientation = numpy.array([0], dtype=numpy.int32)
-    # FIXME: Need to determine geometry, coeffs and constants from input data
-    geometry = numpy.zeros((3, 2))
+    geometry = numpy.zeros((pos[1]-pos[0], gdim))
+    # FIXME: Need to determine coeffs and constants from input data
     coeffs = numpy.zeros(0, dtype=PETSc.ScalarType)
     constants = numpy.zeros(0, dtype=PETSc.ScalarType)
-    A_local = numpy.zeros((3, 3), dtype=PETSc.ScalarType)
+    A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element), dtype=PETSc.ScalarType)
     # Rows taken over by master
-    A_row = numpy.zeros((3, 1), dtype=PETSc.ScalarType)
+    A_row = numpy.zeros((num_dofs_per_element, 1), dtype=PETSc.ScalarType)
     # Columns taken over by master
-    A_col = numpy.zeros((1, 3), dtype=PETSc.ScalarType)
+    A_col = numpy.zeros((1, num_dofs_per_element), dtype=PETSc.ScalarType)
     # Extra insertions at master diagonal
     A_master = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
     # Cross-master coefficients, m0, m1 for same constraint
@@ -128,7 +130,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     for i, cell in enumerate(pos[:-1]):
         num_vertices = pos[i + 1] - pos[i]
         c = connections[cell:cell + num_vertices]
-        for j in range(3):
+        for j in range(num_vertices):
             for k in range(2):
                 geometry[j, k] = x[c[j], k]
 
@@ -138,7 +140,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                ffi_fb(geometry), ffi_fb(orientation),
                ffi_fb(orientation))
 
-        local_pos = dofmap[3 * i:3 * i + 3]
+        local_pos = dofmap[num_dofs_per_element * i:num_dofs_per_element * i + num_dofs_per_element]
         if len(bcs) > 1:
             for k in range(len(local_pos)):
                 if bcs[local_range[0] + local_pos[k]]:
@@ -245,14 +247,14 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                             global_pos[h] = g + local_range[0]
                     global_pos[slave_local] = cell_masters[m_0]
                     m0_index[0] = cell_masters[m_0]
-                    ierr_row = set_values(A, 3, ffi_fb(global_pos),
+                    ierr_row = set_values(A, num_dofs_per_element, ffi_fb(global_pos),
                                           1, ffi_fb(m0_index),
                                           ffi_fb(A_row), mode)
                     assert(ierr_row == 0)
 
                     # Add slave columns to master row
                     ierr_col = set_values(A, 1, ffi_fb(m0_index),
-                                          3, ffi_fb(global_pos),
+                                          num_dofs_per_element, ffi_fb(global_pos),
                                           ffi_fb(A_col), mode)
                     assert(ierr_col == 0)
                     # Add slave contributions to A_(master, master)
@@ -285,8 +287,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                         assert(ierr_c1 == 0)
 
         # Insert local contribution
-        ierr_loc = set_values_local(A, 3, ffi_fb(local_pos),
-                                    3, ffi_fb(local_pos),
+        ierr_loc = set_values_local(A, num_dofs_per_element, ffi_fb(local_pos),
+                                    num_dofs_per_element, ffi_fb(local_pos),
                                     ffi_fb(A_local), mode)
         assert(ierr_loc == 0)
 

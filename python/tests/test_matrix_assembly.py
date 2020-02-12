@@ -53,11 +53,14 @@ def masters_3(x):
         return [], []
 
 @pytest.mark.parametrize("masters_2", [masters_2, masters_3])
-def test_mpc_assembly(masters_2):
+@pytest.mark.parametrize("degree", range(1,4))
+@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
+                                      dolfinx.cpp.mesh.CellType.triangle])
+def test_mpc_assembly(masters_2,degree,celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5,3)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5,3,celltype)
+    V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
     x = V.tabulate_dof_coordinates()
     # Build slaves and masters in parallel with global dof numbering scheme
     masters, coeffs = master_dofs(x)
@@ -172,11 +175,14 @@ def test_mpc_assembly(masters_2):
 
 #Check if ordering of connected dofs matter
 @pytest.mark.parametrize("masters_2", [masters_2, masters_3])
-def test_slave_on_same_cell(masters_2):
+@pytest.mark.parametrize("degree", range(1,4))
+@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
+                                      dolfinx.cpp.mesh.CellType.triangle])
+def test_slave_on_same_cell(masters_2,degree,celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1,4)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1,8,celltype)
+    V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
     x = V.tabulate_dof_coordinates()
     # Build slaves and masters in parallel with global dof numbering scheme
     masters, coeffs = master_dofs(x)
