@@ -54,11 +54,12 @@ def masters_3(x):
         return [], []
 
 @pytest.mark.parametrize("masters_2", [masters_2, masters_3])
-def test_mpc_assembly(masters_2):
+@pytest.mark.parametrize("degree", range(1,4))
+def test_mpc_assembly(masters_2,degree):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 3, 5)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 3, 5)#,dolfinx.cpp.mesh.CellType.quadrilateral)
+    V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
     x = V.tabulate_dof_coordinates()
     masters, coeffs = master_dofs(x)
     for i, master in enumerate(masters):

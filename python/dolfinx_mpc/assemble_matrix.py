@@ -131,7 +131,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
         num_vertices = pos[i + 1] - pos[i]
         c = connections[cell:cell + num_vertices]
         for j in range(num_vertices):
-            for k in range(2):
+            for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
 
         A_local.fill(0.0)
