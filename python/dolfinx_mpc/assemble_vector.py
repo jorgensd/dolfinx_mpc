@@ -12,7 +12,8 @@ import dolfinx
 from .numba_setup import PETSc, ffi
 
 
-def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]), numpy.array([])]):
+def assemble_vector(form, multipointconstraint,
+                    bcs=[numpy.array([]), numpy.array([])]):
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
 
@@ -24,7 +25,7 @@ def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]), numpy.arra
 
     # Data from multipointconstraint
     masters, coefficients = multipointconstraint.masters_and_coefficients()
-    cell_to_slave, cell_to_slave_offset = multipointconstraint.cell_to_slave_mapping()
+    cell_to_slave, c2s_offset = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
     offsets = numpy.array(multipointconstraint.master_offsets())
     slave_cells = numpy.array(multipointconstraint.slave_cells())
@@ -49,11 +50,11 @@ def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]), numpy.arra
     else:
         c2s_nb = List()
     [c2s_nb.append(c2s) for c2s in cell_to_slave]
-    if len(cell_to_slave_offset) == 0:
+    if len(c2s_offset) == 0:
         c2so_nb = List.empty_list(numba.types.int64)
     else:
         c2so_nb = List()
-    [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
+    [c2so_nb.append(c2so) for c2so in c2s_offset]
 
     vector = dolfinx.cpp.la.create_vector(index_map)
 
@@ -63,14 +64,17 @@ def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]), numpy.arra
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
     with vector.localForm() as b:
         b.set(0.0)
-        assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, gdim, dofs,num_dofs_per_element,
-                              (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb), ghost_info,
-                              (bc_dofs, bc_values))
+        assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, gdim,
+                              dofs, num_dofs_per_element,
+                              (slaves, masters, coefficients,
+                               offsets, sc_nb, c2s_nb, c2so_nb),
+                              ghost_info, (bc_dofs, bc_values))
     return vector
 
 
 @numba.njit
-def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap, num_dofs_per_element, mpc, ghost_info, bcs):
+def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
+                          num_dofs_per_element, mpc, ghost_info, bcs):
     """Assemble provided FFC/UFC kernel over a mesh into the array b"""
     (bcs, values) = bcs
     (slaves, masters, coefficients, offsets,
@@ -107,7 +111,8 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
             cell_slaves = cell_to_slave[cell_to_slave_offset[index]:
                                         cell_to_slave_offset[index+1]]
             index += 1
-            glob = dofmap[ num_dofs_per_element * i: num_dofs_per_element * i +  num_dofs_per_element]
+            glob = dofmap[num_dofs_per_element * i:
+                          num_dofs_per_element * i + num_dofs_per_element]
             # Find which slaves belongs to each cell
             global_slaves = []
             for gi, slave in enumerate(slaves):
@@ -138,7 +143,9 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
                             c0 = cell_coeffs[m_0]
                             # Map to local index
                             local_index = -1
-                            if cell_masters[m_0] < local_range[1] and cell_masters[m_0] >= local_range[0]:
+                            in_range = (cell_masters[m_0] < local_range[1] and
+                                        cell_masters[m_0] >= local_range[0])
+                            if in_range:
                                 local_index = cell_masters[m_0]-local_range[0]
                             else:
                                 # Inverse mapping from ghost info

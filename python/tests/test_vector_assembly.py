@@ -1,7 +1,5 @@
-import numba
 import numpy as np
 import pytest
-from numba.typed import List
 from petsc4py import PETSc
 
 import dolfinx
@@ -61,11 +59,13 @@ def masters_3(x):
 
 
 @pytest.mark.parametrize("masters_2", [masters_2, masters_3])
-@pytest.mark.parametrize("degree", range(1,4))
-def test_mpc_assembly(masters_2,degree):
+@pytest.mark.parametrize("degree", range(1, 4))
+@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
+                                      dolfinx.cpp.mesh.CellType.triangle])
+def test_mpc_assembly(masters_2, degree, celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 3, 5)#,dolfinx.cpp.mesh.CellType.quadrilateral)
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 3, 5, celltype)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
     x = V.tabulate_dof_coordinates()
     masters, coeffs = master_dofs(x)
@@ -110,22 +110,19 @@ def test_mpc_assembly(masters_2,degree):
             slave_master_dict[slave][master] = coeff
 
     # Define bcs
-    bcs = np.array([])
-    values = np.array([])
-    u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
     f = dolfinx.Constant(mesh, 1)
     # f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
-    l = ufl.inner(f, v)*ufl.dx
+    lhs = ufl.inner(f, v)*ufl.dx
 
-    L1 = dolfinx.fem.assemble_vector(l)
+    L1 = dolfinx.fem.assemble_vector(lhs)
     L1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                    mode=PETSc.ScatterMode.REVERSE)
     mpc = dolfinx_mpc.MultiPointConstraint(V, slave_master_dict)
 
     for i in range(2):
-        b = dolfinx_mpc.assemble_vector(l, mpc)
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -136,11 +133,11 @@ def test_mpc_assembly(masters_2,degree):
     for i in range(K.shape[0]):
         if i in slave_master_dict.keys():
             for master in slave_master_dict[i].keys():
-                l = sum(master > np.array(list(slave_master_dict.keys())))
-                K[i, master - l] = slave_master_dict[i][master]
+                count = sum(master > np.array(list(slave_master_dict.keys())))
+                K[i, master - count] = slave_master_dict[i][master]
         else:
-            l = sum(i > np.array(list(slave_master_dict.keys())))
-            K[i, i-l] = 1
+            count = sum(i > np.array(list(slave_master_dict.keys())))
+            K[i, i-count] = 1
 
     vec[L1.owner_range[0]:L1.owner_range[1]] += L1.array
     vec = sum(dolfinx.MPI.comm_world.allgather(
@@ -150,12 +147,12 @@ def test_mpc_assembly(masters_2,degree):
         np.array(mpc_vec, dtype=np.float32)))
     reduced_L = np.dot(K.T, vec)
 
-    l = 0
+    count = 0
     if dolfinx.MPI.comm_world.rank == 0:
         print(slave_master_dict)
     for i in range(V.dim()):
         if i in slave_master_dict.keys():
-            l += 1
+            count += 1
             continue
 
-        assert(np.isclose(reduced_L[i-l], mpc_vec[i]))
+        assert(np.isclose(reduced_L[i-count], mpc_vec[i]))

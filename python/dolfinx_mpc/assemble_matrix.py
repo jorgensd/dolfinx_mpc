@@ -75,7 +75,8 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     gdim = V.mesh.geometry.dim
     mpc_data = (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb)
     assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
-                          dofs, num_dofs_per_element, mpc_data, ghost_info, bcs)
+                          dofs, num_dofs_per_element, mpc_data,
+                          ghost_info, bcs)
     A.assemble()
 
     # Freeze slave dofs similar to setting zero dirichlet
@@ -90,7 +91,6 @@ def freeze_slave_dofs(A, slaves, masters, offsets):
     ffi_fb = ffi.from_buffer
     A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
     for i, slave in enumerate(slaves):
-        cell_masters = masters[offsets[i]:offsets[i+1]]
         A_slave[0, 0] = 1
         slave_pos = numpy.array([slave], dtype=numpy.int32)
         # This is done on every processors, that's why we use
@@ -103,7 +103,8 @@ def freeze_slave_dofs(A, slaves, masters, offsets):
 
 
 @numba.njit
-def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element, mpc, ghost_info, bcs):
+def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
+                          num_dofs_per_element, mpc, ghost_info, bcs):
     ffi_fb = ffi.from_buffer
 
     (slaves, masters, coefficients, offsets, slave_cells,
@@ -117,7 +118,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
 
     coeffs = numpy.zeros(0, dtype=PETSc.ScalarType)
     constants = numpy.zeros(0, dtype=PETSc.ScalarType)
-    A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element), dtype=PETSc.ScalarType)
+    A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element),
+                          dtype=PETSc.ScalarType)
     # Rows taken over by master
     A_row = numpy.zeros((num_dofs_per_element, 1), dtype=PETSc.ScalarType)
     # Columns taken over by master
@@ -149,7 +151,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
                ffi_fb(geometry), ffi_fb(orientation),
                ffi_fb(orientation))
 
-        local_pos = dofmap[num_dofs_per_element * i:num_dofs_per_element * i + num_dofs_per_element]
+        local_pos = dofmap[num_dofs_per_element * i:
+                           num_dofs_per_element * i + num_dofs_per_element]
         if len(bcs) > 1:
             for k in range(len(local_pos)):
                 if bcs[local_range[0] + local_pos[k]]:
@@ -216,7 +219,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
                         # Find local index of the other slave
                         o_slave_local = -1
                         for k in range(len(local_pos)):
-                            if local_pos[k] + local_range[0] == slaves[other_slave]:
+                            l0 = local_range[0]
+                            if local_pos[k] + l0 == slaves[other_slave]:
                                 o_slave_local = k
                                 break
                         assert(o_slave_local != -1)
@@ -236,7 +240,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
                             m0_index[0] = cell_masters[m_0]
                             m1_index[0] = other_cell_masters[m_1]
 
-                            # Only insert once per pair, but remove local values for all slaves
+                            # Only insert once per pair,
+                            # but remove local values for all slaves
                             if o_slave_index > s_0:
                                 ierr_m0m1 = set_values(A, 1, ffi_fb(m0_index),
                                                        1, ffi_fb(m1_index),
@@ -256,14 +261,16 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap, num_dofs_per_element
                             global_pos[h] = g + local_range[0]
                     global_pos[slave_local] = cell_masters[m_0]
                     m0_index[0] = cell_masters[m_0]
-                    ierr_row = set_values(A, num_dofs_per_element, ffi_fb(global_pos),
+                    ierr_row = set_values(A, num_dofs_per_element,
+                                          ffi_fb(global_pos),
                                           1, ffi_fb(m0_index),
                                           ffi_fb(A_row), mode)
                     assert(ierr_row == 0)
 
                     # Add slave columns to master row
                     ierr_col = set_values(A, 1, ffi_fb(m0_index),
-                                          num_dofs_per_element, ffi_fb(global_pos),
+                                          num_dofs_per_element,
+                                          ffi_fb(global_pos),
                                           ffi_fb(A_col), mode)
                     assert(ierr_col == 0)
                     # Add slave contributions to A_(master, master)

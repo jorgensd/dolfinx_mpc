@@ -13,15 +13,8 @@ if sys.version_info < (3, 5):
     sys.exit(1)
 
 VERSION = "2019.2.0.dev0"
-RESTRICT_REQUIREMENTS = ">=2019.2.0.dev0,<2019.3"
 
-REQUIREMENTS = [
-    "numpy",
-    "mpi4py",
-    "petsc4py",
-    # "fenics-ffcx",
-    "fenics-ufl{}".format(RESTRICT_REQUIREMENTS),
-]
+REQUIREMENTS = []
 
 
 class CMakeExtension(Extension):
@@ -30,17 +23,18 @@ class CMakeExtension(Extension):
         self.sourcedir = os.path.abspath(sourcedir)
 
 
-
 class CMakeBuild(build_ext):
     def run(self):
         try:
             out = subprocess.check_output(['cmake', '--version'])
         except OSError:
-            raise RuntimeError("CMake must be installed to build the following extensions: "
-                               + ", ".join(e.name for e in self.extensions))
+            raise RuntimeError("CMake must be installed to build the" +
+                               "following extensions:" +
+                               ", ".join(e.name for e in self.extensions))
 
         if platform.system() == "Windows":
-            cmake_version = LooseVersion(re.search(r'version\s*([\d.]+)', out.decode()).group(1))
+            cmake_version = LooseVersion(re.search(r'version\s*([\d.]+)',
+                                                   out.decode()).group(1))
             if cmake_version < '3.1.0':
                 raise RuntimeError("CMake >= 3.1.0 is required on Windows")
 
@@ -48,7 +42,8 @@ class CMakeBuild(build_ext):
             self.build_extension(ext)
 
     def build_extension(self, ext):
-        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        extdir = os.path.abspath(os.path.dirname(
+            self.get_ext_fullpath(ext.name)))
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
                       '-DPYTHON_EXECUTABLE=' + sys.executable]
 
@@ -56,7 +51,8 @@ class CMakeBuild(build_ext):
         build_args = ['--config', cfg]
 
         if platform.system() == "Windows":
-            cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(cfg.upper(), extdir)]
+            cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(
+                cfg.upper(), extdir)]
             if sys.maxsize > 2**32:
                 cmake_args += ['-A', 'x64']
             build_args += ['--', '/m']
@@ -65,12 +61,14 @@ class CMakeBuild(build_ext):
             build_args += ['--', '-j3']
 
         env = os.environ.copy()
-        env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
-                                                              self.distribution.get_version())
+        env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(
+            env.get('CXXFLAGS', ''), self.distribution.get_version())
         if not os.path.exists(self.build_temp):
             os.makedirs(self.build_temp)
-        subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
-        subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=self.build_temp, env=env)
+        subprocess.check_call(['cmake', ext.sourcedir] + cmake_args,
+                              cwd=self.build_temp, env=env)
+        subprocess.check_call(['cmake', '--build', '.'] + build_args,
+                              cwd=self.build_temp, env=env)
 
 
 setup(name='dolfinx-mpc',
@@ -78,8 +76,7 @@ setup(name='dolfinx-mpc',
       author='Jørgen S. Dokken',
       description='Python interface for multipointconstraints in dolfinx',
       long_description='',
-      packages=["dolfinx_mpc",
-      "dolfinx_mpc.wrappers"],
+      packages=["dolfinx_mpc", "dolfinx_mpc.wrappers"],
       package_data={'dolfinx_mpc.wrappers': ['*.h']},
       ext_modules=[CMakeExtension('dolfinx_mpc.cpp')],
       cmdclass=dict(build_ext=CMakeBuild),
