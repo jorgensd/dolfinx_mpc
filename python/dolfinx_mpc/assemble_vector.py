@@ -3,14 +3,16 @@
 # This file is part of DOLFIN (https://www.fenicsproject.org)
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
-from .numba_setup import ffi, PETSc
 import numba
 import numpy
 from numba.typed import List
+
 import dolfinx
 
+from .numba_setup import PETSc, ffi
 
-def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]),numpy.array([])]):
+
+def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]), numpy.array([])]):
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
 
@@ -31,24 +33,23 @@ def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]),numpy.array
 
     # Get index map and ghost info
     index_map = multipointconstraint.index_map()
-    ghost_info = (index_map.local_range, index_map.indices(True),index_map.ghosts)
-
+    ghost_info = (index_map.local_range,
+                  index_map.indices(True), index_map.ghosts)
 
     # Wrapping for numba to be able to do "if i in slave_cells"
-    if len(slave_cells)==0:
+    if len(slave_cells) == 0:
         sc_nb = List.empty_list(numba.types.int64)
     else:
         sc_nb = List()
     [sc_nb.append(sc) for sc in slave_cells]
 
-
     # Can be empty list locally, so has to be wrapped to be used with numba
-    if len(cell_to_slave)==0:
+    if len(cell_to_slave) == 0:
         c2s_nb = List.empty_list(numba.types.int64)
     else:
         c2s_nb = List()
     [c2s_nb.append(c2s) for c2s in cell_to_slave]
-    if len(cell_to_slave_offset)==0:
+    if len(cell_to_slave_offset) == 0:
         c2so_nb = List.empty_list(numba.types.int64)
     else:
         c2so_nb = List()
@@ -61,9 +62,11 @@ def assemble_vector(form, multipointconstraint, bcs=[numpy.array([]),numpy.array
     with vector.localForm() as b:
         b.set(0.0)
         assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, dofs,
-                              (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb), ghost_info,
+                              (slaves, masters, coefficients, offsets,
+                               sc_nb, c2s_nb, c2so_nb), ghost_info,
                               (bc_dofs, bc_values))
     return vector
+
 
 @numba.njit
 def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
@@ -138,9 +141,10 @@ def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                                 local_index = cell_masters[m_0]-local_range[0]
                             else:
                                 # Inverse mapping from ghost info
-                                for q,ghost in enumerate(ghosts):
+                                for q, ghost in enumerate(ghosts):
                                     if cell_masters[m_0] == ghost:
-                                        local_index = q + local_range[1]-local_range[0]
+                                        local_index = q + \
+                                            local_range[1]-local_range[0]
                                         # break
                                         pass
                             assert local_index != -1
@@ -148,7 +152,6 @@ def assemble_vector_numba(b, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
                             b_local[k] = 0
         for j in range(3):
             b[dofmap[i * 3 + j]] += b_local[j]
-
 
     # for k in range(len(bcs)):
     #     if bcs[k]:

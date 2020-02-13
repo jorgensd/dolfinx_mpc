@@ -3,11 +3,15 @@
 # This file is part of DOLFIN (https://www.fenicsproject.org)
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
-from .numba_setup import mode, set_values_local, set_values, ffi, PETSc, insert
 import numba
-import dolfinx
 import numpy
 from numba.typed import List
+
+import dolfinx
+
+from .numba_setup import PETSc, ffi, insert, mode, set_values, set_values_local
+
+
 # See https://github.com/numba/numba/issues/4036 for why we need 'sink'
 @numba.njit
 def sink(*args):
@@ -42,6 +46,7 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     # Unravel data from MPC
     slave_cells = numpy.array(multipointconstraint.slave_cells())
     masters, coefficients = multipointconstraint.masters_and_coefficients()
+
     # Suppress numba warning
     masters, coefficients = numpy.array(masters), numpy.array(coefficients)
     cell_to_slave, c_to_s_off = multipointconstraint.cell_to_slave_mapping()
@@ -73,9 +78,10 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     A.assemble()
     # Freeze slave dofs similar to setting zero dirichlet
     # Setting 0 Dirichlet in original matrix for slave diagonal
-    freeze_slave_dofs(A.handle, slaves, masters,offsets)
+    freeze_slave_dofs(A.handle, slaves, masters, offsets)
     A.assemble()
     return A
+
 
 @numba.njit
 def freeze_slave_dofs(A, slaves, masters, offsets):
@@ -83,14 +89,16 @@ def freeze_slave_dofs(A, slaves, masters, offsets):
     A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
     for i, slave in enumerate(slaves):
         cell_masters = masters[offsets[i]:offsets[i+1]]
-        A_slave[0,0] = 1
-        slave_pos = numpy.array([slave],dtype=numpy.int32)
-        # This is done on every processors, thats why we use PETSC.InsertMode.INSERT
-        ierr_slave = set_values(A, 1,ffi_fb(slave_pos),
+        A_slave[0, 0] = 1
+        slave_pos = numpy.array([slave], dtype=numpy.int32)
+        # This is done on every processors, that's why we use
+        # PETSC.InsertMode.INSERT
+        ierr_slave = set_values(A, 1, ffi_fb(slave_pos),
                                 1, ffi_fb(slave_pos),
                                 ffi_fb(A_slave), insert)
         assert(ierr_slave == 0)
     sink(A_slave, slave_pos)
+
 
 @numba.njit
 def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
@@ -102,7 +110,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, dofmap, mpc, ghost_info, bcs):
     local_size = local_range[1]-local_range[0]
     connections, pos = mesh
     orientation = numpy.array([0], dtype=numpy.int32)
-    # FIXME: Need to determine geometry, coeffs and constants from input data
+    # FIXME: Need to determine geometry, coeffs and constants from input
+    # data
     geometry = numpy.zeros((3, 2))
     coeffs = numpy.zeros(0, dtype=PETSc.ScalarType)
     constants = numpy.zeros(0, dtype=PETSc.ScalarType)
