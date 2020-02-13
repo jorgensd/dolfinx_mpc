@@ -1,7 +1,5 @@
-import numba
 import numpy as np
 import pytest
-from numba.typed import List
 
 import dolfinx
 import dolfinx_mpc
@@ -60,12 +58,16 @@ def masters_3(x):
 
 
 @pytest.mark.parametrize("masters_2", [masters_2, masters_3])
-def test_mpc_assembly(masters_2):
+@pytest.mark.parametrize("degree", range(1, 4))
+@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
+                                      dolfinx.cpp.mesh.CellType.triangle])
+def test_mpc_assembly(masters_2, degree, celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5, 3)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5, 3, celltype)
+    V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
     x = V.tabulate_dof_coordinates()
+
     # Build slaves and masters in parallel with global dof numbering scheme
     masters, coeffs = master_dofs(x)
     for i, master in enumerate(masters):
@@ -144,11 +146,11 @@ def test_mpc_assembly(masters_2):
     for i in range(K.shape[0]):
         if i in slave_master_dict.keys():
             for master in slave_master_dict[i].keys():
-                l = sum(master > np.array(list(slave_master_dict.keys())))
-                K[i, master - l] = slave_master_dict[i][master]
+                count = sum(master > np.array(list(slave_master_dict.keys())))
+                K[i, master - count] = slave_master_dict[i][master]
         else:
-            l = sum(i > np.array(list(slave_master_dict.keys())))
-            K[i, i-l] = 1
+            count = sum(i > np.array(list(slave_master_dict.keys())))
+            K[i, i-count] = 1
 
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))
@@ -162,11 +164,11 @@ def test_mpc_assembly(masters_2):
 
     # Pad globally reduced system with 0 rows and columns for each slave entry
     A_numpy_padded = np.zeros((V.dim(), V.dim()))
-    l = 0
+    count = 0
     for i in range(V.dim()):
         if i in slave_master_dict.keys():
             A_numpy_padded[i, i] = 1
-            l += 1
+            count += 1
             continue
         m = 0
         for j in range(V.dim()):
@@ -174,18 +176,21 @@ def test_mpc_assembly(masters_2):
                 m += 1
                 continue
             else:
-                A_numpy_padded[i, j] = reduced_A[i-l, j-m]
+                A_numpy_padded[i, j] = reduced_A[i-count, j-m]
 
     # Check that all entities are close
     assert np.allclose(A_mpc_np, A_numpy_padded)
 
 # Check if ordering of connected dofs matter
 @pytest.mark.parametrize("masters_2", [masters_2, masters_3])
-def test_slave_on_same_cell(masters_2):
+@pytest.mark.parametrize("degree", range(1, 4))
+@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
+                                      dolfinx.cpp.mesh.CellType.triangle])
+def test_slave_on_same_cell(masters_2, degree, celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1, 4)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1, 8, celltype)
+    V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
     x = V.tabulate_dof_coordinates()
     # Build slaves and masters in parallel with global dof numbering scheme
     masters, coeffs = master_dofs(x)
@@ -266,11 +271,11 @@ def test_slave_on_same_cell(masters_2):
     for i in range(K.shape[0]):
         if i in slave_master_dict.keys():
             for master in slave_master_dict[i].keys():
-                l = sum(master > np.array(list(slave_master_dict.keys())))
-                K[i, master - l] = slave_master_dict[i][master]
+                count = sum(master > np.array(list(slave_master_dict.keys())))
+                K[i, master - count] = slave_master_dict[i][master]
         else:
-            l = sum(i > np.array(list(slave_master_dict.keys())))
-            K[i, i-l] = 1
+            count = sum(i > np.array(list(slave_master_dict.keys())))
+            K[i, i-count] = 1
 
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))
@@ -285,11 +290,11 @@ def test_slave_on_same_cell(masters_2):
 
     # Pad globally reduced system with 0 rows and columns for each slave entry
     A_numpy_padded = np.zeros((V.dim(), V.dim()))
-    l = 0
+    count = 0
     for i in range(V.dim()):
         if i in slave_master_dict.keys():
             A_numpy_padded[i, i] = 1
-            l += 1
+            count += 1
             continue
         m = 0
         for j in range(V.dim()):
@@ -297,6 +302,6 @@ def test_slave_on_same_cell(masters_2):
                 m += 1
                 continue
             else:
-                A_numpy_padded[i, j] = reduced_A[i-l, j-m]
+                A_numpy_padded[i, j] = reduced_A[i-count, j-m]
     # Check that all entities are close
     assert np.allclose(A_mpc_np, A_numpy_padded)

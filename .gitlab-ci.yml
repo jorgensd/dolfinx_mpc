@@ -14,6 +14,7 @@ test:
         - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
         - ninja -j3 install
         - cd ../python
+        - flake8 . --exclude=demos
         - pip3 install -e . --upgrade
         - cd tests
         - python3 -m pytest .

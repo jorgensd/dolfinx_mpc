@@ -103,7 +103,7 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
                     k = local_dof
             assert k != -1
             # Check if we have already inserted for this slave
-            if not slave in slaves_visited:
+            if slave not in slaves_visited:
                 slaves_visited.append(slave)
                 slaves_masters = masters[offsets[slave_index]:
                                          offsets[slave_index+1]]
