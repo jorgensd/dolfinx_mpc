@@ -3,13 +3,12 @@ import ctypes.util
 import importlib
 import os
 
-
 import cffi
 import numba
 import numba.cffi_support
 import numpy as np
-
-from petsc4py import PETSc, get_config as PETSc_get_config
+from petsc4py import PETSc
+from petsc4py import get_config as PETSc_get_config
 
 from dolfinx import MPI
 
