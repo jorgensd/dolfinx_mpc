@@ -1,16 +1,18 @@
-from dolfinx import function
-from dolfinx_mpc import cpp
 import typing
+
 import numba
 from numba.typed import List
 from petsc4py import PETSc
+
+from dolfinx import function
+from dolfinx_mpc import cpp
+
 
 class MultiPointConstraint(cpp.mpc.MultiPointConstraint):
     def __init__(
             self,
             V: typing.Union[function.FunctionSpace],
             master_slave_map: typing.Dict[int, typing.Dict[int, float]]):
-
         """Representation of MultiPointConstraint which is imposed on
         a linear system.
 
@@ -36,39 +38,38 @@ class MultiPointConstraint(cpp.mpc.MultiPointConstraint):
             _V = V
         super().__init__(_V, slaves, masters, coefficients, offsets)
 
-
-
-
-    def backsubstitution(self,vector, dofmap):
+    def backsubstitution(self, vector, dofmap):
         slaves = self.slaves()
         masters, coefficients = self.masters_and_coefficients()
         offsets = self.master_offsets()
         index_map = self.index_map()
         slave_cells = self.slave_cells()
         cell_to_slave, cell_to_slave_offset = self.cell_to_slave_mapping()
-        if len(slave_cells)==0:
+        if len(slave_cells) == 0:
             sc_nb = List.empty_list(numba.types.int64)
         else:
             sc_nb = List()
         [sc_nb.append(sc) for sc in slave_cells]
 
         # Can be empty list locally, so has to be wrapped to be used with numba
-        if len(cell_to_slave)==0:
+        if len(cell_to_slave) == 0:
             c2s_nb = List.empty_list(numba.types.int64)
         else:
             c2s_nb = List()
         [c2s_nb.append(c2s) for c2s in cell_to_slave]
-        if len(cell_to_slave_offset)==0:
+        if len(cell_to_slave_offset) == 0:
             c2so_nb = List.empty_list(numba.types.int64)
         else:
             c2so_nb = List()
         [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
 
-        ghost_info = (index_map.local_range, index_map.ghosts, index_map.indices(True))
+        ghost_info = (index_map.local_range, index_map.ghosts,
+                      index_map.indices(True))
         mpc = (slaves, sc_nb, c2s_nb, c2so_nb, masters, coefficients, offsets)
 
         backsubstitution_numba(vector, dofmap.dof_array, mpc, ghost_info)
-        vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                           mode=PETSc.ScatterMode.FORWARD)
         return vector
 
 
@@ -77,8 +78,9 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
     """
         Insert mpc values into vector bc
         """
-    (slaves, slave_cells, cell_to_slave, cell_to_slave_offset, masters, coefficients, offsets) = mpc
-    (local_range, ghosts,global_indices) = ghost_info
+    (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
+     masters, coefficients, offsets) = mpc
+    (local_range, ghosts, global_indices) = ghost_info
     slaves_visited = List.empty_list(numba.types.int64)
     # Loop through slave cells
     for (index, cell_index) in enumerate(slave_cells):
@@ -115,7 +117,8 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
                     else:
                         for q, ghost in enumerate(ghosts):
                             if master == ghost:
-                                local_master_index = q + local_range[1] - local_range[0]
+                                local_master_index = q + \
+                                    local_range[1] - local_range[0]
                                 break
-                    assert q!= -1
+                    assert q != -1
                     b[k] += coeff*b[local_master_index]

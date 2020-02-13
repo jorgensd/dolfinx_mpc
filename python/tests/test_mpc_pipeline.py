@@ -1,12 +1,15 @@
+import time
+
+import numba
+import numpy as np
+import pytest
+from numba.typed import List
+from petsc4py import PETSc
+
 import dolfinx
 import dolfinx_mpc
-import numpy as np
-from numba.typed import List
 import ufl
-from petsc4py import PETSc
-import numba
-import pytest
-import time
+
 
 def master_dofs(x):
     dofs, vals = [],[]
