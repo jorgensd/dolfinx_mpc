@@ -1,4 +1,5 @@
 test:
+  stage: test
   image:
     name: quay.io/fenicsproject/dolfinx:real
     entrypoint: [""]
@@ -10,12 +11,11 @@ test:
     - cd ../python
     - pip3 install -e . --upgrade
 
-  unit-tests:
-    script:
-      - cd python
-      - flake8 .
-      - cd tests
-      - python3 -m pytest .
-      - mpirun -n 2 python3 -m pytest .
-      - mpirun -n 3 python3 -m pytest .
-      - mpirun -n 4 python3 -m pytest .
+  script:
+    - cd python
+    - flake8 .
+    - cd tests
+    - python3 -m pytest .
+    - mpirun -n 2 python3 -m pytest .
+    - mpirun -n 3 python3 -m pytest .
+    - mpirun -n 4 python3 -m pytest .
