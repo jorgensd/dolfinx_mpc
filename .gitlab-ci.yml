@@ -1,6 +1,3 @@
-stages:
-  - test
-
 test:
   image:
     name: quay.io/fenicsproject/dolfinx:real
