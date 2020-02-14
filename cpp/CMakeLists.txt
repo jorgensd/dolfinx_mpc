@@ -42,10 +42,6 @@ include(FeatureSummary)
 option(BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries." ON)
 add_feature_info(BUILD_SHARED_LIBS BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries.")
 
-# Add shared library paths so shared libs in non-system paths are found
-option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath." ON)
-add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
-
 # Check for required package Eigen3
 find_package(Eigen3 3.2.90 REQUIRED)
 set_package_properties(Eigen3 PROPERTIES TYPE REQUIRED
@@ -67,11 +63,6 @@ feature_summary(WHAT ALL)
 
 #------------------------------------------------------------------------------
 include(GNUInstallDirs)
-
-#------------------------------------------------------------------------------
-
-# NOTE: This modifies a file in the source directory, which probably isn't good
-# configure_file(DolfinxMPC.h.in DolfinxMPC.h)
 
 #------------------------------------------------------------------------------
 add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
@@ -113,7 +104,6 @@ of this variable will be used by Eigen for the alignment of all data structures.
 
 target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${EIGEN3_INCLUDE_DIR})
 target_compile_definitions(dolfinx_mpc PUBLIC "EIGEN_MAX_ALIGN_BYTES=${DOLFINX_EIGEN_MAX_ALIGN_BYTES}")
-
 
 # MPI
 target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
