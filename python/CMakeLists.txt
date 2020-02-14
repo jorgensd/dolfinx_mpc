@@ -32,8 +32,6 @@ endif()
 # Add to CMake search path
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR})
 
-
-
 # Add DOLFINX libraries and other config
 find_package(DOLFINX REQUIRED)
 if (DOLFINX_FOUND)
