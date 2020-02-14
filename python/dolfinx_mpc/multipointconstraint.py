@@ -8,6 +8,7 @@ from dolfinx import function, fem, MPI
 from dolfinx_mpc import cpp
 import numpy
 
+
 class MultiPointConstraint(cpp.mpc.MultiPointConstraint):
     def __init__(
             self,
@@ -124,18 +125,24 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
                     b[k] += coeff*b[local_master_index]
 
 
-
-def slave_master_structure(V: function.FunctionSpace,
-                           slave_master_dict: typing.Dict[types.FunctionType, typing.Dict[types.FunctionType, float]]):
+def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
+                           typing.Dict[types.FunctionType,
+                                       typing.Dict[
+                                           types.FunctionType, float]]):
     """
-    Returns the data structures required to build a multi-point constraint (Using geometrical searches).
-    Given a nested dictionary, where the first keys are functions for geometrically locating the slave degrees of freedom.
-    The values of these keys are another dictionary, containing functions for geometrically locating the master degree of freedom.
-    The value of the nested dictionary is the coefficient the master dof should be multiplied with in the multi point constraint.
+    Returns the data structures required to build a multi-point constraint.
+    Given a nested dictionary, where the first keys are functions for
+    geometrically locating the slave degrees of freedom. The values of these
+    keys are another dictionary, containing functions for geometrically
+    locating the master degree of freedom. The value of the nested dictionary
+    is the coefficient the master degree of freedom should be multiplied with
+    in the multi point constraint.
     Example:
-    If u0 = alpha u1 + beta u2, u3 = beta u4 + gamma u5
-    slave_master_dict = {lambda x locate_u0:{lambda x locate_u1: alpha, lambda x locate_u2: beta},
-                         lambda x locate_u3:{lambda x locate_u4: beta, lambda x locate_u5: gamma}}
+       If u0 = alpha u1 + beta u2, u3 = beta u4 + gamma u5
+       slave_master_dict = {lambda x loc_u0:{lambda x loc_u1: alpha,
+                                             lambda x loc_u2: beta},
+                            lambda x loc_u3:{lambda x loc_u4: beta,
+                                             lambda x loc_u5: gamma}}
     """
     slaves = []
     masters = []
@@ -144,7 +151,7 @@ def slave_master_structure(V: function.FunctionSpace,
     local_min = V.dofmap.index_map.local_range[0]
     for slave in slave_master_dict.keys():
         offsets.append(len(slave_master_dict[slave]))
-        dof = fem.locate_dofs_geometrical(V, slave)  + local_min
+        dof = fem.locate_dofs_geometrical(V, slave) + local_min
         dof_global = numpy.hstack(MPI.comm_world.allgather(dof))[0]
         slaves.append(dof_global)
         for master in slave_master_dict[slave].keys():
@@ -153,22 +160,26 @@ def slave_master_structure(V: function.FunctionSpace,
             masters.append(dof_m)
             coeffs.append(slave_master_dict[slave][master])
     offsets.append(len(slave_master_dict[slave]))
-    return numpy.array(slaves), numpy.array(masters), numpy.array(coeffs), numpy.array(offsets)
+    return (numpy.array(slaves), numpy.array(masters),
+            numpy.array(coeffs), numpy.array(offsets))
 
 
-def dof_close_to(x,point=None):
+def dof_close_to(x, point=None):
     """
-    Convenience function for locating a dof close to a point use numpy and lambda functions
+    Convenience function for locating a dof close to a point use numpy
+    and lambda functions.
     """
     if point is None:
         raise ValueError("Point must be supplied")
     if len(point) == 1:
         return numpy.isclose(x[0], point[0])
     elif len(point) == 2:
-        return numpy.logical_and(numpy.isclose(x[0], point[0]), numpy.isclose(x[1], point[1]))
+        return numpy.logical_and(numpy.isclose(x[0], point[0]),
+                                 numpy.isclose(x[1], point[1]))
     elif len(point) == 3:
-        return numpy.logical_and(numpy.logical_and(numpy.isclose(x[0], point[0]),
-                                             numpy.isclose(x[1], point[1]),
-                                             numpy.isclose(x[2], point[2])))
+        return numpy.logical_and(
+            numpy.logical_and(numpy.isclose(x[0], point[0]),
+                              numpy.isclose(x[1], point[1]),
+                              numpy.isclose(x[2], point[2])))
     else:
         return ValueError("Point has to be 1D, 2D or 3D")
