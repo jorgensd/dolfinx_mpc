@@ -1,21 +1,19 @@
 test:
-    only:
-        changes:
-            - tests/*
-            - .gitlab-ci.yml
-            - multimeshsolvers/*
-    stage: test
     image:
         name: quay.io/fenicsproject/dolfinx:real
         entrypoint: [""]
-    script:
+	before_script:
         - mkdir -p build
         - cd build
         - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
         - ninja -j3 install
         - cd ../python
-        - flake8 .
         - pip3 install -e . --upgrade
+
+    unit-tests:
+      script:
+        - cd python
+        - flake8 .
         - cd tests
         - python3 -m pytest .
         - mpirun -n 2 python3 -m pytest .
