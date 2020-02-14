@@ -7,7 +7,6 @@
 
 # flake8: noqa
 
-from .multipointconstraint import MultiPointConstraint
+from .multipointconstraint import MultiPointConstraint, slave_master_structure, dof_close_to
 from .assemble_matrix import assemble_matrix_numba, assemble_matrix
 from .assemble_vector import assemble_vector_numba, assemble_vector
-import dolfinx.cpp
