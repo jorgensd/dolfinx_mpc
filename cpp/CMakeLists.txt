@@ -246,11 +246,4 @@ string(REPLACE ";" " " PKG_LINKFLAGS "${PKG_LINKFLAGS}")
 foreach(_linkflag ${DOLFINX_LINK_FLAGS})
   set(PKG_LINKFLAGS "${PKG_LINKFLAGS} ${_linkflag}")
 endforeach()
-
-# Configure and install pkg-config file
-configure_file(${DOLFINX_MPC_SOURCE_DIR}/dolfinx_mpc.pc.in ${CMAKE_BINARY_DIR}/dolfinx_mpc.pc @ONLY)
-install(FILES ${CMAKE_BINARY_DIR}/dolfinx_mpc.pc
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-  COMPONENT Development
-  )
 #------------------------------------------------------------------------------
