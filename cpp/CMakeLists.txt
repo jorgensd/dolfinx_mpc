@@ -42,10 +42,6 @@ include(FeatureSummary)
 option(BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries." ON)
 add_feature_info(BUILD_SHARED_LIBS BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries.")
 
-# Add shared library paths so shared libs in non-system paths are found
-option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath." ON)
-add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
-
 # Check for required package Eigen3
 find_package(Eigen3 3.2.90 REQUIRED)
 set_package_properties(Eigen3 PROPERTIES TYPE REQUIRED
@@ -67,11 +63,6 @@ feature_summary(WHAT ALL)
 
 #------------------------------------------------------------------------------
 include(GNUInstallDirs)
-
-#------------------------------------------------------------------------------
-
-# NOTE: This modifies a file in the source directory, which probably isn't good
-# configure_file(DolfinxMPC.h.in DolfinxMPC.h)
 
 #------------------------------------------------------------------------------
 add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
@@ -114,7 +105,6 @@ of this variable will be used by Eigen for the alignment of all data structures.
 target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${EIGEN3_INCLUDE_DIR})
 target_compile_definitions(dolfinx_mpc PUBLIC "EIGEN_MAX_ALIGN_BYTES=${DOLFINX_EIGEN_MAX_ALIGN_BYTES}")
 
-
 # MPI
 target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
 
@@ -134,12 +124,7 @@ install(TARGETS dolfinx_mpc
 # Generate DOLFINTargets.cmake
 install(EXPORT DOLFINX_MPCTargets DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc)
 
-# Generate CMake config files (DOLFINX_MPCConfig{,Version}.cmake)
-
 include(CMakePackageConfigHelpers)
-write_basic_package_version_file(${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConfigVersion.cmake
-  VERSION ${DOLFINX_MPC_VERSION}
-  COMPATIBILITY ExactVersion)
 
 configure_package_config_file(${DOLFINX_MPC_SOURCE_DIR}/DOLFINX_MPCConfig.cmake.in
 ${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConfig.cmake
@@ -149,108 +134,7 @@ INSTALL_DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc)
 install(
   FILES
   ${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConfig.cmake
-  ${CMAKE_BINARY_DIR}/dolfinx_mpc/DOLFINX_MPCConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dolfinx_mpc
   COMPONENT Development)
 
-#------------------------------------------------------------------------------
-# Generate pkg-config file and install it
-
-# Define packages that should be required by pkg-config file
-set(PKG_REQUIRES "")
-
-# Get link libraries and includes
-get_target_property(PKGCONFIG_DOLFINX_TARGET_LINK_LIBRARIES dolfinx_mpc INTERFACE_LINK_LIBRARIES)
-get_target_property(PKGCONFIG_DOLFINX_INCLUDE_DIRECTORIES dolfinx_mpc INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
-
-# Add imported targets to lists for creating pkg-config file
-set(PKGCONFIG_DOLFINX_LIBS)
-foreach(_target ${PKGCONFIG_DOLFINX_TARGET_LINK_LIBRARIES})
-
-  if ("${_target}" MATCHES "^[^<>]+$")  # Skip "$<foo...>", which we get with static libs
-
-    if ("${_target}" MATCHES "^.*::.*$")
-      # Get include paths
-      get_target_property(_inc_dirs ${_target} INTERFACE_INCLUDE_DIRECTORIES)
-      if (_inc_dirs)
-        list(APPEND PKGCONFIG_DOLFINX_INCLUDE_DIRECTORIES ${_inc_dirs})
-      endif()
-
-      # Get libraries
-      get_target_property(_libs ${_target} INTERFACE_LINK_LIBRARIES)
-      if (_libs)
-        list(APPEND PKGCONFIG_DOLFINX_LIBS ${_libs})
-      endif()
-
-    else()
-      # 'regular' libs, i.e. not imported targets
-      list(APPEND PKGCONFIG_DOLFINX_LIBS ${_target})
-    endif()
-
-    # Special handling for compiled Boost imported targets
-    if (("${_target}" MATCHES "^.*Boost::.*$") AND NOT "${_target}" STREQUAL "Boost::boost")
-      get_target_property(_libs ${_target} IMPORTED_LOCATION_RELEASE)
-      if (_libs)
-        list(APPEND PKGCONFIG_DOLFINX_LIBS ${_libs})
-      endif()
-    endif()
-
-  endif()
-
-endforeach()
-
-# Join include lists and remove duplicates
-list(REMOVE_DUPLICATES PKGCONFIG_DOLFINX_INCLUDE_DIRECTORIES)
-list(REMOVE_DUPLICATES PKGCONFIG_DOLFINX_LIBS)
-
-# Convert include dirs to -I<incdir> form
-foreach(_inc_dir ${PKGCONFIG_DOLFINX_INCLUDE_DIRECTORIES})
-  set(PKG_INCLUDES "-I${_inc_dir} ${PKG_INCLUDES}")
-endforeach()
-
-# Get dolfinx definitions
-get_target_property(PKG_DOLFINX_DEFINITIONS dolfinx_mpc INTERFACE_COMPILE_DEFINITIONS)
-set(PKG_DEFINITIONS)
-foreach(_def ${PKG_DOLFINX_DEFINITIONS})
-  set(PKG_DEFINITIONS "${PKG_DEFINITIONS} -D${_def}")
-endforeach()
-
-# Convert compiler flags and definitions into space separated strings
-string(REPLACE ";" " " PKG_CXXFLAGS "${CMAKE_CXX_FLAGS}")
-string(REPLACE ";" " " PKG_LINKFLAGS "${CMAKE_EXE_LINKER_FLAGS}")
-
-# Convert libraries to -L<libdir> -l<lib> form
-foreach(_lib ${PKGCONFIG_DOLFINX_LIBS})
-  # Add -Wl,option directives
-  if ("${_lib}" MATCHES "-Wl,[^ ]*")
-    set(PKG_LINKFLAGS "${_lib} ${PKG_LINKFLAGS}")
-  else()
-    string(REGEX REPLACE "(.?:?/[^ ]*)/lib([^ ]*)\\.(a|so|dylib|dll)" "-L\\1 -l\\2"
-      _linkflags
-      "${_lib}"
-      )
-
-    # Add libraries that matches the form -L<libdir> -l<lib>
-    if ("${_linkflags}" MATCHES "-L.+ -l.+")
-      set(PKG_LINKFLAGS "${_linkflags} ${PKG_LINKFLAGS}")
-    endif()
-  endif()
-endforeach()
-
-# Remove duplicated link flags
-separate_arguments(PKG_LINKFLAGS)
-list(REMOVE_DUPLICATES PKG_LINKFLAGS)
-string(REPLACE ";" " " PKG_LINKFLAGS "${PKG_LINKFLAGS}")
-
-# Add additional link flags
-foreach(_linkflag ${DOLFINX_LINK_FLAGS})
-  set(PKG_LINKFLAGS "${PKG_LINKFLAGS} ${_linkflag}")
-endforeach()
-
-# Configure and install pkg-config file
-configure_file(${DOLFINX_MPC_SOURCE_DIR}/dolfinx_mpc.pc.in ${CMAKE_BINARY_DIR}/dolfinx_mpc.pc @ONLY)
-install(FILES ${CMAKE_BINARY_DIR}/dolfinx_mpc.pc
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-  COMPONENT Development
-  )
 #------------------------------------------------------------------------------
