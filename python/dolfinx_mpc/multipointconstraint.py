@@ -9,43 +9,13 @@ from dolfinx_mpc import cpp
 import numpy
 
 
-class MultiPointConstraint(cpp.mpc.MultiPointConstraint):
-    def __init__(
-            self,
-            V: typing.Union[function.FunctionSpace],
-            master_slave_map: typing.Dict[int, typing.Dict[int, float]]):
-        """Representation of MultiPointConstraint which is imposed on
-        a linear system.
-
-        """
-        slaves = []
-        masters = []
-        coefficients = []
-        offsets = []
-
-        for slave in master_slave_map.keys():
-            offsets.append(len(masters))
-            slaves.append(slave)
-            for master in master_slave_map[slave]:
-                masters.append(master)
-                coefficients.append(master_slave_map[slave][master])
-        # Add additional element to indicate end of list
-        # (to determine number of master dofs later on)
-        offsets.append(len(masters))
-        # Extract cpp function space
-        try:
-            _V = V._cpp_object
-        except AttributeError:
-            _V = V
-        super().__init__(_V, slaves, masters, coefficients, offsets)
-
-    def backsubstitution(self, vector, dofmap):
-        slaves = self.slaves()
-        masters, coefficients = self.masters_and_coefficients()
-        offsets = self.master_offsets()
-        index_map = self.index_map()
-        slave_cells = self.slave_cells()
-        cell_to_slave, cell_to_slave_offset = self.cell_to_slave_mapping()
+def backsubstitution(mpc, vector, dofmap):
+        slaves = mpc.slaves()
+        masters, coefficients = mpc.masters_and_coefficients()
+        offsets = mpc.master_offsets()
+        index_map = mpc.index_map()
+        slave_cells = mpc.slave_cells()
+        cell_to_slave, cell_to_slave_offset = mpc.cell_to_slave_mapping()
         if len(slave_cells) == 0:
             sc_nb = List.empty_list(numba.types.int64)
         else:
@@ -150,7 +120,7 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
     offsets = []
     local_min = V.dofmap.index_map.local_range[0]
     for slave in slave_master_dict.keys():
-        offsets.append(len(slave_master_dict[slave]))
+        offsets.append(len(masters))
         dof = fem.locate_dofs_geometrical(V, slave) + local_min
         dof_global = numpy.hstack(MPI.comm_world.allgather(dof))[0]
         slaves.append(dof_global)
@@ -159,12 +129,12 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
             dof_m = numpy.hstack(MPI.comm_world.allgather(dof_m))[0]
             masters.append(dof_m)
             coeffs.append(slave_master_dict[slave][master])
-    offsets.append(len(slave_master_dict[slave]))
+    offsets.append(len(masters))
     return (numpy.array(slaves), numpy.array(masters),
-            numpy.array(coeffs), numpy.array(offsets))
+            numpy.array(coeffs, dtype=numpy.float64), numpy.array(offsets))
 
 
-def dof_close_to(x, point=None):
+def dof_close_to(x, point):
     """
     Convenience function for locating a dof close to a point use numpy
     and lambda functions.

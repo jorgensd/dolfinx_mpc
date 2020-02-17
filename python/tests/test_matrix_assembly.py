@@ -6,121 +6,35 @@ import dolfinx_mpc
 import ufl
 
 
-def master_dofs(x):
-    dofs, vals = [], []
-    logical = np.logical_and(np.isclose(x[:, 0], 0), np.isclose(x[:, 1], 1))
-    try:
-        dof, val = np.argwhere(logical).T[0][0], 0.43
-        dofs.append(dof)
-        vals.append(val)
-    except IndexError:
-        pass
-    logical = np.logical_and(np.isclose(x[:, 0], 1), np.isclose(x[:, 1], 1))
-    try:
-        dof, val = np.argwhere(logical).T[0][0], 0.11
-        dofs.append(dof)
-        vals.append(val)
-    except IndexError:
-        pass
-    return dofs, vals
-
-
-def slave_dofs(x):
-    logical = np.logical_and(np.isclose(x[:, 0], 1), np.isclose(x[:, 1], 0))
-    try:
-        return np.argwhere(logical)[0]
-    except IndexError:
-        return []
-
-
-def slaves_2(x):
-    logical = np.logical_and(np.isclose(x[:, 0], 0), np.isclose(x[:, 1], 0))
-    try:
-        return np.argwhere(logical)[0]
-    except IndexError:
-        return []
-
-
-def masters_2(x):
-    logical = np.logical_and(np.isclose(x[:, 0], 1), np.isclose(x[:, 1], 1))
-    try:
-        return np.argwhere(logical).T[0], [0.69]
-    except IndexError:
-        return [], []
-
-
-def masters_3(x):
-    logical = np.logical_and(np.isclose(x[:, 0], 0), np.isclose(x[:, 1], 1))
-    try:
-        return np.argwhere(logical).T[0], [0.69]
-    except IndexError:
-        return [], []
-
-
-@pytest.mark.parametrize("masters_2", [masters_2, masters_3])
+@pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
 @pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
                                       dolfinx.cpp.mesh.CellType.triangle])
-def test_mpc_assembly(masters_2, degree, celltype):
+def test_mpc_assembly(master_point, degree, celltype):
 
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5, 3, celltype)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
-    x = V.tabulate_dof_coordinates()
-
-    # Build slaves and masters in parallel with global dof numbering scheme
-    masters, coeffs = master_dofs(x)
-    for i, master in enumerate(masters):
-        masters[i] = masters[i]+V.dofmap.index_map.local_range[0]
-    masters = dolfinx.MPI.comm_world.allgather(
-        np.array(masters, dtype=np.int32))
-    coeffs = dolfinx.MPI.comm_world.allgather(
-        np.array(coeffs, dtype=np.float32))
-    masters = np.hstack(masters)
-    coeffs = np.hstack(coeffs)
-    slaves = slave_dofs(x)
-    for i, slave in enumerate(slaves):
-        slaves[i] = slaves[i]+V.dofmap.index_map.local_range[0]
-    slaves = dolfinx.MPI.comm_world.allgather(np.array(slaves, dtype=np.int32))
-    slaves = np.hstack(slaves)
-    slave_master_dict = {}
-    for slave in slaves:
-        slave_master_dict[slave] = {}
-        for master, coeff in zip(masters, coeffs):
-            slave_master_dict[slave][master] = coeff
-    # Second constraint
-    masters2, coeffs2 = masters_2(x)
-    slaves2 = slaves_2(x)
-    for i, slave in enumerate(slaves2):
-        slaves2[i] = slaves2[i]+V.dofmap.index_map.local_range[0]
-    slaves2 = dolfinx.MPI.comm_world.allgather(
-        np.array(slaves2, dtype=np.int32))
-    slaves2 = np.hstack(slaves2)
-    for i, master in enumerate(masters2):
-        masters2[i] = masters2[i]+V.dofmap.index_map.local_range[0]
-    masters2 = dolfinx.MPI.comm_world.allgather(
-        np.array(masters2, dtype=np.int32))
-    masters2 = np.hstack(masters2)
-    coeffs2 = dolfinx.MPI.comm_world.allgather(
-        np.array(coeffs2, dtype=np.float32))
-    coeffs2 = np.hstack(coeffs2)
-
-    for slave in slaves2:
-        slave_master_dict[slave] = {}
-        for master, coeff in zip(masters2, coeffs2):
-            slave_master_dict[slave][master] = coeff
-    print(slave_master_dict)
 
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
-
-    # Generating normal matrix for comparison
     A1 = dolfinx.fem.assemble_matrix(a)
     A1.assemble()
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V, slave_master_dict)
+    # Create multi point constraint using geometrical mappings
+    dof_at = dolfinx_mpc.dof_close_to
+    s_m_c = {lambda x: dof_at(x, [1, 0]):
+             {lambda x: dof_at(x, [0, 1]): 0.43,
+              lambda x: dof_at(x, [1, 1]): 0.11},
+             lambda x: dof_at(x, [0, 0]):
+             {lambda x: dof_at(x, master_point): 0.69}}
+    (slaves, masters,
+     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+
+    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                   masters, coeffs, offsets)
 
     # No dirichlet condition as this is just assembly
     bcs = np.array([])
@@ -141,15 +55,18 @@ def test_mpc_assembly(masters_2, degree, celltype):
             A_mpc_np[i, col] = val
     A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
-    # Build global K matrix from slave_master_dict
-    K = np.zeros((V.dim(), V.dim()-len(slave_master_dict.keys())))
+    # Generate global K matrix
+    K = np.zeros((V.dim(), V.dim() - len(slaves)))
     for i in range(K.shape[0]):
-        if i in slave_master_dict.keys():
-            for master in slave_master_dict[i].keys():
-                count = sum(master > np.array(list(slave_master_dict.keys())))
-                K[i, master - count] = slave_master_dict[i][master]
+        if i in slaves:
+            index = np.argwhere(slaves == i)[0, 0]
+            masters_index = masters[offsets[index]: offsets[index+1]]
+            coeffs_index = coeffs[offsets[index]: offsets[index+1]]
+            for master, coeff in zip(masters_index, coeffs_index):
+                count = sum(master > np.array(slaves))
+                K[i, master - count] = coeff
         else:
-            count = sum(i > np.array(list(slave_master_dict.keys())))
+            count = sum(i > slaves)
             K[i, i-count] = 1
 
     # Transfer original matrix to numpy
@@ -166,13 +83,13 @@ def test_mpc_assembly(masters_2, degree, celltype):
     A_numpy_padded = np.zeros((V.dim(), V.dim()))
     count = 0
     for i in range(V.dim()):
-        if i in slave_master_dict.keys():
+        if i in slaves:
             A_numpy_padded[i, i] = 1
             count += 1
             continue
         m = 0
         for j in range(V.dim()):
-            if j in slave_master_dict.keys():
+            if j in slaves:
                 m += 1
                 continue
             else:
@@ -181,59 +98,27 @@ def test_mpc_assembly(masters_2, degree, celltype):
     # Check that all entities are close
     assert np.allclose(A_mpc_np, A_numpy_padded)
 
+
 # Check if ordering of connected dofs matter
-@pytest.mark.parametrize("masters_2", [masters_2, masters_3])
+@pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
 @pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
                                       dolfinx.cpp.mesh.CellType.triangle])
-def test_slave_on_same_cell(masters_2, degree, celltype):
+def test_slave_on_same_cell(master_point, degree, celltype):
 
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1, 8, celltype)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
-    x = V.tabulate_dof_coordinates()
-    # Build slaves and masters in parallel with global dof numbering scheme
-    masters, coeffs = master_dofs(x)
-    for i, master in enumerate(masters):
-        masters[i] = masters[i]+V.dofmap.index_map.local_range[0]
-    masters = dolfinx.MPI.comm_world.allgather(
-        np.array(masters, dtype=np.int32))
-    coeffs = dolfinx.MPI.comm_world.allgather(
-        np.array(coeffs, dtype=np.float32))
-    masters = np.hstack(masters)
-    coeffs = np.hstack(coeffs)
-    slaves = slave_dofs(x)
-    for i, slave in enumerate(slaves):
-        slaves[i] = slaves[i]+V.dofmap.index_map.local_range[0]
-    slaves = dolfinx.MPI.comm_world.allgather(np.array(slaves, dtype=np.int32))
-    slaves = np.hstack(slaves)
-    slave_master_dict = {}
-    for slave in slaves:
-        slave_master_dict[slave] = {}
-        for master, coeff in zip(masters, coeffs):
-            slave_master_dict[slave][master] = coeff
 
-    # Second constraint
-    masters2, coeffs2 = masters_2(x)
-
-    slaves2 = slaves_2(x)
-    for i, slave in enumerate(slaves2):
-        slaves2[i] = slaves2[i]+V.dofmap.index_map.local_range[0]
-    slaves2 = dolfinx.MPI.comm_world.allgather(
-        np.array(slaves2, dtype=np.int32))
-    slaves2 = np.hstack(slaves2)
-    for i, master in enumerate(masters2):
-        masters2[i] = masters2[i]+V.dofmap.index_map.local_range[0]
-    masters2 = dolfinx.MPI.comm_world.allgather(
-        np.array(masters2, dtype=np.int32))
-    masters2 = np.hstack(masters2)
-    coeffs2 = dolfinx.MPI.comm_world.allgather(
-        np.array(coeffs2, dtype=np.float32))
-    coeffs2 = np.hstack(coeffs2)
-    for slave in slaves2:
-        slave_master_dict[slave] = {}
-        for master, coeff in zip(masters2, coeffs2):
-            slave_master_dict[slave][master] = coeff
+    # Build master slave map
+    dof_at = dolfinx_mpc.dof_close_to
+    s_m_c = {lambda x: dof_at(x, [1, 0]):
+             {lambda x: dof_at(x, [0, 1]): 0.43,
+              lambda x: dof_at(x, [1, 1]): 0.11},
+             lambda x: dof_at(x, [0, 0]):
+             {lambda x: dof_at(x, master_point): 0.69}}
+    (slaves, masters,
+     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
 
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
@@ -244,7 +129,8 @@ def test_slave_on_same_cell(masters_2, degree, celltype):
     A1 = dolfinx.fem.assemble_matrix(a)
     A1.assemble()
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V, slave_master_dict)
+    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                   masters, coeffs, offsets)
 
     # No dirichlet condition as this is just assembly
     bcs = np.array([])
@@ -256,7 +142,6 @@ def test_slave_on_same_cell(masters_2, degree, celltype):
         A2 = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
         end = time.time()
         print("Runtime: {0:.2e}".format(end-start))
-
     # Transfer A2 to numpy matrix for comparison with globally built matrix
     A_mpc_np = np.zeros((V.dim(), V.dim()))
 
@@ -267,14 +152,17 @@ def test_slave_on_same_cell(masters_2, degree, celltype):
     A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
     # Build global K matrix from slave_master_dict
-    K = np.zeros((V.dim(), V.dim()-len(slave_master_dict.keys())))
+    K = np.zeros((V.dim(), V.dim()-len(slaves)))
     for i in range(K.shape[0]):
-        if i in slave_master_dict.keys():
-            for master in slave_master_dict[i].keys():
-                count = sum(master > np.array(list(slave_master_dict.keys())))
-                K[i, master - count] = slave_master_dict[i][master]
+        if i in slaves:
+            index = np.argwhere(slaves == i)[0, 0]
+            masters_index = masters[offsets[index]: offsets[index+1]]
+            coeffs_index = coeffs[offsets[index]: offsets[index+1]]
+            for master, coeff in zip(masters_index, coeffs_index):
+                count = sum(master > np.array(slaves))
+                K[i, master - count] = coeff
         else:
-            count = sum(i > np.array(list(slave_master_dict.keys())))
+            count = sum(i > slaves)
             K[i, i-count] = 1
 
     # Transfer original matrix to numpy
@@ -292,13 +180,13 @@ def test_slave_on_same_cell(masters_2, degree, celltype):
     A_numpy_padded = np.zeros((V.dim(), V.dim()))
     count = 0
     for i in range(V.dim()):
-        if i in slave_master_dict.keys():
+        if i in slaves:
             A_numpy_padded[i, i] = 1
             count += 1
             continue
         m = 0
         for j in range(V.dim()):
-            if j in slave_master_dict.keys():
+            if j in slaves:
                 m += 1
                 continue
             else:
