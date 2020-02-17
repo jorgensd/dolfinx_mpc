@@ -10,6 +10,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/fem/FormIntegrals.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/la/PETScMatrix.h>
@@ -41,31 +42,6 @@ MultiPointConstraint::MultiPointConstraint(
   _offsets_cell_to_master = v;
 
   _index_map = generate_index_map();
-}
-
-/// Get the master nodes for the i-th slave
-std::vector<std::int64_t> MultiPointConstraint::masters(std::int64_t i)
-{
-  assert(i < unsigned(_masters.size()));
-  std::vector<std::int64_t> owners;
-  // Check if this is the final entry or beyond
-  for (std::int64_t j = _offsets[i]; j < _offsets[i + 1]; j++)
-  {
-    owners.push_back(_masters[j]);
-  }
-  return owners;
-}
-
-/// Get the master nodes for the i-th slave
-std::vector<double> MultiPointConstraint::coefficients(std::int64_t i)
-{
-  assert(i < unsigned(_coefficients.size()));
-  std::vector<double> coeffs;
-  for (std::int64_t j = _offsets[i]; j < _offsets[i + 1]; j++)
-  {
-    coeffs.push_back(_coefficients[j]);
-  }
-  return coeffs;
 }
 
 std::vector<std::int64_t> MultiPointConstraint::slave_cells()
@@ -210,23 +186,34 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form& a)
   pointer = &new_dofmap;
   std::array<const dolfinx::fem::DofMap*, 2> dofmaps = {{pointer, pointer}};
   ///  create and build sparsity pattern
-  std::shared_ptr<dolfinx::la::SparsityPattern> pattern
-      = std::make_shared<dolfinx::la::SparsityPattern>(mesh.mpi_comm(),
-                                                       new_maps);
+  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
 
   if (a.integrals().num_integrals(dolfinx::fem::FormIntegrals::Type::cell) > 0)
-    dolfinx::fem::SparsityPatternBuilder::cells(*pattern, mesh.topology(),
-                                                dofmaps);
+  {
+    dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh.topology(),
+                                                {{dofmaps[0], dofmaps[1]}});
+  }
+
   if (a.integrals().num_integrals(
           dolfinx::fem::FormIntegrals::Type::interior_facet)
       > 0)
+  {
+
+    mesh.create_entities(mesh.topology().dim() - 1);
+    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
     dolfinx::fem::SparsityPatternBuilder::interior_facets(
-        *pattern, mesh.topology(), dofmaps);
+        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+  }
+
   if (a.integrals().num_integrals(
           dolfinx::fem::FormIntegrals::Type::exterior_facet)
       > 0)
+  {
+    mesh.create_entities(mesh.topology().dim() - 1);
+    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
-        *pattern, mesh.topology(), dofmaps);
+        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+  }
 
   // Loop over slave cells
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
@@ -293,8 +280,8 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form& a)
           }
         }
 
-        pattern->insert(new_master_dofs[0], master_slave_dofs[1]);
-        pattern->insert(master_slave_dofs[0], new_master_dofs[1]);
+        pattern.insert(new_master_dofs[0], master_slave_dofs[1]);
+        pattern.insert(master_slave_dofs[0], new_master_dofs[1]);
       }
     }
   }
@@ -332,15 +319,15 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form& a)
           {
             other_master_dof[0] = other_master - local_range[0];
           }
-          pattern->insert(local_master_dof, other_master_dof);
-          pattern->insert(other_master_dof, local_master_dof);
+          pattern.insert(local_master_dof, other_master_dof);
+          pattern.insert(other_master_dof, local_master_dof);
         }
       }
     }
   }
 
-  pattern->assemble();
-  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), *pattern);
+  pattern.assemble();
+  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern);
 
   return A;
 }

@@ -58,12 +58,6 @@ public:
   /// Return array of slave coefficients
   std::vector<std::int64_t> slaves();
 
-  // Masters for the i-th slave node
-  std::vector<std::int64_t> masters(std::int64_t i);
-
-  // Master coefficients for the i-th slave node
-  std::vector<double> coefficients(std::int64_t i);
-
   // Local indices of cells containing slave coefficients
   std::vector<std::int64_t> slave_cells();
 
