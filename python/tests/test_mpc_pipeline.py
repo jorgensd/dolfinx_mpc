@@ -21,8 +21,8 @@ def test_pipeline(master_point):
     bcs = np.array([])
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    x = ufl.SpatialCoordinate(mesh)
     f = dolfinx.Constant(mesh, 1)
+    # x = ufl.SpatialCoordinate(mesh)
     # f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
     a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
     lhs = ufl.inner(f, v)*ufl.dx
@@ -32,7 +32,6 @@ def test_pipeline(master_point):
     L1 = dolfinx.fem.assemble_vector(lhs)
     L1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                    mode=PETSc.ScatterMode.REVERSE)
-
 
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
@@ -90,7 +89,6 @@ def test_pipeline(master_point):
         else:
             count = sum(i > slaves)
             K[i, i-count] = 1
-
 
     vec = np.zeros(V.dim())
     mpc_vec = np.zeros(V.dim())

@@ -5,43 +5,42 @@ from numba.typed import List
 from petsc4py import PETSc
 import types
 from dolfinx import function, fem, MPI
-from dolfinx_mpc import cpp
 import numpy
 
 
 def backsubstitution(mpc, vector, dofmap):
-        slaves = mpc.slaves()
-        masters, coefficients = mpc.masters_and_coefficients()
-        offsets = mpc.master_offsets()
-        index_map = mpc.index_map()
-        slave_cells = mpc.slave_cells()
-        cell_to_slave, cell_to_slave_offset = mpc.cell_to_slave_mapping()
-        if len(slave_cells) == 0:
-            sc_nb = List.empty_list(numba.types.int64)
-        else:
-            sc_nb = List()
-        [sc_nb.append(sc) for sc in slave_cells]
+    slaves = mpc.slaves()
+    masters, coefficients = mpc.masters_and_coefficients()
+    offsets = mpc.master_offsets()
+    index_map = mpc.index_map()
+    slave_cells = mpc.slave_cells()
+    cell_to_slave, cell_to_slave_offset = mpc.cell_to_slave_mapping()
+    if len(slave_cells) == 0:
+        sc_nb = List.empty_list(numba.types.int64)
+    else:
+        sc_nb = List()
+    [sc_nb.append(sc) for sc in slave_cells]
 
-        # Can be empty list locally, so has to be wrapped to be used with numba
-        if len(cell_to_slave) == 0:
-            c2s_nb = List.empty_list(numba.types.int64)
-        else:
-            c2s_nb = List()
-        [c2s_nb.append(c2s) for c2s in cell_to_slave]
-        if len(cell_to_slave_offset) == 0:
-            c2so_nb = List.empty_list(numba.types.int64)
-        else:
-            c2so_nb = List()
-        [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
+    # Can be empty list locally, so has to be wrapped to be used with numba
+    if len(cell_to_slave) == 0:
+        c2s_nb = List.empty_list(numba.types.int64)
+    else:
+        c2s_nb = List()
+    [c2s_nb.append(c2s) for c2s in cell_to_slave]
+    if len(cell_to_slave_offset) == 0:
+        c2so_nb = List.empty_list(numba.types.int64)
+    else:
+        c2so_nb = List()
+    [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
 
-        ghost_info = (index_map.local_range, index_map.ghosts,
-                      index_map.indices(True))
-        mpc = (slaves, sc_nb, c2s_nb, c2so_nb, masters, coefficients, offsets)
+    ghost_info = (index_map.local_range, index_map.ghosts,
+                  index_map.indices(True))
+    mpc = (slaves, sc_nb, c2s_nb, c2so_nb, masters, coefficients, offsets)
 
-        backsubstitution_numba(vector, dofmap.dof_array, mpc, ghost_info)
-        vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                           mode=PETSc.ScatterMode.FORWARD)
-        return vector
+    backsubstitution_numba(vector, dofmap.dof_array, mpc, ghost_info)
+    vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                       mode=PETSc.ScatterMode.FORWARD)
+    return vector
 
 
 @numba.njit
