@@ -10,6 +10,7 @@
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/common/IndexMap.h>
+#include <Eigen/Dense>
 #include "utils.h"
 
 namespace dolfinx_mpc
@@ -41,7 +42,7 @@ public:
   /// @param[in] offsets Gives the starting point for the i-th slave
   /// node in the master and coefficients list.
   MultiPointConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-                       std::vector<std::int64_t> slaves, std::vector<std::int64_t> masters,
+                       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
                        std::vector<double> coefficients, std::vector<std::int64_t> offsets);
 
   /// Add sparsity pattern for multi-point constraints to existing
@@ -54,7 +55,7 @@ public:
   std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();
 
   /// Return array of slave coefficients
-  std::vector<std::int64_t> slaves();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves();
 
   // Local indices of cells containing slave coefficients
   std::vector<std::int64_t> slave_cells();
@@ -66,7 +67,7 @@ public:
   std::vector<std::int64_t> master_offsets();
 
   /// Return the array of master dofs and corresponding coefficients
-  std::pair<std::vector<std::int64_t>, std::vector<double>>
+  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, std::vector<double>>
   masters_and_coefficients();
 
   /// Return map from cell with slaves to the dof numbers
@@ -79,8 +80,8 @@ public:
 
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
-  std::vector<std::int64_t> _slaves;
-  std::vector<std::int64_t> _masters;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
   std::vector<double> _coefficients;
   std::vector<std::int64_t> _offsets;
   std::vector<std::int64_t> _slave_cells;

@@ -4,11 +4,13 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
+#include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <memory>
+#include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
@@ -24,7 +26,8 @@ void mpc(py::module& m)
                            "Object for representing multi-point constraints");
   multipointconstraint
       .def(py::init<std::shared_ptr<const dolfinx::function::FunctionSpace>,
-                    std::vector<std::int64_t>, std::vector<std::int64_t>,
+                    Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+                    Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
                     std::vector<double>, std::vector<std::int64_t>>())
       .def("slave_cells", &dolfinx_mpc::MultiPointConstraint::slave_cells)
       .def("cell_to_slave_mapping",

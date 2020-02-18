@@ -20,7 +20,8 @@ using namespace dolfinx_mpc;
 
 MultiPointConstraint::MultiPointConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-    std::vector<std::int64_t> slaves, std::vector<std::int64_t> masters,
+    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
+    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
     std::vector<double> coefficients, std::vector<std::int64_t> offsets)
     : _function_space(V), _slaves(slaves), _masters(masters),
       _coefficients(coefficients), _offsets(offsets), _slave_cells(),
@@ -73,19 +74,17 @@ MultiPointConstraint::generate_index_map()
         _cell_to_slave.begin() + _offsets_cell_to_slave[i],
         _cell_to_slave.begin() + _offsets_cell_to_slave[i + 1]);
     // Loop over slaves in cell
-    for (auto slave_dof : slaves_i)
+    for (Eigen::Index j = 0; j < slaves_i.size(); j++)
     {
       // Find index of slave in global array
       std::int64_t slave_index = 0; // Index in global slave array
       for (std::uint64_t counter = 0; counter < _slaves.size(); counter++)
-        if (_slaves[counter] == slave_dof)
+        if (_slaves[counter] == slaves_i[j])
           slave_index = counter;
 
       // Loop over all masters for given slave
-      std::vector<std::int64_t> masters_i(
-          _masters.begin() + _offsets[slave_index],
-          _masters.begin() + _offsets[slave_index + 1]);
-      for (auto master : masters_i)
+      for (Eigen::Index k = 0;
+           k < _offsets[slave_index + 1] - _offsets[slave_index]; k++)
       {
         // Check if master is already owned by the processor by looping over
         // all owned cells
@@ -95,7 +94,8 @@ MultiPointConstraint::generate_index_map()
           std::vector<std::int64_t> masters_on_cell(
               _cell_to_master.begin() + _offsets_cell_to_master[m],
               _cell_to_master.begin() + _offsets_cell_to_master[m + 1]);
-          if (std::find(masters_on_cell.begin(), masters_on_cell.end(), master)
+          if (std::find(masters_on_cell.begin(), masters_on_cell.end(),
+                        _masters[_offsets[slave_index] + k])
               != masters_on_cell.end())
           {
             master_on_proc = true;
@@ -106,8 +106,9 @@ MultiPointConstraint::generate_index_map()
         if (!master_on_proc)
         {
           new_ghosts.conservativeResize(new_ghosts.size() + 1);
-          new_ghosts[num_ghosts] = master;
-          _glob_to_loc_ghosts[master] = num_ghosts + index_map->size_local();
+          new_ghosts[num_ghosts] = _masters[_offsets[slave_index] + k];
+          _glob_to_loc_ghosts[_masters[_offsets[slave_index] + k]]
+              = num_ghosts + index_map->size_local();
           num_ghosts++;
         }
       }
@@ -117,27 +118,27 @@ MultiPointConstraint::generate_index_map()
   // Loop over master cells on local processor and add ghosts for all other
   // masters (This could probably be optimized, but thats for later)
   std::array<std::int64_t, 2> local_range = index_map->local_range();
-  for (auto global_master : _masters)
+  for (Eigen::Index i = 0; i < _masters.size(); ++i)
   {
     // Check if master is owned by processor
-    if ((global_master < local_range[0]) || (local_range[1] <= global_master))
+    if ((_masters[i] < local_range[0]) || (local_range[1] <= _masters[i]))
     {
       // If master is not owned, check if it is ghosted
       bool already_ghosted = false;
       for (std::int64_t gh = 0; gh < new_ghosts.size(); gh++)
       {
-        if (global_master == new_ghosts[gh])
+        if (_masters[i] == new_ghosts[gh])
         {
           already_ghosted = true;
-          _glob_master_to_loc_ghosts[global_master]
+          _glob_master_to_loc_ghosts[_masters[i]]
               = gh + index_map->size_local();
         }
       }
       if (!already_ghosted)
       {
         new_ghosts.conservativeResize(new_ghosts.size() + 1);
-        new_ghosts[num_ghosts] = global_master;
-        _glob_master_to_loc_ghosts[global_master]
+        new_ghosts[num_ghosts] = _masters[i];
+        _glob_master_to_loc_ghosts[_masters[i]]
             = num_ghosts + index_map->size_local();
         num_ghosts++;
       }
@@ -192,24 +193,23 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
     std::vector<std::int64_t> slaves_i(
         _cell_to_slave.begin() + _offsets_cell_to_slave[i],
         _cell_to_slave.begin() + _offsets_cell_to_slave[i + 1]);
+
     // Loop over slaves in cell
-    for (auto slave_dof : slaves_i)
+    for (Eigen::Index j = 0; j < slaves_i.size(); j++)
     {
       std::int64_t slave_index = 0; // Index in slave array
       // FIXME: Move this somewhere else as there should exist a map for
       // this
       for (std::uint64_t counter = 0; counter < _slaves.size(); counter++)
       {
-        if (_slaves[counter] == slave_dof)
+        if (_slaves[counter] == slaves_i[j])
         {
           slave_index = counter;
         }
       }
-      std::vector<std::int64_t> masters_i(
-          _masters.begin() + _offsets[slave_index],
-          _masters.begin() + _offsets[slave_index + 1]);
       // Insert pattern for each master
-      for (auto master : masters_i)
+      for (Eigen::Index k = 0;
+           k < _offsets[slave_index + 1] - _offsets[slave_index]; k++)
       {
         // New sparsity pattern arrays
         std::array<Eigen::Array<PetscInt, Eigen::Dynamic, 1>, 2>
@@ -218,39 +218,40 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
         std::array<Eigen::Array<PetscInt, Eigen::Dynamic, 1>, 2>
             master_slave_dofs;
         // Loop over test and trial space
-        for (std::size_t j = 0; j < 2; j++)
+        for (std::size_t l = 0; l < 2; l++)
         {
-          auto cell_dof_list = dofmaps[j]->cell_dofs(_slave_cells[i]);
+          auto cell_dof_list = dofmaps[l]->cell_dofs(_slave_cells[i]);
 
-          new_master_dofs[j].resize(1);
-
+          new_master_dofs[l].resize(1);
+          int n = 0;
           // Replace slave dof with master dof (local insert)
-          int l = 0;
-          for (std::size_t k = 0; k < unsigned(cell_dof_list.size()); ++k)
+          for (std::size_t m = 0; m < unsigned(cell_dof_list.size()); m++)
           {
             if (_slaves[slave_index]
-                == unsigned(cell_dof_list[k] + local_range[0]))
+                == unsigned(cell_dof_list[m] + local_range[0]))
             {
               // Check if master is a ghost
-              if (_glob_to_loc_ghosts.find(master) != _glob_to_loc_ghosts.end())
+              if (_glob_to_loc_ghosts.find(_masters[_offsets[slave_index] + k])
+                  != _glob_to_loc_ghosts.end())
               {
-                new_master_dofs[j](0) = _glob_to_loc_ghosts[master];
+                new_master_dofs[l](0)
+                    = _glob_to_loc_ghosts[_masters[_offsets[slave_index] + k]];
               }
               else
               {
-                new_master_dofs[j](0) = master - local_range[0];
+                new_master_dofs[l](0)
+                    = _masters[_offsets[slave_index] + k] - local_range[0];
               }
             }
             else
             {
-              master_slave_dofs[j].conservativeResize(
-                  master_slave_dofs[j].size() + 1);
-              master_slave_dofs[j](l) = cell_dof_list(k);
-              l = l + 1;
+              master_slave_dofs[l].conservativeResize(
+                  master_slave_dofs[l].size() + 1);
+              master_slave_dofs[l](n) = cell_dof_list(m);
+              n++;
             }
           }
         }
-
         pattern.insert(new_master_dofs[0], master_slave_dofs[1]);
         pattern.insert(master_slave_dofs[0], new_master_dofs[1]);
       }
@@ -275,20 +276,21 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
       {
         local_master_dof[0] = master - local_range[0];
       }
+
       Eigen::Array<PetscInt, 1, 1> other_master_dof;
-      for (auto other_master : _masters)
+      for (Eigen::Index k = 0; k < _masters.size(); k++)
+      // for (auto other_master : _masters)
       {
         // If not on processor add ghost-index, else add local number
-        if (other_master != master)
+        if (_masters[k] != master)
         {
-          if ((other_master < local_range[0])
-              || (local_range[1] <= other_master))
+          if ((_masters[k] < local_range[0]) || (local_range[1] <= _masters[k]))
           {
-            other_master_dof[0] = _glob_master_to_loc_ghosts[other_master];
+            other_master_dof[0] = _glob_master_to_loc_ghosts[_masters[k]];
           }
           else
           {
-            other_master_dof[0] = other_master - local_range[0];
+            other_master_dof[0] = _masters[k] - local_range[0];
           }
           pattern.insert(local_master_dof, other_master_dof);
           pattern.insert(other_master_dof, local_master_dof);
@@ -296,18 +298,20 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
       }
     }
   }
-
   return pattern;
 }
 
-std::vector<std::int64_t> MultiPointConstraint::slaves() { return _slaves; }
+Eigen::Array<std::int64_t, Eigen::Dynamic, 1> MultiPointConstraint::slaves()
+{
+  return _slaves;
+}
 
 std::shared_ptr<dolfinx::common::IndexMap> MultiPointConstraint::index_map()
 {
   return _index_map;
 }
 
-std::pair<std::vector<std::int64_t>, std::vector<double>>
+std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, std::vector<double>>
 MultiPointConstraint::masters_and_coefficients()
 {
   return std::pair(_masters, _coefficients);
