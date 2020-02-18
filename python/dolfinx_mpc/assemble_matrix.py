@@ -61,21 +61,16 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     else:
         sc_nb = List()
     [sc_nb.append(sc) for sc in slave_cells]
-
-    # Can be empty list locally, so has to be wrapped to be used with numba
+    # Wrapping for numba to be able to do "if i in cell_to_slave"
     if len(cell_to_slave) == 0:
         c2s_nb = List.empty_list(numba.types.int64)
     else:
         c2s_nb = List()
     [c2s_nb.append(c2s) for c2s in cell_to_slave]
-    if len(c_to_s_off) == 0:
-        c2so_nb = List.empty_list(numba.types.int64)
-    else:
-        c2so_nb = List()
-    [c2so_nb.append(c2so) for c2so in c_to_s_off]
+
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     gdim = V.mesh.geometry.dim
-    mpc_data = (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c2so_nb)
+    mpc_data = (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c_to_s_off)
     assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
                           dofs, num_dofs_per_element, mpc_data,
                           ghost_info, bcs)
