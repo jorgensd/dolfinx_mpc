@@ -1,7 +1,6 @@
 import typing
 
 import numba
-from numba.typed import List
 from petsc4py import PETSc
 import types
 from dolfinx import function, fem, MPI
@@ -18,7 +17,8 @@ def backsubstitution(mpc, vector, dofmap):
     cell_to_slave, cell_to_slave_offset = mpc.cell_to_slave_mapping()
     ghost_info = (index_map.local_range, index_map.ghosts,
                   index_map.indices(True))
-    mpc = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset, masters, coefficients, offsets)
+    mpc = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
+           masters, coefficients, offsets)
 
     backsubstitution_numba(vector, dofmap.dof_array, mpc, ghost_info)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
@@ -34,7 +34,7 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
     (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
      masters, coefficients, offsets) = mpc
     (local_range, ghosts, global_indices) = ghost_info
-    slaves_visited = List.empty_list(numba.types.int64)
+    slaves_visited = numpy.empty(0, dtype=numpy.float64)
     # Loop through slave cells
     for (index, cell_index) in enumerate(slave_cells):
         cell_slaves = cell_to_slave[cell_to_slave_offset[index]:
@@ -57,7 +57,7 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
             assert k != -1
             # Check if we have already inserted for this slave
             if not in_numpy_array(slaves_visited, slave):
-                slaves_visited.append(slave)
+                slaves_visited = numpy.append(slaves_visited, slave)
                 slaves_masters = masters[offsets[slave_index]:
                                          offsets[slave_index+1]]
                 slaves_coeffs = coefficients[offsets[slave_index]:

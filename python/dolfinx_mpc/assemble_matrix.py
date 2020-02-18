@@ -5,7 +5,6 @@
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 import numba
 import numpy
-from numba.typed import List
 
 import dolfinx
 
@@ -46,31 +45,19 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     A.zeroEntries()
 
     # Unravel data from MPC
-    slave_cells = numpy.array(multipointconstraint.slave_cells())
+    slave_cells = multipointconstraint.slave_cells()
     masters, coefficients = multipointconstraint.masters_and_coefficients()
-
-    # Suppress numba warning
-    masters, coefficients = numpy.array(masters), numpy.array(coefficients)
+    masters, coefficients = masters, coefficients
     cell_to_slave, c_to_s_off = multipointconstraint.cell_to_slave_mapping()
-    slaves = numpy.array(multipointconstraint.slaves())
-    offsets = numpy.array(multipointconstraint.master_offsets())
+    slaves = multipointconstraint.slaves()
+    offsets = multipointconstraint.master_offsets()
+    mpc_data = (slaves, masters, coefficients, offsets,
+                slave_cells, cell_to_slave, c_to_s_off)
 
-    # Wrapping for numba to be able to do "if i in slave_cells"
-    if len(slave_cells) == 0:
-        sc_nb = List.empty_list(numba.types.int64)
-    else:
-        sc_nb = List()
-    [sc_nb.append(sc) for sc in slave_cells]
-    # Wrapping for numba to be able to do "if i in cell_to_slave"
-    if len(cell_to_slave) == 0:
-        c2s_nb = List.empty_list(numba.types.int64)
-    else:
-        c2s_nb = List()
-    [c2s_nb.append(c2s) for c2s in cell_to_slave]
-
+    # General assembly data
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     gdim = V.mesh.geometry.dim
-    mpc_data = (slaves, masters, coefficients, offsets, sc_nb, c2s_nb, c_to_s_off)
+
     assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
                           dofs, num_dofs_per_element, mpc_data,
                           ghost_info, bcs)
@@ -86,7 +73,8 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
 @numba.njit
 def freeze_slave_dofs(A, slaves, masters, offsets):
     """
-    Insert 1 on the diagonal for each slave dof such that the matrix can be inverted
+    Insert 1 on the diagonal for each slave dof such that the
+    matrix can be inverted
     """
     ffi_fb = ffi.from_buffer
     A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
@@ -111,6 +99,7 @@ def in_numpy_array(array, value):
         if item == value:
             return True
     return False
+
 
 @numba.njit
 def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
