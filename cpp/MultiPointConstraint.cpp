@@ -5,13 +5,13 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "MultiPointConstraint.h"
+#include "utils.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
-#include <dolfinx/fem/SparsityPatternBuilder.h>
+#include <dolfinx/fem/FormIntegrals.h>
 #include <dolfinx/function/FunctionSpace.h>
-#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/mesh/MeshIterator.h>
 #include <dolfinx/mesh/Topology.h>
@@ -24,105 +24,27 @@ MultiPointConstraint::MultiPointConstraint(
     std::vector<double> coefficients, std::vector<std::int64_t> offsets)
     : _function_space(V), _slaves(slaves), _masters(masters),
       _coefficients(coefficients), _offsets(offsets), _slave_cells(),
-      _normal_cells(), _offsets_cell_to_slave(), _cell_to_slave(),
-      _master_cells(), _offsets_cell_to_master(), _cell_to_master(),
-      _glob_to_loc_ghosts(), _glob_master_to_loc_ghosts(), _index_map()
+      _offsets_cell_to_slave(), _cell_to_slave(), _master_cells(),
+      _offsets_cell_to_master(), _cell_to_master(), _glob_to_loc_ghosts(),
+      _glob_master_to_loc_ghosts(), _index_map()
 {
-  find_slave_cells();
+  auto [q, cell_to_slave] = dolfinx_mpc::locate_cells_with_dofs(V, slaves);
+  auto [r, s] = cell_to_slave;
+  auto [t, cell_to_master] = dolfinx_mpc::locate_cells_with_dofs(V, masters);
+  auto [u, v] = cell_to_master;
+  _slave_cells = q;
+  _cell_to_slave = r;
+  _offsets_cell_to_slave = s;
+  _master_cells = t;
+  _cell_to_master = u;
+  _offsets_cell_to_master = v;
+
   _index_map = generate_index_map();
-}
-
-/// Get the master nodes for the i-th slave
-std::vector<std::int64_t> MultiPointConstraint::masters(std::int64_t i)
-{
-  assert(i < unsigned(_masters.size()));
-  std::vector<std::int64_t> owners;
-  // Check if this is the final entry or beyond
-  for (std::int64_t j = _offsets[i]; j < _offsets[i + 1]; j++)
-  {
-    owners.push_back(_masters[j]);
-  }
-  return owners;
-}
-
-/// Get the master nodes for the i-th slave
-std::vector<double> MultiPointConstraint::coefficients(std::int64_t i)
-{
-  assert(i < unsigned(_coefficients.size()));
-  std::vector<double> coeffs;
-  for (std::int64_t j = _offsets[i]; j < _offsets[i + 1]; j++)
-  {
-    coeffs.push_back(_coefficients[j]);
-  }
-  return coeffs;
 }
 
 std::vector<std::int64_t> MultiPointConstraint::slave_cells()
 {
   return _slave_cells;
-}
-
-/// Partition cells into cells containing slave dofs and cells with no cell
-void MultiPointConstraint::find_slave_cells()
-{
-  const dolfinx::mesh::Mesh &mesh = *(_function_space->mesh());
-  const dolfinx::fem::DofMap &dofmap = *(_function_space->dofmap());
-  const std::vector<int64_t> &global_indices =
-      mesh.topology().global_indices(mesh.topology().dim());
-
-  // Categorise cells as normal cells or master cells or slave cells,
-  // which can later be used in the custom assembly
-  std::int64_t j = 0;
-  std::int64_t k = 0;
-  _offsets_cell_to_slave.push_back(j);
-  _offsets_cell_to_master.push_back(k);
-  std::array<std::int64_t, 2> local_range = dofmap.index_map->local_range();
-
-  for (auto &cell : dolfinx::mesh::MeshRange(mesh, mesh.topology().dim()))
-  {
-    const int cell_index = cell.index();
-    auto dofs = dofmap.cell_dofs(cell_index);
-    bool slave_cell = false;
-    bool master_cell = false;
-    for (Eigen::Index i = 0; i < dofs.size(); ++i)
-    {
-      for (auto slave : _slaves)
-      {
-        if ((local_range[0] <= slave) && (slave < local_range[1]) &&
-            (unsigned(dofs[i] + dofmap.index_map->local_range()[0]) == slave))
-        {
-          _cell_to_slave.push_back(slave);
-          j++;
-          slave_cell = true;
-        }
-      }
-      for (auto master : _masters)
-      {
-        if ((local_range[0] <= master) && (master < local_range[1]) &&
-            (unsigned(dofs[i] + dofmap.index_map->local_range()[0]) ==
-             master))
-        {
-          _cell_to_master.push_back(master);
-          k++;
-          master_cell = true;
-        }
-      }
-    }
-    if (slave_cell)
-    {
-      _slave_cells.push_back(cell_index);
-      _offsets_cell_to_slave.push_back(j);
-    }
-    if (master_cell)
-    {
-      _master_cells.push_back(master_cell);
-      _offsets_cell_to_master.push_back(k);
-    }
-    if (!slave_cell && !master_cell)
-    {
-      _normal_cells.push_back(cell_index);
-    }
-  }
 }
 
 std::pair<std::vector<std::int64_t>, std::vector<std::int64_t>>
@@ -134,21 +56,16 @@ MultiPointConstraint::cell_to_slave_mapping()
 std::shared_ptr<dolfinx::common::IndexMap>
 MultiPointConstraint::generate_index_map()
 {
-  const dolfinx::mesh::Mesh &mesh = *(_function_space->mesh());
-  const dolfinx::fem::DofMap &dofmap = *(_function_space->dofmap());
+  const dolfinx::mesh::Mesh& mesh = *(_function_space->mesh());
+  const dolfinx::fem::DofMap& dofmap = *(_function_space->dofmap());
 
   // Get common::IndexMaps for each dimension
   std::shared_ptr<const dolfinx::common::IndexMap> index_map = dofmap.index_map;
 
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> ghosts = index_map->ghosts();
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> new_ghosts;
-  for (int i = 0; i < ghosts.size(); ++i)
-  {
-    new_ghosts.conservativeResize(new_ghosts.size() + 1);
-    new_ghosts[i] = ghosts[i];
-  }
-  // Loop over slave cells on local processor
-  int num_ghosts = ghosts.size();
+  // Get old dofs that will be appended to
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> new_ghosts
+      = index_map->ghosts();
+  int num_ghosts = new_ghosts.size();
 
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
@@ -158,42 +75,40 @@ MultiPointConstraint::generate_index_map()
     // Loop over slaves in cell
     for (auto slave_dof : slaves_i)
     {
-      std::int64_t slave_index = 0; // Index in slave array
-      // Find place of slave in global setting to obtain corresponding master
-      // dofs
+      // Find index of slave in global array
+      std::int64_t slave_index = 0; // Index in global slave array
       for (std::uint64_t counter = 0; counter < _slaves.size(); counter++)
-      {
         if (_slaves[counter] == slave_dof)
-        {
           slave_index = counter;
-        }
-      }
 
+      // Loop over all masters for given slave
       std::vector<std::int64_t> masters_i(
           _masters.begin() + _offsets[slave_index],
           _masters.begin() + _offsets[slave_index + 1]);
       for (auto master : masters_i)
       {
-        // Loop over all local master cells to determine if master is in a
-        // local cell
+        // Check if master is already owned by the processor by looping over
+        // all owned cells
         bool master_on_proc = false;
         for (std::int64_t m = 0; m < unsigned(_master_cells.size()); m++)
         {
           std::vector<std::int64_t> masters_on_cell(
               _cell_to_master.begin() + _offsets_cell_to_master[m],
               _cell_to_master.begin() + _offsets_cell_to_master[m + 1]);
-          if (std::find(masters_on_cell.begin(), masters_on_cell.end(),
-                        master) != masters_on_cell.end())
+          if (std::find(masters_on_cell.begin(), masters_on_cell.end(), master)
+              != masters_on_cell.end())
           {
             master_on_proc = true;
           }
         }
+        // If master not on processor add it to the ghost array and
+        // create a map from master to local index used in matrix creation
         if (!master_on_proc)
         {
           new_ghosts.conservativeResize(new_ghosts.size() + 1);
           new_ghosts[num_ghosts] = master;
           _glob_to_loc_ghosts[master] = num_ghosts + index_map->size_local();
-          num_ghosts = num_ghosts + 1;
+          num_ghosts++;
         }
       }
     }
@@ -204,38 +119,39 @@ MultiPointConstraint::generate_index_map()
   std::array<std::int64_t, 2> local_range = index_map->local_range();
   for (auto global_master : _masters)
   {
+    // Check if master is owned by processor
     if ((global_master < local_range[0]) || (local_range[1] <= global_master))
     {
+      // If master is not owned, check if it is ghosted
       bool already_ghosted = false;
-
       for (std::int64_t gh = 0; gh < new_ghosts.size(); gh++)
       {
         if (global_master == new_ghosts[gh])
         {
           already_ghosted = true;
-          _glob_master_to_loc_ghosts[global_master] =
-              gh + index_map->size_local();
+          _glob_master_to_loc_ghosts[global_master]
+              = gh + index_map->size_local();
         }
       }
       if (!already_ghosted)
       {
         new_ghosts.conservativeResize(new_ghosts.size() + 1);
         new_ghosts[num_ghosts] = global_master;
-        _glob_master_to_loc_ghosts[global_master] =
-            num_ghosts + index_map->size_local();
-        num_ghosts = num_ghosts + 1;
+        _glob_master_to_loc_ghosts[global_master]
+            = num_ghosts + index_map->size_local();
+        num_ghosts++;
       }
     }
   }
-  std::shared_ptr<dolfinx::common::IndexMap> new_index_map =
-      std::make_shared<dolfinx::common::IndexMap>(
+  std::shared_ptr<dolfinx::common::IndexMap> new_index_map
+      = std::make_shared<dolfinx::common::IndexMap>(
           mesh.mpi_comm(), index_map->size_local(), new_ghosts,
           index_map->block_size);
   return new_index_map;
 }
-// Append to existing sparsity pattern
-dolfinx::la::PETScMatrix
-MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a)
+
+dolfinx::la::SparsityPattern
+MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 {
 
   if (a.rank() != 2)
@@ -248,36 +164,29 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a)
   assert(a.function_space(0) == _function_space);
   assert(a.function_space(1) == _function_space);
 
-  const dolfinx::mesh::Mesh &mesh = *(a.mesh());
+  const dolfinx::mesh::Mesh& mesh = *(a.mesh());
 
   /// Create new dofmap using the MPC index-maps
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
   new_maps[0] = _index_map;
   new_maps[1] = _index_map;
-  const dolfinx::fem::DofMap *old_dofmap = a.function_space(0)->dofmap().get();
+  const dolfinx::fem::DofMap* old_dofmap = a.function_space(0)->dofmap().get();
   const dolfinx::fem::DofMap new_dofmap = dolfinx::fem::DofMap(
       old_dofmap->element_dof_layout, _index_map, old_dofmap->dof_array());
   std::array<std::int64_t, 2> local_range = new_dofmap.index_map->local_range();
-  const dolfinx::fem::DofMap *pointer;
+  const dolfinx::fem::DofMap* pointer;
   pointer = &new_dofmap;
-  std::array<const dolfinx::fem::DofMap *, 2> dofmaps = {{pointer, pointer}};
-  ///  create and build sparsity pattern
-  std::shared_ptr<dolfinx::la::SparsityPattern> pattern =
-      std::make_shared<dolfinx::la::SparsityPattern>(mesh.mpi_comm(), new_maps);
+  std::array<const dolfinx::fem::DofMap*, 2> dofmaps = {{pointer, pointer}};
 
-  if (a.integrals().num_integrals(dolfinx::fem::FormIntegrals::Type::cell) > 0)
-    dolfinx::fem::SparsityPatternBuilder::cells(*pattern, mesh.topology(),
-                                                dofmaps);
-  if (a.integrals().num_integrals(
-          dolfinx::fem::FormIntegrals::Type::interior_facet) > 0)
-    dolfinx::fem::SparsityPatternBuilder::interior_facets(
-        *pattern, mesh.topology(), dofmaps);
-  if (a.integrals().num_integrals(
-          dolfinx::fem::FormIntegrals::Type::exterior_facet) > 0)
-    dolfinx::fem::SparsityPatternBuilder::exterior_facets(
-        *pattern, mesh.topology(), dofmaps);
+  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
 
-  // Loop over slave cells
+  ///  Create and build sparsity pattern for original form. Should be equivalent
+  ///  to calling create_sparsity_pattern(Form a)
+  dolfinx_mpc::build_standard_pattern(pattern, a);
+
+  // Add non-zeros for each slave cell to sparsity pattern.
+  // For each slave dof, all local entries has to be from the ith slave to the
+  // jth master degree of freedom
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
     std::vector<std::int64_t> slaves_i(
@@ -319,12 +228,11 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a)
           int l = 0;
           for (std::size_t k = 0; k < unsigned(cell_dof_list.size()); ++k)
           {
-            if (_slaves[slave_index] ==
-                unsigned(cell_dof_list[k] + local_range[0]))
+            if (_slaves[slave_index]
+                == unsigned(cell_dof_list[k] + local_range[0]))
             {
               // Check if master is a ghost
-              if (_glob_to_loc_ghosts.find(master) !=
-                  _glob_to_loc_ghosts.end())
+              if (_glob_to_loc_ghosts.find(master) != _glob_to_loc_ghosts.end())
               {
                 new_master_dofs[j](0) = _glob_to_loc_ghosts[master];
               }
@@ -343,8 +251,8 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a)
           }
         }
 
-        pattern->insert(new_master_dofs[0], master_slave_dofs[1]);
-        pattern->insert(master_slave_dofs[0], new_master_dofs[1]);
+        pattern.insert(new_master_dofs[0], master_slave_dofs[1]);
+        pattern.insert(master_slave_dofs[0], new_master_dofs[1]);
       }
     }
   }
@@ -373,8 +281,8 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a)
         // If not on processor add ghost-index, else add local number
         if (other_master != master)
         {
-          if ((other_master < local_range[0]) ||
-              (local_range[1] <= other_master))
+          if ((other_master < local_range[0])
+              || (local_range[1] <= other_master))
           {
             other_master_dof[0] = _glob_master_to_loc_ghosts[other_master];
           }
@@ -382,17 +290,14 @@ MultiPointConstraint::generate_petsc_matrix(const dolfinx::fem::Form &a)
           {
             other_master_dof[0] = other_master - local_range[0];
           }
-          pattern->insert(local_master_dof, other_master_dof);
-          pattern->insert(other_master_dof, local_master_dof);
+          pattern.insert(local_master_dof, other_master_dof);
+          pattern.insert(other_master_dof, local_master_dof);
         }
       }
     }
   }
 
-  pattern->assemble();
-  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), *pattern);
-
-  return A;
+  return pattern;
 }
 
 std::vector<std::int64_t> MultiPointConstraint::slaves() { return _slaves; }

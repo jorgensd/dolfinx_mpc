@@ -120,12 +120,13 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
     local_min = V.dofmap.index_map.local_range[0]
     for slave in slave_master_dict.keys():
         offsets.append(len(masters))
+
         dof = fem.locate_dofs_geometrical(V, slave) + local_min
-        dof_global = numpy.hstack(MPI.comm_world.allgather(dof))[0]
+        dof_global = numpy.vstack(MPI.comm_world.allgather(dof))[0]
         slaves.append(dof_global)
         for master in slave_master_dict[slave].keys():
             dof_m = fem.locate_dofs_geometrical(V, master) + local_min
-            dof_m = numpy.hstack(MPI.comm_world.allgather(dof_m))[0]
+            dof_m = numpy.vstack(MPI.comm_world.allgather(dof_m))[0]
             masters.append(dof_m)
             coeffs.append(slave_master_dict[slave][master])
     offsets.append(len(masters))

@@ -1,6 +1,6 @@
 // Copyright (C) 2020 Jorgen S. Dokken
 //
-// This file is part of DOLFIN-X (https://www.fenicsproject.org)
+// This file is part of DOLFIN-X MPC
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
@@ -8,9 +8,9 @@
 
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/la/SparsityPattern.h>
-#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/common/IndexMap.h>
+#include "utils.h"
 
 namespace dolfinx_mpc
 {
@@ -44,27 +44,20 @@ public:
                        std::vector<std::int64_t> slaves, std::vector<std::int64_t> masters,
                        std::vector<double> coefficients, std::vector<std::int64_t> offsets);
 
-  // Masters for the i-th slave node
-  std::vector<std::int64_t> masters(std::int64_t i);
-
-  // Master coefficients for the i-th slave node
-  std::vector<double> coefficients(std::int64_t i);
-
-  // Local indices of cells containing slave coefficients
-  std::vector<std::int64_t> slave_cells();
-
-  /// Return an array containing the local index of all slave cells
-  void find_slave_cells();
-
   /// Add sparsity pattern for multi-point constraints to existing
   /// sparsity pattern
   /// @param[in] a bi-linear form for the current variational problem
   /// (The one used to generate input sparsity-pattern).
-  /// @param[in] pattern Existing sparsity pattern.
-  dolfinx::la::PETScMatrix generate_petsc_matrix(const dolfinx::fem::Form &a);
+  dolfinx::la::SparsityPattern create_sparsity_pattern(const dolfinx::fem::Form &a);
+
+  /// Generate indexmap including MPC ghosts
+  std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();
 
   /// Return array of slave coefficients
   std::vector<std::int64_t> slaves();
+
+  // Local indices of cells containing slave coefficients
+  std::vector<std::int64_t> slave_cells();
 
   /// Return the index_map for the test and trial space
   std::shared_ptr<dolfinx::common::IndexMap> index_map();
@@ -84,9 +77,6 @@ public:
   /// is not on this processor
   std::unordered_map<int, int> glob_to_loc_ghosts();
 
-  /// Generate indexmap including MPC ghosts
-  std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();
-
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
   std::vector<std::int64_t> _slaves;
@@ -94,7 +84,6 @@ private:
   std::vector<double> _coefficients;
   std::vector<std::int64_t> _offsets;
   std::vector<std::int64_t> _slave_cells;
-  std::vector<std::int64_t> _normal_cells;
   std::vector<std::int64_t> _offsets_cell_to_slave;
   std::vector<std::int64_t> _cell_to_slave;
   std::vector<std::int64_t> _master_cells;
@@ -104,5 +93,7 @@ private:
   std::unordered_map<int, int> _glob_master_to_loc_ghosts;
   std::shared_ptr<dolfinx::common::IndexMap> _index_map;
 };
+
+
 
 } // namespace dolfinx_mpc
