@@ -4,11 +4,9 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
-#include "caster_petsc.h"
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
-#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <memory>
 #include <pybind11/pybind11.h>
