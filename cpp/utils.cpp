@@ -6,7 +6,11 @@
 
 #include "utils.h"
 #include <dolfinx/fem/DofMap.h>
+#include <dolfinx/fem/Form.h>
+#include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/la/SparsityPattern.h>
+#include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/MeshIterator.h>
 
 using namespace dolfinx_mpc;
@@ -60,4 +64,44 @@ dolfinx_mpc::locate_cells_with_dofs(
       cells_to_dofs_map(cell_to_dofs, cell_to_dofs_offsets);
 
   return std::make_pair(cells_with_dofs, cells_to_dofs_map);
+}
+
+void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
+                                         const dolfinx::fem::Form& a)
+{
+  // Get dof maps
+  std::array<const dolfinx::fem::DofMap*, 2> dofmaps
+      = {{a.function_space(0)->dofmap().get(),
+          a.function_space(1)->dofmap().get()}};
+
+  // Get mesh
+  assert(a.mesh());
+  const dolfinx::mesh::Mesh& mesh = *(a.mesh());
+
+  if (a.integrals().num_integrals(dolfinx::fem::FormIntegrals::Type::cell) > 0)
+  {
+    dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh.topology(),
+                                                {{dofmaps[0], dofmaps[1]}});
+  }
+
+  if (a.integrals().num_integrals(
+          dolfinx::fem::FormIntegrals::Type::interior_facet)
+      > 0)
+  {
+
+    mesh.create_entities(mesh.topology().dim() - 1);
+    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
+    dolfinx::fem::SparsityPatternBuilder::interior_facets(
+        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+  }
+
+  if (a.integrals().num_integrals(
+          dolfinx::fem::FormIntegrals::Type::exterior_facet)
+      > 0)
+  {
+    mesh.create_entities(mesh.topology().dim() - 1);
+    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
+    dolfinx::fem::SparsityPatternBuilder::exterior_facets(
+        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+  }
 }

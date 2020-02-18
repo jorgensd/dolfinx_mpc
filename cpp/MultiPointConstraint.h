@@ -8,7 +8,6 @@
 
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/la/SparsityPattern.h>
-#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/common/IndexMap.h>
 #include "utils.h"
@@ -49,8 +48,7 @@ public:
   /// sparsity pattern
   /// @param[in] a bi-linear form for the current variational problem
   /// (The one used to generate input sparsity-pattern).
-  /// @param[in] pattern Existing sparsity pattern.
-  dolfinx::la::PETScMatrix generate_petsc_matrix(const dolfinx::fem::Form &a);
+  dolfinx::la::SparsityPattern create_sparsity_pattern(const dolfinx::fem::Form &a);
 
   /// Generate indexmap including MPC ghosts
   std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();

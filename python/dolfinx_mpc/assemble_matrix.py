@@ -40,7 +40,9 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
 
     # Generate matrix with MPC sparsity pattern
     cpp_form = dolfinx.Form(form)._cpp_object
-    A = multipointconstraint.generate_petsc_matrix(cpp_form)
+    pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
+    pattern.assemble()
+    A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
 
     # Unravel data from MPC
