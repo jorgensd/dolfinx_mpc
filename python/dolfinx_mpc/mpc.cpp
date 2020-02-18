@@ -28,7 +28,8 @@ void mpc(py::module& m)
       .def(py::init<std::shared_ptr<const dolfinx::function::FunctionSpace>,
                     Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
                     Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-                    std::vector<double>, std::vector<std::int64_t>>())
+                    Eigen::Array<double, Eigen::Dynamic, 1>,
+                    Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>())
       .def("slave_cells", &dolfinx_mpc::MultiPointConstraint::slave_cells)
       .def("cell_to_slave_mapping",
            &dolfinx_mpc::MultiPointConstraint::cell_to_slave_mapping)

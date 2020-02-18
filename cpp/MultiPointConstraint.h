@@ -43,7 +43,7 @@ public:
   /// node in the master and coefficients list.
   MultiPointConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
                        Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-                       std::vector<double> coefficients, std::vector<std::int64_t> offsets);
+                       Eigen::Array<double, Eigen::Dynamic, 1> coefficients, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets);
 
   /// Add sparsity pattern for multi-point constraints to existing
   /// sparsity pattern
@@ -64,10 +64,10 @@ public:
   std::shared_ptr<dolfinx::common::IndexMap> index_map();
 
   /// Return master offset data
-  std::vector<std::int64_t> master_offsets();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_offsets();
 
   /// Return the array of master dofs and corresponding coefficients
-  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, std::vector<double>>
+  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, Eigen::Array<double, Eigen::Dynamic, 1>>
   masters_and_coefficients();
 
   /// Return map from cell with slaves to the dof numbers
@@ -82,8 +82,8 @@ private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
-  std::vector<double> _coefficients;
-  std::vector<std::int64_t> _offsets_master;
+  Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_master;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_slave;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_slave;

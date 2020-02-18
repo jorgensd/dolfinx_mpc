@@ -22,7 +22,8 @@ MultiPointConstraint::MultiPointConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-    std::vector<double> coefficients, std::vector<std::int64_t> offsets_master)
+    Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
+    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets_master)
     : _function_space(V), _slaves(slaves), _masters(masters),
       _coefficients(coefficients), _offsets_master(offsets_master),
       _slave_cells(), _offsets_cell_to_slave(), _cell_to_slave(),
@@ -313,14 +314,16 @@ std::shared_ptr<dolfinx::common::IndexMap> MultiPointConstraint::index_map()
   return _index_map;
 }
 
-std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, std::vector<double>>
+std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+          Eigen::Array<double, Eigen::Dynamic, 1>>
 MultiPointConstraint::masters_and_coefficients()
 {
   return std::pair(_masters, _coefficients);
 }
 
 /// Return master offset data
-std::vector<std::int64_t> MultiPointConstraint::master_offsets()
+Eigen::Array<std::int64_t, Eigen::Dynamic, 1>
+MultiPointConstraint::master_offsets()
 {
   return _offsets_master;
 }
