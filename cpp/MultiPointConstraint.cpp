@@ -43,12 +43,14 @@ MultiPointConstraint::MultiPointConstraint(
   _index_map = generate_index_map();
 }
 
-std::vector<std::int64_t> MultiPointConstraint::slave_cells()
+Eigen::Array<std::int64_t, Eigen::Dynamic, 1>
+MultiPointConstraint::slave_cells()
 {
   return _slave_cells;
 }
 
-std::pair<std::vector<std::int64_t>, std::vector<std::int64_t>>
+std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+          Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
 MultiPointConstraint::cell_to_slave_mapping()
 {
   return std::pair(_cell_to_slave, _offsets_cell_to_slave);
@@ -70,16 +72,14 @@ MultiPointConstraint::generate_index_map()
 
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
-    std::vector<std::int64_t> slaves_i(
-        _cell_to_slave.begin() + _offsets_cell_to_slave[i],
-        _cell_to_slave.begin() + _offsets_cell_to_slave[i + 1]);
     // Loop over slaves in cell
-    for (Eigen::Index j = 0; j < slaves_i.size(); j++)
+    for (Eigen::Index j = 0;
+         j < _offsets_cell_to_slave[i + 1] - _offsets_cell_to_slave[i]; j++)
     {
       // Find index of slave in global array
       std::int64_t slave_index = 0; // Index in global slave array
       for (std::uint64_t counter = 0; counter < _slaves.size(); counter++)
-        if (_slaves[counter] == slaves_i[j])
+        if (_slaves[counter] == _cell_to_slave[_offsets_cell_to_slave[i] + j])
           slave_index = counter;
 
       // Loop over all masters for given slave
@@ -91,14 +91,15 @@ MultiPointConstraint::generate_index_map()
         bool master_on_proc = false;
         for (std::int64_t m = 0; m < unsigned(_master_cells.size()); m++)
         {
-          std::vector<std::int64_t> masters_on_cell(
-              _cell_to_master.begin() + _offsets_cell_to_master[m],
-              _cell_to_master.begin() + _offsets_cell_to_master[m + 1]);
-          if (std::find(masters_on_cell.begin(), masters_on_cell.end(),
-                        _masters[_offsets[slave_index] + k])
-              != masters_on_cell.end())
+          for (Eigen::Index n = 0;
+               n < _offsets_cell_to_master[m + 1] - _offsets_cell_to_master[m];
+               n++)
           {
-            master_on_proc = true;
+            if (_masters[_offsets[slave_index] + k]
+                == _cell_to_master[_offsets_cell_to_master[m] + n])
+            {
+              master_on_proc = true;
+            }
           }
         }
         // If master not on processor add it to the ghost array and
@@ -181,8 +182,8 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 
   dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
 
-  ///  Create and build sparsity pattern for original form. Should be equivalent
-  ///  to calling create_sparsity_pattern(Form a)
+  ///  Create and build sparsity pattern for original form. Should be
+  ///  equivalent to calling create_sparsity_pattern(Form a)
   dolfinx_mpc::build_standard_pattern(pattern, a);
 
   // Add non-zeros for each slave cell to sparsity pattern.
@@ -190,23 +191,17 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   // jth master degree of freedom
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
-    std::vector<std::int64_t> slaves_i(
-        _cell_to_slave.begin() + _offsets_cell_to_slave[i],
-        _cell_to_slave.begin() + _offsets_cell_to_slave[i + 1]);
-
     // Loop over slaves in cell
-    for (Eigen::Index j = 0; j < slaves_i.size(); j++)
+    for (Eigen::Index j = 0;
+         j < _offsets_cell_to_slave[i + 1] - _offsets_cell_to_slave[i]; j++)
     {
-      std::int64_t slave_index = 0; // Index in slave array
-      // FIXME: Move this somewhere else as there should exist a map for
-      // this
+      // Figure out what the index of the current slave on the cell is in
+      // _slaves
+      std::int64_t slave_index = 0;
       for (std::uint64_t counter = 0; counter < _slaves.size(); counter++)
-      {
-        if (_slaves[counter] == slaves_i[j])
-        {
+        if (_slaves[counter] == _cell_to_slave[_offsets_cell_to_slave[i] + j])
           slave_index = counter;
-        }
-      }
+
       // Insert pattern for each master
       for (Eigen::Index k = 0;
            k < _offsets[slave_index + 1] - _offsets[slave_index]; k++)
@@ -252,6 +247,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
             }
           }
         }
+
         pattern.insert(new_master_dofs[0], master_slave_dofs[1]);
         pattern.insert(master_slave_dofs[0], new_master_dofs[1]);
       }
@@ -261,28 +257,29 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   // Loop over local master cells
   for (std::int64_t i = 0; i < unsigned(_master_cells.size()); i++)
   {
-    std::vector<std::int64_t> masters_i(
-        _cell_to_master.begin() + _offsets_cell_to_master[i],
-        _cell_to_master.begin() + _offsets_cell_to_master[i + 1]);
-    for (auto master : masters_i)
+    for (Eigen::Index j = 0;
+         j < _offsets_cell_to_master[i + 1] - _offsets_cell_to_master[i]; j++)
     {
       // Check if dof of owned cell is a local cell
       Eigen::Array<PetscInt, 1, 1> local_master_dof(1);
-      if ((master < local_range[0]) || (local_range[1] <= master))
+      if ((_cell_to_master[_offsets_cell_to_master[i] + j] < local_range[0])
+          || (local_range[1]
+              <= _cell_to_master[_offsets_cell_to_master[i] + j]))
       {
-        local_master_dof[0] = _glob_master_to_loc_ghosts[master];
+        local_master_dof[0] = _glob_master_to_loc_ghosts
+            [_cell_to_master[_offsets_cell_to_master[i] + j]];
       }
       else
       {
-        local_master_dof[0] = master - local_range[0];
+        local_master_dof[0]
+            = _cell_to_master[_offsets_cell_to_master[i] + j] - local_range[0];
       }
 
       Eigen::Array<PetscInt, 1, 1> other_master_dof;
       for (Eigen::Index k = 0; k < _masters.size(); k++)
-      // for (auto other_master : _masters)
       {
         // If not on processor add ghost-index, else add local number
-        if (_masters[k] != master)
+        if (_masters[k] != _cell_to_master[_offsets_cell_to_master[i] + j])
         {
           if ((_masters[k] < local_range[0]) || (local_range[1] <= _masters[k]))
           {

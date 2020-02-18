@@ -16,7 +16,9 @@ namespace dolfinx_mpc
   /// Returning the cell indices for all elements containing to input dofs, and a mapping from these cells to the corresponding dofs
   /// @param[in] V The function space the multi point constraint is applied on
   /// @param[in] dofs A list of the global degrees of freedom for the dofs that should be located.
-  std::pair<std::vector<std::int64_t>,std::pair<std::vector<std::int64_t>, std::vector<std::int64_t>>>
+  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+	std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+	Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>>
   locate_cells_with_dofs(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
 						 Eigen::Array<std::int64_t, Eigen::Dynamic, 1> dofs);
 

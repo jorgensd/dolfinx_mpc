@@ -58,7 +58,7 @@ public:
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves();
 
   // Local indices of cells containing slave coefficients
-  std::vector<std::int64_t> slave_cells();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cells();
 
   /// Return the index_map for the test and trial space
   std::shared_ptr<dolfinx::common::IndexMap> index_map();
@@ -71,7 +71,7 @@ public:
   masters_and_coefficients();
 
   /// Return map from cell with slaves to the dof numbers
-  std::pair<std::vector<std::int64_t>, std::vector<std::int64_t>>
+  std::pair< Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
   cell_to_slave_mapping();
 
   /// Return the global to local mapping of a master coefficient it it
@@ -84,12 +84,12 @@ private:
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
   std::vector<double> _coefficients;
   std::vector<std::int64_t> _offsets;
-  std::vector<std::int64_t> _slave_cells;
-  std::vector<std::int64_t> _offsets_cell_to_slave;
-  std::vector<std::int64_t> _cell_to_slave;
-  std::vector<std::int64_t> _master_cells;
-  std::vector<std::int64_t> _offsets_cell_to_master;
-  std::vector<std::int64_t> _cell_to_master;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_slave;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_slave;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_master;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_master;
   std::unordered_map<int, int> _glob_to_loc_ghosts;
   std::unordered_map<int, int> _glob_master_to_loc_ghosts;
   std::shared_ptr<dolfinx::common::IndexMap> _index_map;
