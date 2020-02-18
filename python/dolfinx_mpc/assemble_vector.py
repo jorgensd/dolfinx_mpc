@@ -10,7 +10,7 @@ from numba.typed import List
 import dolfinx
 
 from .numba_setup import PETSc, ffi
-
+from .assemble_matrix import in_numpy_array
 
 def assemble_vector(form, multipointconstraint,
                     bcs=[numpy.array([]), numpy.array([])]):
@@ -104,7 +104,7 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
         #     for k in range(3):
         #         if bcs[dofmap[i * 3 + k]]:
         #             b_local[k] = 0
-        if i in slave_cells:
+        if in_numpy_array(slave_cells, i):
             b_local_copy = b_local.copy()
             # Determine which slaves are in this cell,
             # and which global index they have in 1D arrays

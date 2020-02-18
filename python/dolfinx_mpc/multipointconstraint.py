@@ -5,6 +5,7 @@ from numba.typed import List
 from petsc4py import PETSc
 import types
 from dolfinx import function, fem, MPI
+from .assemble_matrix import in_numpy_array
 import numpy
 
 
@@ -15,27 +16,9 @@ def backsubstitution(mpc, vector, dofmap):
     index_map = mpc.index_map()
     slave_cells = mpc.slave_cells()
     cell_to_slave, cell_to_slave_offset = mpc.cell_to_slave_mapping()
-    if len(slave_cells) == 0:
-        sc_nb = List.empty_list(numba.types.int64)
-    else:
-        sc_nb = List()
-    [sc_nb.append(sc) for sc in slave_cells]
-
-    # Can be empty list locally, so has to be wrapped to be used with numba
-    if len(cell_to_slave) == 0:
-        c2s_nb = List.empty_list(numba.types.int64)
-    else:
-        c2s_nb = List()
-    [c2s_nb.append(c2s) for c2s in cell_to_slave]
-    if len(cell_to_slave_offset) == 0:
-        c2so_nb = List.empty_list(numba.types.int64)
-    else:
-        c2so_nb = List()
-    [c2so_nb.append(c2so) for c2so in cell_to_slave_offset]
-
     ghost_info = (index_map.local_range, index_map.ghosts,
                   index_map.indices(True))
-    mpc = (slaves, sc_nb, c2s_nb, c2so_nb, masters, coefficients, offsets)
+    mpc = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset, masters, coefficients, offsets)
 
     backsubstitution_numba(vector, dofmap.dof_array, mpc, ghost_info)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
@@ -61,7 +44,7 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
         # Find the global index of the slaves on the cell in the slaves-array
         global_slaves_index = []
         for gi in range(len(slaves)):
-            if slaves[gi] in cell_slaves:
+            if in_numpy_array(cell_slaves, slaves[gi]):
                 global_slaves_index.append(gi)
 
         for slave_index in global_slaves_index:
@@ -73,7 +56,7 @@ def backsubstitution_numba(b, dofmap, mpc, ghost_info):
                     k = local_dof
             assert k != -1
             # Check if we have already inserted for this slave
-            if slave not in slaves_visited:
+            if not in_numpy_array(slaves_visited, slave):
                 slaves_visited.append(slave)
                 slaves_masters = masters[offsets[slave_index]:
                                          offsets[slave_index+1]]

@@ -85,6 +85,9 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
 
 @numba.njit
 def freeze_slave_dofs(A, slaves, masters, offsets):
+    """
+    Insert 1 on the diagonal for each slave dof such that the matrix can be inverted
+    """
     ffi_fb = ffi.from_buffer
     A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
     for i, slave in enumerate(slaves):
@@ -98,6 +101,16 @@ def freeze_slave_dofs(A, slaves, masters, offsets):
         assert(ierr_slave == 0)
     sink(A_slave, slave_pos)
 
+
+@numba.njit
+def in_numpy_array(array, value):
+    """
+    Convenience function replacing "value in array" for numpy arrays in numba
+    """
+    for item in array:
+        if item == value:
+            return True
+    return False
 
 @numba.njit
 def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
@@ -155,7 +168,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
                 if bcs[local_range[0] + local_pos[k]]:
                     A_local[k, :] = 0
 
-        if i in slave_cells:
+        if in_numpy_array(slave_cells, i):
             A_local_copy = A_local.copy()
             cell_slaves = cell_to_slave[cell_to_slave_offset[index]:
                                         cell_to_slave_offset[index+1]]
@@ -164,7 +177,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
             # Find which slaves belongs to each cell
             global_slaves = []
             for gi, slave in enumerate(slaves):
-                if slaves[gi] in cell_slaves:
+                if in_numpy_array(cell_slaves, slaves[gi]):
                     global_slaves.append(gi)
             for s_0 in range(len(global_slaves)):
                 slave_index = global_slaves[s_0]
