@@ -22,12 +22,12 @@ MultiPointConstraint::MultiPointConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-    std::vector<double> coefficients, std::vector<std::int64_t> offsets)
+    std::vector<double> coefficients, std::vector<std::int64_t> offsets_master)
     : _function_space(V), _slaves(slaves), _masters(masters),
-      _coefficients(coefficients), _offsets(offsets), _slave_cells(),
-      _offsets_cell_to_slave(), _cell_to_slave(), _master_cells(),
-      _offsets_cell_to_master(), _cell_to_master(), _glob_to_loc_ghosts(),
-      _glob_master_to_loc_ghosts(), _index_map()
+      _coefficients(coefficients), _offsets_master(offsets_master),
+      _slave_cells(), _offsets_cell_to_slave(), _cell_to_slave(),
+      _master_cells(), _offsets_cell_to_master(), _cell_to_master(),
+      _glob_to_loc_ghosts(), _glob_master_to_loc_ghosts(), _index_map()
 {
   auto [q, cell_to_slave] = dolfinx_mpc::locate_cells_with_dofs(V, slaves);
   auto [r, s] = cell_to_slave;
@@ -84,7 +84,8 @@ MultiPointConstraint::generate_index_map()
 
       // Loop over all masters for given slave
       for (Eigen::Index k = 0;
-           k < _offsets[slave_index + 1] - _offsets[slave_index]; k++)
+           k < _offsets_master[slave_index + 1] - _offsets_master[slave_index];
+           k++)
       {
         // Check if master is already owned by the processor by looping over
         // all owned cells
@@ -95,7 +96,7 @@ MultiPointConstraint::generate_index_map()
                n < _offsets_cell_to_master[m + 1] - _offsets_cell_to_master[m];
                n++)
           {
-            if (_masters[_offsets[slave_index] + k]
+            if (_masters[_offsets_master[slave_index] + k]
                 == _cell_to_master[_offsets_cell_to_master[m] + n])
             {
               master_on_proc = true;
@@ -107,8 +108,8 @@ MultiPointConstraint::generate_index_map()
         if (!master_on_proc)
         {
           new_ghosts.conservativeResize(new_ghosts.size() + 1);
-          new_ghosts[num_ghosts] = _masters[_offsets[slave_index] + k];
-          _glob_to_loc_ghosts[_masters[_offsets[slave_index] + k]]
+          new_ghosts[num_ghosts] = _masters[_offsets_master[slave_index] + k];
+          _glob_to_loc_ghosts[_masters[_offsets_master[slave_index] + k]]
               = num_ghosts + index_map->size_local();
           num_ghosts++;
         }
@@ -187,8 +188,8 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   dolfinx_mpc::build_standard_pattern(pattern, a);
 
   // Add non-zeros for each slave cell to sparsity pattern.
-  // For each slave dof, all local entries has to be from the ith slave to the
-  // jth master degree of freedom
+  // For the i-th cell with a slave, all local entries has to be from the j-th
+  // slave to the k-th master degree of freedom
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
     // Loop over slaves in cell
@@ -204,20 +205,21 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 
       // Insert pattern for each master
       for (Eigen::Index k = 0;
-           k < _offsets[slave_index + 1] - _offsets[slave_index]; k++)
+           k < _offsets_master[slave_index + 1] - _offsets_master[slave_index];
+           k++)
       {
-        // New sparsity pattern arrays
+        /// Arrays replacing slave dof with master dof in sparsity pattern
         std::array<Eigen::Array<PetscInt, Eigen::Dynamic, 1>, 2>
-            new_master_dofs;
+            master_for_slave;
         // Sparsity pattern needed for columns
         std::array<Eigen::Array<PetscInt, Eigen::Dynamic, 1>, 2>
-            master_slave_dofs;
+            slave_dof_neighbours;
         // Loop over test and trial space
         for (std::size_t l = 0; l < 2; l++)
         {
           auto cell_dof_list = dofmaps[l]->cell_dofs(_slave_cells[i]);
 
-          new_master_dofs[l].resize(1);
+          master_for_slave[l].resize(1);
           int n = 0;
           // Replace slave dof with master dof (local insert)
           for (std::size_t m = 0; m < unsigned(cell_dof_list.size()); m++)
@@ -226,30 +228,33 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
                 == unsigned(cell_dof_list[m] + local_range[0]))
             {
               // Check if master is a ghost
-              if (_glob_to_loc_ghosts.find(_masters[_offsets[slave_index] + k])
+              if (_glob_to_loc_ghosts.find(
+                      _masters[_offsets_master[slave_index] + k])
                   != _glob_to_loc_ghosts.end())
               {
-                new_master_dofs[l](0)
-                    = _glob_to_loc_ghosts[_masters[_offsets[slave_index] + k]];
+                master_for_slave[l](0)
+                    = _glob_to_loc_ghosts[_masters[_offsets_master[slave_index]
+                                                   + k]];
               }
               else
               {
-                new_master_dofs[l](0)
-                    = _masters[_offsets[slave_index] + k] - local_range[0];
+                master_for_slave[l](0)
+                    = _masters[_offsets_master[slave_index] + k]
+                      - local_range[0];
               }
             }
             else
             {
-              master_slave_dofs[l].conservativeResize(
-                  master_slave_dofs[l].size() + 1);
-              master_slave_dofs[l](n) = cell_dof_list(m);
+              slave_dof_neighbours[l].conservativeResize(
+                  slave_dof_neighbours[l].size() + 1);
+              slave_dof_neighbours[l](n) = cell_dof_list(m);
               n++;
             }
           }
         }
 
-        pattern.insert(new_master_dofs[0], master_slave_dofs[1]);
-        pattern.insert(master_slave_dofs[0], new_master_dofs[1]);
+        pattern.insert(master_for_slave[0], slave_dof_neighbours[1]);
+        pattern.insert(slave_dof_neighbours[0], master_for_slave[1]);
       }
     }
   }
@@ -317,7 +322,7 @@ MultiPointConstraint::masters_and_coefficients()
 /// Return master offset data
 std::vector<std::int64_t> MultiPointConstraint::master_offsets()
 {
-  return _offsets;
+  return _offsets_master;
 }
 
 /// Return the global to local mapping of a master coefficient it it is not

@@ -83,7 +83,7 @@ private:
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
   std::vector<double> _coefficients;
-  std::vector<std::int64_t> _offsets;
+  std::vector<std::int64_t> _offsets_master;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_slave;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_slave;
