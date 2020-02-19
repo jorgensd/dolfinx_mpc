@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from petsc4py import PETSc
-
 import dolfinx
+import dolfinx.io
 import dolfinx_mpc
 import ufl
 
@@ -35,6 +35,8 @@ def test_pipeline(master_point):
 
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
+    # s_m_c = {lambda x: dof_at(x, [0, 0]):
+    #          {lambda x: dof_at(x, [1, 1]): 0.1}}
     s_m_c = {lambda x: dof_at(x, [1, 0]):
              {lambda x: dof_at(x, [0, 1]): 0.43,
               lambda x: dof_at(x, [1, 1]): 0.11},
@@ -75,6 +77,18 @@ def test_pipeline(master_point):
                    mode=PETSc.ScatterMode.FORWARD)
 
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    # Create functionspace and function for mpc vector
+    modified_dofmap = dolfinx.cpp.fem.DofMap(V.dofmap.dof_layout,
+                                             mpc.index_map(),
+                                             V.dofmap.dof_array)
+    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                  modified_dofmap)
+    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+
+    # Write solution to file
+    u_h = dolfinx.Function(Vmpc)
+    u_h.vector.setArray(uh.array)
+    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
 
     # Generate global K
     K = np.zeros((V.dim(), V.dim() - len(slaves)))
