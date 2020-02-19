@@ -25,8 +25,6 @@ dolfinx_mpc::locate_cells_with_dofs(
 {
   const dolfinx::mesh::Mesh& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
-  const std::vector<int64_t>& global_indices
-      = mesh.topology().global_indices(mesh.topology().dim());
   std::array<std::int64_t, 2> local_range = dofmap.index_map->local_range();
 
   /// Data structures
