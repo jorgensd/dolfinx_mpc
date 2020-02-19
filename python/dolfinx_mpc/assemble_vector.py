@@ -5,11 +5,11 @@
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 import numba
 import numpy
-from numba.typed import List
 
 import dolfinx
 
 from .numba_setup import PETSc, ffi
+from .assemble_matrix import in_numpy_array
 
 
 def assemble_vector(form, multipointconstraint,
@@ -27,34 +27,15 @@ def assemble_vector(form, multipointconstraint,
     masters, coefficients = multipointconstraint.masters_and_coefficients()
     cell_to_slave, c2s_offset = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
-    offsets = numpy.array(multipointconstraint.master_offsets())
-    slave_cells = numpy.array(multipointconstraint.slave_cells())
-    masters = numpy.array(masters)
-    coefficients = numpy.array(coefficients)
+    offsets = multipointconstraint.master_offsets()
+    slave_cells = multipointconstraint.slave_cells()
+    mpc_data = (slaves, masters, coefficients,
+                offsets, slave_cells, cell_to_slave, c2s_offset)
 
     # Get index map and ghost info
     index_map = multipointconstraint.index_map()
     ghost_info = (index_map.local_range,
                   index_map.indices(True), index_map.ghosts)
-
-    # Wrapping for numba to be able to do "if i in slave_cells"
-    if len(slave_cells) == 0:
-        sc_nb = List.empty_list(numba.types.int64)
-    else:
-        sc_nb = List()
-    [sc_nb.append(sc) for sc in slave_cells]
-
-    # Can be empty list locally, so has to be wrapped to be used with numba
-    if len(cell_to_slave) == 0:
-        c2s_nb = List.empty_list(numba.types.int64)
-    else:
-        c2s_nb = List()
-    [c2s_nb.append(c2s) for c2s in cell_to_slave]
-    if len(c2s_offset) == 0:
-        c2so_nb = List.empty_list(numba.types.int64)
-    else:
-        c2so_nb = List()
-    [c2so_nb.append(c2so) for c2so in c2s_offset]
 
     vector = dolfinx.cpp.la.create_vector(index_map)
 
@@ -65,9 +46,7 @@ def assemble_vector(form, multipointconstraint,
     with vector.localForm() as b:
         b.set(0.0)
         assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, gdim,
-                              dofs, num_dofs_per_element,
-                              (slaves, masters, coefficients,
-                               offsets, sc_nb, c2s_nb, c2so_nb),
+                              dofs, num_dofs_per_element, mpc_data,
                               ghost_info, (bc_dofs, bc_values))
     return vector
 
@@ -104,7 +83,7 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
         #     for k in range(3):
         #         if bcs[dofmap[i * 3 + k]]:
         #             b_local[k] = 0
-        if i in slave_cells:
+        if in_numpy_array(slave_cells, i):
             b_local_copy = b_local.copy()
             # Determine which slaves are in this cell,
             # and which global index they have in 1D arrays
@@ -116,7 +95,7 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
             # Find which slaves belongs to each cell
             global_slaves = []
             for gi, slave in enumerate(slaves):
-                if slaves[gi] in cell_slaves:
+                if in_numpy_array(cell_slaves, slaves[gi]):
                     global_slaves.append(gi)
             # Loop over the slaves
             for s_0 in range(len(global_slaves)):

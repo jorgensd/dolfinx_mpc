@@ -5,6 +5,7 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "utils.h"
+#include <Eigen/Dense>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
@@ -15,11 +16,12 @@
 
 using namespace dolfinx_mpc;
 
-std::pair<std::vector<std::int64_t>,
-          std::pair<std::vector<std::int64_t>, std::vector<std::int64_t>>>
+std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+          std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+                    Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>>
 dolfinx_mpc::locate_cells_with_dofs(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-    std::vector<std::int64_t> dofs)
+    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> dofs)
 {
   const dolfinx::mesh::Mesh& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
@@ -28,13 +30,14 @@ dolfinx_mpc::locate_cells_with_dofs(
   std::array<std::int64_t, 2> local_range = dofmap.index_map->local_range();
 
   /// Data structures
-  std::vector<std::int64_t> cell_to_dofs;
-  std::vector<std::int64_t> cell_to_dofs_offsets;
-  std::vector<std::int64_t> cells_with_dofs;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cell_to_dofs;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cell_to_dofs_offsets;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cells_with_dofs;
 
   /// Loop over all cells on this process
-  std::int64_t j = 0;
-  cell_to_dofs_offsets.push_back(j);
+  std::int64_t offset_index = 0;
+  cell_to_dofs_offsets.conservativeResize(1);
+  cell_to_dofs_offsets.tail(1) = offset_index;
   for (auto& cell : dolfinx::mesh::MeshRange(mesh, mesh.topology().dim()))
   {
     const int cell_index = cell.index();
@@ -42,25 +45,29 @@ dolfinx_mpc::locate_cells_with_dofs(
     bool in_cell = false;
     for (Eigen::Index i = 0; i < cell_dofs.size(); ++i)
     {
-      for (auto gdof : dofs)
+      for (Eigen::Index j = 0; j < dofs.size(); ++j)
       {
         /// Check if dof is owned by the process and if is on the cell
-        if ((local_range[0] <= gdof) && (gdof < local_range[1])
-            && (unsigned(cell_dofs[i] + local_range[0]) == gdof))
+        if ((local_range[0] <= dofs[j]) && (dofs[j] < local_range[1])
+            && (unsigned(cell_dofs[i] + local_range[0]) == dofs[j]))
         {
-          cell_to_dofs.push_back(gdof);
-          j++;
+          cell_to_dofs.conservativeResize(cell_to_dofs.size() + 1);
+          cell_to_dofs.tail(1) = dofs[j];
+          offset_index++;
           in_cell = true;
         }
       }
     }
     if (in_cell)
     {
-      cells_with_dofs.push_back(cell_index);
-      cell_to_dofs_offsets.push_back(j);
+      cells_with_dofs.conservativeResize(cells_with_dofs.size() + 1);
+      cells_with_dofs.tail(1) = cell_index;
+      cell_to_dofs_offsets.conservativeResize(cell_to_dofs_offsets.size() + 1);
+      cell_to_dofs_offsets.tail(1) = offset_index;
     }
   }
-  std::pair<std::vector<std::int64_t>, std::vector<std::int64_t>>
+  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+            Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
       cells_to_dofs_map(cell_to_dofs, cell_to_dofs_offsets);
 
   return std::make_pair(cells_with_dofs, cells_to_dofs_map);
