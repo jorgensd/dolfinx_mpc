@@ -2,7 +2,7 @@ test:
   stage: test
   image:
     name: quay.io/fenicsproject/dolfinx:dev-env-real
-        entrypoint: [""]
+    entrypoint: [""]
   before_script:
     - pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
     - pip3 install --no-cache-dir git+https://github.com/FEniCS/ufl.git
@@ -29,7 +29,7 @@ test:
 
 
 # name: quay.io/fenicsproject/dolfinx:real
-#     entrypoint: [""]
+# entrypoint: [""]
 #   before_script:
 #     - mkdir -p build
 #     - cd build
