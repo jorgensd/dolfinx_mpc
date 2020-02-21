@@ -48,6 +48,50 @@ set_package_properties(Eigen3 PROPERTIES TYPE REQUIRED
   DESCRIPTION "Lightweight C++ template library for linear algebra"
   URL "http://eigen.tuxfamily.org")
 
+# Check for required package UFC (part of ffcx)
+MESSAGE(STATUS "Asking Python module FFCX for location of UFC...")
+  find_package(PythonInterp 3 REQUIRED)
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx, sys; sys.stdout.write(ffcx.codegeneration.get_include_path())"
+    OUTPUT_VARIABLE UFC_INCLUDE_DIR
+    )
+
+  if (UFC_INCLUDE_DIR)
+    set(UFC_INCLUDE_DIRS ${UFC_INCLUDE_DIR} CACHE STRING "Where to find ufc.h and ufc_geometry.h")
+
+    execute_process(
+      COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx, sys; sys.stdout.write(ffcx.__version__)"
+      OUTPUT_VARIABLE UFC_VERSION
+      )
+
+    if (UFC_FIND_VERSION)
+      # Check if version found is >= required version
+      if (NOT "${UFC_VERSION}" VERSION_LESS "${UFC_FIND_VERSION}")
+        set(UFC_VERSION_OK TRUE)
+      endif()
+    else()
+      # No specific version requested
+      set(UFC_VERSION_OK TRUE)
+    endif()
+  endif()
+
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx.codegeneration, sys; sys.stdout.write(ffcx.codegeneration.get_signature())"
+    OUTPUT_VARIABLE UFC_SIGNATURE
+  )
+
+mark_as_advanced(UFC_VERSION UFC_INCLUDE_DIRS UFC_SIGNATURE UFC_VERSION_OK)
+# Standard package handling
+find_package_handle_standard_args(UFC
+                                  "UFC could not be found."
+                                  UFC_INCLUDE_DIRS
+                                  UFC_VERSION
+                                  UFC_VERSION_OK
+                                  UFC_SIGNATURE)
+set_package_properties(UFC PROPERTIES TYPE REQUIRED
+  DESCRIPTION "Unified language for form-compilers (part of FFC-X)"
+  URL "https://github.com/fenics/ffcx")
+
 # Check for required package DOLFINX
 find_package(DOLFINX REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
@@ -56,8 +100,17 @@ set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     PURPOSE "Main dependency of library")
 
 feature_summary(WHAT ALL)
+
+
 #------------------------------------------------------------------------------
 # Installation of DOLFIN_MPC library
+
+add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
+
+if (UFC_FOUND)
+    target_include_directories(dolfinx_mpc PRIVATE ${UFC_INCLUDE_DIRS})
+endif()
+
 
 # Delcare the library (target)
 
@@ -65,7 +118,6 @@ feature_summary(WHAT ALL)
 include(GNUInstallDirs)
 
 #------------------------------------------------------------------------------
-add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
 
 install(FILES dolfinx_mpc.h  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
 install(FILES MultiPointConstraint.h utils.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
