@@ -33,6 +33,19 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     pos = c2v.offsets()
     geom = V.mesh.geometry.points
 
+    # Get cell orientation data
+    edge_reflections = V.mesh.topology.get_all_edge_reflections()
+    face_reflections = V.mesh.topology.get_all_face_reflections()
+    face_rotations = V.mesh.topology.get_all_face_rotations()
+    # FIXME: Need to get all of this data indep of gdim
+    facet_permutations = numpy.array([],dtype=numpy.uint8)
+    # FIXME: Numba does not support edge reflections
+    edge_reflections = numpy.array([],dtype=numpy.bool)
+    permutation_data = (edge_reflections, face_reflections,
+                        face_rotations, facet_permutations)
+    # FIXME: should be local facet index
+    facet_index = numpy.array([], dtype=numpy.int32)
+
     # Generate ufc_form
     ufc_form = dolfinx.jit.ffcx_jit(form)
     kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
@@ -58,7 +71,8 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     gdim = V.mesh.geometry.dim
 
-    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
+    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim, facet_index,
+                          permutation_data,
                           dofs, num_dofs_per_element, mpc_data,
                           ghost_info, bcs)
     A.assemble()
@@ -102,19 +116,22 @@ def in_numpy_array(array, value):
 
 
 @numba.njit
-def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
+def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
+                          permutation_data, dofmap,
                           num_dofs_per_element, mpc, ghost_info, bcs):
     ffi_fb = ffi.from_buffer
 
     (slaves, masters, coefficients, offsets, slave_cells,
      cell_to_slave, cell_to_slave_offset) = mpc
     (local_range, global_indices) = ghost_info
+    (edge_reflections, face_reflections,
+     face_rotations, facet_permutations) = permutation_data
+
     local_size = local_range[1]-local_range[0]
     connections, pos = mesh
-    orientation = numpy.array([0], dtype=numpy.int32)
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
-    # FIXME: Need to determine coeffs and constants from input data
 
+    # FIXME: Need to determine coeffs and constants from input data
     coeffs = numpy.zeros(0, dtype=PETSc.ScalarType)
     constants = numpy.zeros(0, dtype=PETSc.ScalarType)
     A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element),
@@ -143,12 +160,16 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
         for j in range(num_vertices):
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
-
+        face_reflection = face_reflections[i,:]
+        # FIXME: Numba does not support edge reflections
+        edge_reflection = edge_reflections #edge_reflections[i,:]
+        face_rotation = face_rotations[i,:]
         A_local.fill(0.0)
         kernel(ffi_fb(A_local), ffi_fb(coeffs),
                ffi_fb(constants),
-               ffi_fb(geometry), ffi_fb(orientation),
-               ffi_fb(orientation))
+               ffi_fb(geometry), ffi_fb(facet_index), ffi_fb(facet_permutations),
+               ffi_fb(face_reflection), ffi_fb(edge_reflection),
+               ffi_fb(face_rotation))
 
         local_pos = dofmap[num_dofs_per_element * i:
                            num_dofs_per_element * i + num_dofs_per_element]
