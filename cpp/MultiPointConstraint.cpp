@@ -150,7 +150,7 @@ MultiPointConstraint::generate_index_map()
   std::shared_ptr<dolfinx::common::IndexMap> new_index_map
       = std::make_shared<dolfinx::common::IndexMap>(
           mesh.mpi_comm(), index_map->size_local(), new_ghosts,
-          index_map->block_size);
+          index_map->block_size());
   return new_index_map;
 }
 

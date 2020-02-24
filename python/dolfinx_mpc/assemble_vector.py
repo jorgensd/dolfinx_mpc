@@ -23,6 +23,19 @@ def assemble_vector(form, multipointconstraint,
     geom = V.mesh.geometry.points
     dofs = V.dofmap.dof_array
 
+    # Get cell orientation data
+    edge_reflections = V.mesh.topology.get_edge_reflections()
+    face_reflections = V.mesh.topology.get_face_reflections()
+    face_rotations = V.mesh.topology.get_face_rotations()
+    # FIXME: Need to get all of this data indep of gdim
+    facet_permutations = numpy.array([], dtype=numpy.uint8)
+    # FIXME: Numba does not support edge reflections
+    edge_reflections = numpy.array([], dtype=numpy.bool)
+    permutation_data = (edge_reflections, face_reflections,
+                        face_rotations, facet_permutations)
+    # FIXME: should be local facet index
+    facet_index = numpy.array([], dtype=numpy.int32)
+
     # Data from multipointconstraint
     masters, coefficients = multipointconstraint.masters_and_coefficients()
     cell_to_slave, c2s_offset = multipointconstraint.cell_to_slave_mapping()
@@ -46,22 +59,27 @@ def assemble_vector(form, multipointconstraint,
     with vector.localForm() as b:
         b.set(0.0)
         assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, gdim,
+                              facet_index, permutation_data,
                               dofs, num_dofs_per_element, mpc_data,
                               ghost_info, (bc_dofs, bc_values))
     return vector
 
 
 @numba.njit
-def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
-                          num_dofs_per_element, mpc, ghost_info, bcs):
+def assemble_vector_numba(b, kernel, mesh, x, gdim, facet_index,
+                          permutation_data, dofmap, num_dofs_per_element,
+                          mpc, ghost_info, bcs):
     """Assemble provided FFC/UFC kernel over a mesh into the array b"""
+    ffi_fb = ffi.from_buffer
     (bcs, values) = bcs
     (slaves, masters, coefficients, offsets,
      slave_cells, cell_to_slave, cell_to_slave_offset) = mpc
+    (edge_reflections, face_reflections,
+     face_rotations, facet_permutations) = permutation_data
+
     local_range, global_indices, ghosts = ghost_info
 
     connections, pos = mesh
-    orientation = numpy.array([0], dtype=numpy.int32)
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
     coeffs = numpy.zeros(1, dtype=PETSc.ScalarType)
     constants = numpy.zeros(1, dtype=PETSc.ScalarType)
@@ -75,11 +93,20 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
         b_local.fill(0.0)
-        kernel(ffi.from_buffer(b_local), ffi.from_buffer(coeffs),
-               ffi.from_buffer(constants),
-               ffi.from_buffer(geometry), ffi.from_buffer(orientation),
-               ffi.from_buffer(orientation))
-        # if len(bcs) > 1:
+        # Cell orientation data
+        face_reflection = face_reflections[i, :]
+        # FIXME: Numba does not support edge reflections
+        edge_reflection = edge_reflections  # edge_reflections[i,:]
+        face_rotation = face_rotations[i, :]
+
+        kernel(ffi_fb(b_local), ffi_fb(coeffs),
+               ffi_fb(constants),
+               ffi_fb(geometry), ffi_fb(facet_index),
+               ffi_fb(facet_permutations), ffi_fb(face_reflection),
+               ffi_fb(edge_reflection), ffi_fb(face_rotation))
+
+        # FIXME: Add support for bcs on master dof
+        # if len(bcs) > 0:
         #     for k in range(3):
         #         if bcs[dofmap[i * 3 + k]]:
         #             b_local[k] = 0
@@ -104,17 +131,9 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
                                        offsets[slave_index+1]]
                 cell_coeffs = coefficients[offsets[slave_index]:
                                            offsets[slave_index+1]]
-                # Variable for local position of slave dof
-                # slave_local = 0
-                # for k in range(len(glob)):
-                #     if global_indices[glob[k]] == slaves[slave_index]:
-                #         slave_local = k
 
                 # Loop through each master dof to take individual contributions
                 for m_0 in range(len(cell_masters)):
-                    if slaves[slave_index] == cell_masters[m_0]:
-                        print("No slaves (since slave is same as master dof)")
-                        continue
 
                     # Find local dof and add contribution to another place
                     for k in range(len(glob)):
@@ -140,6 +159,7 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, dofmap,
         for j in range(num_dofs_per_element):
             b[dofmap[i * num_dofs_per_element + j]] += b_local[j]
 
+    # FIXME: Add support for bcs on master dofs
     # for k in range(len(bcs)):
     #     if bcs[k]:
 

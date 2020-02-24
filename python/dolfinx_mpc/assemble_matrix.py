@@ -33,6 +33,19 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     pos = c2v.offsets()
     geom = V.mesh.geometry.points
 
+    # Get cell orientation data
+    edge_reflections = V.mesh.topology.get_edge_reflections()
+    face_reflections = V.mesh.topology.get_face_reflections()
+    face_rotations = V.mesh.topology.get_face_rotations()
+    # FIXME: Need to get all of this data indep of gdim
+    facet_permutations = numpy.array([], dtype=numpy.uint8)
+    # FIXME: Numba does not support edge reflections
+    edge_reflections = numpy.array([], dtype=numpy.bool)
+    permutation_data = (edge_reflections, face_reflections,
+                        face_rotations, facet_permutations)
+    # FIXME: should be local facet index
+    facet_index = numpy.array([], dtype=numpy.int32)
+
     # Generate ufc_form
     ufc_form = dolfinx.jit.ffcx_jit(form)
     kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
@@ -58,36 +71,35 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     gdim = V.mesh.geometry.dim
 
-    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
+    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim, facet_index,
+                          permutation_data,
                           dofs, num_dofs_per_element, mpc_data,
                           ghost_info, bcs)
     A.assemble()
 
-    # Freeze slave dofs similar to setting zero dirichlet
-    # Setting 0 Dirichlet in original matrix for slave diagonal
-    freeze_slave_dofs(A.handle, slaves, masters, offsets)
+    # Add one on diagonal for diriclet bc and slave dofs
+    add_diagonal(A.handle, slaves)
+    add_diagonal(A.handle, bcs)
     A.assemble()
     return A
 
 
 @numba.njit
-def freeze_slave_dofs(A, slaves, masters, offsets):
+def add_diagonal(A, dofs):
     """
-    Insert 1 on the diagonal for each slave dof such that the
-    matrix can be inverted
+    Insert 1 on the diagonal for each dof
     """
     ffi_fb = ffi.from_buffer
-    A_slave = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
-    for i, slave in enumerate(slaves):
-        A_slave[0, 0] = 1
-        slave_pos = numpy.array([slave], dtype=numpy.int32)
+    A_diag = numpy.ones((1, 1), dtype=PETSc.ScalarType)
+    for i, dof in enumerate(dofs):
+        dof_pos = numpy.array([dof], dtype=numpy.int32)
         # This is done on every processors, that's why we use
         # PETSC.InsertMode.INSERT
-        ierr_slave = set_values(A, 1, ffi_fb(slave_pos),
-                                1, ffi_fb(slave_pos),
-                                ffi_fb(A_slave), insert)
-        assert(ierr_slave == 0)
-    sink(A_slave, slave_pos)
+        ierr_diag = set_values(A, 1, ffi_fb(dof_pos),
+                               1, ffi_fb(dof_pos),
+                               ffi_fb(A_diag), insert)
+        assert(ierr_diag == 0)
+    sink(A_diag, dof_pos)
 
 
 @numba.njit
@@ -102,19 +114,22 @@ def in_numpy_array(array, value):
 
 
 @numba.njit
-def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
+def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
+                          permutation_data, dofmap,
                           num_dofs_per_element, mpc, ghost_info, bcs):
     ffi_fb = ffi.from_buffer
 
     (slaves, masters, coefficients, offsets, slave_cells,
      cell_to_slave, cell_to_slave_offset) = mpc
     (local_range, global_indices) = ghost_info
+    (edge_reflections, face_reflections,
+     face_rotations, facet_permutations) = permutation_data
+
     local_size = local_range[1]-local_range[0]
     connections, pos = mesh
-    orientation = numpy.array([0], dtype=numpy.int32)
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
-    # FIXME: Need to determine coeffs and constants from input data
 
+    # FIXME: Need to determine coeffs and constants from input data
     coeffs = numpy.zeros(0, dtype=PETSc.ScalarType)
     constants = numpy.zeros(0, dtype=PETSc.ScalarType)
     A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element),
@@ -143,18 +158,25 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
         for j in range(num_vertices):
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
-
+        # Cellwise orientation data
+        face_reflection = face_reflections[i, :]
+        # FIXME: Numba does not support edge reflections
+        edge_reflection = edge_reflections  # edge_reflections[i,:]
+        face_rotation = face_rotations[i, :]
         A_local.fill(0.0)
         kernel(ffi_fb(A_local), ffi_fb(coeffs),
                ffi_fb(constants),
-               ffi_fb(geometry), ffi_fb(orientation),
-               ffi_fb(orientation))
+               ffi_fb(geometry), ffi_fb(facet_index),
+               ffi_fb(facet_permutations),
+               ffi_fb(face_reflection), ffi_fb(edge_reflection),
+               ffi_fb(face_rotation))
 
         local_pos = dofmap[num_dofs_per_element * i:
                            num_dofs_per_element * i + num_dofs_per_element]
-        if len(bcs) > 1:
+        if len(bcs) > 0:
             for k in range(len(local_pos)):
-                if bcs[local_range[0] + local_pos[k]]:
+                is_bc_dof = in_numpy_array(bcs, local_pos[k])
+                if is_bc_dof:
                     A_local[k, :] = 0
 
         if in_numpy_array(slave_cells, i):
@@ -307,8 +329,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, dofmap,
                                     ffi_fb(A_local), mode)
         assert(ierr_loc == 0)
 
-    # Insert actual Dirichlet condition
-    # if len(bcs)>1:
+    # FIXME: add handling of Dirichlet condition on master nodes
+    # if len(bcs)>0:
     #     bc_value = numpy.array([[1]], dtype=PETSc.ScalarType)
     #     for i in range(len(bcs)):
     #         if bcs[i]:

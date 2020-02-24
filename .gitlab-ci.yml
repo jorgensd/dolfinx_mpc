@@ -1,9 +1,22 @@
 test:
   stage: test
   image:
-    name: quay.io/fenicsproject/dolfinx:real
+    name: quay.io/fenicsproject/dolfinx:dev-env-real
     entrypoint: [""]
   before_script:
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ufl.git
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git
+    - git clone https://github.com/fenics/dolfinx.git
+    - cd dolfinx
+    - git checkout mscroggs/all_orientation_data
+    - mkdir build
+    - cd build
+    - cmake -G Ninja ../cpp
+    - ninja ${MAKEFLAGS} install
+    - cd ../python
+    - pip3 install .
+    - cd ../../
     - mkdir -p build
     - cd build
     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
@@ -18,3 +31,14 @@ test:
     - mpirun -n 2 python3 -m pytest .
     - mpirun -n 3 python3 -m pytest .
     - mpirun -n 4 python3 -m pytest .
+
+
+# name: quay.io/fenicsproject/dolfinx:real
+# entrypoint: [""]
+#   before_script:
+#     - mkdir -p build
+#     - cd build
+#     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+#     - ninja -j3 install
+#     - cd ../python
+#     - pip3 install -e . --upgrade
