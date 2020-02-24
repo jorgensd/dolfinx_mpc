@@ -66,8 +66,9 @@ def assemble_vector(form, multipointconstraint,
 
 
 @numba.njit
-def assemble_vector_numba(b, kernel, mesh, x, gdim, facet_index, permutation_data,
-                          dofmap, num_dofs_per_element, mpc, ghost_info, bcs):
+def assemble_vector_numba(b, kernel, mesh, x, gdim, facet_index,
+                          permutation_data, dofmap, num_dofs_per_element,
+                          mpc, ghost_info, bcs):
     """Assemble provided FFC/UFC kernel over a mesh into the array b"""
     ffi_fb = ffi.from_buffer
     (bcs, values) = bcs
