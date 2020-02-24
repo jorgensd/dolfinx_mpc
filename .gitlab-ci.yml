@@ -25,7 +25,6 @@ test:
     - pip3 install -e . --upgrade
 
   script:
-    - cd python
     - flake8 .
     - cd tests
     - python3 -m pytest .
