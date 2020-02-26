@@ -30,10 +30,16 @@ def demo_elasticity(mesh, master_space, slave_space):
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
     f = ufl.as_vector((-5*x[1], x[0]))
-    # d = dolfinx.Constant(mesh, 2)
-    # f = d*dolfinx.Function(V)
+    d = dolfinx.Constant(mesh, 2)
+    g = dolfinx.Function(V)
 
-    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    def expr(x):
+        values = np.empty((2, x.shape[1]))
+        values[0] = x[0]
+        values[1] = 0.73*x[1]
+        return values
+    g.interpolate(expr)
+    a = d*ufl.inner(g, g)*ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     lhs = ufl.inner(f, v)*ufl.dx
 
     # Create MPC
@@ -99,6 +105,7 @@ def demo_elasticity(mesh, master_space, slave_space):
 
     # Generate reference matrices and unconstrained solution
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
+
     A_org.assemble()
     L_org = dolfinx.fem.assemble_vector(lhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])

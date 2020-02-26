@@ -55,12 +55,19 @@ def assemble_vector(form, multipointconstraint,
 
     ufc_form = dolfinx.jit.ffcx_jit(form)
 
+    # Pack constants and coefficients
+    cpp_form = dolfinx.Form(form)._cpp_object
+    form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
+    form_consts = numpy.array(dolfinx.cpp.fem.pack_constants(cpp_form),
+                              dtype=numpy.float64)
+
     kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
     gdim = V.mesh.geometry.dim
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
     with vector.localForm() as b:
         b.set(0.0)
         assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, gdim,
+                              form_coeffs, form_consts,
                               facet_index, permutation_data,
                               dofs, num_dofs_per_element, mpc_data,
                               ghost_info, (bc_dofs, bc_values))
@@ -68,7 +75,8 @@ def assemble_vector(form, multipointconstraint,
 
 
 @numba.njit
-def assemble_vector_numba(b, kernel, mesh, x, gdim, facet_index,
+def assemble_vector_numba(b, kernel, mesh, x, gdim,
+                          coeffs, constants, facet_index,
                           permutation_data, dofmap, num_dofs_per_element,
                           mpc, ghost_info, bcs):
     """Assemble provided FFC/UFC kernel over a mesh into the array b"""
@@ -83,8 +91,6 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, facet_index,
     local_size = local_range[1] - local_range[0]
     connections, pos = mesh
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
-    coeffs = numpy.zeros(1, dtype=PETSc.ScalarType)
-    constants = numpy.ones(1, dtype=PETSc.ScalarType)
     b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
     index = 0
     for i, cell in enumerate(pos[:-1]):
@@ -94,17 +100,13 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim, facet_index,
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
         b_local.fill(0.0)
-        # Cell orientation data
-        face_reflection = face_reflections[i, :]
-        # FIXME: Numba does not support edge reflections
-        edge_reflection = edge_reflections  # edge_reflections[i,:]
-        face_rotation = face_rotations[i, :]
 
-        kernel(ffi_fb(b_local), ffi_fb(coeffs),
+        # FIXME: Numba does not support edge reflections
+        kernel(ffi_fb(b_local), ffi_fb(coeffs[i, :]),
                ffi_fb(constants),
                ffi_fb(geometry), ffi_fb(facet_index),
-               ffi_fb(facet_permutations), ffi_fb(face_reflection),
-               ffi_fb(edge_reflection), ffi_fb(face_rotation))
+               ffi_fb(facet_permutations), ffi_fb(face_reflections[i, :]),
+               ffi_fb(edge_reflections), ffi_fb(face_rotations[i, :]))
 
         # FIXME: Add support for bcs on master dof
         # if len(bcs) > 0:

@@ -21,11 +21,17 @@ def test_pipeline(master_point):
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    f = dolfinx.Constant(mesh, 1)
-    # x = ufl.SpatialCoordinate(mesh)
-    # f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
-    a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
-    lhs = ufl.inner(f, v)*ufl.dx
+    d = dolfinx.Constant(mesh, 1.5)
+    c = dolfinx.Constant(mesh, 2)
+    x = ufl.SpatialCoordinate(mesh)
+    f = c*ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
+    g = dolfinx.Function(V)
+    g.interpolate(lambda x: np.sin(x[0])*x[1])
+    h = dolfinx.Function(V)
+    h.interpolate(lambda x: 2+x[1]*x[0])
+
+    a = d*g*ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
+    lhs = h*ufl.inner(f, v)*ufl.dx
     # Generate reference matrices
     A_org = dolfinx.fem.assemble_matrix(a)
     A_org.assemble()
@@ -103,4 +109,5 @@ def test_pipeline(master_point):
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
