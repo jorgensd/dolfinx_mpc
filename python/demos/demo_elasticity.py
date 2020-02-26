@@ -6,22 +6,21 @@ from petsc4py import PETSc
 import dolfinx
 import dolfinx.io
 import dolfinx_mpc
+import dolfinx_mpc.utils
 import ufl
 
 
 def demo_elasticity(mesh, master_space, slave_space):
-    # Create mesh and function space
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
-
-    def boundary(x):
-        return np.isclose(x.T, [0, 0, 0]).all(axis=1)
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
+    def boundary(x):
+        return np.isclose(x.T, [0, 0, 0]).all(axis=1)
     bdofsV = dolfinx.fem.locate_dofs_geometrical(V, boundary)
     bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV)
     bcs = [bc]
@@ -36,24 +35,6 @@ def demo_elasticity(mesh, master_space, slave_space):
 
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     lhs = ufl.inner(f, v)*ufl.dx
-
-    # Generate reference matrices and unconstrained solution
-    A1 = dolfinx.fem.assemble_matrix(a, bcs)
-    A1.assemble()
-    L1 = dolfinx.fem.assemble_vector(lhs)
-    dolfinx.fem.apply_lifting(L1, [a], [bcs])
-    L1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                   mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L1, bcs)
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
-    solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
-    solver.setOperators(A1)
-    u_ = dolfinx.Function(V)
-    solver.solve(L1, u_.vector)
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_.xdmf").write(u_)
 
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
@@ -75,24 +56,27 @@ def demo_elasticity(mesh, master_space, slave_space):
         print("Runtime: {0:.2e}".format(end-start))
     for i in range(2):
         b = dolfinx_mpc.assemble_vector(lhs, mpc)
+
+    # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
+    # Solve Linear problem
     solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
-
-    # Solve
     uh = b.copy()
-    uh.set(1)
+    uh.set(0)
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
+    # Back substitute to slave dofs
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+
     # Create functionspace and function for mpc vector
     modified_dofmap = dolfinx.cpp.fem.DofMap(V.dofmap.dof_layout,
                                              mpc.index_map(),
@@ -106,81 +90,49 @@ def demo_elasticity(mesh, master_space, slave_space):
     u_h.vector.setArray(uh.array)
     dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
 
-    # Generate global K
-    K = np.zeros((V.dim(), V.dim() - len(slaves)))
-    for i in range(K.shape[0]):
-        if i in slaves:
-            index = np.argwhere(slaves == i)[0, 0]
-            masters_index = masters[offsets[index]: offsets[index+1]]
-            coeffs_index = coeffs[offsets[index]: offsets[index+1]]
-            for master, coeff in zip(masters_index, coeffs_index):
-                count = sum(master > np.array(slaves))
-                K[i, master - count] = coeff
-        else:
-            count = sum(i > slaves)
-            K[i, i-count] = 1
+    # Transfer data from the MPC problem to numpy arrays for comparison
+    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
-    vec = np.zeros(V.dim())
-    mpc_vec = np.zeros(V.dim())
-    vec[L1.owner_range[0]:L1.owner_range[1]] += L1.array
-    vec = sum(dolfinx.MPI.comm_world.allgather(
-        np.array(vec, dtype=np.float32)))
-    mpc_vec[b.owner_range[0]:b.owner_range[1]] += b.array
-    mpc_vec = sum(dolfinx.MPI.comm_world.allgather(
-        np.array(mpc_vec, dtype=np.float32)))
-    reduced_L = np.dot(K.T, vec)
+    # Solve the MPC problem using a global transformation matrix
+    # and numpy solvers to get reference values
 
-    count = 0
-    for i in range(V.dim()):
-        if i in slaves:
-            count += 1
-            continue
-        assert(np.isclose(reduced_L[i-count], mpc_vec[i]))
+    # Generate reference matrices and unconstrained solution
+    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org.assemble()
+    L_org = dolfinx.fem.assemble_vector(lhs)
+    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                      mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(L_org, bcs)
+    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver.setType(PETSc.KSP.Type.PREONLY)
+    solver.getPC().setType(PETSc.PC.Type.LU)
+    solver.setOperators(A_org)
+    u_ = dolfinx.Function(V)
+    solver.solve(L_org, u_.vector)
+    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                          mode=PETSc.ScatterMode.FORWARD)
+    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_.xdmf").write(u_)
 
-    # Transfer original matrix to numpy
-    A_global = np.zeros((V.dim(), V.dim()))
-    for i in range(A1.getOwnershipRange()[0], A1.getOwnershipRange()[1]):
-        cols, vals = A1.getRow(i)
-        for col, val in zip(cols, vals):
-            A_global[i, col] = val
-    A_global = sum(dolfinx.MPI.comm_world.allgather(A_global))
+    # Create global transformation matrix
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+                                                       masters, coeffs,
+                                                       offsets)
+    # Create reduced A
+    A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-
-    # Transfer A to numpy matrix for comparison with globally built matrix
-    A_mpc_np = np.zeros((V.dim(), V.dim()))
-    for i in range(A.getOwnershipRange()[0], A.getOwnershipRange()[1]):
-        cols, vals = A.getRow(i)
-        # print("Line: ", i, " ", end="")
-        for col, val in zip(cols, vals):
-            A_mpc_np[i, col] = val
-
-    A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
-
-    # exit(1)
-    # Pad globally reduced system with 0 rows and columns for each slave entry
-    A_numpy_padded = np.zeros((V.dim(), V.dim()))
-    count = 0
-    for i in range(V.dim()):
-        if i in slaves:
-            A_numpy_padded[i, i] = 1
-            count += 1
-            continue
-        m = 0
-        for j in range(V.dim()):
-            if j in slaves:
-                m += 1
-                continue
-            else:
-                A_numpy_padded[i, j] = reduced_A[i-count, j-m]
-
-    # Check that all entities are close
-    assert np.allclose(A_mpc_np, A_numpy_padded)
-
-    # Compute globally reduced system and compare norms with A
+    # Created reduced L
+    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
+    reduced_L = np.dot(K.T, vec)
+    # Solve linear system
     d = np.linalg.solve(reduced_A, reduced_L)
+    # Back substitution to full solution vector
     uh_numpy = np.dot(K, d)
-    print("MPC", uh.array)
-    print("NUMPY", uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+
+    # Compare LHS, RHS and solution with reference values
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
 
 
