@@ -5,6 +5,8 @@ import dolfinx
 import dolfinx_mpc
 import ufl
 
+from utils import create_transformation_matrix
+
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
@@ -55,19 +57,8 @@ def test_mpc_assembly(master_point, degree, celltype):
             A_mpc_np[i, col] = val
     A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
-    # Generate global K matrix
-    K = np.zeros((V.dim(), V.dim() - len(slaves)))
-    for i in range(K.shape[0]):
-        if i in slaves:
-            index = np.argwhere(slaves == i)[0, 0]
-            masters_index = masters[offsets[index]: offsets[index+1]]
-            coeffs_index = coeffs[offsets[index]: offsets[index+1]]
-            for master, coeff in zip(masters_index, coeffs_index):
-                count = sum(master > np.array(slaves))
-                K[i, master - count] = coeff
-        else:
-            count = sum(i > slaves)
-            K[i, i-count] = 1
+    # Create global transformation matrix
+    K = create_transformation_matrix(V.dim(), slaves, masters, coeffs, offsets)
 
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))
@@ -151,19 +142,8 @@ def test_slave_on_same_cell(master_point, degree, celltype):
             A_mpc_np[i, col] = val
     A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
-    # Build global K matrix from slave_master_dict
-    K = np.zeros((V.dim(), V.dim()-len(slaves)))
-    for i in range(K.shape[0]):
-        if i in slaves:
-            index = np.argwhere(slaves == i)[0, 0]
-            masters_index = masters[offsets[index]: offsets[index+1]]
-            coeffs_index = coeffs[offsets[index]: offsets[index+1]]
-            for master, coeff in zip(masters_index, coeffs_index):
-                count = sum(master > np.array(slaves))
-                K[i, master - count] = coeff
-        else:
-            count = sum(i > slaves)
-            K[i, i-count] = 1
+    # Create global transformation matrix
+    K = create_transformation_matrix(V.dim(), slaves, masters, coeffs, offsets)
 
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))
