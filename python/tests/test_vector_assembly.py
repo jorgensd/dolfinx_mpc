@@ -25,10 +25,6 @@ def test_mpc_assembly(master_point, degree, celltype):
     # f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
     lhs = ufl.inner(f, v)*ufl.dx
 
-    L1 = dolfinx.fem.assemble_vector(lhs)
-    L1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                   mode=PETSc.ScatterMode.REVERSE)
-
     # Create multi point constraint using geometrical mappings
     dof_at = dolfinx_mpc.dof_close_to
     s_m_c = {lambda x: dof_at(x, [1, 0]):
@@ -46,25 +42,18 @@ def test_mpc_assembly(master_point, degree, celltype):
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
-    # Generate global K matrix
+    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+
+    # Reduce system with global matrix K after assembly
+    L_org = dolfinx.fem.assemble_vector(lhs)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                      mode=PETSc.ScatterMode.REVERSE)
+
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
                                                        masters, coeffs,
                                                        offsets)
 
-    vec = np.zeros(V.dim())
-    mpc_vec = np.zeros(V.dim())
-    vec[L1.owner_range[0]:L1.owner_range[1]] += L1.array
-    vec = sum(dolfinx.MPI.comm_world.allgather(
-        np.array(vec, dtype=np.float32)))
-    mpc_vec[b.owner_range[0]:b.owner_range[1]] += b.array
-    mpc_vec = sum(dolfinx.MPI.comm_world.allgather(
-        np.array(mpc_vec, dtype=np.float32)))
+    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
     reduced_L = np.dot(K.T, vec)
 
-    count = 0
-    for i in range(V.dim()):
-        if i in slaves:
-            count += 1
-            continue
-
-        assert(np.isclose(reduced_L[i-count], mpc_vec[i]))
+    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
