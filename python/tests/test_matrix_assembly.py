@@ -60,8 +60,6 @@ def test_mpc_assembly(master_point, degree, celltype):
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
                                                        masters, coeffs,
                                                        offsets)
-
-
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))
     for i in range(A1.getOwnershipRange()[0], A1.getOwnershipRange()[1]):

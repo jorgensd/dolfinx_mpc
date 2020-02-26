@@ -112,7 +112,6 @@ def demo_elasticity(mesh, master_space, slave_space):
                                                        masters, coeffs,
                                                        offsets)
 
-
     vec = np.zeros(V.dim())
     mpc_vec = np.zeros(V.dim())
     vec[L1.owner_range[0]:L1.owner_range[1]] += L1.array

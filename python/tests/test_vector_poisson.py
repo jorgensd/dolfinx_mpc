@@ -9,8 +9,6 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
 
-from utils import create_transformation_matrix
-
 
 @pytest.mark.parametrize("Nx", [4, 6])
 @pytest.mark.parametrize("Ny", [2, 3, 4])
@@ -117,7 +115,6 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
                                                        masters, coeffs,
                                                        offsets)
-
 
     vec = np.zeros(V.dim())
     mpc_vec = np.zeros(V.dim())
