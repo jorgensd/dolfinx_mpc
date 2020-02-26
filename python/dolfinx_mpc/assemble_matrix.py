@@ -59,6 +59,12 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
 
     # Generate matrix with MPC sparsity pattern
     cpp_form = dolfinx.Form(form)._cpp_object
+
+    # Pack constants and coefficients
+    form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
+    form_consts = numpy.array(dolfinx.cpp.fem.pack_constants(cpp_form),
+                              dtype=numpy.float64)
+
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
 
@@ -78,7 +84,8 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     gdim = V.mesh.geometry.dim
 
-    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim, facet_index,
+    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
+                          form_coeffs, form_consts, facet_index,
                           permutation_data,
                           dofs, num_dofs_per_element, mpc_data,
                           ghost_info, bc_array)
@@ -127,8 +134,8 @@ def in_numpy_array(array, value):
 
 
 @numba.njit
-def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
-                          permutation_data, dofmap,
+def assemble_matrix_numba(A, kernel, mesh, x, gdim, coeffs, constants,
+                          facet_index, permutation_data, dofmap,
                           num_dofs_per_element, mpc, ghost_info, bcs):
     ffi_fb = ffi.from_buffer
 
@@ -142,9 +149,6 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
     connections, pos = mesh
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
 
-    # FIXME: Need to determine coeffs and constants from input data
-    coeffs = numpy.zeros(0, dtype=PETSc.ScalarType)
-    constants = numpy.zeros(0, dtype=PETSc.ScalarType)
     A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element),
                           dtype=PETSc.ScalarType)
     # Rows taken over by master
@@ -171,18 +175,15 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
         for j in range(num_vertices):
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
-        # Cellwise orientation data
-        face_reflection = face_reflections[i, :]
+
         # FIXME: Numba does not support edge reflections
-        edge_reflection = edge_reflections  # edge_reflections[i,:]
-        face_rotation = face_rotations[i, :]
         A_local.fill(0.0)
-        kernel(ffi_fb(A_local), ffi_fb(coeffs),
+        kernel(ffi_fb(A_local), ffi_fb(coeffs[i, :]),
                ffi_fb(constants),
                ffi_fb(geometry), ffi_fb(facet_index),
                ffi_fb(facet_permutations),
-               ffi_fb(face_reflection), ffi_fb(edge_reflection),
-               ffi_fb(face_rotation))
+               ffi_fb(face_reflections[i, :]), ffi_fb(edge_reflections),
+               ffi_fb(face_rotations[i, :]))
 
         local_pos = dofmap[num_dofs_per_element * i:
                            num_dofs_per_element * i + num_dofs_per_element]
