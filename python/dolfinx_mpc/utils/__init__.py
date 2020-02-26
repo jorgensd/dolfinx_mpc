@@ -8,4 +8,6 @@
 # flake8: noqa
 
 
-from .utils import create_transformation_matrix
+from .utils import (create_transformation_matrix, PETScVector_to_global_numpy,
+                    PETScMatrix_to_global_numpy, compare_vectors,
+                    compare_matrices)
