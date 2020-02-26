@@ -26,6 +26,7 @@ dolfinx_mpc::locate_cells_with_dofs(
   const dolfinx::mesh::Mesh& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
   std::array<std::int64_t, 2> local_range = dofmap.index_map->local_range();
+  const int block_size = dofmap.index_map->block_size();
 
   /// Data structures
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cell_to_dofs;
@@ -46,8 +47,10 @@ dolfinx_mpc::locate_cells_with_dofs(
       for (Eigen::Index j = 0; j < dofs.size(); ++j)
       {
         /// Check if dof is owned by the process and if is on the cell
-        if ((local_range[0] <= dofs[j]) && (dofs[j] < local_range[1])
-            && (unsigned(cell_dofs[i] + local_range[0]) == dofs[j]))
+        if ((local_range[0] * block_size <= dofs[j])
+            && (dofs[j] < block_size * local_range[1])
+            && (unsigned(cell_dofs[i] + block_size * local_range[0])
+                == dofs[j]))
         {
           cell_to_dofs.conservativeResize(cell_to_dofs.size() + 1);
           cell_to_dofs.tail(1) = dofs[j];

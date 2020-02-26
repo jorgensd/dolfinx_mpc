@@ -17,7 +17,13 @@ def sink(*args):
     pass
 
 
-def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
+def assemble_matrix(form, multipointconstraint, bcs=None):
+    bc_array = numpy.array([])
+    if bcs is not None:
+        for bc in bcs:
+            # Extract local index of possible sub space
+            bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
+
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() ==
            form.arguments()[1].ufl_function_space())
@@ -25,7 +31,8 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     dofmap = V.dofmap
     dofs = dofmap.dof_array
     indexmap = dofmap.index_map
-    ghost_info = (indexmap.local_range, indexmap.indices(True))
+    ghost_info = (indexmap.local_range, indexmap.block_size,
+                  indexmap.indices(True))
 
     # Get data from mesh
     c2v = V.mesh.topology.connectivity(V.mesh.topology.dim, 0)
@@ -54,9 +61,9 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     cpp_form = dolfinx.Form(form)._cpp_object
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
+
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
-
     # Unravel data from MPC
     slave_cells = multipointconstraint.slave_cells()
     masters, coefficients = multipointconstraint.masters_and_coefficients()
@@ -74,12 +81,16 @@ def assemble_matrix(form, multipointconstraint, bcs=numpy.array([])):
     assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim, facet_index,
                           permutation_data,
                           dofs, num_dofs_per_element, mpc_data,
-                          ghost_info, bcs)
+                          ghost_info, bc_array)
     A.assemble()
 
     # Add one on diagonal for diriclet bc and slave dofs
     add_diagonal(A.handle, slaves)
-    add_diagonal(A.handle, bcs)
+    A.assemble()
+    if bcs is not None:
+        if cpp_form.function_space(0).id == cpp_form.function_space(1).id:
+            dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_space(0),
+                                         bcs, 1.0)
     A.assemble()
     return A
 
@@ -107,10 +118,12 @@ def in_numpy_array(array, value):
     """
     Convenience function replacing "value in array" for numpy arrays in numba
     """
+    in_array = False
     for item in array:
         if item == value:
-            return True
-    return False
+            in_array = True
+            break
+    return in_array
 
 
 @numba.njit
@@ -121,7 +134,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
 
     (slaves, masters, coefficients, offsets, slave_cells,
      cell_to_slave, cell_to_slave_offset) = mpc
-    (local_range, global_indices) = ghost_info
+    (local_range, block_size, global_indices) = ghost_info
     (edge_reflections, face_reflections,
      face_rotations, facet_permutations) = permutation_data
 
@@ -178,7 +191,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
                 is_bc_dof = in_numpy_array(bcs, local_pos[k])
                 if is_bc_dof:
                     A_local[k, :] = 0
-
+                    A_local[:, k] = 0
         if in_numpy_array(slave_cells, i):
             A_local_copy = A_local.copy()
             cell_slaves = cell_to_slave[cell_to_slave_offset[index]:
@@ -199,18 +212,13 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
                 # Variable for local position of slave dof
                 slave_local = 0
                 for k in range(len(local_pos)):
-                    if local_pos[k] + local_range[0] == slaves[slave_index]:
+                    g_pos = local_pos[k] + block_size*local_range[0]
+                    if g_pos == slaves[slave_index]:
                         slave_local = k
 
                 # Loop through each master dof to take individual contributions
                 for m_0 in range(len(cell_masters)):
                     ce = cell_coeffs[m_0]
-
-                    # Special case if master is the same as slave,
-                    # aka nothing should be done
-                    if slaves[slave_index] == cell_masters[m_0]:
-                        print("No slaves (since slave is same as master dof)")
-                        continue
 
                     # Reset local contribution matrices
                     A_row.fill(0.0)
@@ -240,7 +248,7 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
                         # Find local index of the other slave
                         o_slave_local = -1
                         for k in range(len(local_pos)):
-                            l0 = local_range[0]
+                            l0 = block_size * local_range[0]
                             if local_pos[k] + l0 == slaves[other_slave]:
                                 o_slave_local = k
                                 break
@@ -272,16 +280,18 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
                                                        1, ffi_fb(m0_index),
                                                        ffi_fb(A_m1m0), mode)
                                 assert(ierr_m1m0 == 0)
+
                     # Add slave rows to master column
                     global_pos = numpy.zeros(local_pos.size, dtype=numpy.int32)
                     # Map ghosts to global index and slave to master
                     for (h, g) in enumerate(local_pos):
-                        if g >= local_size:
+                        if g >= block_size * local_size:
                             global_pos[h] = global_indices[g]
                         else:
-                            global_pos[h] = g + local_range[0]
+                            global_pos[h] = g + block_size*local_range[0]
                     global_pos[slave_local] = cell_masters[m_0]
                     m0_index[0] = cell_masters[m_0]
+
                     ierr_row = set_values(A, num_dofs_per_element,
                                           ffi_fb(global_pos),
                                           1, ffi_fb(m0_index),
@@ -340,5 +350,5 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, facet_index,
     #                                  ffi_fb(bc_value), mode)
     #             assert(ierr_bc == 0)
 
-    sink(A_m0m1, A_m1m0, m0_index, m1_index, A_row, global_pos,
-         A_col, A_master, A_c0, A_c1, A_local, local_pos)
+    sink(A_m0m1, A_m1m0, m1_index, A_row,
+         A_col, m0_index, global_pos, A_master, A_c0, A_c1, A_local, local_pos)
