@@ -3,9 +3,8 @@ import pytest
 
 import dolfinx
 import dolfinx_mpc
+import dolfinx_mpc.utils
 import ufl
-
-from utils import create_transformation_matrix
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
@@ -58,7 +57,10 @@ def test_mpc_assembly(master_point, degree, celltype):
     A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
     # Create global transformation matrix
-    K = create_transformation_matrix(V.dim(), slaves, masters, coeffs, offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+                                                       masters, coeffs,
+                                                       offsets)
+
 
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))
@@ -143,7 +145,9 @@ def test_slave_on_same_cell(master_point, degree, celltype):
     A_mpc_np = sum(dolfinx.MPI.comm_world.allgather(A_mpc_np))
 
     # Create global transformation matrix
-    K = create_transformation_matrix(V.dim(), slaves, masters, coeffs, offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+                                                       masters, coeffs,
+                                                       offsets)
 
     # Transfer original matrix to numpy
     A_global = np.zeros((V.dim(), V.dim()))

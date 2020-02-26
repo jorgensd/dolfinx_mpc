@@ -6,6 +6,7 @@ from petsc4py import PETSc
 import dolfinx
 import dolfinx.io
 import dolfinx_mpc
+import dolfinx_mpc.utils
 import ufl
 
 
@@ -106,19 +107,11 @@ def demo_elasticity(mesh, master_space, slave_space):
     u_h.vector.setArray(uh.array)
     dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
 
-    # Generate global K
-    K = np.zeros((V.dim(), V.dim() - len(slaves)))
-    for i in range(K.shape[0]):
-        if i in slaves:
-            index = np.argwhere(slaves == i)[0, 0]
-            masters_index = masters[offsets[index]: offsets[index+1]]
-            coeffs_index = coeffs[offsets[index]: offsets[index+1]]
-            for master, coeff in zip(masters_index, coeffs_index):
-                count = sum(master > np.array(slaves))
-                K[i, master - count] = coeff
-        else:
-            count = sum(i > slaves)
-            K[i, i-count] = 1
+    # Generate global K matrix
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+                                                       masters, coeffs,
+                                                       offsets)
+
 
     vec = np.zeros(V.dim())
     mpc_vec = np.zeros(V.dim())

@@ -4,9 +4,9 @@ from petsc4py import PETSc
 
 import dolfinx
 import dolfinx_mpc
+import dolfinx_mpc.utils
 import ufl
 
-from utils import create_transformation_matrix
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
@@ -48,7 +48,9 @@ def test_mpc_assembly(master_point, degree, celltype):
                   mode=PETSc.ScatterMode.REVERSE)
 
     # Generate global K matrix
-    K = create_transformation_matrix(V.dim(), slaves, masters, coeffs, offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+                                                       masters, coeffs,
+                                                       offsets)
 
     vec = np.zeros(V.dim())
     mpc_vec = np.zeros(V.dim())
