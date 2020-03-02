@@ -18,9 +18,9 @@ def assemble_vector(form, multipointconstraint,
     V = form.arguments()[0].ufl_function_space()
 
     # Unpack mesh and dofmap data
-    c = V.mesh.topology.connectivity(2, 0).array()
-    pos = V.mesh.topology.connectivity(2, 0).offsets()
-    geom = V.mesh.geometry.points
+    pos = V.mesh.geometry.dofmap().offsets()
+    x_dofs = V.mesh.geometry.dofmap().array()
+    x = V.mesh.geometry.x
     dofs = V.dofmap.dof_array
 
     # Get cell orientation data
@@ -58,15 +58,14 @@ def assemble_vector(form, multipointconstraint,
     # Pack constants and coefficients
     cpp_form = dolfinx.Form(form)._cpp_object
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = numpy.array(dolfinx.cpp.fem.pack_constants(cpp_form),
-                              dtype=numpy.float64)
+    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
     gdim = V.mesh.geometry.dim
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
     with vector.localForm() as b:
         b.set(0.0)
-        assemble_vector_numba(numpy.asarray(b), kernel, (c, pos), geom, gdim,
+        assemble_vector_numba(numpy.asarray(b), kernel, (pos, x_dofs, x), gdim,
                               form_coeffs, form_consts,
                               facet_index, permutation_data,
                               dofs, num_dofs_per_element, mpc_data,
@@ -75,7 +74,7 @@ def assemble_vector(form, multipointconstraint,
 
 
 @numba.njit
-def assemble_vector_numba(b, kernel, mesh, x, gdim,
+def assemble_vector_numba(b, kernel, mesh, gdim,
                           coeffs, constants, facet_index,
                           permutation_data, dofmap, num_dofs_per_element,
                           mpc, ghost_info, bcs):
@@ -89,13 +88,17 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim,
 
     local_range, global_indices, block_size, ghosts = ghost_info
     local_size = local_range[1] - local_range[0]
-    connections, pos = mesh
+
+    # Unpack mesh data
+    pos, x_dofmap, x = mesh
+
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
     b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
     index = 0
     for i, cell in enumerate(pos[:-1]):
         num_vertices = pos[i + 1] - pos[i]
-        c = connections[cell:cell + num_vertices]
+        # FIXME: This assumes a particular geometry dof layout
+        c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
@@ -177,7 +180,7 @@ def assemble_vector_numba(b, kernel, mesh, x, gdim,
 
 
 @numba.njit
-def block_numba(b, kernel, mesh, x, gdim, facet_index,
+def block_numba(b, kernel, mesh, gdim, facet_index,
                 permutation_data, dofmap, num_dofs_per_element,
                 mpc, ghost_info, bcs):
     """Assemble provided FFC/UFC kernel over a mesh into the array b"""
@@ -189,7 +192,8 @@ def block_numba(b, kernel, mesh, x, gdim, facet_index,
      face_rotations, facet_permutations) = permutation_data
 
     local_range, global_indices, block_size, ghosts = ghost_info
-    connections, pos = mesh
+    pos, x_dofmap, x = mesh
+
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
     coeffs = numpy.zeros(2, dtype=PETSc.ScalarType)
     constants = numpy.zeros(2, dtype=PETSc.ScalarType)
@@ -198,7 +202,8 @@ def block_numba(b, kernel, mesh, x, gdim, facet_index,
 
     for i, cell in enumerate(pos[:-1]):
         num_vertices = pos[i + 1] - pos[i]
-        c = connections[cell:cell + num_vertices]
+        # FIXME: This assumes a particular geometry dof layout
+        c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]

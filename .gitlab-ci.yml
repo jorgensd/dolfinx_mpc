@@ -2,7 +2,7 @@
 test:
   stage: test
   image:
-    name: quay.io/fenicsproject/dolfinx:dev-env-real
+    name: dolfinx/dev-env-real
     entrypoint: [""]
   before_script:
     - pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
@@ -37,7 +37,7 @@ test:
     - mpirun -n 2 python3 demo_elasticity.py
 
 
-# name: quay.io/fenicsproject/dolfinx:real
+# name: dolfinx/real
 # entrypoint: [""]
 #   before_script:
 #     - mkdir -p build

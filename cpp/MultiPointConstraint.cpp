@@ -9,6 +9,7 @@
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
+#include <dolfinx/fem/DofMapBuilder.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/FormIntegrals.h>
 #include <dolfinx/function/FunctionSpace.h>
@@ -28,7 +29,8 @@ MultiPointConstraint::MultiPointConstraint(
       _coefficients(coefficients), _offsets_master(offsets_master),
       _slave_cells(), _offsets_cell_to_slave(), _cell_to_slave(),
       _master_cells(), _offsets_cell_to_master(), _cell_to_master(),
-      _glob_to_loc_ghosts(), _glob_master_to_loc_ghosts(), _index_map()
+      _glob_to_loc_ghosts(), _glob_master_to_loc_ghosts(), _index_map(),
+      _mpc_dofmap()
 {
   auto [q, cell_to_slave] = dolfinx_mpc::locate_cells_with_dofs(V, slaves);
   auto [r, s] = cell_to_slave;
@@ -202,12 +204,25 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   new_maps[0] = _index_map;
   new_maps[1] = _index_map;
   const dolfinx::fem::DofMap* old_dofmap = a.function_space(0)->dofmap().get();
-  const dolfinx::fem::DofMap new_dofmap = dolfinx::fem::DofMap(
-      old_dofmap->element_dof_layout, _index_map, old_dofmap->dof_array());
-  std::array<std::int64_t, 2> local_range = new_dofmap.index_map->local_range();
-  const dolfinx::fem::DofMap* pointer;
-  pointer = &new_dofmap;
-  std::array<const dolfinx::fem::DofMap*, 2> dofmaps = {{pointer, pointer}};
+
+  /// Get AdjacencyList for old dofmap
+  const int bs = old_dofmap->element_dof_layout->block_size();
+
+  dolfinx::mesh::Topology topology = mesh.topology();
+  dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
+  if (bs != 1)
+  {
+    layout = *old_dofmap->element_dof_layout->sub_dofmap({0});
+  }
+  auto [unused_indexmap, _dofmap] = dolfinx::fem::DofMapBuilder::build(
+      mesh.mpi_comm(), topology, layout, bs);
+  _mpc_dofmap = std::make_shared<dolfinx::fem::DofMap>(
+      old_dofmap->element_dof_layout, _index_map, _dofmap);
+
+  std::array<std::int64_t, 2> local_range
+      = _mpc_dofmap->index_map->local_range();
+  std::array<const dolfinx::fem::DofMap*, 2> dofmaps
+      = {{_mpc_dofmap.get(), _mpc_dofmap.get()}};
 
   dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
 

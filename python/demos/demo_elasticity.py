@@ -84,11 +84,8 @@ def demo_elasticity(mesh, master_space, slave_space):
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
     # Create functionspace and function for mpc vector
-    modified_dofmap = dolfinx.cpp.fem.DofMap(V.dofmap.dof_layout,
-                                             mpc.index_map(),
-                                             V.dofmap.dof_array)
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  modified_dofmap)
+                                                  mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 
     # Write solution to file
