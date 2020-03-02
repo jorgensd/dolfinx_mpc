@@ -40,10 +40,9 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
                   indexmap.indices(True))
 
     # Get data from mesh
-    c2v = V.mesh.topology.connectivity(V.mesh.topology.dim, 0)
-    c = c2v.array()
-    pos = c2v.offsets()
-    geom = V.mesh.geometry.points
+    pos = V.mesh.geometry.dofmap().offsets()
+    x_dofs = V.mesh.geometry.dofmap().array()
+    x = V.mesh.geometry.x
 
     # Get cell orientation data
     edge_reflections = V.mesh.topology.get_edge_reflections()
@@ -67,8 +66,7 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
 
     # Pack constants and coefficients
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = numpy.array(dolfinx.cpp.fem.pack_constants(cpp_form),
-                              dtype=numpy.float64)
+    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
@@ -89,7 +87,7 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     gdim = V.mesh.geometry.dim
 
-    assemble_matrix_numba(A.handle, kernel, (c, pos), geom, gdim,
+    assemble_matrix_numba(A.handle, kernel, (pos, x_dofs, x), gdim,
                           form_coeffs, form_consts, facet_index,
                           permutation_data,
                           dofs, num_dofs_per_element, mpc_data,
@@ -139,7 +137,7 @@ def in_numpy_array(array, value):
 
 
 @numba.njit
-def assemble_matrix_numba(A, kernel, mesh, x, gdim, coeffs, constants,
+def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
                           facet_index, permutation_data, dofmap,
                           num_dofs_per_element, mpc, ghost_info, bcs):
     """
@@ -149,9 +147,10 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, coeffs, constants,
     slave_cells = mpc[4]  # Note: packing order for MPC really important
 
     # Get mesh and geometry data
-    connections, pos = mesh
+    pos, x_dofmap, x = mesh
     (edge_reflections, face_reflections,
      face_rotations, facet_permutations) = permutation_data
+
     # NOTE: All cells are assumed to be of the same type
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
 
@@ -164,7 +163,8 @@ def assemble_matrix_numba(A, kernel, mesh, x, gdim, coeffs, constants,
         num_vertices = pos[i + 1] - pos[i]
 
         # Compute vertices of cell from mesh data
-        c = connections[cell:cell + num_vertices]
+        # FIXME: This assumes a particular geometry dof layout
+        c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]

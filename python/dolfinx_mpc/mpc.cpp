@@ -39,6 +39,7 @@ void mpc(py::module& m)
       .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
       .def("master_offsets", &dolfinx_mpc::MultiPointConstraint::master_offsets)
       .def("create_sparsity_pattern",
-           &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern);
+           &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
+      .def("mpc_dofmap", &dolfinx_mpc::MultiPointConstraint::mpc_dofmap);
 }
 } // namespace dolfinx_mpc_wrappers

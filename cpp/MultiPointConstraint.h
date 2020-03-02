@@ -9,6 +9,7 @@
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/fem/DofMap.h>
 #include <dolfinx/common/IndexMap.h>
 #include <Eigen/Dense>
 #include "utils.h"
@@ -78,6 +79,10 @@ public:
   /// is not on this processor
   std::unordered_map<int, int> glob_to_loc_ghosts();
 
+  /// Return dofmap with MPC ghost values.
+  std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap()
+	{return _mpc_dofmap;};
+
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
@@ -93,6 +98,7 @@ private:
   std::unordered_map<int, int> _glob_to_loc_ghosts;
   std::unordered_map<int, int> _glob_master_to_loc_ghosts;
   std::shared_ptr<dolfinx::common::IndexMap> _index_map;
+  std::shared_ptr<dolfinx::fem::DofMap> _mpc_dofmap;
 };
 
 
