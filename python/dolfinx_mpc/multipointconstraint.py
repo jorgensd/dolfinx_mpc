@@ -1,3 +1,9 @@
+# Copyright (C) 2020 Jørgen S. Dokken
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    LGPL-3.0-or-later
+
 import typing
 import numba
 from petsc4py import PETSc
