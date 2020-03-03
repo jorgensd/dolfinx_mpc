@@ -10,7 +10,8 @@ import dolfinx_mpc.utils
 import ufl
 
 
-def demo_elasticity(mesh, master_space, slave_space):
+def demo_elasticity():
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 4, 4)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -19,37 +20,50 @@ def demo_elasticity(mesh, master_space, slave_space):
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
-    def boundary(x):
-        return np.isclose(x.T, [0, 0, 0]).all(axis=1)
-    bdofsV = dolfinx.fem.locate_dofs_geometrical(V, boundary)
-    bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV)
-    bcs = [bc]
+    # V1 = V.sub(1).collapse()
+    # u_disp = dolfinx.function.Function(V1)
+    # with u_disp.vector.localForm() as u_local:
+    #     u_local.set(0.1)
+
+    # def point_load(x):
+    #     return np.isclose(x.T, [1, 0.5, 0]).all(axis=1)
+    # bdofsV1 = dolfinx.fem.locate_dofs_geometrical((V.sub(1), V1), point_load)
+    # bc_p = dolfinx.fem.dirichletbc.DirichletBC(u_disp, bdofsV1, V.sub(1))
+    def boundaries(x):
+        return np.isclose(x[0], np.finfo(float).eps)
+    facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
+                                                           boundaries)
+    bc = dolfinx.fem.DirichletBC(u_bc, dolfinx.fem.locate_dofs_topological(V, 1, facets))
+    bcs = [bc]#, bc_p]
+
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    x = ufl.SpatialCoordinate(mesh)
-    f = ufl.as_vector((-5*x[1], x[0]))
-    d = dolfinx.Constant(mesh, 2)
-    g = dolfinx.Function(V)
+    # Elasticity parameters
+    E = 1.0e4
+    nu = 0.0
+    mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
+    lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
 
-    def expr(x):
-        values = np.empty((2, x.shape[1]))
-        values[0] = x[0]
-        values[1] = 0.73*x[1]
-        return values
-    g.interpolate(expr)
-    a = d*ufl.inner(g, g)*ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(f, v)*ufl.dx
+    # Stress computation
+    def sigma(v):
+        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
+                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+
+    x = ufl.SpatialCoordinate(mesh)
+    # Define variational problem
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
+    lhs = ufl.inner(ufl.as_vector((0,(x[0]-0.5)*10**4*x[1])), v) * ufl.dx
 
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
-    s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 0.1,
-                                           lambda x: dof_at(x, [0.5, 1]): 0.3}}
+    s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 1}}
     (slaves, masters,
      coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                           slave_space,
-                                                           master_space)
+                                                           1, 1)
 
     print(slaves, masters)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
@@ -91,6 +105,7 @@ def demo_elasticity(mesh, master_space, slave_space):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
+    u_h.name = "u_mpc"
     dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
@@ -117,6 +132,7 @@ def demo_elasticity(mesh, master_space, slave_space):
     solver.solve(L_org, u_.vector)
     u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                           mode=PETSc.ScatterMode.FORWARD)
+    u_.name = "u_unperturbed"
     dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_.xdmf").write(u_)
 
     # Create global transformation matrix
@@ -137,10 +153,10 @@ def demo_elasticity(mesh, master_space, slave_space):
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+    print("MPC", uh[masters[0]], uh[slaves[0]])
+    print("Org", u_.vector.array[masters[0]], u_.vector.array[slaves[0]])
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
 
 
-for mesh in [dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 4, 4)]:
-    for i in [0, 1]:
-        for j in [0, 1]:
-            demo_elasticity(mesh, i, j)
+
+demo_elasticity()
