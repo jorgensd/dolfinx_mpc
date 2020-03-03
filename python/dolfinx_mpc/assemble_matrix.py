@@ -23,7 +23,6 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
         for bc in bcs:
             # Extract local index of possible sub space
             bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
-
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() ==
            form.arguments()[1].ufl_function_space())
@@ -77,7 +76,7 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
     offsets = multipointconstraint.master_offsets()
     mpc_data = (slaves, masters, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)
-    print(masters, slaves)
+
     # General assembly data
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     gdim = V.mesh.geometry.dim

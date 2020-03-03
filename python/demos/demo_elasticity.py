@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 
 from petsc4py import PETSc
@@ -33,13 +31,14 @@ def demo_elasticity():
         return np.isclose(x[0], np.finfo(float).eps)
     facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
                                                            boundaries)
-    bc = dolfinx.fem.DirichletBC(u_bc, dolfinx.fem.locate_dofs_topological(V, 1, facets))
-    bcs = [bc]#, bc_p]
-
+    topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
+    bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
+    bcs = [bc]  # , bc_p]
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
+
     # Elasticity parameters
     E = 1.0e4
     nu = 0.0
@@ -56,24 +55,20 @@ def demo_elasticity():
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(ufl.as_vector((0,(x[0]-0.5)*10**4*x[1])), v) * ufl.dx
+    lhs = ufl.inner(ufl.as_vector((0, (x[0] - 0.5)*10**4*x[1])), v) * ufl.dx
 
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
-    s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 1}}
+    s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 0.9}}
     (slaves, masters,
      coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
                                                            1, 1)
 
-    print(slaves, masters)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
     # Setup MPC system
     for i in range(2):
-        start = time.time()
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-        end = time.time()
-        print("Runtime: {0:.2e}".format(end-start))
     for i in range(2):
         b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
@@ -153,10 +148,19 @@ def demo_elasticity():
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    print("MPC", uh[masters[0]], uh[slaves[0]])
-    print("Org", u_.vector.array[masters[0]], u_.vector.array[slaves[0]])
+    if uh.owner_range[0] < masters[0] and masters[0] < uh.owner_range[1]:
+        print("MASTER DOF, MPC {0:.4e} Unconstrained {1:.4e}"
+              .format(uh.array[masters[0]-uh.owner_range[0]],
+                      u_.vector.array[masters[0]-uh.owner_range[0]]))
+        print("Slave (given as master*coeff) {0:.4e}".
+              format(uh.array[masters[0]-uh.owner_range[0]]*coeffs[0]))
+
+    if uh.owner_range[0] < slaves[0] and slaves[0] < uh.owner_range[1]:
+        print("SLAVE  DOF, MPC {0:.4e} Unconstrained {1:.4e}"
+              .format(uh.array[slaves[0]-uh.owner_range[0]],
+                      u_.vector.array[slaves[0]-uh.owner_range[0]]))
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
 
 
-
-demo_elasticity()
+if __name__ == "__main__":
+    demo_elasticity()
