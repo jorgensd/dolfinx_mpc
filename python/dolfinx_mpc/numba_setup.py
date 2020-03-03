@@ -129,3 +129,9 @@ set_values = MatSetValues_api
 set_values_local = MatSetValuesLocal_api
 mode = PETSc.InsertMode.ADD_VALUES
 insert = PETSc.InsertMode.INSERT_VALUES
+
+
+# See https://github.com/numba/numba/issues/4036 for why we need 'sink'
+@numba.njit
+def sink(*args):
+    pass

@@ -8,13 +8,8 @@ import numpy
 
 import dolfinx
 
-from .numba_setup import PETSc, ffi, insert, mode, set_values, set_values_local
-
-
-# See https://github.com/numba/numba/issues/4036 for why we need 'sink'
-@numba.njit
-def sink(*args):
-    pass
+from .numba_setup import (PETSc, ffi, insert, mode, set_values,
+                          set_values_local, sink)
 
 
 def assemble_matrix(form, multipointconstraint, bcs=None):
