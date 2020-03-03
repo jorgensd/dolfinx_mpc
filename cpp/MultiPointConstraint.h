@@ -56,28 +56,34 @@ public:
   std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();
 
   /// Return array of slave coefficients
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves()
+	{return _slaves;};
 
   // Local indices of cells containing slave coefficients
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cells();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cells()
+	{return _slave_cells;};
 
   /// Return the index_map for the test and trial space
-  std::shared_ptr<dolfinx::common::IndexMap> index_map();
+  std::shared_ptr<dolfinx::common::IndexMap> index_map()
+	{return _index_map;};
 
   /// Return master offset data
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_offsets();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_offsets(){
+	return _offsets_masters;};
 
   /// Return the array of master dofs and corresponding coefficients
   std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, Eigen::Array<double, Eigen::Dynamic, 1>>
-  masters_and_coefficients();
+	masters_and_coefficients(){return std::pair(_masters, _coefficients);};
 
   /// Return map from cell with slaves to the dof numbers
   std::pair< Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
-  cell_to_slave_mapping();
+	cell_to_slave_mapping()
+	{return std::pair(_cell_to_slave, _offsets_cell_to_slave);};
 
   /// Return the global to local mapping of a master coefficient it it
   /// is not on this processor
-  std::unordered_map<int, int> glob_to_loc_ghosts();
+  std::unordered_map<int, int> glob_to_loc_ghosts()
+  {return _glob_to_loc_ghosts;};
 
   /// Return dofmap with MPC ghost values.
   std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap()
@@ -85,20 +91,26 @@ public:
 
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
-  Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_master;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_slave;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_slave;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_master;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_master;
-  std::unordered_map<int, int> _glob_to_loc_ghosts;
-  std::unordered_map<int, int> _glob_master_to_loc_ghosts;
   std::shared_ptr<dolfinx::common::IndexMap> _index_map;
   std::shared_ptr<dolfinx::fem::DofMap> _mpc_dofmap;
+
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
+
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
+  Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_masters;
+
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_slave;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_slave;
+
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_master;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_master;
+
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
+
+  std::unordered_map<int, int> _glob_to_loc_ghosts;
+  std::unordered_map<int, int> _glob_master_to_loc_ghosts;
 };
 
 
