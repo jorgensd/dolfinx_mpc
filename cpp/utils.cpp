@@ -1,6 +1,6 @@
 // Copyright (C) 2020 Jorgen S. Dokken
 //
-// This file is part of DOLFIN-X MPC
+// This file is part of DOLFINX_MPC
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 

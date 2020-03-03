@@ -1,6 +1,6 @@
-// Copyright (C) 2017 Chris N. Richardson and Garth N. Wells
+// Copyright (C) 2020 Jørgen S. Dokken
 //
-// This file is part of DOLFINX (https://www.fenicsproject.org)
+// This file is part of DOLFINX_MPC
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
@@ -9,11 +9,13 @@
 
 namespace py = pybind11;
 
-namespace dolfinx_mpc_wrappers {
-void mpc(py::module &m);
+namespace dolfinx_mpc_wrappers
+{
+void mpc(py::module& m);
 } // namespace dolfinx_mpc_wrappers
 
-PYBIND11_MODULE(cpp, m) {
+PYBIND11_MODULE(cpp, m)
+{
   // Create module for C++ wrappers
   m.doc() = "DOLFINX MultiPointConstraint Python interface";
   m.attr("__version__") = DOLFINX_MPC_VERSION;
