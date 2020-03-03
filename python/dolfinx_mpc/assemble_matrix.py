@@ -159,8 +159,8 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
 
     # Loop over all cells
     slave_cell_index = 0
-    for i, cell in enumerate(pos[:-1]):
-        num_vertices = pos[i + 1] - pos[i]
+    for cell_index, cell in enumerate(pos[:-1]):
+        num_vertices = pos[cell_index + 1] - pos[cell_index]
 
         # Compute vertices of cell from mesh data
         # FIXME: This assumes a particular geometry dof layout
@@ -171,16 +171,18 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
 
         A_local.fill(0.0)
         # FIXME: Numba does not support edge reflections
-        kernel(ffi_fb(A_local), ffi_fb(coeffs[i, :]),
+        kernel(ffi_fb(A_local), ffi_fb(coeffs[cell_index, :]),
                ffi_fb(constants),
                ffi_fb(geometry), ffi_fb(facet_index),
                ffi_fb(facet_permutations),
-               ffi_fb(face_reflections[i, :]), ffi_fb(edge_reflections),
-               ffi_fb(face_rotations[i, :]))
+               ffi_fb(face_reflections[cell_index, :]),
+               ffi_fb(edge_reflections),
+               ffi_fb(face_rotations[cell_index, :]))
 
         # Local dof position
-        local_pos = dofmap[num_dofs_per_element * i:
-                           num_dofs_per_element * i + num_dofs_per_element]
+        local_pos = dofmap[num_dofs_per_element * cell_index:
+                           num_dofs_per_element * cell_index
+                           + num_dofs_per_element]
         # Remove all contributions for dofs that are in the Dirichlet bcs
         if len(bcs) > 0:
             for k in range(len(local_pos)):
@@ -190,9 +192,9 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
                     A_local[:, k] = 0
 
         # If this slave contains a slave dof, modify local contribution
-        if in_numpy_array(slave_cells, i):
-            A_local = modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
-                                      mpc, ghost_info, num_dofs_per_element)
+        if in_numpy_array(slave_cells, cell_index):
+            modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
+                            mpc, ghost_info, num_dofs_per_element)
             slave_cell_index += 1
 
         # Insert local contribution
