@@ -178,6 +178,8 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 
   int block_size = _index_map->block_size();
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> ghosts = _index_map->ghosts();
+  const std::vector<std::int64_t> global_indices
+      = _index_map->global_indices(false);
 
   /// Create new dofmap using the MPC index-maps
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
@@ -216,6 +218,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   // slave to the k-th master degree of freedom
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
+
     // Loop over slaves in cell
     for (Eigen::Index j = 0;
          j < _offsets_cell_to_slave[i + 1] - _offsets_cell_to_slave[i]; j++)
@@ -248,17 +251,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
           // Replace slave dof with master dof (local insert)
           for (std::size_t m = 0; m < unsigned(cell_dof_list.size()); m++)
           {
-            std::uint64_t global_cell_dof
-                = cell_dof_list[m] + block_size * local_range[0];
-            // If cell dof is ghost map to global index
-            if (block_size * local_size <= cell_dof_list[m])
-            {
-              const std::div_t div = std::div(cell_dof_list[m], block_size);
-              const int index = div.quot;
-              const int rem = div.rem;
-              global_cell_dof = ghosts[index - local_size] + rem;
-            }
-            if (_slaves[slave_index] == global_cell_dof)
+            if (_slaves[slave_index] == global_indices[cell_dof_list[m]])
             {
               // Check if master is a ghost
               if (_glob_to_loc_ghosts.find(
