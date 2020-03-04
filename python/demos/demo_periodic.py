@@ -25,7 +25,7 @@ import numpy as np
 from petsc4py import PETSc
 
 # Create mesh and finite element
-N = 25
+N = 50
 mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
 V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
@@ -42,7 +42,6 @@ def DirichletBoundary(x):
 facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
                                                        DirichletBoundary)
 topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
-print(topological_dofs)
 bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
 
@@ -66,8 +65,8 @@ for i in range(1, N):
 (slaves, masters,
  coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
 # Tmp fix
-slaves = slaves[0]
-masters = masters[0]
+# slaves = slaves[0]
+# masters = masters[0]
 
 # Define variational problem
 u = ufl.TrialFunction(V)
@@ -128,7 +127,7 @@ A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
 mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
 
-#--------------------VERIFICATION-------------------------
+# --------------------VERIFICATION-------------------------
 A_org = dolfinx.fem.assemble_matrix(a, bcs)
 
 A_org.assemble()
