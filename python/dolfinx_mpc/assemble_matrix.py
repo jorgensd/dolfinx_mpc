@@ -31,7 +31,7 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
     dofs = dofmap.dof_array
     indexmap = dofmap.index_map
     ghost_info = (indexmap.local_range, indexmap.block_size,
-                  indexmap.indices(True))
+                  indexmap.global_indices(False), indexmap.ghosts)
 
     # Get data from mesh
     pos = V.mesh.geometry.dofmap().offsets()
@@ -213,8 +213,7 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
     (slaves, masters, coefficients, offsets, slave_cells,
      cell_to_slave, cell_to_slave_offset) = mpc
     # Unpack ghost data
-    (local_range, block_size, global_indices) = ghost_info
-    local_size = local_range[1]-local_range[0]
+    local_range, block_size, global_indices, ghosts = ghost_info
 
     # Rows taken over by master
     A_row = numpy.zeros((num_dofs_per_element, 1), dtype=PETSc.ScalarType)
@@ -250,9 +249,10 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
         # Variable for local position of slave dof
         slave_local = -1
         for k in range(len(local_pos)):
-            g_pos = local_pos[k] + block_size*local_range[0]
+            g_pos = global_indices[local_pos[k]]
             if g_pos == slaves[slave_index]:
                 slave_local = k
+                break
         assert slave_local != -1
 
         # Loop through each master dof to take individual contributions
@@ -287,11 +287,11 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
                 # Find local index of the other slave
                 o_slave_local = -1
                 for k in range(len(local_pos)):
-                    l0 = block_size * local_range[0]
-                    if local_pos[k] + l0 == slaves[other_slave]:
+                    if global_indices[local_pos[k]] == slaves[other_slave]:
                         o_slave_local = k
                         break
                 assert(o_slave_local != -1)
+
                 other_cell_masters = masters[offsets[other_slave]:
                                              offsets[other_slave+1]]
                 o_coeffs = coefficients[offsets[other_slave]:
@@ -324,10 +324,7 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
             global_pos = numpy.zeros(local_pos.size, dtype=numpy.int32)
             # Map ghosts to global index and slave to master
             for (h, g) in enumerate(local_pos):
-                if g >= block_size * local_size:
-                    global_pos[h] = global_indices[g]
-                else:
-                    global_pos[h] = g + block_size*local_range[0]
+                global_pos[h] = global_indices[g]
             global_pos[slave_local] = cell_masters[m_0]
             m0_index[0] = cell_masters[m_0]
 
@@ -347,7 +344,6 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
         # Add contributions for different masters on the same cell
         for m_0 in range(len(cell_masters)):
             for m_1 in range(m_0+1, len(cell_masters)):
-
                 A_c0.fill(0.0)
                 c0, c1 = cell_coeffs[m_0], cell_coeffs[m_1]
                 A_c0[0, 0] += c0*c1*A_local_copy[slave_local, slave_local]

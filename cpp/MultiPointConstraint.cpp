@@ -16,7 +16,6 @@
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/mesh/MeshIterator.h>
 #include <dolfinx/mesh/Topology.h>
-
 using namespace dolfinx_mpc;
 
 MultiPointConstraint::MultiPointConstraint(
@@ -26,11 +25,10 @@ MultiPointConstraint::MultiPointConstraint(
     Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets_master)
     : _function_space(V), _index_map(), _mpc_dofmap(), _slaves(slaves),
-      _masters(masters), _coefficients(coefficients),
+      _masters(masters), _masters_local(), _coefficients(coefficients),
       _offsets_masters(offsets_master), _cell_to_slave(),
       _offsets_cell_to_slave(), _cell_to_master(), _offsets_cell_to_master(),
-      _slave_cells(), _master_cells(), _glob_to_loc_ghosts(),
-      _glob_master_to_loc_ghosts()
+      _slave_cells(), _master_cells()
 {
   /// Locate all cells containing slaves locally and create a cell_to_slave map
   auto [q, cell_to_slave] = dolfinx_mpc::locate_cells_with_dofs(V, slaves);
@@ -49,6 +47,15 @@ MultiPointConstraint::MultiPointConstraint(
 
   /// Generate MPC specific index map
   _index_map = generate_index_map();
+
+  /// Find all local indices for master
+  std::vector<std::int64_t> master_vec(_masters.data(),
+                                       _masters.data() + _masters.size());
+  std::vector<std::int32_t> masters_local
+      = _index_map->global_to_local(master_vec, false);
+  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> masters_eigen(
+      masters_local.data(), masters_local.size(), 1);
+  _masters_local = masters_eigen;
 }
 
 /// Generate MPC specific index map with the correct ghosting
@@ -60,6 +67,8 @@ MultiPointConstraint::generate_index_map()
 
   // Get common::IndexMaps for each dimension
   std::shared_ptr<const dolfinx::common::IndexMap> index_map = dofmap.index_map;
+  std::array<std::int64_t, 2> local_range = index_map->local_range();
+
   int block_size = index_map->block_size();
 
   // Get old dofs that will be appended to
@@ -84,24 +93,10 @@ MultiPointConstraint::generate_index_map()
            k++)
       {
         // Check if master is already owned by the processor by looping over
-        // all owned cells
-        bool master_on_proc = false;
-        for (std::int64_t m = 0; m < unsigned(_master_cells.size()); m++)
-        {
-          for (Eigen::Index n = 0;
-               n < _offsets_cell_to_master[m + 1] - _offsets_cell_to_master[m];
-               n++)
-          {
-            if (_masters[_offsets_masters[slave_index] + k]
-                == _cell_to_master[_offsets_cell_to_master[m] + n])
-            {
-              master_on_proc = true;
-            }
-          }
-        }
-        // If master not on processor add it to the ghost array and
-        // create a map from master to local index used in matrix creation
-        if (!master_on_proc)
+        if (!((block_size * local_range[0]
+               <= _masters[_offsets_masters[slave_index] + k])
+              && (_masters[_offsets_masters[slave_index] + k]
+                  < block_size * local_range[1])))
         {
           const int master_as_int = _masters[_offsets_masters[slave_index] + k];
           const std::div_t div = std::div(master_as_int, block_size);
@@ -112,8 +107,6 @@ MultiPointConstraint::generate_index_map()
             if (index == new_ghosts[gh])
             {
               already_ghosted = true;
-              _glob_to_loc_ghosts[_masters[_offsets_masters[slave_index] + k]]
-                  = gh + index_map->size_local();
             }
           }
           if (!already_ghosted)
@@ -122,8 +115,6 @@ MultiPointConstraint::generate_index_map()
             // containing the master
             new_ghosts.conservativeResize(new_ghosts.size() + 1);
             new_ghosts[num_ghosts] = index;
-            _glob_to_loc_ghosts[_masters[_offsets_masters[slave_index] + k]]
-                = num_ghosts + index_map->size_local();
             num_ghosts++;
           }
         }
@@ -133,7 +124,6 @@ MultiPointConstraint::generate_index_map()
 
   // Loop over master cells on local processor and add ghosts for all other
   // masters (This could probably be optimized, but thats for later)
-  std::array<std::int64_t, 2> local_range = index_map->local_range();
   for (Eigen::Index i = 0; i < _masters.size(); ++i)
   {
     // Check if master is owned by processor
@@ -151,16 +141,12 @@ MultiPointConstraint::generate_index_map()
         if (index == new_ghosts[gh])
         {
           already_ghosted = true;
-          _glob_master_to_loc_ghosts[_masters[i]]
-              = gh + index_map->size_local();
         }
       }
       if (!already_ghosted)
       {
         new_ghosts.conservativeResize(new_ghosts.size() + 1);
         new_ghosts[num_ghosts] = index;
-        _glob_master_to_loc_ghosts[_masters[i]]
-            = num_ghosts + index_map->size_local();
         num_ghosts++;
       }
     }
@@ -191,6 +177,9 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   const dolfinx::mesh::Mesh& mesh = *(a.mesh());
 
   int block_size = _index_map->block_size();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> ghosts = _index_map->ghosts();
+  const std::vector<std::int64_t> global_indices
+      = _index_map->global_indices(false);
 
   /// Create new dofmap using the MPC index-maps
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
@@ -214,6 +203,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 
   std::array<std::int64_t, 2> local_range
       = _mpc_dofmap->index_map->local_range();
+  std::int64_t local_size = local_range[1] - local_range[0];
   std::array<const dolfinx::fem::DofMap*, 2> dofmaps
       = {{_mpc_dofmap.get(), _mpc_dofmap.get()}};
 
@@ -228,6 +218,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   // slave to the k-th master degree of freedom
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
+
     // Loop over slaves in cell
     for (Eigen::Index j = 0;
          j < _offsets_cell_to_slave[i + 1] - _offsets_cell_to_slave[i]; j++)
@@ -260,37 +251,23 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
           // Replace slave dof with master dof (local insert)
           for (std::size_t m = 0; m < unsigned(cell_dof_list.size()); m++)
           {
-            if (_slaves[slave_index]
-                == unsigned(cell_dof_list[m] + block_size * local_range[0]))
+            if (_slaves[slave_index] == global_indices[cell_dof_list[m]])
             {
-              // Check if master is a ghost
-              if (_glob_to_loc_ghosts.find(
-                      _masters[_offsets_masters[slave_index] + k])
-                  != _glob_to_loc_ghosts.end())
-              {
-                // Local block index (larger than local_size)
-                std::int64_t block_index
-                    = _glob_to_loc_ghosts[_masters[_offsets_masters[slave_index]
-                                                   + k]];
-                for (std::size_t comp = 0; comp < block_size; comp++)
-                  master_for_slave[l](comp) = block_size * block_index + comp;
-              }
-              else
-              {
-                const int master_int
-                    = _masters[_offsets_masters[slave_index] + k];
-                const std::div_t div = std::div(master_int, block_size);
-                const int index = div.quot;
-                /// Add non zeros for full block
-                for (std::size_t comp = 0; comp < block_size; comp++)
-                  master_for_slave[l](comp)
-                      = block_size * index + comp - block_size * local_range[0];
-              }
+              std::int64_t master_int
+                  = _masters[_offsets_masters[slave_index] + k];
+              const std::vector<std::int64_t> master_indices{master_int};
+              std::vector<std::int32_t> local_master
+                  = _index_map->global_to_local(master_indices, false);
+              const std::div_t div = std::div(local_master[0], block_size);
+              const int index = div.quot;
+              for (std::size_t comp = 0; comp < block_size; comp++)
+                master_for_slave[l](comp) = block_size * index + comp;
             }
           }
           // Add all values on cell (including slave), to get complete blocks
           slave_dof_neighbours[l] = cell_dof_list;
         }
+
         pattern.insert(master_for_slave[0], slave_dof_neighbours[1]);
         pattern.insert(slave_dof_neighbours[0], master_for_slave[1]);
       }
@@ -302,55 +279,32 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
     for (Eigen::Index j = 0;
          j < _offsets_cell_to_master[i + 1] - _offsets_cell_to_master[i]; j++)
     {
-      // Check if dof of owned cell is a local cell
+      // Map first master to local dof and add remainder of block
       Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
-      if ((_cell_to_master[_offsets_cell_to_master[i] + j]
-           < block_size * local_range[0])
-          || (block_size * local_range[1]
-              <= _cell_to_master[_offsets_cell_to_master[i] + j]))
-      {
-        // Local block index (larger than local_size)
-        std::int64_t block_index
-            = _glob_to_loc_ghosts[_cell_to_master[_offsets_cell_to_master[i]
-                                                  + j]];
-        for (std::size_t comp = 0; comp < block_size; comp++)
-          local_master_dof[comp] = block_size * block_index + comp;
-      }
-      else
-      {
-        const int master_int = _cell_to_master[_offsets_cell_to_master[i] + j];
-        const std::div_t div = std::div(master_int, block_size);
-        const int index = div.quot;
-        /// Add non zeros for full block
-        for (std::size_t comp = 0; comp < block_size; comp++)
-          local_master_dof[comp]
-              = block_size * index + comp - block_size * local_range[0];
-      }
+      std::int64_t master_int = _cell_to_master[_offsets_cell_to_master[i] + j];
+      const std::vector<std::int64_t> master_indices{master_int};
+      std::vector<std::int32_t> local_master
+          = _index_map->global_to_local(master_indices, false);
+      const std::div_t div = std::div(local_master[0], block_size);
+      const int index = div.quot;
+      for (std::size_t comp = 0; comp < block_size; comp++)
+        local_master_dof[comp] = block_size * index + comp;
 
       Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(block_size);
       for (Eigen::Index k = 0; k < _masters.size(); k++)
       {
-        // If not on processor add ghost-index, else add local number
         if (_masters[k] != _cell_to_master[_offsets_cell_to_master[i] + j])
         {
-          if ((_masters[k] < block_size * local_range[0])
-              || (block_size * local_range[1] <= _masters[k]))
-          {
-            // Local block index (larger than local_size)
-            std::int64_t block_index = _glob_to_loc_ghosts[_masters[k]];
-            for (std::size_t comp = 0; comp < block_size; comp++)
-              other_master_dof[comp] = block_size * block_index + comp;
-          }
-          else
-          {
-            const int master_int = _masters[k];
-            const std::div_t div = std::div(master_int, block_size);
-            const int index = div.quot;
-            /// Add non zeros for full block
-            for (std::size_t comp = 0; comp < block_size; comp++)
-              other_master_dof[comp]
-                  = block_size * index + comp - block_size * local_range[0];
-          }
+          // Map other master to local dof and add remainder of block
+          std::int64_t master_int = _masters[k];
+          const std::vector<std::int64_t> master_indices{master_int};
+          std::vector<std::int32_t> local_master
+              = _index_map->global_to_local(master_indices, false);
+          const std::div_t div = std::div(local_master[0], block_size);
+          const int index = div.quot;
+          for (std::size_t comp = 0; comp < block_size; comp++)
+            other_master_dof[comp] = block_size * index + comp;
+
           pattern.insert(local_master_dof, other_master_dof);
           pattern.insert(other_master_dof, local_master_dof);
         }

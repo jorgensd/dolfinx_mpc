@@ -43,7 +43,8 @@ public:
   /// @param[in] offsets Gives the starting point for the i-th slave
   /// node in the master and coefficients list.
   MultiPointConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-                       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
+                       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
+					   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
                        Eigen::Array<double, Eigen::Dynamic, 1> coefficients, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets);
 
   /// Add sparsity pattern for multi-point constraints to existing
@@ -58,6 +59,11 @@ public:
   /// Return array of slave coefficients
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves()
 	{return _slaves;};
+
+  /// Return local_indices of master coefficients
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> masters_local()
+	{return _masters_local;};
+
 
   // Local indices of cells containing slave coefficients
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cells()
@@ -80,11 +86,6 @@ public:
 	cell_to_slave_mapping()
 	{return std::pair(_cell_to_slave, _offsets_cell_to_slave);};
 
-  /// Return the global to local mapping of a master coefficient it it
-  /// is not on this processor
-  std::unordered_map<int, int> glob_to_loc_ghosts()
-  {return _glob_to_loc_ghosts;};
-
   /// Return dofmap with MPC ghost values.
   std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap()
 	{return _mpc_dofmap;};
@@ -97,6 +98,8 @@ private:
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
 
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _masters_local;
+
   Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_masters;
 
@@ -108,9 +111,6 @@ private:
 
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
-
-  std::unordered_map<int, int> _glob_to_loc_ghosts;
-  std::unordered_map<int, int> _glob_master_to_loc_ghosts;
 };
 
 
