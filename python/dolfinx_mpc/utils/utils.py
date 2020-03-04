@@ -111,6 +111,9 @@ def compare_matrices(reduced_A, A, global_ones):
                 continue
             else:
                 A_numpy_padded[i, j] = reduced_A[i-count, j-m]
+    import dolfinx
+    if dolfinx.MPI.comm_world.rank == 0:
+        print(A_numpy_padded-A)
 
-    # Check that all entities are close
+        # Check that all entities are close
     assert np.allclose(A, A_numpy_padded)

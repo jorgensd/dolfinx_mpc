@@ -26,6 +26,12 @@ dolfinx_mpc::locate_cells_with_dofs(
   const dolfinx::mesh::Mesh& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
   std::array<std::int64_t, 2> local_range = dofmap.index_map->local_range();
+  const std::vector<std::int64_t> global_indices
+      = dofmap.index_map->global_indices(false);
+
+  std::int64_t local_size = local_range[1] - local_range[0];
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> ghosts
+      = dofmap.index_map->ghosts();
   const int block_size = dofmap.index_map->block_size();
 
   /// Data structures
@@ -41,16 +47,26 @@ dolfinx_mpc::locate_cells_with_dofs(
   {
     const int cell_index = cell.index();
     auto cell_dofs = dofmap.cell_dofs(cell_index);
+
     bool in_cell = false;
     for (Eigen::Index i = 0; i < cell_dofs.size(); ++i)
     {
+      // std::uint64_t global_cell_dof
+      //     = cell_dofs[i] + block_size * local_range[0];
+      // if (block_size * local_size <= cell_dofs[i])
+      // {
+      //   const std::div_t div = std::div(cell_dofs[i], block_size);
+      //   const int index = div.quot;
+      //   const int rem = div.rem;
+      //   global_cell_dof = ghosts[index - local_size] + rem;
+      // }
+
       for (Eigen::Index j = 0; j < dofs.size(); ++j)
       {
-        /// Check if dof is owned by the process and if is on the cell
-        if ((local_range[0] * block_size <= dofs[j])
-            && (dofs[j] < block_size * local_range[1])
-            && (unsigned(cell_dofs[i] + block_size * local_range[0])
-                == dofs[j]))
+        if (global_indices[cell_dofs[i]]
+            == dofs[j] //  && block_size * local_range[0] <= dofs[j]
+                       // && dofs[j] < block_size * local_range[1]
+        )
         {
           cell_to_dofs.conservativeResize(cell_to_dofs.size() + 1);
           cell_to_dofs.tail(1) = dofs[j];

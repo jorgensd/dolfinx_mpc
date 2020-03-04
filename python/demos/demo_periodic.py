@@ -19,12 +19,13 @@
 import dolfinx
 import dolfinx.io
 import dolfinx_mpc
+import dolfinx_mpc.utils
 import ufl
 import numpy as np
 from petsc4py import PETSc
 
 # Create mesh and finite element
-N = 50
+N = 25
 mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
 V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
@@ -41,6 +42,7 @@ def DirichletBoundary(x):
 facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
                                                        DirichletBoundary)
 topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
+print(topological_dofs)
 bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
 
@@ -63,6 +65,9 @@ for i in range(1, N):
 
 (slaves, masters,
  coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+# Tmp fix
+slaves = slaves[0]
+masters = masters[0]
 
 # Define variational problem
 u = ufl.TrialFunction(V)
@@ -82,6 +87,7 @@ u = dolfinx.Function(V)
 u.name = "uh"
 mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                masters, coeffs, offsets)
+# print("Slavecell" ,dolfinx.MPI.comm_world.rank, mpc.slave_cells())
 # Setup MPC system
 A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 b = dolfinx_mpc.assemble_vector(lhs, mpc)
@@ -116,3 +122,49 @@ u_h = dolfinx.Function(Vmpc)
 u_h.vector.setArray(uh.array)
 u_h.name = "u_mpc"
 dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "actual_periodic.xdmf").write(u_h)
+
+# Transfer data from the MPC problem to numpy arrays for comparison
+A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+
+
+#--------------------VERIFICATION-------------------------
+A_org = dolfinx.fem.assemble_matrix(a, bcs)
+
+A_org.assemble()
+L_org = dolfinx.fem.assemble_vector(lhs)
+dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                  mode=PETSc.ScatterMode.REVERSE)
+dolfinx.fem.set_bc(L_org, bcs)
+solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+solver.setType(PETSc.KSP.Type.PREONLY)
+solver.getPC().setType(PETSc.PC.Type.LU)
+solver.setOperators(A_org)
+u_ = dolfinx.Function(V)
+solver.solve(L_org, u_.vector)
+u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                      mode=PETSc.ScatterMode.FORWARD)
+
+# Create global transformation matrix
+K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+                                                   masters, coeffs,
+                                                   offsets)
+# Create reduced A
+A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+
+
+# Created reduced L
+vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
+reduced_L = np.dot(K.T, vec)
+# Solve linear system
+d = np.linalg.solve(reduced_A, reduced_L)
+# Back substitution to full solution vector
+uh_numpy = np.dot(K, d)
+
+# Compare LHS, RHS and solution with reference values
+
+dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
+assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
