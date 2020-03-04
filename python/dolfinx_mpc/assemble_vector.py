@@ -41,10 +41,10 @@ def assemble_vector(form, multipointconstraint,
     cell_to_slave, c2s_offset = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
     offsets = multipointconstraint.master_offsets()
+    masters_local = multipointconstraint.masters_local()
     slave_cells = multipointconstraint.slave_cells()
     mpc_data = (slaves, masters, coefficients,
-                offsets, slave_cells, cell_to_slave, c2s_offset)
-
+                offsets, slave_cells, cell_to_slave, c2s_offset, masters_local)
     # Get index map and ghost info
     index_map = multipointconstraint.index_map()
 
@@ -133,12 +133,10 @@ def modify_mpc_contributions(b, cell_index,
     #             b_local[k] = 0
 
     # Unwrap MPC data
-    (slaves, masters, coefficients, offsets,
-     slave_cells, cell_to_slave, cell_to_slave_offset) = mpc
+    (slaves, masters, coefficients, offsets, slave_cells,
+     cell_to_slave, cell_to_slave_offset, masters_local) = mpc
     # Unwrap ghost data
     local_range, global_indices, block_size, ghosts = ghost_info
-    local_size = local_range[1] - local_range[0]
-
     b_local_copy = b_local.copy()
 
     # Determine which slaves are in this cell,
@@ -167,29 +165,8 @@ def modify_mpc_contributions(b, cell_index,
             for k in range(len(glob)):
                 if global_indices[glob[k]] == slaves[slave_index]:
                     c0 = cell_coeffs[m_0]
-                    # Map to local index
-                    local_index = -1
-                    in_range = (cell_masters[m_0] <
-                                block_size * local_range[1] and
-                                cell_masters[m_0] >=
-                                block_size * local_range[0])
 
                     # Find local index of global master dof
-                    if in_range:
-                        local_index = (cell_masters[m_0] -
-                                       block_size * local_range[0])
-                    else:
-                        # Inverse mapping from ghost info
-                        for q, ghost in enumerate(ghosts):
-                            if local_index != -1:
-                                break
-                            for comp in range(block_size):
-                                cm0 = cell_masters[m_0]
-                                if cm0 == block_size * ghost + comp:
-                                    local_index = ((q + local_size)
-                                                   * block_size + comp)
-                                    break
-
-                    assert local_index != -1
+                    local_index = masters_local[offsets[slave_index]+m_0]
                     b[local_index] += c0*b_local_copy[k]
                     b_local[k] = 0

@@ -25,7 +25,7 @@ MultiPointConstraint::MultiPointConstraint(
     Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets_master)
     : _function_space(V), _index_map(), _mpc_dofmap(), _slaves(slaves),
-      _masters(masters), _coefficients(coefficients),
+      _masters(masters), _masters_local(), _coefficients(coefficients),
       _offsets_masters(offsets_master), _cell_to_slave(),
       _offsets_cell_to_slave(), _cell_to_master(), _offsets_cell_to_master(),
       _slave_cells(), _master_cells()
@@ -47,6 +47,15 @@ MultiPointConstraint::MultiPointConstraint(
 
   /// Generate MPC specific index map
   _index_map = generate_index_map();
+
+  /// Find all local indices for master
+  std::vector<std::int64_t> master_vec(_masters.data(),
+                                       _masters.data() + _masters.size());
+  std::vector<std::int32_t> masters_local
+      = _index_map->global_to_local(master_vec, false);
+  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> masters_eigen(
+      masters_local.data(), masters_local.size(), 1);
+  _masters_local = masters_eigen;
 }
 
 /// Generate MPC specific index map with the correct ghosting

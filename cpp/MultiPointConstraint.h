@@ -43,7 +43,8 @@ public:
   /// @param[in] offsets Gives the starting point for the i-th slave
   /// node in the master and coefficients list.
   MultiPointConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-                       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
+                       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
+					   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
                        Eigen::Array<double, Eigen::Dynamic, 1> coefficients, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets);
 
   /// Add sparsity pattern for multi-point constraints to existing
@@ -58,6 +59,11 @@ public:
   /// Return array of slave coefficients
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves()
 	{return _slaves;};
+
+  /// Return local_indices of master coefficients
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> masters_local()
+	{return _masters_local;};
+
 
   // Local indices of cells containing slave coefficients
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cells()
@@ -92,6 +98,8 @@ private:
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
 
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _masters_local;
+
   Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_masters;
 
