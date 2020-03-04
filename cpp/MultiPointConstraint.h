@@ -80,11 +80,6 @@ public:
 	cell_to_slave_mapping()
 	{return std::pair(_cell_to_slave, _offsets_cell_to_slave);};
 
-  /// Return the global to local mapping of a master coefficient it it
-  /// is not on this processor
-  std::unordered_map<int, int> glob_to_loc_ghosts()
-  {return _glob_to_loc_ghosts;};
-
   /// Return dofmap with MPC ghost values.
   std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap()
 	{return _mpc_dofmap;};
@@ -108,9 +103,6 @@ private:
 
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
-
-  std::unordered_map<int, int> _glob_to_loc_ghosts;
-  std::unordered_map<int, int> _glob_master_to_loc_ghosts;
 };
 
 
