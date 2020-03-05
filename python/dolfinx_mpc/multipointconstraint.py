@@ -174,3 +174,41 @@ def dof_close_to(x, point):
                               numpy.isclose(x[2], point[2])))
     else:
         return ValueError("Point has to be 1D, 2D or 3D")
+
+
+def facet_normal_approximation(V, mf, mf_id):
+    import dolfinx
+    import ufl
+    n = dolfinx.FacetNormal(V.mesh)
+    nh = dolfinx.Function(V)
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = (dolfinx.Constant(V.mesh, 0)*ufl.inner(u, v)*ufl.dx
+         + ufl.inner(u, v)*ufl.ds)
+    ds = ufl.ds(domain=V.mesh, subdomain_data=mf, subdomain_id=mf_id)
+    L = ufl.inner(n, v)*ds
+
+    A = dolfinx.fem.assemble_matrix(a)
+    A = ident_zeros(A)
+
+    b = dolfinx.fem.assemble_vector(L)
+    ksp = PETSc.KSP().create(V.mesh.mpi_comm())
+    ksp.setOperators(A)
+    ksp.setType("preonly")
+    ksp.getPC().setType("lu")
+    ksp.getPC().setFactorSolverType("mumps")
+    ksp.solve(b, nh.vector)
+    return nh
+
+
+def ident_zeros(A):
+    assert A.size[0] == A.size[1]
+    A.assemble()
+    one = numpy.ones(1, dtype=numpy.float64)
+    for i in range(A.size[0]):
+        indices, values = A.getRow(i)
+        absrow = sum(abs(values))
+        if absrow < 1e-6:
+            rows = numpy.array([i], dtype=numpy.int32)
+            A.setValues(rows, rows, one)
+            A.assemble()
+    return A

@@ -19,7 +19,7 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
     """
     geom = pygmsh.built_in.Geometry()
     rect = geom.add_rectangle(0.0, 2.0, 0.0, 1.0, 0.0, lcar=0.1)
-    geom.rotate(rect, [0, 0, 0], np.pi/6, [0, 0, 1])
+    geom.rotate(rect, [0, 0, 0], np.pi/8, [0, 0, 1])
 
     geom.add_physical([rect.line_loop.lines[0], rect.line_loop.lines[2]], 1)
     geom.add_physical([rect.line_loop.lines[1]], 2)
@@ -51,7 +51,7 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
 # Create mesh
 # geom.rotate only in pygmsh master, not stable release yet.
 # See: https://github.com/nschloe/pygmsh/commit/d978fa18
-# create_mesh_gmsh()
+create_mesh_gmsh()
 
 # Load mesh and corresponding facet markers
 with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh.xdmf") as xdmf:
@@ -107,25 +107,32 @@ x = W.tabulate_dof_coordinates()
 wall_facets = np.where(mf.values == 1)[0]
 dofx = dolfinx.fem.locate_dofs_topological((W.sub(0).sub(0),
                                             V.sub(0).collapse()),
-                                           1, wall_facets)[:, 0]
+                                           1, wall_facets)
 dofy = dolfinx.fem.locate_dofs_topological((W.sub(0).sub(1),
                                             V.sub(1).collapse()),
-                                           1, wall_facets)[:, 0]
+                                           1, wall_facets)
 
 slaves = []
 masters = []
+coeffs = []
 offsets = np.linspace(0, len(dofx), len(dofx)+1, dtype=np.int)
-coeffs = np.sqrt(3)*np.ones(len(dofx))
+# coeffs = np.sqrt(3)*np.ones(len(dofx))
 global_indices = W.dofmap.index_map.global_indices(False)
+
+nh = dolfinx_mpc.facet_normal_approximation(V, mf, 1)
+nhx, nhy = nh.sub(0).collapse(), nh.sub(1).collapse()
+nh_out = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "nh.xdmf")
+nh_out.write_checkpoint(nh, "nh", 0.0)
+nh_out.close()
 
 # Find index of each pair of x and y components.
 for d_x in dofx:
     for d_y in dofy:
-        if np.allclose(x[d_x], x[d_y]):
+        if np.allclose(x[d_x[0]], x[d_y[0]]):
             slave_dof = np.vstack(dolfinx.MPI.comm_world.allgather(
-                global_indices[d_x]))[0, 0]
+                global_indices[d_x[0]]))[0, 0]
             master_dof = np.vstack(dolfinx.MPI.comm_world.allgather(
-                global_indices[d_y]))[0, 0]
+                global_indices[d_y[0]]))[0, 0]
             already_bc = False
             # Check for duplicates with Dirichlet BCS and remove them
             for bc in bcs:
@@ -137,11 +144,13 @@ for d_x in dofx:
                     already_bc = True
                     break
             if not already_bc:
+                coeffs.append(-nhy.vector[d_y[1]]/nhx.vector[d_x[1]])
                 slaves.append(slave_dof)
                 masters.append(master_dof)
 
-masters = np.array(masters)
-slaves = np.array(slaves)
+masters = np.array(masters, dtype=np.int64)
+slaves = np.array(slaves, dtype=np.int64)
+coeffs = np.array(coeffs, dtype=np.float64)
 mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(W._cpp_object, slaves,
                                                masters, coeffs, offsets)
 
