@@ -10,4 +10,4 @@
 
 from .utils import (create_transformation_matrix, PETScVector_to_global_numpy,
                     PETScMatrix_to_global_numpy, compare_vectors,
-                    compare_matrices)
+                    compare_matrices, cache_numba)

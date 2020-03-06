@@ -6,6 +6,9 @@
 
 import numpy as np
 import dolfinx
+import dolfinx_mpc
+import ufl
+import time
 
 
 def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
@@ -97,6 +100,7 @@ def compare_matrices(reduced_A, A, global_ones):
       reduced_A = [[0.1, 0.3], [0.2, 0.4]]
       global_ones = [1]
     """
+
     A_numpy_padded = np.zeros(A.shape)
     count = 0
     for i in range(A.shape[0]):
@@ -114,3 +118,44 @@ def compare_matrices(reduced_A, A, global_ones):
 
     # Check that all entities are close
     assert np.allclose(A, A_numpy_padded)
+
+
+def cache_numba(matrix=False, vector=False, backsubstitution=False):
+    """
+    Build a minimal numba cache for all operations
+    """
+    print("Building Numba cache...")
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world,
+                                  dolfinx.MPI.comm_world.size,
+                                  dolfinx.MPI.comm_world.size)
+    V = dolfinx.FunctionSpace(mesh, ("CG", 1))
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = ufl.inner(u, v) * ufl.dx
+    L = ufl.inner(dolfinx.Constant(mesh, 1), v) * ufl.dx
+    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object,
+                                                   np.array([],
+                                                            dtype=np.int64),
+                                                   np.array([],
+                                                            dtype=np.int64),
+                                                   np.array([],
+                                                            dtype=np.float64),
+                                                   np.array([],
+                                                            dtype=np.int64))
+    if matrix:
+        start = time.time()
+        A = dolfinx_mpc.assemble_matrix(a, mpc, [])
+        end = time.time()
+        print("CACHE Matrix assembly time: {0:.2e} ".format(end-start))
+        A.assemble()
+    if vector:
+        start = time.time()
+        b = dolfinx_mpc.assemble_vector(L, mpc)
+        end = time.time()
+        print("CACHE Vector assembly time: {0:.2e} ".format(end-start))
+
+        if backsubstitution:
+            c = b.copy()
+            start = time.time()
+            dolfinx_mpc.backsubstitution(mpc, c, V.dofmap)
+            end = time.time()
+            print("CACHE backsubstitution: {0:.2e} ".format(end-start))

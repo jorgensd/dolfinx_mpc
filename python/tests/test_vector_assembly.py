@@ -14,6 +14,9 @@ import dolfinx_mpc.utils
 import ufl
 
 
+dolfinx_mpc.utils.cache_numba(vector=True)
+
+
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
 @pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
@@ -26,9 +29,8 @@ def test_mpc_assembly(master_point, degree, celltype):
 
     # Generate reference vector
     v = ufl.TestFunction(V)
-    f = dolfinx.Constant(mesh, 1)
-    # x = ufl.SpatialCoordinate(mesh)
-    # f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
+    x = ufl.SpatialCoordinate(mesh)
+    f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
     lhs = ufl.inner(f, v)*ufl.dx
 
     # Create multi point constraint using geometrical mappings
@@ -42,8 +44,7 @@ def test_mpc_assembly(master_point, degree, celltype):
      coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
-    for i in range(2):
-        b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
