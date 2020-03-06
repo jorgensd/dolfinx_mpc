@@ -171,6 +171,6 @@ def dof_close_to(x, point):
         return numpy.logical_and(
             numpy.logical_and(numpy.isclose(x[0], point[0]),
                               numpy.isclose(x[1], point[1])),
-                              numpy.isclose(x[2], point[2]))
+            numpy.isclose(x[2], point[2]))
     else:
         return ValueError("Point has to be 1D, 2D or 3D")
