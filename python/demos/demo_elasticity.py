@@ -13,9 +13,11 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
 
+dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
+
 
 def demo_elasticity():
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 4, 4)
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 10, 10)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -73,10 +75,8 @@ def demo_elasticity():
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
     # Setup MPC system
-    for i in range(2):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    for i in range(2):
-        b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])

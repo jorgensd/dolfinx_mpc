@@ -17,6 +17,9 @@ import dolfinx_mpc.utils
 import ufl
 
 
+dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
+
+
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 def test_pipeline(master_point):
 
@@ -47,8 +50,6 @@ def test_pipeline(master_point):
 
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
-    # s_m_c = {lambda x: dof_at(x, [0, 0]):
-    #          {lambda x: dof_at(x, [1, 1]): 0.1}}
     s_m_c = {lambda x: dof_at(x, [1, 0]):
              {lambda x: dof_at(x, [0, 1]): 0.43,
               lambda x: dof_at(x, [1, 1]): 0.11},
@@ -60,19 +61,17 @@ def test_pipeline(master_point):
                                                    masters, coeffs, offsets)
 
     # Setup MPC system
-    for i in range(2):
-        start = time.time()
-        A = dolfinx_mpc.assemble_matrix(a, mpc)
-        end = time.time()
-        print("Runtime: {0:.2e}".format(end-start))
+    start = time.time()
+    A = dolfinx_mpc.assemble_matrix(a, mpc)
+    end = time.time()
+    print("Runtime: {0:.2e}".format(end-start))
     mf = dolfinx.MeshFunction("size_t", mesh, 1, 0)
 
     def boundary(x):
         return np.full(x.shape[1], True)
     mf.mark(boundary, 1)
 
-    for i in range(2):
-        b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    b = dolfinx_mpc.assemble_vector(lhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 

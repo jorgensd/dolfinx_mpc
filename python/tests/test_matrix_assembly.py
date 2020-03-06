@@ -10,7 +10,11 @@ import pytest
 import dolfinx
 import dolfinx_mpc
 import dolfinx_mpc.utils
+import time
 import ufl
+
+
+dolfinx_mpc.utils.cache_numba(matrix=True)
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
@@ -42,12 +46,10 @@ def test_mpc_assembly(master_point, degree, celltype):
                                                    masters, coeffs, offsets)
 
     # Assemble custom MPC assembler
-    import time
-    for i in range(2):
-        start = time.time()
-        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
-        end = time.time()
-        print("Runtime: {0:.2e}".format(end-start))
+    start = time.time()
+    A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
+    end = time.time()
+    print("Runtime: {0:.2e}".format(end-start))
 
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
 
@@ -93,11 +95,10 @@ def test_slave_on_same_cell(master_point, degree, celltype):
 
     # Assemble custom MPC assembler
     import time
-    for i in range(2):
-        start = time.time()
-        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
-        end = time.time()
-        print("Runtime: {0:.2e}".format(end-start))
+    start = time.time()
+    A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
+    end = time.time()
+    print("Runtime: {0:.2e}".format(end-start))
 
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
 

@@ -24,8 +24,10 @@ import ufl
 import numpy as np
 from petsc4py import PETSc
 
+dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
+
 # Create mesh and finite element
-N = 50
+N = 15
 mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
 V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
