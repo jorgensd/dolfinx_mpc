@@ -29,9 +29,11 @@ test:
     - mpirun -n 3 python3 demo_periodic.py
     - mpirun -n 4 python3 demo_periodic.py
     - python3 demo_stokes.py
-    - mpirun -n 2 python3 demo_stokes.py
-    - mpirun -n 3 python3 demo_stokes.py
-    - mpirun -n 4 python3 demo_stokes.py
+    # Deactivate parallel stokes until we can read in mvcs again, see
+    # https://github.com/FEniCS/dolfinx/issues/818
+    # - mpirun -n 2 python3 demo_stokes.py
+    # - mpirun -n 3 python3 demo_stokes.py
+    # - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 2 python3 demo_periodic3d.py
     - mpirun -n 3 python3 demo_periodic3d.py
