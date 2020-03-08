@@ -66,10 +66,9 @@ def PETScMatrix_to_global_numpy(A):
     all processors as a numpy nd array.
     """
     A_numpy = np.zeros((A.size[0], A.size[1]))
-    for i in range(A.getOwnershipRange()[0], A.getOwnershipRange()[1]):
-        cols, vals = A.getRow(i)
-        for col, val in zip(cols, vals):
-            A_numpy[i, col] = val
+    B = A.convert("dense")
+    o_range = A.getOwnershipRange()
+    A_numpy[o_range[0]:o_range[1], :] = B.getDenseArray()
     A_numpy = sum(dolfinx.MPI.comm_world.allgather(A_numpy))
     return A_numpy
 
