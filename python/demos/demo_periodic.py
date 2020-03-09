@@ -186,12 +186,12 @@ reduced_A = np.matmul(np.matmul(K.T, A_global), K)
 vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
 reduced_L = np.dot(K.T, vec)
 # Solve linear system
-# d = np.linalg.solve(reduced_A, reduced_L)
+d = np.linalg.solve(reduced_A, reduced_L)
 # Back substitution to full solution vector
-# uh_numpy = np.dot(K, d)
+uh_numpy = np.dot(K, d)
 
 # compare LHS, RHS and solution with reference values
 
 dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
 dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-# assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
