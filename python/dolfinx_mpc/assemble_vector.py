@@ -118,7 +118,7 @@ def assemble_vector_numba(b, kernel, mesh, gdim,
             b[dofmap[cell_index * num_dofs_per_element + j]] += b_local[j]
 
 
-@numba.njit
+@numba.njit(cache=True)
 def modify_mpc_contributions(b, cell_index,
                              slave_cell_index, b_local, mpc, dofmap,
                              num_dofs_per_element, ghost_info):

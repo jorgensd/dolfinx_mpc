@@ -52,7 +52,7 @@ def PETScVector_to_global_numpy(vector):
     Gather a PETScVector from different processors on
     all processors as a numpy array
     """
-    numpy_vec = np.zeros(vector.size)
+    numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
     numpy_vec[l_min:l_max] += vector.array
@@ -65,10 +65,12 @@ def PETScMatrix_to_global_numpy(A):
     Gather a PETScMatrix from different processors on
     all processors as a numpy nd array.
     """
-    A_numpy = np.zeros((A.size[0], A.size[1]))
+
     B = A.convert("dense")
+    B_np = B.getDenseArray()
+    A_numpy = np.zeros((A.size[0], A.size[1]), dtype=B_np.dtype)
     o_range = A.getOwnershipRange()
-    A_numpy[o_range[0]:o_range[1], :] = B.getDenseArray()
+    A_numpy[o_range[0]:o_range[1], :] = B_np
     A_numpy = sum(dolfinx.MPI.comm_world.allgather(A_numpy))
     return A_numpy
 
@@ -100,7 +102,7 @@ def compare_matrices(reduced_A, A, global_ones):
       global_ones = [1]
     """
 
-    A_numpy_padded = np.zeros(A.shape)
+    A_numpy_padded = np.zeros(A.shape, dtype=reduced_A.dtype)
     count = 0
     for i in range(A.shape[0]):
         if i in global_ones:

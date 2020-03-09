@@ -117,7 +117,7 @@ def add_diagonal(A, dofs):
     sink(A_diag, dof_pos)
 
 
-@numba.njit
+@numba.njit(cache=True)
 def in_numpy_array(array, value):
     """
     Convenience function replacing "value in array" for numpy arrays in numba
