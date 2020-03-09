@@ -81,7 +81,7 @@ for i in range(1, M):
 # Define variational problem
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
-a = ufl.dot(ufl.grad(u), ufl.grad(v))*ufl.dx
+a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
 
 x = ufl.SpatialCoordinate(mesh)
 dx = x[0] - 0.9
@@ -90,7 +90,7 @@ dz = x[2] - 0.1
 f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
             + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
 
-lhs = f*v*ufl.dx
+lhs = ufl.inner(f, v)*ufl.dx
 
 # Compute solution
 u = dolfinx.Function(V)
