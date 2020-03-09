@@ -70,11 +70,11 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
     # Unravel data from MPC
     slave_cells = multipointconstraint.slave_cells()
     masters, coefficients = multipointconstraint.masters_and_coefficients()
-    masters, coefficients = masters, coefficients
+    masters_local = multipointconstraint.masters_local()
     cell_to_slave, c_to_s_off = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
     offsets = multipointconstraint.master_offsets()
-    mpc_data = (slaves, masters, coefficients, offsets,
+    mpc_data = (slaves, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)
 
     # General assembly data
@@ -210,8 +210,9 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
     ffi_fb = ffi.from_buffer
 
     # Unpack MPC data
-    (slaves, masters, coefficients, offsets, slave_cells,
+    (slaves, masters_local, coefficients, offsets, slave_cells,
      cell_to_slave, cell_to_slave_offset) = mpc
+
     # Unpack ghost data
     local_range, block_size, global_indices, ghosts = ghost_info
 
@@ -242,8 +243,8 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
             global_slaves.append(gi)
     for s_0 in range(len(global_slaves)):
         slave_index = global_slaves[s_0]
-        cell_masters = masters[offsets[slave_index]:
-                               offsets[slave_index+1]]
+        cell_masters = masters_local[offsets[slave_index]:
+                                     offsets[slave_index+1]]
         cell_coeffs = coefficients[offsets[slave_index]:
                                    offsets[slave_index+1]]
         # Variable for local position of slave dof
@@ -292,8 +293,8 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
                         break
                 assert(o_slave_local != -1)
 
-                other_cell_masters = masters[offsets[other_slave]:
-                                             offsets[other_slave+1]]
+                other_cell_masters = masters_local[offsets[other_slave]:
+                                                   offsets[other_slave+1]]
                 o_coeffs = coefficients[offsets[other_slave]:
                                         offsets[other_slave+1]]
                 # Find local index of other masters
@@ -311,34 +312,39 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
                     # Only insert once per pair,
                     # but remove local values for all slaves
                     if o_slave_index > s_0:
-                        ierr_m0m1 = set_values(A, 1, ffi_fb(m0_index),
-                                               1, ffi_fb(m1_index),
-                                               ffi_fb(A_m0m1), mode)
+                        ierr_m0m1 = set_values_local(A, 1, ffi_fb(m0_index),
+                                                     1, ffi_fb(m1_index),
+                                                     ffi_fb(A_m0m1), mode)
                         assert(ierr_m0m1 == 0)
-                        ierr_m1m0 = set_values(A, 1, ffi_fb(m1_index),
-                                               1, ffi_fb(m0_index),
-                                               ffi_fb(A_m1m0), mode)
+                        ierr_m1m0 = set_values_local(A, 1, ffi_fb(m1_index),
+                                                     1, ffi_fb(m0_index),
+                                                     ffi_fb(A_m1m0), mode)
                         assert(ierr_m1m0 == 0)
 
-            # Add slave rows to master column
-            global_pos = numpy.zeros(local_pos.size, dtype=numpy.int32)
-            # Map ghosts to global index and slave to master
-            for (h, g) in enumerate(local_pos):
-                global_pos[h] = global_indices[g]
-            global_pos[slave_local] = cell_masters[m_0]
+            # Add slave column to master column
+            mpc_pos = local_pos.copy()
+            mpc_pos[slave_local] = cell_masters[m_0]
             m0_index[0] = cell_masters[m_0]
 
-            ierr_row = set_values(A, num_dofs_per_element, ffi_fb(global_pos),
-                                  1, ffi_fb(m0_index), ffi_fb(A_row), mode)
+            ierr_row = set_values_local(A,
+                                        num_dofs_per_element, ffi_fb(mpc_pos),
+                                        1, ffi_fb(m0_index),
+                                        ffi_fb(A_row), mode)
             assert(ierr_row == 0)
 
-            # Add slave columns to master row
-            ierr_col = set_values(A, 1, ffi_fb(m0_index), num_dofs_per_element,
-                                  ffi_fb(global_pos), ffi_fb(A_col), mode)
+            # Add slave row to master row
+            ierr_col = set_values_local(A,
+                                        1, ffi_fb(m0_index),
+                                        num_dofs_per_element, ffi_fb(mpc_pos),
+                                        ffi_fb(A_col), mode)
+
             assert(ierr_col == 0)
             # Add slave contributions to A_(master, master)
-            ierr_m0m0 = set_values(A, 1, ffi_fb(m0_index), 1, ffi_fb(m0_index),
-                                   ffi_fb(A_master), mode)
+            ierr_m0m0 = set_values_local(A,
+                                         1, ffi_fb(m0_index),
+                                         1, ffi_fb(m0_index),
+                                         ffi_fb(A_master), mode)
+
             assert(ierr_m0m0 == 0)
 
         # Add contributions for different masters on the same cell
@@ -349,26 +355,20 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
                 A_c0[0, 0] += c0*c1*A_local_copy[slave_local, slave_local]
                 m0_index[0] = cell_masters[m_0]
                 m1_index[0] = cell_masters[m_1]
-                ierr_c0 = set_values(A, 1, ffi_fb(m0_index), 1,
-                                     ffi_fb(m1_index), ffi_fb(A_c0), mode)
+                ierr_c0 = set_values_local(A,
+                                           1, ffi_fb(m0_index),
+                                           1, ffi_fb(m1_index),
+                                           ffi_fb(A_c0), mode)
                 assert(ierr_c0 == 0)
                 A_c1.fill(0.0)
                 A_c1[0, 0] += c0*c1*A_local_copy[slave_local, slave_local]
-                ierr_c1 = set_values(A, 1, ffi_fb(m1_index), 1,
-                                     ffi_fb(m0_index), ffi_fb(A_c1), mode)
+                ierr_c1 = set_values_local(A,
+                                           1, ffi_fb(m1_index),
+                                           1, ffi_fb(m0_index),
+                                           ffi_fb(A_c1), mode)
                 assert(ierr_c1 == 0)
 
-    # FIXME: add handling of Dirichlet condition on master nodes
-    # if len(bcs)>0:
-    #     bc_value = numpy.array([[1]], dtype=PETSc.ScalarType)
-    #     for i in range(len(bcs)):
-    #         if bcs[i]:
-    #             bc_row = numpy.array([i],dtype=numpy.int32)
-    #             ierr_bc = set_values(A, 1, ffi_fb(bc_row), 1,
-    #                                  ffi_fb(bc_row),
-    #                                  ffi_fb(bc_value), mode)
-    #             assert(ierr_bc == 0)
-
-    sink(A_m0m1, A_m1m0, m1_index, A_row, A_col, m0_index, global_pos,
+    sink(A_m0m1, A_m1m0, m1_index, A_row, A_col, m0_index, mpc_pos,
          A_master, A_c0, A_c1)
+
     return A_local

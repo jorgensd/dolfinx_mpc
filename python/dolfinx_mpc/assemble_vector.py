@@ -43,8 +43,8 @@ def assemble_vector(form, multipointconstraint,
     offsets = multipointconstraint.master_offsets()
     masters_local = multipointconstraint.masters_local()
     slave_cells = multipointconstraint.slave_cells()
-    mpc_data = (slaves, masters, coefficients,
-                offsets, slave_cells, cell_to_slave, c2s_offset, masters_local)
+    mpc_data = (slaves, masters_local, coefficients,
+                offsets, slave_cells, cell_to_slave, c2s_offset)
     # Get index map and ghost info
     index_map = multipointconstraint.index_map()
 
@@ -133,8 +133,8 @@ def modify_mpc_contributions(b, cell_index,
     #             b_local[k] = 0
 
     # Unwrap MPC data
-    (slaves, masters, coefficients, offsets, slave_cells,
-     cell_to_slave, cell_to_slave_offset, masters_local) = mpc
+    (slaves, masters_local, coefficients, offsets, slave_cells,
+     cell_to_slave, cell_to_slave_offset) = mpc
     # Unwrap ghost data
     local_range, global_indices, block_size, ghosts = ghost_info
     b_local_copy = b_local.copy()
@@ -154,8 +154,8 @@ def modify_mpc_contributions(b, cell_index,
     # Loop over the slaves
     for s_0 in range(len(global_slaves)):
         slave_index = global_slaves[s_0]
-        cell_masters = masters[offsets[slave_index]:
-                               offsets[slave_index+1]]
+        cell_masters = masters_local[offsets[slave_index]:
+                                     offsets[slave_index+1]]
         cell_coeffs = coefficients[offsets[slave_index]:
                                    offsets[slave_index+1]]
 
