@@ -36,9 +36,7 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
 
     facet_cells = np.vstack(np.array([cells.data for cells in mesh.cells
                                       if cells.type == "line"]))
-    facet_data = np.array([mesh.cell_data_dict["gmsh:physical"][k]
-                           for k in mesh.cell_data_dict["gmsh:physical"].keys()
-                           if k == "line"])[0]
+    facet_data = mesh.cell_data_dict["gmsh:physical"]["line"]
 
     facet_mesh = meshio.Mesh(points=mesh.points,
                              cells=[("line", facet_cells)],
@@ -80,9 +78,9 @@ dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh.xdmf") as xdmf:
     mesh = xdmf.read_mesh(dolfinx.cpp.mesh.GhostMode.none)
 
-with dolfinx.io.XDMFFile(mesh.mpi_comm(), "dolfin_mvc.xdmf") as xdmf:
-    read_function = getattr(xdmf, "read_mf_size_t")
-    mf = read_function(mesh, "facets")
+with dolfinx.io.XDMFFile(mesh.mpi_comm(), "facet_mesh.xdmf") as xdmf:
+    mvc = xdmf.read_mvc_size_t(mesh, "name_to_read")
+mf = dolfinx.MeshFunction("size_t", mesh, mvc, 0)
 
 # Create the function space
 P2 = ufl.VectorElement("Lagrange", mesh.ufl_cell(), 2)
