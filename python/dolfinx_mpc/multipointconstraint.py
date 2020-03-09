@@ -16,32 +16,32 @@ import numpy
 def backsubstitution(mpc, vector, dofmap):
     slaves = mpc.slaves()
     masters, coefficients = mpc.masters_and_coefficients()
+    masters_local = mpc.masters_local()
     offsets = mpc.master_offsets()
     index_map = mpc.index_map()
     slave_cells = mpc.slave_cells()
     cell_to_slave, cell_to_slave_offset = mpc.cell_to_slave_mapping()
-    ghost_info = (index_map.local_range, index_map.ghosts,
-                  index_map.block_size, index_map.indices(True))
     mpc = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
-           masters, coefficients, offsets)
+           masters_local, coefficients, offsets)
     num_dofs_per_element = dofmap.dof_layout.num_dofs
+    global_indices = index_map.indices(True)
     backsubstitution_numba(vector, dofmap.dof_array,
-                           num_dofs_per_element, mpc, ghost_info)
+                           num_dofs_per_element, mpc, global_indices)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
     return vector
 
 
 @numba.njit
-def backsubstitution_numba(b, dofmap, num_dofs_per_element, mpc, ghost_info):
+def backsubstitution_numba(b, dofmap, num_dofs_per_element, mpc,
+                           global_indices):
     """
-        Insert mpc values into vector bc
-        """
+    Insert mpc values into vector bc
+    """
     (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
-     masters, coefficients, offsets) = mpc
-    (local_range, ghosts, block_size, global_indices) = ghost_info
-    local_size = local_range[1] - local_range[0]
+     masters_local, coefficients, offsets) = mpc
     slaves_visited = numpy.empty(0, dtype=numpy.float64)
+
     # Loop through slave cells
     for (index, cell_index) in enumerate(slave_cells):
         cell_slaves = cell_to_slave[cell_to_slave_offset[index]:
@@ -67,28 +67,12 @@ def backsubstitution_numba(b, dofmap, num_dofs_per_element, mpc, ghost_info):
             # Check if we have already inserted for this slave
             if not in_numpy_array(slaves_visited, slave):
                 slaves_visited = numpy.append(slaves_visited, slave)
-                slaves_masters = masters[offsets[slave_index]:
-                                         offsets[slave_index+1]]
+                slaves_masters = masters_local[offsets[slave_index]:
+                                               offsets[slave_index+1]]
                 slaves_coeffs = coefficients[offsets[slave_index]:
                                              offsets[slave_index+1]]
                 for (master, coeff) in zip(slaves_masters, slaves_coeffs):
-                    # Find local index for master
-                    local_master_index = -1
-                    in_range = (master < block_size * local_range[1] and
-                                master >= block_size * local_range[0])
-                    if in_range:
-                        local_master_index = master-block_size*local_range[0]
-                    else:
-                        for q, ghost in enumerate(ghosts):
-                            if local_master_index != -1:
-                                break
-                            for comp in range(block_size):
-                                if master == block_size * ghost + comp:
-                                    local_master_index = ((q + local_size)
-                                                          * block_size + comp)
-                                    break
-                    assert local_master_index != -1
-                    b[k] += coeff*b[local_master_index]
+                    b[k] += coeff*b[master]
 
 
 def slave_master_structure(V: function.FunctionSpace, slave_master_dict:

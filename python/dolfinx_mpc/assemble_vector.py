@@ -165,8 +165,5 @@ def modify_mpc_contributions(b, cell_index,
             for k in range(len(glob)):
                 if global_indices[glob[k]] == slaves[slave_index]:
                     c0 = cell_coeffs[m_0]
-
-                    # Find local index of global master dof
-                    local_index = masters_local[offsets[slave_index]+m_0]
-                    b[local_index] += c0*b_local_copy[k]
+                    b[cell_masters[m_0]] += c0*b_local_copy[k]
                     b_local[k] = 0
