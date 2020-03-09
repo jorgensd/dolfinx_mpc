@@ -32,7 +32,7 @@ def backsubstitution(mpc, vector, dofmap):
     return vector
 
 
-@numba.njit
+@numba.njit(cache=True)
 def backsubstitution_numba(b, dofmap, num_dofs_per_element, mpc,
                            global_indices):
     """
