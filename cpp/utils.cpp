@@ -37,9 +37,11 @@ dolfinx_mpc::locate_cells_with_dofs(
   std::int64_t offset_index = 0;
   cell_to_dofs_offsets.conservativeResize(1);
   cell_to_dofs_offsets.tail(1) = offset_index;
-  for (auto& cell : dolfinx::mesh::MeshRange(mesh, mesh.topology().dim()))
+  const int tdim = mesh.topology().dim();
+  const int num_cells = mesh.topology().index_map(tdim)->size_local();
+  for (int cell_index = 0; cell_index < num_cells; cell_index++)
   {
-    const int cell_index = cell.index();
+
     auto cell_dofs = dofmap.cell_dofs(cell_index);
 
     /// Check if dof is in cell
