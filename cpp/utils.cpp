@@ -6,11 +6,14 @@
 
 #include "utils.h"
 #include <Eigen/Dense>
+#include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/la/SparsityPattern.h>
+#include <dolfinx/la/utils.h>
+#include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/MeshIterator.h>
 
@@ -112,4 +115,113 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
+}
+
+Eigen::Tensor<double, 3, Eigen::RowMajor> dolfinx_mpc::get_basis_functions(
+    std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+    const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
+    const int index)
+{
+  // TODO: This could be easily made more efficient by exploiting points
+  // being ordered by the cell to which they belong.
+
+  // Get mesh
+  assert(V);
+  assert(V->mesh());
+  const dolfinx::mesh::Mesh& mesh = *V->mesh();
+  const int gdim = mesh.geometry().dim();
+  const int tdim = mesh.topology().dim();
+
+  // Get geometry data
+  const dolfinx::graph::AdjacencyList<std::int32_t>& connectivity_g
+      = mesh.geometry().dofmap();
+  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& pos_g
+      = connectivity_g.offsets();
+  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& cell_g
+      = connectivity_g.array();
+
+  // FIXME: Add proper interface for num coordinate dofs
+  const int num_dofs_g = connectivity_g.num_links(0);
+  const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>& x_g
+      = mesh.geometry().x();
+  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      coordinate_dofs(num_dofs_g, gdim);
+
+  // Get coordinate mapping
+  std::shared_ptr<const dolfinx::fem::CoordinateElement> cmap
+      = mesh.geometry().coord_mapping;
+  if (!cmap)
+  {
+    throw std::runtime_error(
+        "dolfinx::fem::CoordinateElement has not been attached to mesh.");
+  }
+
+  // Get element
+  assert(V->element());
+  const dolfinx::fem::FiniteElement& element = *V->element();
+  const int reference_value_size = element.reference_value_size();
+  const int value_size = element.value_size();
+  const int space_dimension = element.space_dimension();
+
+  // Prepare geometry data structures
+  Eigen::Tensor<double, 3, Eigen::RowMajor> J(1, gdim, tdim);
+  Eigen::Array<double, Eigen::Dynamic, 1> detJ(1);
+  Eigen::Tensor<double, 3, Eigen::RowMajor> K(1, tdim, gdim);
+  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> X(1,
+                                                                          tdim);
+
+  // Prepare basis function data structures
+  Eigen::Tensor<double, 3, Eigen::RowMajor> basis_reference_values(
+      1, space_dimension, reference_value_size);
+  Eigen::Tensor<double, 3, Eigen::RowMajor> basis_values(1, space_dimension,
+                                                         value_size);
+
+  // Create work vector for expansion coefficients
+  Eigen::Matrix<PetscScalar, 1, Eigen::Dynamic> coefficients(
+      element.space_dimension());
+
+  // Get dofmap
+  assert(V->dofmap());
+  const dolfinx::fem::DofMap& dofmap = *V->dofmap();
+
+  mesh.create_entity_permutations();
+
+  const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic>&
+      cell_edge_reflections
+      = mesh.topology().get_edge_reflections();
+  const Eigen::Array<bool, Eigen::Dynamic, Eigen::Dynamic>&
+      cell_face_reflections
+      = mesh.topology().get_face_reflections();
+  const Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>&
+      cell_face_rotations
+      = mesh.topology().get_face_rotations();
+
+  // Skip negative cell indices
+  if (index < 0)
+    return basis_values;
+
+  // Get cell geometry (coordinate dofs)
+  for (int i = 0; i < num_dofs_g; ++i)
+    for (int j = 0; j < gdim; ++j)
+      coordinate_dofs(i, j) = x_g(cell_g[pos_g[index] + i], j);
+
+  // Compute reference coordinates X, and J, detJ and K
+  cmap->compute_reference_geometry(X, J, detJ, K, x.head(gdim),
+                                   coordinate_dofs);
+
+  // Compute basis on reference element
+  element.evaluate_reference_basis(basis_reference_values, X);
+
+  const Eigen::Array<bool, Eigen::Dynamic, 1>& e_ref_cell
+      = cell_edge_reflections.col(index);
+  const Eigen::Array<bool, Eigen::Dynamic, 1>& f_ref_cell
+      = cell_face_reflections.col(index);
+  const Eigen::Array<std::uint8_t, Eigen::Dynamic, 1>& f_rot_cell
+      = cell_face_rotations.col(index);
+
+  // Push basis forward to physical element
+  element.transform_reference_basis(basis_values, basis_reference_values, X, J,
+                                    detJ, K, e_ref_cell.data(),
+                                    f_ref_cell.data(), f_rot_cell.data());
+  return basis_values;
 }
