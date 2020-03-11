@@ -3,8 +3,9 @@ import meshio
 import numpy as np
 
 geom = pygmsh.built_in.Geometry()
-rect = geom.add_rectangle(0.0, 1.0, 0.0, 1.0, 0.0, 0.4)
-rect2 = geom.add_rectangle(0.0, 1.0, 1.0, 2.0, 0.0, 0.5)
+res_bottom = 0.2
+rect = geom.add_rectangle(0.0, 1.0, 0.0, 1.0, 0.0, res_bottom)
+rect2 = geom.add_rectangle(0.0, 1.0, 1.0, 2.0, 0.0, 0.5*res_bottom)
 
 # Top: 1, Bottom 2, Side walls: 3
 geom.add_physical([rect.line_loop.lines[2]], 1)
