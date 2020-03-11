@@ -153,7 +153,7 @@ u_h.name = "u_mpc"
 
 out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                                    "u_periodic_tet.xdmf")
-out_periodic.write_checkpoint(u_h, "uh", 0.0)
+out_periodic.write(u_h)
 out_periodic.close()
 
 # Hex output
