@@ -32,7 +32,7 @@ def demo_stacked_cubes():
 
     # u_disp = dolfinx.function.Function(V)
     with uy_disp.vector.localForm() as u_local:
-        u_local.set(-0.025)
+        u_local.set(-0.04)
 
     def top(x):
         return np.isclose(x[1], 2)
@@ -137,7 +137,7 @@ def demo_stacked_cubes():
                 # NOTE, we should rather use mesh markers here to determine if
                 # the dof is a slave dof, or use something similar to what is
                 # used for masters
-                is_slave_dof = midpoint[1] < 1
+                is_slave_dof = midpoint[1] > 1
                 global_slave = global_indices[cell_dofs[dof_index]]
                 if is_slave_dof and global_slave not in slaves:
                     slaves.append(global_slave)
@@ -159,7 +159,7 @@ def demo_stacked_cubes():
                         other_midpoint = cell_midpoints[other_index]
                         is_master_cell = ((other_index != cell_index) and
                                           np.any(dofs_on_interface) and
-                                          (other_midpoint[1] > 1) and
+                                          (other_midpoint[1] < 1) and
                                           facet_in_cell)
 
                         if is_master_cell:
