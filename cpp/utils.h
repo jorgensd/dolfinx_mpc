@@ -32,7 +32,7 @@ namespace dolfinx_mpc
   /// @param[in] V       The function space
   /// @param[in] x       The physical coordinate
   /// @param[in] index   The cell_index
-  Eigen::Tensor<double, 3, Eigen::RowMajor> get_basis_functions(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> get_basis_functions(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
 	    const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
 	const int index);
 

@@ -117,7 +117,8 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
   }
 }
 
-Eigen::Tensor<double, 3, Eigen::RowMajor> dolfinx_mpc::get_basis_functions(
+Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+dolfinx_mpc::get_basis_functions(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index)
@@ -197,8 +198,10 @@ Eigen::Tensor<double, 3, Eigen::RowMajor> dolfinx_mpc::get_basis_functions(
       = mesh.topology().get_face_rotations();
 
   // Skip negative cell indices
+  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      basis_array(space_dimension, value_size);
   if (index < 0)
-    return basis_values;
+    return basis_array;
 
   // Get cell geometry (coordinate dofs)
   for (int i = 0; i < num_dofs_g; ++i)
@@ -223,5 +226,14 @@ Eigen::Tensor<double, 3, Eigen::RowMajor> dolfinx_mpc::get_basis_functions(
   element.transform_reference_basis(basis_values, basis_reference_values, X, J,
                                     detJ, K, e_ref_cell.data(),
                                     f_ref_cell.data(), f_rot_cell.data());
-  return basis_values;
+
+  for (int i = 0; i < space_dimension; ++i)
+  {
+    for (int j = 0; j < value_size; ++j)
+    {
+      // TODO: Find an Eigen shortcut for this operation
+      basis_array(i, j) = basis_values(0, i, j);
+    }
+  }
+  return basis_array;
 }
