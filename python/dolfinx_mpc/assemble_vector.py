@@ -31,6 +31,8 @@ def assemble_vector(form, multipointconstraint,
     facet_permutations = numpy.array([], dtype=numpy.uint8)
     # FIXME: Numba does not support edge reflections
     edge_reflections = numpy.array([], dtype=numpy.bool)
+    face_reflections = numpy.array([], dtype=numpy.bool)
+    face_rotations = numpy.array([], dtype=numpy.uint8)
     permutation_data = (edge_reflections, face_reflections,
                         face_rotations, facet_permutations)
     # FIXME: should be local facet index
@@ -105,8 +107,11 @@ def assemble_vector_numba(b, kernel, mesh, gdim,
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
                ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
                ffi_fb(facet_permutations),
-               ffi_fb(face_reflections[cell_index, :]),
-               ffi_fb(edge_reflections), ffi_fb(face_rotations[cell_index, :]))
+               ffi_fb(face_reflections),
+               ffi_fb(edge_reflections), ffi_fb(face_rotations))
+        # FIXME: Should be
+        # ffi_fb(face_reflections[cell_index, :])
+        # ffi_fb(face_rotations[cell_index, :])
 
         if in_numpy_array(slave_cells, cell_index):
             modify_mpc_contributions(b, cell_index, slave_cell_index, b_local,
