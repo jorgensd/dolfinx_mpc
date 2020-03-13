@@ -65,6 +65,8 @@ test-real:
     - cd cubes
     - python3 create_and_export_mesh.py
     - python3 cube_bench.py
+    - python3 cube_bench3d.py
+
 
 # test:
 #   stage: test
