@@ -33,7 +33,6 @@ test-complex:
     - python3 cube_bench.py
     - python3 cube_bench3d.py
 
-
 test-real:
   stage: test
   image:

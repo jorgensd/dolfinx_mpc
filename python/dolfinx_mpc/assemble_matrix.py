@@ -12,14 +12,14 @@ from .numba_setup import (PETSc, ffi, insert, mode, set_values,
                           set_values_local, sink)
 
 
-def assemble_matrix(form, multipointconstraint, bcs=None):
+def assemble_matrix(form, multipointconstraint, bcs=[]):
     """
     Assembles a ufl form given a multi point constraint and possible
     Dirichlet boundary conditions.
     NOTE: Dirichlet conditions cant be on master dofs.
     """
     bc_array = numpy.array([])
-    if bcs is not None:
+    if len(bcs) > 0:
         for bc in bcs:
             # Extract local index of possible sub space
             bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
@@ -45,6 +45,8 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
     # FIXME: Need to get all of this data indep of gdim
     facet_permutations = numpy.array([], dtype=numpy.uint8)
     # FIXME: Numba does not support edge reflections
+    face_reflections = numpy.array([], dtype=numpy.bool)
+    face_rotations = numpy.array([], dtype=numpy.uint8)
     edge_reflections = numpy.array([], dtype=numpy.bool)
     face_reflections = numpy.array([], dtype=numpy.bool)
     face_rotations = numpy.array([], dtype=numpy.uint8)
@@ -69,6 +71,10 @@ def assemble_matrix(form, multipointconstraint, bcs=None):
 
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
+
+    # Assemble the matrix with all entries
+    dolfinx.cpp.fem.assemble_matrix(A, cpp_form, bcs)
+
     # Unravel data from MPC
     slave_cells = multipointconstraint.slave_cells()
     masters, coefficients = multipointconstraint.masters_and_coefficients()
@@ -156,6 +162,8 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
     # Loop over all cells
     slave_cell_index = 0
     for cell_index, cell in enumerate(pos[:-1]):
+        if not in_numpy_array(slave_cells, cell_index):
+            continue
         num_vertices = pos[cell_index + 1] - pos[cell_index]
 
         # Compute vertices of cell from mesh data
@@ -173,10 +181,7 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
                ffi_fb(facet_permutations),
                ffi_fb(face_reflections),
                ffi_fb(edge_reflections),
-               ffi_fb(face_rotations)
-               )
-        # FIXME: should be:  ffi_fb(face_reflections[cell_index, :]),
-        # ffi_fb(face_rotations[cell_index, :])
+               ffi_fb(face_rotations))
 
         # Local dof position
         local_pos = dofmap[num_dofs_per_element * cell_index:
@@ -190,23 +195,26 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
                     A_local[k, :] = 0
                     A_local[:, k] = 0
 
+        A_local_copy = A_local.copy()
+
         # If this slave contains a slave dof, modify local contribution
-        if in_numpy_array(slave_cells, cell_index):
-            modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
-                            mpc, ghost_info, num_dofs_per_element)
-            slave_cell_index += 1
+        modify_mpc_cell(A, slave_cell_index, A_local, A_local_copy, local_pos,
+                        mpc, ghost_info, num_dofs_per_element)
+        # Remove already assembled contribution to matrix
+        A_contribution = A_local - A_local_copy
+        slave_cell_index += 1
 
         # Insert local contribution
         ierr_loc = set_values_local(A, num_dofs_per_element, ffi_fb(local_pos),
                                     num_dofs_per_element, ffi_fb(local_pos),
-                                    ffi_fb(A_local), mode)
+                                    ffi_fb(A_contribution), mode)
         assert(ierr_loc == 0)
 
-    sink(A_local, local_pos)
+    sink(A_contribution, local_pos)
 
 
 @numba.njit
-def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
+def modify_mpc_cell(A, slave_cell_index, A_local, A_local_copy, local_pos,
                     mpc, ghost_info, num_dofs_per_element):
     """
     Modifies A_local as it contains slave degrees of freedom.
@@ -237,7 +245,6 @@ def modify_mpc_cell(A, slave_cell_index, A_local, local_pos,
     m0_index = numpy.zeros(1, dtype=numpy.int32)
     m1_index = numpy.zeros(1, dtype=numpy.int32)
 
-    A_local_copy = A_local.copy()
     cell_slaves = cell_to_slave[cell_to_slave_offset[slave_cell_index]:
                                 cell_to_slave_offset[slave_cell_index+1]]
 
