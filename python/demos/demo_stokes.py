@@ -10,6 +10,12 @@ import ufl
 from petsc4py import PETSc
 
 
+# Length, width and rotation of channel
+L = 2
+H = 1
+theta = np.pi/6
+
+
 def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
     """
     Create a channel of length 2, height one, rotated pi/6 degrees
@@ -19,8 +25,8 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
     Inlet: 3
     """
     geom = pygmsh.built_in.Geometry()
-    rect = geom.add_rectangle(0.0, 2.0, 0.0, 1.0, 0.0, lcar=0.2)
-    geom.rotate(rect, [0, 0, 0], np.pi/6, [0, 0, 1])
+    rect = geom.add_rectangle(0.0, L, 0.0, H, 0.0, lcar=0.2)
+    geom.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
 
     geom.add_physical([rect.line_loop.lines[0], rect.line_loop.lines[2]], 1)
     geom.add_physical([rect.line_loop.lines[1]], 2)
@@ -47,22 +53,6 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
     meshio.xdmf.write("facet_mesh.xdmf", facet_mesh)
 
 
-def parallel_read_fix():
-    # Fix due to: https://github.com/FEniCS/dolfinx/issues/818
-    if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
-        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh.xdmf") as xdmf:
-            mesh = xdmf.read_mesh(dolfinx.cpp.mesh.GhostMode.none)
-
-        with dolfinx.io.XDMFFile(mesh.mpi_comm(), "facet_mesh.xdmf") as xdmf:
-            mvc = xdmf.read_mvc_size_t(mesh, "name_to_read")
-        mvc.name = "name_to_read"
-        mf = dolfinx.MeshFunction("size_t", mesh, mvc, 0)
-        mf.name = "facets"
-        with dolfinx.io.XDMFFile(mesh.mpi_comm(), "dolfin_mvc.xdmf") as xdmf:
-            xdmf.write(mesh)
-            xdmf.write(mf)
-
-
 # Create cache for numba functions
 dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 
@@ -72,15 +62,36 @@ dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 # if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
 #     create_mesh_gmsh()
 
+
 # parallel_read_fix()
 
 # Load mesh and corresponding facet markers
 with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh.xdmf") as xdmf:
-    mesh = xdmf.read_mesh(dolfinx.cpp.mesh.GhostMode.none)
+    mesh = xdmf.read_mesh()
 
-with dolfinx.io.XDMFFile(mesh.mpi_comm(), "facet_mesh.xdmf") as xdmf:
-    mvc = xdmf.read_mvc_size_t(mesh, "name_to_read")
-mf = dolfinx.MeshFunction("size_t", mesh, mvc, 0)
+
+def find_line_function(p0, p1):
+    """
+    Find line y=ax+b for each of the lines in the mesh
+    https://mathworld.wolfram.com/Two-PointForm.html
+    """
+    return lambda x: np.isclose(x[1],
+                                p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0]))
+
+
+points = np.array([[0, 0, 0], [L, 0, 0], [L, H, 0], [0, H, 0]])
+r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
+rotated_points = np.dot(r_matrix, points.T)
+slip_0 = find_line_function(rotated_points[:, 0], rotated_points[:, 1])
+outlet = find_line_function(rotated_points[:, 1], rotated_points[:, 2])
+slip_1 = find_line_function(rotated_points[:, 2], rotated_points[:, 3])
+inlet = find_line_function(rotated_points[:, 3], rotated_points[:, 0])
+
+mf = dolfinx.MeshFunction("size_t", mesh, mesh.topology.dim-1, 0)
+mf.mark(slip_0, 1)
+mf.mark(slip_1, 1)
+mf.mark(outlet, 2)
+mf.mark(inlet, 3)
 
 # Create the function space
 P2 = ufl.VectorElement("Lagrange", mesh.ufl_cell(), 2)
@@ -240,10 +251,10 @@ u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 
 u_out = dolfinx.io.XDMFFile(dolfinx.cpp.MPI.comm_world, "u.xdmf")
-u_out.write_checkpoint(u, "u",  0.0)
+u_out.write(u)
 u_out.close()
 p_out = dolfinx.io.XDMFFile(dolfinx.cpp.MPI.comm_world, "p.xdmf")
-p_out.write_checkpoint(p, "p",  0.0)
+p_out.write(p)
 p_out.close()
 
 
