@@ -28,9 +28,6 @@ test-complex:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - cd cubes
-    - python3 create_and_export_mesh.py
-    - python3 cube_bench.py
 
 test-real:
   stage: test
@@ -61,9 +58,6 @@ test-real:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - cd cubes
-    - python3 create_and_export_mesh.py
-    - python3 cube_bench.py
 
 # test:
 #   stage: test
