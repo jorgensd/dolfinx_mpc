@@ -6,8 +6,8 @@ import numpy as np
 def mesh_2D():
     geom = pygmsh.built_in.Geometry()
     res = 0.1
-    rect = geom.add_rectangle(0.0, 1.0, 0.0, 1.0, 0.0, res)
-    rect2 = geom.add_rectangle(0.0, 1.0, 1.0, 2.0, 0.0, 2*res)
+    rect = geom.add_rectangle(0.0, 1, 0.0, 1.0, 0.0, res)
+    rect2 = geom.add_rectangle(0.0, 1, 1.0, 2.0, 0.0, 2*res)
     # Top: 1, Bottom 2, Side walls: 3
     # geom.add_physical([rect.line_loop.lines[2]], 1)
     # geom.add_physical([rect.line_loop.lines[0]], 2)
@@ -16,7 +16,7 @@ def mesh_2D():
 
     # Upper box:
     # Top: 4, Bottom 5, Side walls: 6
-    # geom.add_physical([rect2.line_loop.lines[2]], 4)
+    # geom.add_physical([rect2.line_aloop.lines[2]], 4)
     # geom.add_physical([rect2.line_loop.lines[0]], 5)
     # geom.add_physical([rect2.line_loop.lines[1],
     # rect2.line_loop.lines[3]], 6)
