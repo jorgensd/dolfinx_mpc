@@ -33,6 +33,8 @@ def assemble_vector(form, multipointconstraint,
     face_reflections = numpy.array([], dtype=numpy.bool)
     face_rotations = numpy.array([], dtype=numpy.uint8)
     edge_reflections = numpy.array([], dtype=numpy.bool)
+    face_reflections = numpy.array([], dtype=numpy.bool)
+    face_rotations = numpy.array([], dtype=numpy.uint8)
     permutation_data = (edge_reflections, face_reflections,
                         face_rotations, facet_permutations)
     # FIXME: should be local facet index
@@ -122,6 +124,7 @@ def assemble_vector_numba(b, kernel, mesh, gdim,
                                  b_local_copy, mpc, dofmap,
                                  num_dofs_per_element, ghost_info)
         slave_cell_index += 1
+
         for j in range(num_dofs_per_element):
             position = dofmap[cell_index * num_dofs_per_element + j]
             b[position] += (b_local[j] - b_local_copy[j])

@@ -48,6 +48,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     face_reflections = numpy.array([], dtype=numpy.bool)
     face_rotations = numpy.array([], dtype=numpy.uint8)
     edge_reflections = numpy.array([], dtype=numpy.bool)
+    face_reflections = numpy.array([], dtype=numpy.bool)
+    face_rotations = numpy.array([], dtype=numpy.uint8)
     permutation_data = (edge_reflections, face_reflections,
                         face_rotations, facet_permutations)
     # FIXME: should be local facet index
@@ -194,7 +196,6 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
                     A_local[:, k] = 0
 
         A_local_copy = A_local.copy()
-
         # If this slave contains a slave dof, modify local contribution
         modify_mpc_cell(A, slave_cell_index, A_local, A_local_copy, local_pos,
                         mpc, ghost_info, num_dofs_per_element)
@@ -312,15 +313,15 @@ def modify_mpc_cell(A, slave_cell_index, A_local, A_local_copy, local_pos,
                     A_m0m1.fill(0)
                     A_m1m0.fill(0)
                     o_c = o_coeffs[m_1]
-                    A_m0m1[0, 0] = o_c*A_row[o_slave_local, 0]
-                    A_m1m0[0, 0] = o_c*A_col[0, o_slave_local]
+                    A_m0m1[0, 0] = ce*o_c*A_local_copy[slave_local,
+                                                       o_slave_local]
+                    A_m1m0[0, 0] = ce*o_c*A_local_copy[o_slave_local,
+                                                       slave_local]
                     A_row[o_slave_local, 0] = 0
                     A_col[0, o_slave_local] = 0
                     m0_index[0] = cell_masters[m_0]
                     m1_index[0] = other_cell_masters[m_1]
-
-                    # Only insert once per pair,
-                    # but remove local values for all slaves
+                    # Insert only once per slave pair on each cell
                     if o_slave_index > s_0:
                         ierr_m0m1 = set_values_local(A, 1, ffi_fb(m0_index),
                                                      1, ffi_fb(m1_index),
