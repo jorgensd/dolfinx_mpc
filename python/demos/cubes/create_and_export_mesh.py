@@ -50,9 +50,9 @@ def mesh_2D():
 
 def mesh_3D():
     geom = pygmsh.built_in.Geometry()
-    res = 0.1
-    bbox = geom.add_box(0, 1, 0, 1, 0, 1, 2*res)
-    tbox = geom.add_box(0, 1, 0, 1, 1, 2, res)
+    res = 0.25
+    bbox = geom.add_box(0, 1, 0, 1, 0, 1, res)
+    tbox = geom.add_box(0, 1, 0, 1, 1, 2, 2*res)
     geom.add_physical([bbox.volume], 1)
     geom.add_physical([tbox.volume], 2)
     msh = pygmsh.generate_mesh(geom)
