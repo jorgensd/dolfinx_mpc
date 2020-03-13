@@ -365,7 +365,6 @@ def demo_stacked_cubes(celltype="quad"):
     print(uh.norm())
 
 
-
 if __name__ == "__main__":
     demo_stacked_cubes("quad")
     demo_stacked_cubes("triangle")
