@@ -25,7 +25,7 @@ def backsubstitution(mpc, vector, dofmap):
            masters_local, coefficients, offsets)
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     global_indices = index_map.indices(True)
-    backsubstitution_numba(vector, dofmap.dof_array,
+    backsubstitution_numba(vector, dofmap.list.array(),
                            num_dofs_per_element, mpc, global_indices)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
