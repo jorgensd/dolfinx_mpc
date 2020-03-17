@@ -48,6 +48,7 @@ test-real:
     - pip3 install -e . --upgrade
 
   script:
+    - pip3 install pygmsh --upgrade
     - flake8 .
     - cd tests
     - python3 -m pytest .
