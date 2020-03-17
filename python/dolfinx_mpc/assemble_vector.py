@@ -21,7 +21,7 @@ def assemble_vector(form, multipointconstraint,
     pos = V.mesh.geometry.dofmap().offsets()
     x_dofs = V.mesh.geometry.dofmap().array()
     x = V.mesh.geometry.x
-    dofs = V.dofmap.dof_array
+    dofs = V.dofmap.list.array()
 
     # Get cell orientation data
     edge_reflections = V.mesh.topology.get_edge_reflections()
