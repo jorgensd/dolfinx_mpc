@@ -49,8 +49,8 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
                              cell_data={"name_to_read": [facet_data]})
 
     # Write mesh
-    meshio.xdmf.write("mesh.xdmf", triangle_mesh)
-    meshio.xdmf.write("facet_mesh.xdmf", facet_mesh)
+    meshio.xdmf.write("meshes/mesh.xdmf", triangle_mesh)
+    meshio.xdmf.write("meshes/facet_mesh.xdmf", facet_mesh)
 
 
 # Create cache for numba functions
@@ -59,14 +59,11 @@ dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 # Create mesh
 # geom.rotate only in pygmsh master, not stable release yet.
 # See: https://github.com/nschloe/pygmsh/commit/d978fa18
-# if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
-#    create_mesh_gmsh()
-
-
-# parallel_read_fix()
+if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
+    create_mesh_gmsh()
 
 # Load mesh and corresponding facet markers
-with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh.xdmf") as xdmf:
+with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "meshes/mesh.xdmf") as xdmf:
     mesh = xdmf.read_mesh()
 
 
@@ -160,7 +157,7 @@ def set_master_slave_slip_relationship(W, V, mf, value, bcs):
 
     nh = dolfinx_mpc.facet_normal_approximation(V, mf, 1)
     nhx, nhy = nh.sub(0).collapse(), nh.sub(1).collapse()
-    nh_out = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "nh.xdmf")
+    nh_out = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/nh.xdmf")
     nh_out.write(nh)
     nh_out.close()
 
@@ -243,10 +240,12 @@ U.vector.setArray(uh.array)
 u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 
-u_out = dolfinx.io.XDMFFile(dolfinx.cpp.MPI.comm_world, "u.xdmf")
+u_out = dolfinx.io.XDMFFile(
+    dolfinx.cpp.MPI.comm_world, "results/stokes_u.xdmf")
 u_out.write(u)
 u_out.close()
-p_out = dolfinx.io.XDMFFile(dolfinx.cpp.MPI.comm_world, "p.xdmf")
+p_out = dolfinx.io.XDMFFile(
+    dolfinx.cpp.MPI.comm_world, "results/stokes_p.xdmf")
 p_out.write(p)
 p_out.close()
 

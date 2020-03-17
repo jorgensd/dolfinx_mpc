@@ -88,7 +88,7 @@ dx = x[0] - 0.9
 dy = x[1] - 0.5
 dz = x[2] - 0.1
 f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
-            + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
+    + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
 
 lhs = ufl.inner(f, v)*ufl.dx
 
@@ -152,7 +152,7 @@ u_h.vector.setArray(uh.array)
 u_h.name = "u_mpc"
 
 out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                                   "u_periodic_tet.xdmf")
+                                   "results/u_periodic_tet.xdmf")
 out_periodic.write(u_h)
 out_periodic.close()
 
@@ -173,17 +173,14 @@ dolfinx.fem.apply_lifting(L_org, [a], [bcs])
 L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.set_bc(L_org, bcs)
-# solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
-# solver.setType(PETSc.KSP.Type.PREONLY)
-# solver.getPC().setType(PETSc.PC.Type.LU)
 solver.setOperators(A_org)
 u_ = dolfinx.Function(V)
 solver.solve(L_org, u_.vector)
 u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
-out_ref = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_nonperiodic.xdmf")
-out_ref.write(u_)
-out_ref.close()
+# out_ref = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_nonperiodic.xdmf")
+# out_ref.write(u_)
+# out_ref.close()
 
 # Transfer data from the MPC problem to numpy arrays for comparison
 A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
