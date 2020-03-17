@@ -59,8 +59,8 @@ dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 # Create mesh
 # geom.rotate only in pygmsh master, not stable release yet.
 # See: https://github.com/nschloe/pygmsh/commit/d978fa18
-if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
-    create_mesh_gmsh()
+# if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
+#    create_mesh_gmsh()
 
 
 # parallel_read_fix()
