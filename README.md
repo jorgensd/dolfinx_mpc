@@ -17,8 +17,11 @@ use PETSc matrices.
 
 # Installation
 
-Requirements: dolfinx (branch dokken/expose_sparsitypattern) To install
-the library run the following code from this directory:
+Requirements: dolfinx
+Easiest way to install dolfinx is to use docker.
+The dolfinx docker images goes under the name [dolfinx/real](https://hub.docker.com/r/dolfinx/real) and [dolfinx/complex](https://hub.docker.com/r/dolfinx/complex).
+
+To install the library run the following code from this directory:
 ```
 rm -rf build
 mkdir -p build
