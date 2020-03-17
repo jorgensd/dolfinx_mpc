@@ -16,32 +16,33 @@ import ufl
 dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 
 
-def demo_elasticity():
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 10, 10)
-
+def test_surface_integrals():
+    N = 4
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-    # Define boundary conditions (HAS TO BE NON-MASTER NODES)
+    # Fixed Dirichlet BC on the left wall
+    def left_wall(x):
+        return np.isclose(x[0], np.finfo(float).eps)
+
+    fdim = mesh.topology.dim - 1
+    left_facets = dolfinx.mesh.compute_marked_boundary_entities(mesh,
+                                                                fdim,
+                                                                left_wall)
+    bc_dofs = dolfinx.fem.locate_dofs_topological(V, 1, left_facets)
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    bc = dolfinx.fem.DirichletBC(u_bc, bc_dofs)
+    bcs = [bc]
 
-    # V1 = V.sub(1).collapse()
-    # u_disp = dolfinx.function.Function(V1)
-    # with u_disp.vector.localForm() as u_local:
-    #     u_local.set(0.1)
-
-    # def point_load(x):
-    #     return np.isclose(x.T, [1, 0.5, 0]).all(axis=1)
-    # bdofsV1 = dolfinx.fem.locate_dofs_geometrical((V.sub(1), V1), point_load)
-    # bc_p = dolfinx.fem.dirichletbc.DirichletBC(u_disp, bdofsV1, V.sub(1))
-    def boundaries(x):
-        return np.isclose(x[0], np.finfo(float).eps)
-    facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
-                                                           boundaries)
-    topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
-    bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
-    bcs = [bc]  # , bc_p]
+    # Traction on top of domain
+    def top(x):
+        return np.isclose(x[1], 1)
+    mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
+    mf.mark(top, 3)
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
+    g = dolfinx.Constant(mesh, (0, -9.81e2))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -58,22 +59,29 @@ def demo_elasticity():
         return (2.0 * mu * ufl.sym(ufl.grad(v)) +
                 lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
-    x = ufl.SpatialCoordinate(mesh)
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(ufl.as_vector((0, (x[0] - 0.5)*10**4*x[1])), v) * ufl.dx
+    lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
+        + ufl.inner(g, v)*ds
 
-    # Create MPC
+    # Create MPC (y-displacement of right wall is constant)
     dof_at = dolfinx_mpc.dof_close_to
-    s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 0.9}}
+
+    def slave_locater(i, N):
+        return lambda x: dof_at(x, [1, float(i/N)])
+
+    s_m_c = {}
+    for i in range(1, N):
+        s_m_c[slave_locater(i, N)] = {lambda x: dof_at(x, [1, 1]): 1}
+
     (slaves, masters,
      coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
                                                            1, 1)
-
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
+
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
@@ -125,16 +133,6 @@ def demo_elasticity():
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(L_org, bcs)
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
-    solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
-    solver.setOperators(A_org)
-    u_ = dolfinx.Function(V)
-    solver.solve(L_org, u_.vector)
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
-    u_.name = "u_unperturbed"
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_.xdmf").write(u_)
 
     # Create global transformation matrix
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
@@ -155,18 +153,12 @@ def demo_elasticity():
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
     if uh.owner_range[0] < masters[0] and masters[0] < uh.owner_range[1]:
-        print("MASTER DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-              .format(uh.array[masters[0]-uh.owner_range[0]],
-                      u_.vector.array[masters[0]-uh.owner_range[0]]))
+        print("MASTER DOF, MPC {0:.4e}"
+              .format(uh.array[masters[0]-uh.owner_range[0]]))
         print("Slave (given as master*coeff) {0:.4e}".
               format(uh.array[masters[0]-uh.owner_range[0]]*coeffs[0]))
 
     if uh.owner_range[0] < slaves[0] and slaves[0] < uh.owner_range[1]:
-        print("SLAVE  DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-              .format(uh.array[slaves[0]-uh.owner_range[0]],
-                      u_.vector.array[slaves[0]-uh.owner_range[0]]))
+        print("SLAVE  DOF, MPC {0:.4e}"
+              .format(uh.array[slaves[0]-uh.owner_range[0]]))
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
-
-
-if __name__ == "__main__":
-    demo_elasticity()

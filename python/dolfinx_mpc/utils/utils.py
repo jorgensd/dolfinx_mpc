@@ -6,6 +6,9 @@
 
 import numpy as np
 import dolfinx
+import dolfinx_mpc
+import ufl
+import time
 
 
 def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
@@ -49,7 +52,7 @@ def PETScVector_to_global_numpy(vector):
     Gather a PETScVector from different processors on
     all processors as a numpy array
     """
-    numpy_vec = np.zeros(vector.size)
+    numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
     numpy_vec[l_min:l_max] += vector.array
@@ -62,11 +65,12 @@ def PETScMatrix_to_global_numpy(A):
     Gather a PETScMatrix from different processors on
     all processors as a numpy nd array.
     """
-    A_numpy = np.zeros((A.size[0], A.size[1]))
-    for i in range(A.getOwnershipRange()[0], A.getOwnershipRange()[1]):
-        cols, vals = A.getRow(i)
-        for col, val in zip(cols, vals):
-            A_numpy[i, col] = val
+
+    B = A.convert("dense")
+    B_np = B.getDenseArray()
+    A_numpy = np.zeros((A.size[0], A.size[1]), dtype=B_np.dtype)
+    o_range = A.getOwnershipRange()
+    A_numpy[o_range[0]:o_range[1], :] = B_np
     A_numpy = sum(dolfinx.MPI.comm_world.allgather(A_numpy))
     return A_numpy
 
@@ -97,7 +101,8 @@ def compare_matrices(reduced_A, A, global_ones):
       reduced_A = [[0.1, 0.3], [0.2, 0.4]]
       global_ones = [1]
     """
-    A_numpy_padded = np.zeros(A.shape)
+
+    A_numpy_padded = np.zeros(A.shape, dtype=reduced_A.dtype)
     count = 0
     for i in range(A.shape[0]):
         if i in global_ones:
@@ -111,6 +116,53 @@ def compare_matrices(reduced_A, A, global_ones):
                 continue
             else:
                 A_numpy_padded[i, j] = reduced_A[i-count, j-m]
+    D = np.abs(A - A_numpy_padded)
+
+    max_index = np.unravel_index(np.argmax(D, axis=None), D.shape)
+    if D[max_index] > 1e-6:
+        print("Unequal ({0:.2e}) at ".format(D[max_index]), max_index)
+        print(A_numpy_padded[max_index], A[max_index])
 
     # Check that all entities are close
     assert np.allclose(A, A_numpy_padded)
+
+
+def cache_numba(matrix=False, vector=False, backsubstitution=False):
+    """
+    Build a minimal numba cache for all operations
+    """
+    print("Building Numba cache...")
+    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world,
+                                  dolfinx.MPI.comm_world.size,
+                                  dolfinx.MPI.comm_world.size)
+    V = dolfinx.FunctionSpace(mesh, ("CG", 1))
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = ufl.inner(u, v) * ufl.dx
+    L = ufl.inner(dolfinx.Constant(mesh, 1), v) * ufl.dx
+    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object,
+                                                   np.array([],
+                                                            dtype=np.int64),
+                                                   np.array([],
+                                                            dtype=np.int64),
+                                                   np.array([],
+                                                            dtype=np.float64),
+                                                   np.array([],
+                                                            dtype=np.int64))
+    if matrix:
+        start = time.time()
+        A = dolfinx_mpc.assemble_matrix(a, mpc, [])
+        end = time.time()
+        print("CACHE Matrix assembly time: {0:.2e} ".format(end-start))
+        A.assemble()
+    if vector:
+        start = time.time()
+        b = dolfinx_mpc.assemble_vector(L, mpc)
+        end = time.time()
+        print("CACHE Vector assembly time: {0:.2e} ".format(end-start))
+
+        if backsubstitution:
+            c = b.copy()
+            start = time.time()
+            dolfinx_mpc.backsubstitution(mpc, c, V.dofmap)
+            end = time.time()
+            print("CACHE backsubstitution: {0:.2e} ".format(end-start))

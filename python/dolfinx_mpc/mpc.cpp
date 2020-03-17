@@ -9,6 +9,7 @@
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
+#include <dolfinx_mpc/utils.h>
 #include <memory>
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
@@ -42,5 +43,6 @@ void mpc(py::module& m)
       .def("create_sparsity_pattern",
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
       .def("mpc_dofmap", &dolfinx_mpc::MultiPointConstraint::mpc_dofmap);
+  m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
 }
 } // namespace dolfinx_mpc_wrappers

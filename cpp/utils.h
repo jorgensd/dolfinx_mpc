@@ -27,4 +27,13 @@ namespace dolfinx_mpc
   /// @param[in] a       The variational formulation
   void build_standard_pattern(dolfinx::la::SparsityPattern& pattern, const dolfinx::fem::Form& a);
 
+
+  /// Get basis values for all degrees at point x in a given cell
+  /// @param[in] V       The function space
+  /// @param[in] x       The physical coordinate
+  /// @param[in] index   The cell_index
+  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> get_basis_functions(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+	    const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
+	const int index);
+
 } // namespace dolfinx_mpc

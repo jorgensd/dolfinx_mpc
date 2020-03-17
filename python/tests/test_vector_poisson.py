@@ -16,8 +16,11 @@ import dolfinx_mpc.utils
 import ufl
 
 
-@pytest.mark.parametrize("Nx", [4, 6])
-@pytest.mark.parametrize("Ny", [2, 3, 4])
+dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
+
+
+@pytest.mark.parametrize("Nx", [4])
+@pytest.mark.parametrize("Ny", [2, 3])
 @pytest.mark.parametrize("slave_space", [0, 1])
 @pytest.mark.parametrize("master_space", [0, 1])
 def test_vector_possion(Nx, Ny, slave_space, master_space):
@@ -32,12 +35,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
-    # Vsub = V.sub(0).collapse()
-    # bdofsV = dolfinx.fem.locate_dofs_geometrical((V.sub(0), Vsub), boundary)
-    # bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV, V.sub(0))
-    # bdofsV2 = dolfinx.fem.locate_dofs_geometrical((V.sub(0), Vsub), boundary)
-    # bc2 = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV2, V.sub(1))
-    # bcs = [bc,bc2]
+
     bdofsV = dolfinx.fem.locate_dofs_geometrical(V, boundary)
     bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV)
     bcs = [bc]
@@ -63,13 +61,12 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
     # Setup MPC system
-    for i in range(2):
-        start = time.time()
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-        end = time.time()
-        print("Runtime: {0:.2e}".format(end-start))
-    for i in range(2):
-        b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    start = time.time()
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    end = time.time()
+    print("Runtime: {0:.2e}".format(end-start))
+
+    b = dolfinx_mpc.assemble_vector(lhs, mpc)
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)

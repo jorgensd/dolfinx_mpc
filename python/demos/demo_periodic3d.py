@@ -28,9 +28,16 @@ from petsc4py import PETSc
 dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 
 # Create mesh and finite element
-N = 12
-mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
-V = dolfinx.FunctionSpace(mesh, ("CG", 1))
+# Tet setup
+N = 4
+mesh = dolfinx.UnitCubeMesh(dolfinx.MPI.comm_world, N, N, N)
+V = dolfinx.FunctionSpace(mesh, ("CG", 2))
+
+# Hex setup
+# N = 12
+# mesh = dolfinx.UnitCubeMesh(dolfinx.MPI.comm_world, N, N, N,
+#                             dolfinx.cpp.mesh.CellType.hexahedron)
+# V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition
 u_bc = dolfinx.function.Function(V)
@@ -39,37 +46,37 @@ with u_bc.vector.localForm() as u_local:
 
 
 def DirichletBoundary(x):
-    return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
+    return np.logical_or(np.logical_or(np.isclose(x[1], 0),
+                                       np.isclose(x[1], 1)),
+                         np.logical_or(np.isclose(x[2], 0),
+                                       np.isclose(x[2], 1)))
 
 
-facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
-                                                       DirichletBoundary)
-topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
-bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
+mesh.create_connectivity(2, 1)
+geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
+bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
 bcs = [bc]
-
 
 # Create MPC (map all left dofs to right
 dof_at = dolfinx_mpc.dof_close_to
 
 
-def slave_locater(i, N):
-    return lambda x: dof_at(x, [1, float(i/N)])
+def slave_locater(i, j, N):
+    return lambda x: dof_at(x, [1, float(i/N), float(j/N)])
 
 
-def master_locater(i, N):
-    return lambda x: dof_at(x, [0, float(i/N)])
+def master_locater(i, j, N):
+    return lambda x: dof_at(x, [0, float(i/N), float(j/N)])
 
 
 s_m_c = {}
-for i in range(1, N):
-    s_m_c[slave_locater(i, N)] = {master_locater(i, N): 1}
+M = 2*N  # M=N if Hex
+for i in range(1, M):
+    for j in range(1, M):
+        s_m_c[slave_locater(i, j, M)] = {master_locater(i, j, M): 1}
 
 (slaves, masters,
  coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
-# Tmp fix
-# slaves = slaves[0]
-# masters = masters[0]
 
 # Define variational problem
 u = ufl.TrialFunction(V)
@@ -79,8 +86,9 @@ a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
 x = ufl.SpatialCoordinate(mesh)
 dx = x[0] - 0.9
 dy = x[1] - 0.5
+dz = x[2] - 0.1
 f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
-            + 1.0*ufl.exp(-(dx*dx + dy*dy)/0.02)
+            + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
 
 lhs = ufl.inner(f, v)*ufl.dx
 
@@ -89,9 +97,8 @@ u = dolfinx.Function(V)
 u.name = "uh"
 mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                masters, coeffs, offsets)
-# print("Slavecell" ,dolfinx.MPI.comm_world.rank, mpc.slave_cells())
-# Setup MPC system
 
+# Setup MPC system
 A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
@@ -111,9 +118,6 @@ opts["pc_gamg_type"] = "agg"
 # Use Chebyshev smoothing for multigrid
 opts["mg_levels_ksp_type"] = "richardson"
 opts["mg_levels_pc_type"] = "sor"
-# Improve estimate of eigenvalues for Chebyshev smoothing
-# opts["mg_levels_esteig_ksp_type"] = "cg"
-# opts["mg_levels_ksp_chebyshev_esteig_steps"] = 20
 
 solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
 pc = solver.getPC()
@@ -146,7 +150,17 @@ Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 u_h = dolfinx.Function(Vmpc)
 u_h.vector.setArray(uh.array)
 u_h.name = "u_mpc"
-dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_periodic.xdmf").write(u_h)
+
+out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                                   "u_periodic_tet.xdmf")
+out_periodic.write(u_h)
+out_periodic.close()
+
+# Hex output
+# out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+#                                    "u_periodic_hex.xdmf")
+# out_periodic.write(u_h)
+# out_periodic.close()
 
 
 print("----Verification----")
@@ -167,7 +181,9 @@ u_ = dolfinx.Function(V)
 solver.solve(L_org, u_.vector)
 u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
-dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_nonperiodic.xdmf").write(u_)
+out_ref = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_nonperiodic.xdmf")
+out_ref.write(u_)
+out_ref.close()
 
 # Transfer data from the MPC problem to numpy arrays for comparison
 A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -190,8 +206,7 @@ d = np.linalg.solve(reduced_A, reduced_L)
 # Back substitution to full solution vector
 uh_numpy = np.dot(K, d)
 
-# compare LHS, RHS and solution with reference values
-
+# Compare LHS, RHS and solution with reference values
 dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
 dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
 assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
