@@ -2,9 +2,30 @@
 test-complex:
   stage: test
   image:
-    name: dolfinx/complex
+    name: dolfinx/dev-env-complex
     entrypoint: [""]
   before_script:
+    # Install custom dolfin
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ufl.git
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git@mscroggs/permutation_info
+    - git clone https://github.com/fenics/dolfinx.git
+    - cd dolfinx
+    - git checkout mscroggs/permutation_info
+    - mkdir build
+    - cd build
+    - cmake -G Ninja ../cpp
+    - ninja ${MAKEFLAGS} install
+    - cd ../python
+    - pip3 install .
+    - cd ../../
+    # Install MPC
+    - mkdir -p build
+    - cd build
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+    - ninja -j3 install
+    - cd ../python
+    - pip3 install -e . --upgrade
     - mkdir -p build
     - cd build
     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
@@ -13,7 +34,6 @@ test-complex:
     - pip3 install -e . --upgrade
 
   script:
-    # - pip3 install pygmsh --upgrade
     - flake8 .
     - cd tests
     - python3 -m pytest .
@@ -38,9 +58,24 @@ test-complex:
 test-real:
   stage: test
   image:
-    name: dolfinx/real
+    name: dolfinx/dev-env-real
     entrypoint: [""]
   before_script:
+    # Install custom dolfin
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ufl.git
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git@mscroggs/permutation_info
+    - git clone https://github.com/fenics/dolfinx.git
+    - cd dolfinx
+    - git checkout mscroggs/permutation_info
+    - mkdir build
+    - cd build
+    - cmake -G Ninja ../cpp
+    - ninja ${MAKEFLAGS} install
+    - cd ../python
+    - pip3 install .
+    - cd ../../
+    # Install dolfinx mpc
     - mkdir -p build
     - cd build
     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
@@ -49,7 +84,6 @@ test-real:
     - pip3 install -e . --upgrade
 
   script:
-    # - pip3 install pygmsh --upgrade
     - flake8 .
     - cd tests
     - python3 -m pytest .
