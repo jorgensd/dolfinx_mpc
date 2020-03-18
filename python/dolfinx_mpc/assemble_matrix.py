@@ -77,7 +77,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
 
     # Unravel data from MPC
     slave_cells = multipointconstraint.slave_cells()
-    masters, coefficients = multipointconstraint.masters_and_coefficients()
+    coefficients = multipointconstraint.coefficients()
     masters_local = multipointconstraint.masters_local()
     cell_to_slave, c_to_s_off = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()

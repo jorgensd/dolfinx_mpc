@@ -6,13 +6,13 @@
 
 #pragma once
 
+#include "utils.h"
+#include <Eigen/Dense>
+#include <dolfinx/common/IndexMap.h>
+#include <dolfinx/fem/DofMap.h>
+#include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/la/SparsityPattern.h>
-#include <dolfinx/fem/Form.h>
-#include <dolfinx/fem/DofMap.h>
-#include <dolfinx/common/IndexMap.h>
-#include <Eigen/Dense>
-#include "utils.h"
 
 namespace dolfinx_mpc
 {
@@ -42,53 +42,63 @@ public:
   /// it-h master node
   /// @param[in] offsets Gives the starting point for the i-th slave
   /// node in the master and coefficients list.
-  MultiPointConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-                       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
-					   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-                       Eigen::Array<double, Eigen::Dynamic, 1> coefficients, Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets);
+  MultiPointConstraint(
+      std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+      Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
+      Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
+      Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
+      Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets);
 
   /// Add sparsity pattern for multi-point constraints to existing
   /// sparsity pattern
   /// @param[in] a bi-linear form for the current variational problem
   /// (The one used to generate input sparsity-pattern).
-  dolfinx::la::SparsityPattern create_sparsity_pattern(const dolfinx::fem::Form &a);
+  dolfinx::la::SparsityPattern
+  create_sparsity_pattern(const dolfinx::fem::Form& a);
 
   /// Generate indexmap including MPC ghosts
   std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();
 
   /// Return array of slave coefficients
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves()
-	{return _slaves;};
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves() { return _slaves; };
 
   /// Return local_indices of master coefficients
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> masters_local()
-	{return _masters_local;};
-
+  {
+    return _masters_local;
+  };
 
   // Local indices of cells containing slave coefficients
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cells()
-	{return _slave_cells;};
+  {
+    return _slave_cells;
+  };
 
   /// Return the index_map for the test and trial space
-  std::shared_ptr<dolfinx::common::IndexMap> index_map()
-	{return _index_map;};
+  std::shared_ptr<dolfinx::common::IndexMap> index_map() { return _index_map; };
 
   /// Return master offset data
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_offsets(){
-	return _offsets_masters;};
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_offsets()
+  {
+    return _offsets_masters;
+  };
 
   /// Return the array of master dofs and corresponding coefficients
-  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, Eigen::Array<double, Eigen::Dynamic, 1>>
-	masters_and_coefficients(){return std::pair(_masters, _coefficients);};
+  Eigen::Array<double, Eigen::Dynamic, 1> coefficients()
+  {
+    return _coefficients;
+  };
 
   /// Return map from cell with slaves to the dof numbers
-  std::pair< Eigen::Array<std::int64_t, Eigen::Dynamic, 1>, Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
-	cell_to_slave_mapping()
-	{return std::pair(_cell_to_slave, _offsets_cell_to_slave);};
+  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+            Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
+  cell_to_slave_mapping()
+  {
+    return std::pair(_cell_to_slave, _offsets_cell_to_slave);
+  };
 
   /// Return dofmap with MPC ghost values.
-  std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap()
-	{return _mpc_dofmap;};
+  std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap() { return _mpc_dofmap; };
 
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
@@ -112,7 +122,5 @@ private:
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
 };
-
-
 
 } // namespace dolfinx_mpc
