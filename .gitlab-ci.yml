@@ -26,12 +26,6 @@ test-complex:
     - ninja -j3 install
     - cd ../python
     - pip3 install -e . --upgrade
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
 
   script:
     - flake8 .
