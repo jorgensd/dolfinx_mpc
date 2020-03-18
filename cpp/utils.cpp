@@ -187,7 +187,7 @@ dolfinx_mpc::get_basis_functions(
 
   mesh.create_entity_permutations();
 
-  const std::vector<std::uint32_t>& permutation_info
+  const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& permutation_info
       = mesh.topology().get_cell_permutation_info();
   // Skip negative cell indices
   Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
