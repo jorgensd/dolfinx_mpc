@@ -27,7 +27,7 @@ def assemble_vector(form, multipointconstraint,
     permutation_info = V.mesh.topology.get_cell_permutation_info()
 
     # Data from multipointconstraint
-    masters, coefficients = multipointconstraint.masters_and_coefficients()
+    coefficients = multipointconstraint.coefficients()
     cell_to_slave, c2s_offset = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
     offsets = multipointconstraint.master_offsets()

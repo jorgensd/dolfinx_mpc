@@ -84,11 +84,9 @@ public:
   };
 
   /// Return the array of master dofs and corresponding coefficients
-  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-            Eigen::Array<double, Eigen::Dynamic, 1>>
-  masters_and_coefficients()
+  Eigen::Array<double, Eigen::Dynamic, 1> coefficients()
   {
-    return std::pair(_masters, _coefficients);
+    return _coefficients;
   };
 
   /// Return map from cell with slaves to the dof numbers

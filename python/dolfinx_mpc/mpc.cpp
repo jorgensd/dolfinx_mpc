@@ -34,8 +34,7 @@ void mpc(py::module& m)
       .def("slave_cells", &dolfinx_mpc::MultiPointConstraint::slave_cells)
       .def("cell_to_slave_mapping",
            &dolfinx_mpc::MultiPointConstraint::cell_to_slave_mapping)
-      .def("masters_and_coefficients",
-           &dolfinx_mpc::MultiPointConstraint::masters_and_coefficients)
+      .def("coefficients", &dolfinx_mpc::MultiPointConstraint::coefficients)
       .def("slaves", &dolfinx_mpc::MultiPointConstraint::slaves)
       .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
       .def("master_offsets", &dolfinx_mpc::MultiPointConstraint::master_offsets)
