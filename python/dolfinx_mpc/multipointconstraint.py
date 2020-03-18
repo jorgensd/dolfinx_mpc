@@ -15,7 +15,7 @@ import numpy
 
 def backsubstitution(mpc, vector, dofmap):
     slaves = mpc.slaves()
-    masters, coefficients = mpc.masters_and_coefficients()
+    coefficients = mpc.coefficients()
     masters_local = mpc.masters_local()
     offsets = mpc.master_offsets()
     index_map = mpc.index_map()

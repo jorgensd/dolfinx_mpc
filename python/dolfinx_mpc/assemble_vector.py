@@ -41,7 +41,7 @@ def assemble_vector(form, multipointconstraint,
     facet_index = numpy.array([], dtype=numpy.int32)
 
     # Data from multipointconstraint
-    masters, coefficients = multipointconstraint.masters_and_coefficients()
+    coefficients = multipointconstraint.coefficients()
     cell_to_slave, c2s_offset = multipointconstraint.cell_to_slave_mapping()
     slaves = multipointconstraint.slaves()
     offsets = multipointconstraint.master_offsets()
