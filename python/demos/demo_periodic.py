@@ -80,7 +80,7 @@ x = ufl.SpatialCoordinate(mesh)
 dx = x[0] - 0.9
 dy = x[1] - 0.5
 f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
-            + 1.0*ufl.exp(-(dx*dx + dy*dy)/0.02)
+    + 1.0*ufl.exp(-(dx*dx + dy*dy)/0.02)
 
 lhs = ufl.inner(f, v)*ufl.dx
 
@@ -146,7 +146,8 @@ Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 u_h = dolfinx.Function(Vmpc)
 u_h.vector.setArray(uh.array)
 u_h.name = "u_mpc"
-dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_periodic.xdmf").write(u_h)
+dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                    "results/u_periodic.xdmf").write(u_h)
 
 
 print("----Verification----")
@@ -159,15 +160,13 @@ dolfinx.fem.apply_lifting(L_org, [a], [bcs])
 L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.set_bc(L_org, bcs)
-# solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
-# solver.setType(PETSc.KSP.Type.PREONLY)
-# solver.getPC().setType(PETSc.PC.Type.LU)
 solver.setOperators(A_org)
 u_ = dolfinx.Function(V)
 solver.solve(L_org, u_.vector)
 u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
-dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_nonperiodic.xdmf").write(u_)
+dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                    "results/u_nonperiodic.xdmf").write(u_)
 
 # Transfer data from the MPC problem to numpy arrays for comparison
 A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)

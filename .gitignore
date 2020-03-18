@@ -1,0 +1,8 @@
+_petsc_cffi_None.*
+*.xdmf
+*.h5
+*.so
+build/
+python/build/
+__pycache__
+dolfinx_mpc.egg-info
