@@ -141,7 +141,6 @@ def assemble_matrix_numba(A, kernel, mesh, gdim, coeffs, constants,
     facet_index = numpy.zeros(0, dtype=numpy.int32)
     facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
-
     # NOTE: All cells are assumed to be of the same type
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
 
