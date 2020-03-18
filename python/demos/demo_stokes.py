@@ -13,13 +13,13 @@ from petsc4py import PETSc
 # Length, width and rotation of channel
 L = 2
 H = 1
-theta = np.pi/8
+theta = np.pi/9
 
 
 def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
     """
     Create a channel of length 2, height one, rotated pi/6 degrees
-    around origo, and corresponding facet markers:
+    around origin, and corresponding facet markers:
     Walls: 1
     Outlet: 2
     Inlet: 3
@@ -54,11 +54,10 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
 
 
 # Create cache for numba functions
-dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
+# dolfinx_mpc.utils.cache_numba(matrix=True, vector=True,
+# backsubstitution=True)
 
 # Create mesh
-# geom.rotate only in pygmsh master, not stable release yet.
-# See: https://github.com/nschloe/pygmsh/commit/d978fa18
 if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
     create_mesh_gmsh()
 
@@ -142,40 +141,55 @@ def set_master_slave_slip_relationship(W, V, mf, value, bcs):
         bc_g = [global_indices[bdof] for bdof in bc.dof_indices[:, 0]]
         bc_dofs.append(np.hstack(dolfinx.MPI.comm_world.allgather(bc_g)))
     bc_dofs = np.hstack(bc_dofs)
-
+    Vx = V.sub(0).collapse()
+    Vy = V.sub(1).collapse()
     dofx = dolfinx.fem.locate_dofs_topological((W.sub(0).sub(0),
-                                                V.sub(0).collapse()),
+                                                Vx),
                                                1, wall_facets)
     dofy = dolfinx.fem.locate_dofs_topological((W.sub(0).sub(1),
-                                                V.sub(1).collapse()),
+                                                Vy),
                                                1, wall_facets)
 
     slaves = []
     masters = []
     coeffs = []
-    offsets = np.linspace(0, len(dofx), len(dofx)+1, dtype=np.int)
 
     nh = dolfinx_mpc.facet_normal_approximation(V, mf, 1)
     nhx, nhy = nh.sub(0).collapse(), nh.sub(1).collapse()
     nh_out = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/nh.xdmf")
     nh_out.write(nh)
     nh_out.close()
+    nx = nhx.vector.getArray()
+    ny = nhy.vector.getArray()
 
     # Find index of each pair of x and y components.
     for d_x in dofx:
+        # Skip if dof is a ghost
+        if d_x[1] > Vx.dofmap.index_map.size_local:
+            continue
         for d_y in dofy:
-            if np.allclose(x[d_x[0]], x[d_y[0]]):
-                slave_dof = np.vstack(dolfinx.MPI.comm_world.allgather(
-                    global_indices[d_x[0]]))[0, 0]
-                master_dof = np.vstack(dolfinx.MPI.comm_world.allgather(
-                    global_indices[d_y[0]]))[0, 0]
-                if master_dof not in bc_dofs:
-                    slaves.append(slave_dof)
-                    masters.append(master_dof)
-                    coeffs.append(-nhy.vector[d_y[1]]/nhx.vector[d_x[1]])
+            # Skip if dof is a ghost
+            if d_y[1] > Vy.dofmap.index_map.size_local:
+                continue
+            # Skip if not at same physical coordinate
+            if not np.allclose(x[d_x[0]], x[d_y[0]]):
+                continue
+            slave_dof = global_indices[d_x[0]]
+            master_dof = global_indices[d_y[0]]
+            if master_dof not in bc_dofs:
+                slaves.append(slave_dof)
+                masters.append(master_dof)
+                local_coeff = - ny[d_y[1]]/nx[d_x[1]]
+                coeffs.append(local_coeff)
+    # As all dofs is in the same block, we do not need to communicate
+    # all master and slave nodes have been found
+    global_slaves = np.hstack(dolfinx.MPI.comm_world.allgather(slaves))
+    global_masters = np.hstack(dolfinx.MPI.comm_world.allgather(masters))
+    global_coeffs = np.hstack(dolfinx.MPI.comm_world.allgather(coeffs))
+    offsets = np.arange(len(global_slaves)+1)
 
-    return (np.array(masters), np.array(slaves),
-            np.array(coeffs), np.array(offsets))
+    return (np.array(global_masters), np.array(global_slaves),
+            np.array(global_coeffs), offsets)
 
 
 start = time.time()

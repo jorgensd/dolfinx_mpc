@@ -76,7 +76,7 @@ dolfinx_mpc::locate_cells_with_dofs(
 
   return std::make_pair(cells_with_dofs, cells_to_dofs_map);
 }
-
+//-----------------------------------------------------------------------------
 void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
                                          const dolfinx::fem::Form& a)
 {
@@ -116,7 +116,7 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
 }
-
+//-----------------------------------------------------------------------------
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
 dolfinx_mpc::get_basis_functions(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
@@ -237,3 +237,4 @@ dolfinx_mpc::get_basis_functions(
   }
   return basis_array;
 }
+//-----------------------------------------------------------------------------

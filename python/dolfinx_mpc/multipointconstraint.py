@@ -9,7 +9,7 @@ import numba
 from petsc4py import PETSc
 import types
 from dolfinx import function, fem, MPI
-from .assemble_matrix import in_numpy_array
+from .assemble_matrix import in_numpy_array, add_diagonal
 import numpy
 
 
@@ -172,8 +172,8 @@ def facet_normal_approximation(V, mf, mf_id):
     L = ufl.inner(n, v)*ds
 
     A = dolfinx.fem.assemble_matrix(a)
-    A = ident_zeros(A)
-
+    ident_zeros(A)
+    A.assemble()
     b = dolfinx.fem.assemble_vector(L)
     ksp = PETSc.KSP().create(V.mesh.mpi_comm())
     ksp.setOperators(A)
@@ -181,18 +181,21 @@ def facet_normal_approximation(V, mf, mf_id):
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
     ksp.solve(b, nh.vector)
+
     return nh
 
 
 def ident_zeros(A):
+    """
+    Find all rows in a matrix that is zero, and add a 1 on the diagonal
+    """
     assert A.size[0] == A.size[1]
     A.assemble()
-    one = numpy.ones(1, dtype=numpy.float64)
-    for i in range(A.size[0]):
-        indices, values = A.getRow(i)
+    o_range = A.getOwnershipRange()
+    rows = []
+    for i in range(o_range[1]-o_range[0]):
+        indices, values = A.getRow(o_range[0]+i)
         absrow = sum(abs(values))
         if absrow < 1e-6:
-            rows = numpy.array([i], dtype=numpy.int32)
-            A.setValues(rows, rows, one)
-            A.assemble()
-    return A
+            rows.append(o_range[0] + i)
+    add_diagonal(A.handle, numpy.array(rows))
