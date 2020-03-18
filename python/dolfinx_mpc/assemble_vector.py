@@ -24,21 +24,7 @@ def assemble_vector(form, multipointconstraint,
     dofs = V.dofmap.list.array()
 
     # Get cell orientation data
-    edge_reflections = V.mesh.topology.get_edge_reflections()
-    face_reflections = V.mesh.topology.get_face_reflections()
-    face_rotations = V.mesh.topology.get_face_rotations()
-    # FIXME: Need to get all of this data indep of gdim
-    facet_permutations = numpy.array([], dtype=numpy.uint8)
-    # FIXME: Numba does not support edge reflections
-    face_reflections = numpy.array([], dtype=numpy.bool)
-    face_rotations = numpy.array([], dtype=numpy.uint8)
-    edge_reflections = numpy.array([], dtype=numpy.bool)
-    face_reflections = numpy.array([], dtype=numpy.bool)
-    face_rotations = numpy.array([], dtype=numpy.uint8)
-    permutation_data = (edge_reflections, face_reflections,
-                        face_rotations, facet_permutations)
-    # FIXME: should be local facet index
-    facet_index = numpy.array([], dtype=numpy.int32)
+    permutation_info = V.mesh.topology.get_cell_permutation_info()
 
     # Data from multipointconstraint
     masters, coefficients = multipointconstraint.masters_and_coefficients()
@@ -75,7 +61,7 @@ def assemble_vector(form, multipointconstraint,
     with vector.localForm() as b:
         assemble_vector_numba(numpy.asarray(b), kernel, (pos, x_dofs, x), gdim,
                               form_coeffs, form_consts,
-                              facet_index, permutation_data,
+                              permutation_info,
                               dofs, num_dofs_per_element, mpc_data,
                               ghost_info, (bc_dofs, bc_values))
     return vector
@@ -83,15 +69,16 @@ def assemble_vector(form, multipointconstraint,
 
 @numba.njit
 def assemble_vector_numba(b, kernel, mesh, gdim,
-                          coeffs, constants, facet_index,
-                          permutation_data, dofmap, num_dofs_per_element,
+                          coeffs, constants,
+                          permutation_info, dofmap, num_dofs_per_element,
                           mpc, ghost_info, bcs):
     """Assemble provided FFC/UFC kernel over a mesh into the array b"""
     ffi_fb = ffi.from_buffer
     (bcs, values) = bcs
 
-    (edge_reflections, face_reflections,
-     face_rotations, facet_permutations) = permutation_data
+    # Empty arrays mimicking Nullpointers
+    facet_index = numpy.zeros(0, dtype=numpy.int32)
+    facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
     # Unpack mesh data
     pos, x_dofmap, x = mesh
@@ -115,9 +102,8 @@ def assemble_vector_numba(b, kernel, mesh, gdim,
         # FIXME: Numba does not support edge reflections
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
                ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
-               ffi_fb(facet_permutations),
-               ffi_fb(face_reflections),
-               ffi_fb(edge_reflections), ffi_fb(face_rotations))
+               ffi_fb(facet_perm),
+               permutation_info[cell_index])
 
         b_local_copy = b_local.copy()
         modify_mpc_contributions(b, cell_index, slave_cell_index, b_local,
