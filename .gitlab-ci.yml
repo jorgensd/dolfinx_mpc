@@ -21,6 +21,7 @@ test-complex:
     - mpirun -n 3 python3 -m pytest .
     - mpirun -n 4 python3 -m pytest .
     - cd ../demos
+    - mkdir meshes
     - python3 demo_elasticity.py
     - mpirun -n 4 python3 demo_elasticity.py
     - python3 demo_periodic.py
@@ -56,6 +57,7 @@ test-real:
     - mpirun -n 3 python3 -m pytest .
     - mpirun -n 4 python3 -m pytest .
     - cd ../demos
+    - mkdir meshes
     - python3 demo_elasticity.py
     - mpirun -n 4 python3 demo_elasticity.py
     - python3 demo_periodic.py
