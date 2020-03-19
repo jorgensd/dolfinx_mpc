@@ -45,6 +45,9 @@ def demo_stacked_cubes(theta):
                                             [1, 2, 0], [0, 2, 0]]).T)
     top = find_line_function(top_points[:, 2], top_points[:, 3])
     top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
+
+    # left_side = find_line_function(top_points[:, 0], top_points[:, 3])
+
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh_rot.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
 
@@ -61,10 +64,13 @@ def demo_stacked_cubes(theta):
     mf.mark(top, 3)
     mf.mark(interface, 4)
     mf.mark(bottom, 5)
+    # mf.mark(left_side, 6)
+
     dolfinx.io.VTKFile("mf.pvd").write(mf)
 
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
-    g = dolfinx.Constant(mesh, (0, -9.81e2))
+    # ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
+    g_vec = np.dot(r_matrix, [0, -5e-1, 0])
+    # g = dolfinx.Constant(mesh, g_vec[:2])
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
     u_bc = dolfinx.function.Function(V)
@@ -75,15 +81,26 @@ def demo_stacked_cubes(theta):
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
-    bcs = [bc_bottom]
+    def top_v(x):
+        values = np.empty((2, x.shape[1]))
+        values[0] = g_vec[0]
+        values[1] = g_vec[1]
+        return values
+    u_top = dolfinx.function.Function(V)
+    u_top.interpolate(top_v)
+    top_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
+                                                        top)
+    top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
+    bc_top = fem.DirichletBC(u_top, top_dofs)
+    bcs = [bc_bottom, bc_top]
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
 
     # Elasticity parameters
-    E = 1.0e4
-    nu = 0
+    E = 1.0e3
+    nu = 0.1
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
 
@@ -96,8 +113,10 @@ def demo_stacked_cubes(theta):
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
-        + ufl.inner(g, v)*ds
+    lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx
+
+    # lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
+    #     + ufl.inner(g, v)*ds
 
     # Create MPC
     slaves = []
@@ -107,9 +126,8 @@ def demo_stacked_cubes(theta):
 
     # Locate dofs on both interfaces
     # FIXME: For some strange reason this doesnt work for the interface
-    # i_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-    #                                                  interface)
-    i_facets = np.flatnonzero(mf.values == 4)
+    i_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
+                                                      interface)
 
     # Slicing of list is due to the fact that we only require y-components
     interface_x_dofs = fem.locate_dofs_topological((V.sub(0), V0),
@@ -134,10 +152,50 @@ def demo_stacked_cubes(theta):
     mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
     cell_to_facet = mesh.topology.connectivity(mesh.topology.dim,
                                                mesh.topology.dim-1)
-    nh = dolfinx_mpc.facet_normal_approximation(V, mf, 5)
+    nh = dolfinx_mpc.facet_normal_approximation(V, mf, 4)
     dolfinx.io.VTKFile("nh.pvd").write(nh)
     n_vec = nh.vector.getArray()
-    print(n_vec)
+
+    # Set tangential sliding of a single point on the top surface to 0
+    # left_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
+    #                                                      left_side)
+    # left_dofs_x = fem.locate_dofs_topological(
+    #     (V.sub(0), V0), fdim, left_facets)[:, 0]
+    # left_dofs_y = fem.locate_dofs_topological(
+    #     (V.sub(1), V1), fdim, left_facets)[:, 0]
+
+    # top_cube_left_x = np.flatnonzero(top_cube(x_coords[left_dofs_x].T))
+    # top_cube_left_y = np.flatnonzero(top_cube(x_coords[left_dofs_y].T))
+    # slip = False
+    # n_left = dolfinx_mpc.facet_normal_approximation(V, mf, 6)
+    # n_left_vec = n_left.vector.getArray()
+    # dolfinx.io.VTKFile("nleft.pvd").write(n_left)
+
+    # for id_x in top_cube_left_x:
+    #     x_dof = left_dofs_x[id_x]
+    #     corner_1 = np.allclose(x_coords[x_dof], top_points[:, 0])
+    #     corner_2 = np.allclose(x_coords[x_dof], top_points[:, 3])
+    #     if corner_1 or corner_2:
+    #         continue
+    #     for id_y in top_cube_left_y:
+    #         y_dof = left_dofs_y[id_y]
+    #         print(x_coords[x_dof])
+    #         print(x_coords[y_dof])
+
+    #         same_coord = np.allclose(x_coords[x_dof], x_coords[y_dof])
+    #         corner_1 = np.allclose(x_coords[y_dof], top_points[:, 0])
+    #         corner_2 = np.allclose(x_coords[y_dof], top_points[:, 3])
+    #         if not corner_1 and not corner_2 and same_coord:
+    #             slaves.append(global_indices[x_dof])
+    #             masters.append(global_indices[y_dof])
+    #             coeffs.append(n_left_vec[x_dof] /
+    #                           n_left_vec[y_dof])
+    #             offsets.append(len(masters))
+    #             slip = True
+    #             break
+    #     if slip:
+    #         break
+
     for cell_index in range(num_cells):
         midpoint = cell_midpoints[cell_index]
         cell_dofs = V.dofmap.cell_dofs(cell_index)
@@ -150,27 +208,25 @@ def demo_stacked_cubes(theta):
         if np.any(has_dofs_on_interface):
             local_indices = np.flatnonzero(has_dofs_on_interface)
             for dof_index in local_indices:
-                slave_coords = x_coords[cell_dofs[dof_index]]
-                # NOTE, we should rather use mesh markers here to determine if
-                # the dof is a slave dof, or use something similar to what is
-                # used for masters
+                slave_l = cell_dofs[dof_index]
+                slave_coords = x_coords[slave_l]
                 is_slave_cell = not top_cube(midpoint)
-                global_slave = global_indices[cell_dofs[dof_index]]
+                global_slave = global_indices[slave_l]
                 if is_slave_cell and global_slave not in slaves:
                     slaves.append(global_slave)
                     # Find corresponding x-coordinate of this slave
                     master_x = -1
                     for x_index in local_x_indices:
                         if np.allclose(x_coords[cell_dofs[x_index]],
-                                       x_coords[cell_dofs[dof_index]]):
+                                       x_coords[slave_l]):
                             master_x = cell_dofs[x_index]
                             break
                     assert master_x != -1
-                    global_first_slave = global_indices[master_x]
-                    global_first_coeff = - \
-                        nh[cell_dofs[dof_index]]/nh[cell_dofs[master_x]]
-                    print(global_first_slave, global_first_coeff)
-
+                    global_first_master = global_indices[master_x]
+                    global_first_coeff = -\
+                        n_vec[master_x]/n_vec[slave_l]
+                    masters.append(global_first_master)
+                    coeffs.append(global_first_coeff)
                     # Need some parallel comm here
                     # Now find which master cell is close to the slave dof
                     possible_cells = comp_col_pts(tree, slave_coords)
@@ -192,24 +248,25 @@ def demo_stacked_cubes(theta):
                             # to masters with corresponding coeff
                             basis_values = get_basis(V._cpp_object,
                                                      slave_coords, other_index)
-                            # flatten_values = np.sum(basis_values, axis=1)
-                            y_values = basis_values[:, 1]
-                            y_dofs = V.sub(1).dofmap.cell_dofs(other_index)
-                            other_local_indices = np.flatnonzero(
-                                np.isin(other_dofs, y_dofs))
-                            for local_idx in other_local_indices:
-                                if not np.isclose(y_values[local_idx], 0):
-                                    masters.append(
-                                        global_indices[other_dofs[local_idx]])
-                                    coeffs.append(y_values[local_idx])
+                            flatten_values = np.sum(basis_values, axis=1)
+                            for local_idx, dof in enumerate(other_dofs):
+                                if not np.isclose(flatten_values[local_idx],
+                                                  0):
+
+                                    masters.append(global_indices[dof])
+                                    local_coeff = flatten_values[local_idx]
+                                    # Check if x coordinate scale by normal y
+                                    if dof in interface_x_dofs:
+                                        local_coeff *= (n_vec[master_x] /
+                                                        n_vec[slave_l])
+
+                                    coeffs.append(local_coeff)
                             offsets.append(len(masters))
                             break
 
     slaves, masters, coeffs, offsets = (np.array(slaves), np.array(masters),
                                         np.array(coeffs), np.array(offsets))
 
-    print(slaves, masters, coeffs, offsets)
-    exit()
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
 
@@ -265,16 +322,6 @@ def demo_stacked_cubes(theta):
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
-    # solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
-    # solver.setType(PETSc.KSP.Type.PREONLY)
-    # solver.getPC().setType(PETSc.PC.Type.LU)
-    # solver.setOperators(A_org)
-    # u_ = dolfinx.Function(V)
-    # solver.solve(L_org, u_.vector)
-    # u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-    #                       mode=PETSc.ScatterMode.FORWARD)
-    # u_.name = "u_unperturbed"
-    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_.xdmf").write(u_)
 
     # Create global transformation matrix
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
