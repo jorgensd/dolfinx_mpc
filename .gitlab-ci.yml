@@ -44,8 +44,11 @@ test-complex:
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
     - cd cubes
+    - mkdir meshes
+    - mkdir results
     - python3 create_and_export_mesh.py
     - python3 cube_bench.py
+    - python3 rotated_cube.py
     - python3 cube_bench3d.py
 
 test-real:
@@ -93,8 +96,11 @@ test-real:
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
     - cd cubes
+    - mkdir meshes
+    - mkdir results
     - python3 create_and_export_mesh.py
     - python3 cube_bench.py
+    - python3 rotated_cube.py
     - python3 cube_bench3d.py
 # test:
 #   stage: test

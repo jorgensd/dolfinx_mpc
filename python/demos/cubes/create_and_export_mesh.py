@@ -4,48 +4,51 @@ import numpy as np
 
 
 def mesh_2D():
-    geom = pygmsh.built_in.Geometry()
     res = 0.1
-    rect = geom.add_rectangle(0.0, 1, 0.0, 1.0, 0.0, res)
-    rect2 = geom.add_rectangle(0.0, 1, 1.0, 2.0, 0.0, 2*res)
+    geom0 = pygmsh.built_in.Geometry()
+    rect = geom0.add_rectangle(0.0, 1, 0.0, 1.0, 0.0, res)
+    geom0.add_physical([rect.surface], 7)
+
     # Top: 1, Bottom 2, Side walls: 3
     # geom.add_physical([rect.line_loop.lines[2]], 1)
     # geom.add_physical([rect.line_loop.lines[0]], 2)
     # geom.add_physical([rect.line_loop.lines[1], rect.line_loop.lines[3]], 3)
-    geom.add_physical([rect.surface], 7)
+    msh0 = pygmsh.generate_mesh(geom0, prune_z_0=True)
+    geom1 = pygmsh.built_in.Geometry()
+    rect1 = geom1.add_rectangle(0.0, 1, 1.0, 2.0, 0.0, 2*res)
+    geom1.add_physical([rect1.surface], 8)
+    msh1 = pygmsh.generate_mesh(geom1, prune_z_0=True)
 
     # Upper box:
     # Top: 4, Bottom 5, Side walls: 6
-    # geom.add_physical([rect2.line_aloop.lines[2]], 4)
-    # geom.add_physical([rect2.line_loop.lines[0]], 5)
-    # geom.add_physical([rect2.line_loop.lines[1],
-    # rect2.line_loop.lines[3]], 6)
-    geom.add_physical([rect2.surface], 8)
+    # geom.add_physical([rect1.line_aloop.lines[2]], 4)
+    # geom.add_physical([rect1.line_loop.lines[0]], 5)
+    # geom.add_physical([rect1.line_loop.lines[1],
+    # rect1.line_loop.lines[3]], 6)
+    # geom.add_physical([rect1.surface], 8)
+    points0 = msh0.points
+    tri_cells0 = np.vstack([cells.data for cells in msh0.cells
+                            if cells.type == "triangle"])
+    tri_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
+                           for key in
+                           msh0.cell_data_dict["gmsh:physical"].keys()
+                           if key == "triangle"])
+    points1 = msh1.points
+    points = np.vstack([points0, points1])
+    tri_cells1 = np.vstack([cells.data for cells in msh1.cells
+                            if cells.type == "triangle"])
+    tri_data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
+                           for key in
+                           msh1.cell_data_dict["gmsh:physical"].keys()
+                           if key == "triangle"])
+    tri_cells1 += points0.shape[0]
+    tri_cells = np.vstack([tri_cells0, tri_cells1])
 
-    msh = pygmsh.generate_mesh(geom, prune_z_0=True)
-    tri_cells = np.vstack([cells.data for cells in msh.cells
-                           if cells.type == "triangle"])
-    tri_data = np.vstack([msh.cell_data_dict["gmsh:physical"][key]
-                          for key in msh.cell_data_dict["gmsh:physical"].keys()
-                          if key == "triangle"])
-
-    triangle_mesh = meshio.Mesh(points=msh.points,
+    tri_data = np.hstack([tri_data0, tri_data1])
+    triangle_mesh = meshio.Mesh(points=points,
                                 cells=[("triangle", tri_cells)],
                                 cell_data={"name_to_read": tri_data})
-    meshio.write("mesh.xdmf", triangle_mesh)
-
-    # line_cells = np.vstack([cells.data for cells in msh.cells
-    #                         if cells.type == "line"])
-    # line_data = np.vstack([msh.cell_data_dict["gmsh:physical"][key]
-    #                        for key in
-    #                        msh.cell_data_dict["gmsh:physical"].keys()
-    #                        if key == "line"])
-
-    # line_mesh = meshio.Mesh(points=msh.points,
-    #                         cells=[("line", line_cells)],
-    #                         cell_data={"name_to_read": line_data})
-
-    # meshio.xdmf.write("mf.xdmf", line_mesh)
+    meshio.write("meshes/mesh.xdmf", triangle_mesh)
 
 
 def mesh_3D():
@@ -66,9 +69,60 @@ def mesh_3D():
     tetra_mesh = meshio.Mesh(points=msh.points,
                              cells=[("tetra", tet_cells)],
                              cell_data={"name_to_read": tet_data})
-    meshio.write("mesh3D.xdmf", tetra_mesh)
+    meshio.write("meshes/mesh3D.xdmf", tetra_mesh)
+
+
+def mesh_2D_rot(theta):
+    res = 0.1
+    geom0 = pygmsh.built_in.Geometry()
+    rect = geom0.add_rectangle(0.0, 1, 0.0, 1.0, 0.0, res)
+    geom0.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
+    geom0.add_physical([rect.surface], 7)
+
+    # Top: 1, Bottom 2, Side walls: 3
+    # geom.add_physical([rect.line_loop.lines[2]], 1)
+    # geom.add_physical([rect.line_loop.lines[0]], 2)
+    # geom.add_physical([rect.line_loop.lines[1], rect.line_loop.lines[3]], 3)
+    msh0 = pygmsh.generate_mesh(geom0, prune_z_0=True)
+    geom1 = pygmsh.built_in.Geometry()
+    rect1 = geom1.add_rectangle(0.0, 1, 1.0, 2.0, 0.0, 2*res)
+    geom1.rotate(rect1, [0, 0, 0], theta, [0, 0, 1])
+    geom1.add_physical([rect1.surface], 8)
+    msh1 = pygmsh.generate_mesh(geom1, prune_z_0=True)
+
+    # Upper box:
+    # Top: 4, Bottom 5, Side walls: 6
+    # geom.add_physical([rect1.line_aloop.lines[2]], 4)
+    # geom.add_physical([rect1.line_loop.lines[0]], 5)
+    # geom.add_physical([rect1.line_loop.lines[1],
+    # rect1.line_loop.lines[3]], 6)
+    # geom.add_physical([rect1.surface], 8)
+    points0 = msh0.points
+    tri_cells0 = np.vstack([cells.data for cells in msh0.cells
+                            if cells.type == "triangle"])
+    tri_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
+                           for key in
+                           msh0.cell_data_dict["gmsh:physical"].keys()
+                           if key == "triangle"])
+    points1 = msh1.points
+    points = np.vstack([points0, points1])
+    tri_cells1 = np.vstack([cells.data for cells in msh1.cells
+                            if cells.type == "triangle"])
+    tri_data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
+                           for key in
+                           msh1.cell_data_dict["gmsh:physical"].keys()
+                           if key == "triangle"])
+    tri_cells1 += points0.shape[0]
+    tri_cells = np.vstack([tri_cells0, tri_cells1])
+
+    tri_data = np.hstack([tri_data0, tri_data1])
+    triangle_mesh = meshio.Mesh(points=points,
+                                cells=[("triangle", tri_cells)],
+                                cell_data={"name_to_read": tri_data})
+    meshio.write("meshes/mesh_rot.xdmf", triangle_mesh)
 
 
 if __name__ == "__main__":
     mesh_2D()
     mesh_3D()
+    mesh_2D_rot(0.8)
