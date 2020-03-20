@@ -35,6 +35,7 @@ test-complex:
     - mkdir results
     - python3 create_and_export_mesh.py
     - python3 cube_bench.py
+    - python3 rotated_cube.py
     - python3 cube_bench3d.py
 
 test-real:
@@ -73,6 +74,7 @@ test-real:
     - mkdir results
     - python3 create_and_export_mesh.py
     - python3 cube_bench.py
+    - python3 rotated_cube.py
     - python3 cube_bench3d.py
 # test:
 #   stage: test
