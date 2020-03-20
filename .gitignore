@@ -6,3 +6,6 @@ build/
 python/build/
 __pycache__
 dolfinx_mpc.egg-info
+*.pvd
+*.vtu
+.vscode
