@@ -14,11 +14,10 @@ get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 
 def demo_stacked_cubes():
-    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh3D.xdmf") as xdmf:
+    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                             "meshes/mesh3D.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
     mesh.create_connectivity_all()
-    # To inspect partitioning
-    # dolfinx.io.VTKFile("mesh.pvd").write(mesh)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -121,7 +120,6 @@ def demo_stacked_cubes():
 
     # Get some cell info
     # (range should be reduced with mesh function and markers)
-    # cmap = fem.create_coordinate_map(mesh.ufl_domain())
     global_indices = V.dofmap.index_map.global_indices(False)
     num_cells = mesh.num_entities(mesh.topology.dim)
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, mesh.topology.dim,
@@ -220,7 +218,7 @@ def demo_stacked_cubes():
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
+    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/uh3D.xdmf").write(u_h)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -238,16 +236,6 @@ def demo_stacked_cubes():
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
-    # solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
-    # solver.setType(PETSc.KSP.Type.PREONLY)
-    # solver.getPC().setType(PETSc.PC.Type.LU)
-    # solver.setOperators(A_org)
-    # u_ = dolfinx.Function(V)
-    # solver.solve(L_org, u_.vector)
-    # u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-    #                       mode=PETSc.ScatterMode.FORWARD)
-    # u_.name = "u_unperturbed"
-    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_.xdmf").write(u_)
 
     # Create global transformation matrix
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
@@ -259,27 +247,14 @@ def demo_stacked_cubes():
     # Created reduced L
     vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
     reduced_L = np.dot(K.T, vec)
-    # # Solve linear system
+    # Solve linear system
     # d = np.linalg.solve(reduced_A, reduced_L)
-    # # Back substitution to full solution vector
+    # Back substitution to full solution vector
     # uh_numpy = np.dot(K, d)
 
     # # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    # if uh.owner_range[0] < masters[0] and masters[0] < uh.owner_range[1]:
-    #     print("MASTER DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-    #           .format(uh.array[masters[0]-uh.owner_range[0]],
-    #                   u_.vector.array[masters[0]-uh.owner_range[0]]))
-    #     print("Slave (given as master*coeff) {0:.4e}".
-    #           format(uh.array[masters[0]-uh.owner_range[0]]*coeffs[0]))
-
-    # if uh.owner_range[0] < slaves[0] and slaves[0] < uh.owner_range[1]:
-    #     print("SLAVE  DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-    #           .format(uh.array[slaves[0]-uh.owner_range[0]],
-    #                   u_.vector.array[slaves[0]-uh.owner_range[0]]))
-    # assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-    #                                       uh.owner_range[1]])
 
 
 if __name__ == "__main__":

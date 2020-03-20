@@ -14,9 +14,6 @@ get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 
 def demo_stacked_cubes(celltype="quad"):
-    # with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh.xdmf") as xdmf:
-    #     mesh = xdmf.read_mesh()
-
     # Using built in meshes, stacking cubes on top of each other
     if celltype == "quad":
         N = 2
@@ -38,6 +35,7 @@ def demo_stacked_cubes(celltype="quad"):
                                       ct, diagonal="crossed")
         nv = 3
 
+    # Stack the two meshes in one mesh
     x0 = mesh0.geometry.x
     x0 = x0[:, :-1]
     x0[:, 1] += 1
@@ -79,11 +77,11 @@ def demo_stacked_cubes(celltype="quad"):
                         dolfinx.cpp.mesh.GhostMode.none)
     cmap = fem.create_coordinate_map(mesh.ufl_domain())
     if celltype == "unstr":
-        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh.xdmf") as xdmf:
+        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                                 "meshes/mesh.xdmf") as xdmf:
             mesh = xdmf.read_mesh()
 
     mesh.geometry.coord_mapping = cmap
-    dolfinx.io.VTKFile("mesh_{0:s}.pvd".format(celltype)).write(mesh)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -313,7 +311,7 @@ def demo_stacked_cubes(celltype="quad"):
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
     dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                        "uh_{0:s}.xdmf".format(celltype)).write(u_h)
+                        "results/uh_{0:s}.xdmf".format(celltype)).write(u_h)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -340,7 +338,7 @@ def demo_stacked_cubes(celltype="quad"):
     # u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
     #                       mode=PETSc.ScatterMode.FORWARD)
     # u_.name = "u_unperturbed"
-    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "u_.xdmf").write(u_)
+    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/u_.xdmf").write(u_)
 
     # Create global transformation matrix
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,

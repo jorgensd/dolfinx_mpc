@@ -48,7 +48,7 @@ def mesh_2D():
     triangle_mesh = meshio.Mesh(points=points,
                                 cells=[("triangle", tri_cells)],
                                 cell_data={"name_to_read": tri_data})
-    meshio.write("mesh.xdmf", triangle_mesh)
+    meshio.write("meshes/mesh.xdmf", triangle_mesh)
 
 
 def mesh_3D():
@@ -69,7 +69,7 @@ def mesh_3D():
     tetra_mesh = meshio.Mesh(points=msh.points,
                              cells=[("tetra", tet_cells)],
                              cell_data={"name_to_read": tet_data})
-    meshio.write("mesh3D.xdmf", tetra_mesh)
+    meshio.write("meshes/mesh3D.xdmf", tetra_mesh)
 
 
 def mesh_2D_rot(theta):
@@ -119,7 +119,7 @@ def mesh_2D_rot(theta):
     triangle_mesh = meshio.Mesh(points=points,
                                 cells=[("triangle", tri_cells)],
                                 cell_data={"name_to_read": tri_data})
-    meshio.write("mesh_rot.xdmf", triangle_mesh)
+    meshio.write("meshes/mesh_rot.xdmf", triangle_mesh)
 
 
 if __name__ == "__main__":
