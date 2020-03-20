@@ -61,7 +61,7 @@ def demo_stacked_cubes(theta):
     fdim = mesh.topology.dim - 1
     markers = {top: 3, interface: 4, bottom: 5, left_side: 6}
     mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
-    for key in markers.keys:
+    for key in markers.keys():
         mf.mark(key, markers[key])
 
     # dolfinx.io.VTKFile("mf.pvd").write(mf)
@@ -172,9 +172,6 @@ def demo_stacked_cubes(theta):
             continue
         for id_y in top_cube_left_y:
             y_dof = left_dofs_y[id_y]
-            print(x_coords[x_dof])
-            print(x_coords[y_dof])
-
             same_coord = np.allclose(x_coords[x_dof], x_coords[y_dof])
             corner_1 = np.allclose(x_coords[y_dof], top_points[:, 0])
             corner_2 = np.allclose(x_coords[y_dof], top_points[:, 3])
