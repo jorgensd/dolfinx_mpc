@@ -48,7 +48,8 @@ def demo_stacked_cubes(theta):
 
     left_side = find_line_function(top_points[:, 0], top_points[:, 3])
 
-    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "mesh_rot.xdmf") as xdmf:
+    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                             "meshes/mesh_rot.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
