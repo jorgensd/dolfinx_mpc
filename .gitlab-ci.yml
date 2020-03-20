@@ -8,10 +8,9 @@ test-complex:
     # Install custom dolfin
     - pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
     - pip3 install --no-cache-dir git+https://github.com/FEniCS/ufl.git
-    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git@mscroggs/permutation_info
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git
     - git clone https://github.com/fenics/dolfinx.git
     - cd dolfinx
-    - git checkout mscroggs/permutation_info
     - mkdir build
     - cd build
     - cmake -G Ninja ../cpp
@@ -58,10 +57,9 @@ test-real:
     # Install custom dolfin
     - pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
     - pip3 install --no-cache-dir git+https://github.com/FEniCS/ufl.git
-    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git@mscroggs/permutation_info
+    - pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git
     - git clone https://github.com/fenics/dolfinx.git
     - cd dolfinx
-    - git checkout mscroggs/permutation_info
     - mkdir build
     - cd build
     - cmake -G Ninja ../cpp
