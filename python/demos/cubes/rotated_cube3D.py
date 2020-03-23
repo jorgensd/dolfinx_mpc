@@ -9,54 +9,72 @@ import numpy as np
 import pygmsh
 import ufl
 from petsc4py import PETSc
-from create_and_export_mesh import mesh_2D_rot
+from create_and_export_mesh import mesh_3D_rot
 
 comp_col_pts = geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 
-def find_line_function(p0, p1):
+def find_plane_function(p0, p1, p2):
     """
-    Find line y=ax+b for each of the lines in the mesh
-    https://mathworld.wolfram.com/Two-PointForm.html
+    Find plane function given three points:
+    http://www.nabla.hr/CG-LinesPlanesIn3DA3.htm
     """
-    return lambda x: np.isclose(x[1],
-                                p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0]))
+    v1 = np.array(p1)-np.array(p0)
+    v2 = np.array(p2)-np.array(p0)
+
+    n = np.cross(v1, v2)
+    D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
+    return lambda x: np.isclose(0,
+                                np.dot(n, x) + D)
 
 
-def over_line(p0, p1):
-    """
-    Check if a point is over or under y=ax+b for each of the lines in the mesh
-    https://mathworld.wolfram.com/Two-PointForm.html
-    """
-    return lambda x: x[1] > p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0])
+def over_plane(p0, p1, p2):
+    v1 = np.array(p1)-np.array(p0)
+    v2 = np.array(p2)-np.array(p0)
+
+    n = np.cross(v1, v2)
+    D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
+    return lambda x: n[0]*x[0] + n[1]*x[1] + D > -n[2]*x[2]
 
 
 def demo_stacked_cubes(theta):
     if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
-        mesh_2D_rot(theta)
+        mesh_3D_rot(theta)
 
-    r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
+    r_matrix = pygmsh.helpers.rotation_matrix(
+        [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
     bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
                                                [1, 1, 0], [0, 1, 0]]).T)
-    bottom = find_line_function(bottom_points[:, 0], bottom_points[:, 1])
-    interface = find_line_function(bottom_points[:, 2], bottom_points[:, 3])
-    top_points = np.dot(r_matrix, np.array([[0, 1, 0], [1, 1, 0],
-                                            [1, 2, 0], [0, 2, 0]]).T)
-    top = find_line_function(top_points[:, 2], top_points[:, 3])
-    top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
+    interface_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
+                                                  [1, 1, 1], [0, 1, 1]]).T)
+    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
+                                            [1, 1, 2], [0, 1, 2]]).T)
+    left_points = np.dot(r_matrix, np.array(
+        [[0, 0, 0], [0, 1, 0], [0, 0, 1]]).T)
 
-    left_side = find_line_function(top_points[:, 0], top_points[:, 3])
+    bottom = find_plane_function(
+        bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
+    interface = find_plane_function(
+        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
+    top = find_plane_function(
+        top_points[:, 0], top_points[:, 1], top_points[:, 2])
+    left_side = find_plane_function(
+        left_points[:, 0], left_points[:, 1], left_points[:, 2])
 
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                             "meshes/mesh_rot.xdmf") as xdmf:
+                             "meshes/mesh3D_rot.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
 
+    top_cube = over_plane(
+        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Move top in y-dir
     V0 = V.sub(0).collapse()
     V1 = V.sub(1).collapse()
+    V2 = V.sub(2).collapse()
+
     # Traction on top of domain
     fdim = mesh.topology.dim - 1
     markers = {top: 3, interface: 4, bottom: 5, left_side: 6}
@@ -65,8 +83,8 @@ def demo_stacked_cubes(theta):
         mf.mark(key, markers[key])
 
     # dolfinx.io.VTKFile("mf.pvd").write(mf)
-    g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
-    g = dolfinx.Constant(mesh, g_vec[:2])
+    g_vec = np.dot(r_matrix, [0, 0, -1.25e-1])
+    g = dolfinx.Constant(mesh, g_vec)
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
     u_bc = dolfinx.function.Function(V)
@@ -77,18 +95,19 @@ def demo_stacked_cubes(theta):
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
-    # def top_v(x):
-    #     values = np.empty((2, x.shape[1]))
-    #     values[0] = g_vec[0]
-    #     values[1] = g_vec[1]
-    #     return values
-    # u_top = dolfinx.function.Function(V)
-    # u_top.interpolate(top_v)
-    # top_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-    #                                                     top)
-    # top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
-    # bc_top = fem.DirichletBC(u_top, top_dofs)
-    bcs = [bc_bottom]  # , bc_top]
+    def top_v(x):
+        values = np.empty((3, x.shape[1]))
+        values[0] = g_vec[0]
+        values[1] = g_vec[1]
+        values[2] = g_vec[2]
+        return values
+    u_top = dolfinx.function.Function(V)
+    u_top.interpolate(top_v)
+    top_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
+                                                        top)
+    top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
+    bc_top = fem.DirichletBC(u_top, top_dofs)
+    bcs = [bc_bottom, bc_top]
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -109,8 +128,9 @@ def demo_stacked_cubes(theta):
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
-    lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf,
+                     subdomain_id=markers[top])
+    lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
     # Create MPC
@@ -129,7 +149,9 @@ def demo_stacked_cubes(theta):
     interface_y_dofs = fem.locate_dofs_topological((V.sub(1), V1),
                                                    fdim,
                                                    i_facets)[:, 0]
-
+    interface_z_dofs = fem.locate_dofs_topological((V.sub(2), V2),
+                                                   fdim,
+                                                   i_facets)[:, 0]
     # Get some cell info
     global_indices = V.dofmap.index_map.global_indices(False)
     num_cells = mesh.num_entities(mesh.topology.dim)
@@ -145,55 +167,20 @@ def demo_stacked_cubes(theta):
                                                mesh.topology.dim-1)
     nh = dolfinx_mpc.facet_normal_approximation(V, mf, markers[interface])
     n_vec = nh.vector.getArray()
-    # dolfinx.io.VTKFile("results/nh.pvd").write(nh)
 
-    # Set normal sliding of a single on the left side of the cube to zero to
-    # avoid translational invariant problem
-    left_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                         left_side)
-    left_dofs_x = fem.locate_dofs_topological(
-        (V.sub(0), V0), fdim, left_facets)[:, 0]
-    left_dofs_y = fem.locate_dofs_topological(
-        (V.sub(1), V1), fdim, left_facets)[:, 0]
-
-    top_cube_left_x = np.flatnonzero(top_cube(x_coords[left_dofs_x].T))
-    top_cube_left_y = np.flatnonzero(top_cube(x_coords[left_dofs_y].T))
-    slip = False
-    n_left = dolfinx_mpc.facet_normal_approximation(V, mf, markers[left_side])
-    n_left_vec = n_left.vector.getArray()
-    # dolfinx.io.VTKFile("results/nleft.pvd").write(n_left)
-
-    for id_x in top_cube_left_x:
-        x_dof = left_dofs_x[id_x]
-        corner_1 = np.allclose(x_coords[x_dof], top_points[:, 0])
-        corner_2 = np.allclose(x_coords[x_dof], top_points[:, 3])
-        if corner_1 or corner_2:
-            continue
-        for id_y in top_cube_left_y:
-            y_dof = left_dofs_y[id_y]
-            same_coord = np.allclose(x_coords[x_dof], x_coords[y_dof])
-            corner_1 = np.allclose(x_coords[y_dof], top_points[:, 0])
-            corner_2 = np.allclose(x_coords[y_dof], top_points[:, 3])
-            if not corner_1 and not corner_2 and same_coord:
-                slaves.append(global_indices[x_dof])
-                masters.append(global_indices[y_dof])
-                coeffs.append(-n_left_vec[y_dof] /
-                              n_left_vec[x_dof])
-                offsets.append(len(masters))
-                slip = True
-                break
-        if slip:
-            break
     for cell_index in range(num_cells):
         midpoint = cell_midpoints[cell_index]
         cell_dofs = V.dofmap.cell_dofs(cell_index)
 
         # Check if any dofs in cell is on interface
         has_dofs_on_interface = np.isin(cell_dofs, interface_y_dofs)
-        x_on_interface = np.isin(cell_dofs, interface_x_dofs)
-        local_x_indices = np.flatnonzero(x_on_interface)
-
         if np.any(has_dofs_on_interface):
+            x_on_interface = np.isin(cell_dofs, interface_x_dofs)
+            local_x_indices = np.flatnonzero(x_on_interface)
+
+            z_on_interface = np.isin(cell_dofs, interface_z_dofs)
+            local_z_indices = np.flatnonzero(z_on_interface)
+
             local_indices = np.flatnonzero(has_dofs_on_interface)
             for dof_index in local_indices:
                 slave_l = cell_dofs[dof_index]
@@ -215,6 +202,19 @@ def demo_stacked_cubes(theta):
                         n_vec[master_x]/n_vec[slave_l]
                     masters.append(global_first_master)
                     coeffs.append(global_first_coeff)
+                    # Find corresponding z-coordinate of this slave
+                    master_z = -1
+                    for z_index in local_z_indices:
+                        if np.allclose(x_coords[cell_dofs[z_index]],
+                                       x_coords[slave_l]):
+                            master_z = cell_dofs[z_index]
+                            break
+                    assert master_z != -1
+                    global_second_master = global_indices[master_z]
+                    global_second_coeff = -\
+                        n_vec[master_z]/n_vec[slave_l]
+                    masters.append(global_second_master)
+                    coeffs.append(global_second_coeff)
                     # Need some parallel comm here
                     # Now find which master cell is close to the slave dof
                     possible_cells = comp_col_pts(tree, slave_coords)
@@ -230,13 +230,13 @@ def demo_stacked_cubes(theta):
                                           np.any(dofs_on_interface) and
                                           top_cube(other_midpoint) and
                                           facet_in_cell)
-
                         if is_master_cell:
                             # Get basis values, and add coeffs of sub space 1
                             # to masters with corresponding coeff
                             basis_values = get_basis(V._cpp_object,
                                                      slave_coords, other_index)
                             flatten_values = np.sum(basis_values, axis=1)
+
                             for local_idx, dof in enumerate(other_dofs):
                                 if not np.isclose(flatten_values[local_idx],
                                                   0):
@@ -246,6 +246,9 @@ def demo_stacked_cubes(theta):
                                     # Check if x coordinate scale by normal y
                                     if dof in interface_x_dofs:
                                         local_coeff *= (n_vec[master_x] /
+                                                        n_vec[slave_l])
+                                    elif dof in interface_z_dofs:
+                                        local_coeff *= (n_vec[master_z] /
                                                         n_vec[slave_l])
 
                                     coeffs.append(local_coeff)
@@ -292,8 +295,8 @@ def demo_stacked_cubes(theta):
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
     dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                        "uh_rot.xdmf").write(u_h)
-
+                        "results/uh3D_rot.xdmf").write(u_h)
+    print("FIN")
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
@@ -335,4 +338,4 @@ def demo_stacked_cubes(theta):
 
 
 if __name__ == "__main__":
-    demo_stacked_cubes(theta=np.pi/7)
+    demo_stacked_cubes(theta=np.pi/3)
