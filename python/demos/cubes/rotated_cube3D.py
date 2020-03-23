@@ -76,14 +76,16 @@ def demo_stacked_cubes(theta):
     V2 = V.sub(2).collapse()
 
     # Traction on top of domain
-    fdim = mesh.topology.dim - 1
+    tdim = mesh.topology.dim
+
+    fdim = tdim - 1
     markers = {top: 3, interface: 4, bottom: 5, left_side: 6}
     mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
     for key in markers.keys():
         mf.mark(key, markers[key])
 
     # dolfinx.io.VTKFile("mf.pvd").write(mf)
-    g_vec = np.dot(r_matrix, [0, 0, -1.25e-1])
+    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
     g = dolfinx.Constant(mesh, g_vec)
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
@@ -115,7 +117,7 @@ def demo_stacked_cubes(theta):
 
     # Elasticity parameters
     E = 1.0e3
-    nu = 0.1
+    nu = 0
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
 
@@ -154,17 +156,16 @@ def demo_stacked_cubes(theta):
                                                    i_facets)[:, 0]
     # Get some cell info
     global_indices = V.dofmap.index_map.global_indices(False)
-    num_cells = mesh.num_entities(mesh.topology.dim)
-    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, mesh.topology.dim,
+    num_cells = mesh.num_entities(tdim)
+    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
     cmap = fem.create_coordinate_map(mesh.ufl_domain())
     mesh.geometry.coord_mapping = cmap
     x_coords = V.tabulate_dof_coordinates()
-    tree = geometry.BoundingBoxTree(mesh, mesh.topology.dim)
-    mesh.create_connectivity(mesh.topology.dim, mesh.topology.dim-1)
-    mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
-    cell_to_facet = mesh.topology.connectivity(mesh.topology.dim,
-                                               mesh.topology.dim-1)
+
+    mesh.create_connectivity(fdim, tdim)
+    facet_tree = geometry.BoundingBoxTree(mesh, fdim)
+    facet_to_cell = mesh.topology.connectivity(fdim, tdim)
     nh = dolfinx_mpc.facet_normal_approximation(V, mf, markers[interface])
     n_vec = nh.vector.getArray()
 
@@ -216,21 +217,22 @@ def demo_stacked_cubes(theta):
                     masters.append(global_second_master)
                     coeffs.append(global_second_coeff)
                     # Need some parallel comm here
-                    # Now find which master cell is close to the slave dof
-                    possible_cells = comp_col_pts(tree, slave_coords)
-                    for other_index in possible_cells[0]:
-                        facets = cell_to_facet.links(other_index)
-                        facet_in_cell = np.any(np.isin(facets,
-                                                       i_facets))
-                        other_dofs = V.dofmap.cell_dofs(other_index)
-                        dofs_on_interface = np.isin(other_dofs,
-                                                    interface_y_dofs)
-                        other_midpoint = cell_midpoints[other_index]
-                        is_master_cell = ((other_index != cell_index) and
-                                          np.any(dofs_on_interface) and
-                                          top_cube(other_midpoint) and
-                                          facet_in_cell)
+                    # Need to add check that point is on a facet in cell.
+                    possible_facets = comp_col_pts(facet_tree, slave_coords)[0]
+                    for facet in possible_facets:
+                        facet_on_interface = facet in i_facets
+                        c_cells = facet_to_cell.links(facet)
+
+                        interface_facet = len(c_cells) == 1
+                        c_midpoint = cell_midpoints[c_cells[0]]
+                        in_top_cube = top_cube(c_midpoint)
+                        is_master_cell = (facet_on_interface and
+                                          interface_facet and
+                                          in_top_cube)
                         if is_master_cell:
+                            other_index = c_cells[0]
+                            other_dofs = V.dofmap.cell_dofs(other_index)
+
                             # Get basis values, and add coeffs of sub space 1
                             # to masters with corresponding coeff
                             basis_values = get_basis(V._cpp_object,
