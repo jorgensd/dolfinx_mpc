@@ -123,7 +123,7 @@ def mesh_2D_rot(theta=np.pi/2):
 
 
 def mesh_3D_rot(theta=np.pi/2):
-    res = 0.25
+    res = 0.125
     geom0 = pygmsh.built_in.Geometry()
     bbox = geom0.add_box(0, 1, 0, 1, 0, 1, res)
     bbox.dimension = 3
