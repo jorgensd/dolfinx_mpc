@@ -61,19 +61,31 @@ def demo_stacked_cubes(theta):
         top_points[:, 0], top_points[:, 1], top_points[:, 2])
     left_side = find_plane_function(
         left_points[:, 0], left_points[:, 1], left_points[:, 2])
+    top_cube = over_plane(
+        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
 
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                              "meshes/mesh3D_rot.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
+    cmap = fem.create_coordinate_map(mesh.ufl_domain())
+    mesh.geometry.coord_mapping = cmap
 
-    top_cube = over_plane(
-        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Move top in y-dir
     V0 = V.sub(0).collapse()
     V1 = V.sub(1).collapse()
     V2 = V.sub(2).collapse()
+
+    # Create a cell function with markers = 3 for top cube
+    cf = dolfinx.MeshFunction("size_t", mesh, mesh.topology.dim, 0)
+    num_cells = mesh.num_entities(mesh.topology.dim)
+    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, mesh.topology.dim,
+                                                range(num_cells))
+    top_cube_marker = 3
+    for cell_index in range(num_cells):
+        if top_cube(cell_midpoints[cell_index]):
+            cf.values[cell_index] = top_cube_marker
 
     # Traction on top of domain
     tdim = mesh.topology.dim
@@ -156,106 +168,120 @@ def demo_stacked_cubes(theta):
                                                    i_facets)[:, 0]
     # Get some cell info
     global_indices = V.dofmap.index_map.global_indices(False)
-    num_cells = mesh.num_entities(tdim)
-    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
-                                                range(num_cells))
-    cmap = fem.create_coordinate_map(mesh.ufl_domain())
-    mesh.geometry.coord_mapping = cmap
     x_coords = V.tabulate_dof_coordinates()
 
     mesh.create_connectivity(fdim, tdim)
     facet_tree = geometry.BoundingBoxTree(mesh, fdim)
     facet_to_cell = mesh.topology.connectivity(fdim, tdim)
+
+    # Compute approximate facet normals for the interface
+    # (Does not have unit length)
     nh = dolfinx_mpc.facet_normal_approximation(V, mf, markers[interface])
     n_vec = nh.vector.getArray()
 
-    for cell_index in range(num_cells):
-        midpoint = cell_midpoints[cell_index]
-        cell_dofs = V.dofmap.cell_dofs(cell_index)
+    # Extract dofmap info to avoid calling non-numpy functions
+    dofs = V.dofmap.list.array()
+    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
+    for i_facet in i_facets:
+        cell_indices = facet_to_cell.links(i_facet)
+        for cell_index in cell_indices:
+            # Local dof position
+            cell_dofs = dofs[num_dofs_per_element * cell_index:
+                             num_dofs_per_element * cell_index
+                             + num_dofs_per_element]
+            # Check if any dofs in cell is on interface
+            has_dofs_on_interface = np.isin(cell_dofs, interface_y_dofs)
+            if np.any(has_dofs_on_interface):
+                x_on_interface = np.isin(cell_dofs, interface_x_dofs)
+                local_x_indices = np.flatnonzero(x_on_interface)
 
-        # Check if any dofs in cell is on interface
-        has_dofs_on_interface = np.isin(cell_dofs, interface_y_dofs)
-        if np.any(has_dofs_on_interface):
-            x_on_interface = np.isin(cell_dofs, interface_x_dofs)
-            local_x_indices = np.flatnonzero(x_on_interface)
+                z_on_interface = np.isin(cell_dofs, interface_z_dofs)
+                local_z_indices = np.flatnonzero(z_on_interface)
 
-            z_on_interface = np.isin(cell_dofs, interface_z_dofs)
-            local_z_indices = np.flatnonzero(z_on_interface)
+                local_indices = np.flatnonzero(has_dofs_on_interface)
+                for dof_index in local_indices:
+                    slave_l = cell_dofs[dof_index]
+                    slave_coords = x_coords[slave_l]
+                    is_slave_cell = not (cf.values[cell_index] ==
+                                         top_cube_marker)
+                    global_slave = global_indices[slave_l]
+                    if is_slave_cell and global_slave not in slaves:
+                        slaves.append(global_slave)
+                        # Find corresponding x-coordinate of this slave
+                        master_x = -1
+                        for x_index in local_x_indices:
+                            if np.allclose(x_coords[cell_dofs[x_index]],
+                                           x_coords[slave_l]):
+                                master_x = cell_dofs[x_index]
+                                break
+                        assert master_x != -1
+                        global_first_master = global_indices[master_x]
+                        global_first_coeff = -\
+                            n_vec[master_x]/n_vec[slave_l]
+                        masters.append(global_first_master)
+                        coeffs.append(global_first_coeff)
+                        # Find corresponding z-coordinate of this slave
+                        master_z = -1
+                        for z_index in local_z_indices:
+                            if np.allclose(x_coords[cell_dofs[z_index]],
+                                           x_coords[slave_l]):
+                                master_z = cell_dofs[z_index]
+                                break
+                        assert master_z != -1
+                        global_second_master = global_indices[master_z]
+                        global_second_coeff = -\
+                            n_vec[master_z]/n_vec[slave_l]
+                        masters.append(global_second_master)
+                        coeffs.append(global_second_coeff)
+                        # Need some parallel comm here
+                        # Need to add check that point is on a facet in cell.
+                        possible_facets = comp_col_pts(
+                            facet_tree, slave_coords)[0]
+                        for facet in possible_facets:
+                            facet_on_interface = facet in i_facets
+                            c_cells = facet_to_cell.links(facet)
 
-            local_indices = np.flatnonzero(has_dofs_on_interface)
-            for dof_index in local_indices:
-                slave_l = cell_dofs[dof_index]
-                slave_coords = x_coords[slave_l]
-                is_slave_cell = not top_cube(midpoint)
-                global_slave = global_indices[slave_l]
-                if is_slave_cell and global_slave not in slaves:
-                    slaves.append(global_slave)
-                    # Find corresponding x-coordinate of this slave
-                    master_x = -1
-                    for x_index in local_x_indices:
-                        if np.allclose(x_coords[cell_dofs[x_index]],
-                                       x_coords[slave_l]):
-                            master_x = cell_dofs[x_index]
-                            break
-                    assert master_x != -1
-                    global_first_master = global_indices[master_x]
-                    global_first_coeff = -\
-                        n_vec[master_x]/n_vec[slave_l]
-                    masters.append(global_first_master)
-                    coeffs.append(global_first_coeff)
-                    # Find corresponding z-coordinate of this slave
-                    master_z = -1
-                    for z_index in local_z_indices:
-                        if np.allclose(x_coords[cell_dofs[z_index]],
-                                       x_coords[slave_l]):
-                            master_z = cell_dofs[z_index]
-                            break
-                    assert master_z != -1
-                    global_second_master = global_indices[master_z]
-                    global_second_coeff = -\
-                        n_vec[master_z]/n_vec[slave_l]
-                    masters.append(global_second_master)
-                    coeffs.append(global_second_coeff)
-                    # Need some parallel comm here
-                    # Need to add check that point is on a facet in cell.
-                    possible_facets = comp_col_pts(facet_tree, slave_coords)[0]
-                    for facet in possible_facets:
-                        facet_on_interface = facet in i_facets
-                        c_cells = facet_to_cell.links(facet)
-
-                        interface_facet = len(c_cells) == 1
-                        c_midpoint = cell_midpoints[c_cells[0]]
-                        in_top_cube = top_cube(c_midpoint)
-                        is_master_cell = (facet_on_interface and
-                                          interface_facet and
-                                          in_top_cube)
-                        if is_master_cell:
+                            interface_facet = len(c_cells) == 1
                             other_index = c_cells[0]
-                            other_dofs = V.dofmap.cell_dofs(other_index)
+                            in_top_cube = (cf.values[other_index] ==
+                                           top_cube_marker)
 
-                            # Get basis values, and add coeffs of sub space 1
-                            # to masters with corresponding coeff
-                            basis_values = get_basis(V._cpp_object,
-                                                     slave_coords, other_index)
-                            flatten_values = np.sum(basis_values, axis=1)
+                            is_master_cell = (facet_on_interface and
+                                              interface_facet and
+                                              in_top_cube)
 
-                            for local_idx, dof in enumerate(other_dofs):
-                                if not np.isclose(flatten_values[local_idx],
-                                                  0):
+                            if is_master_cell:
+                                other_dofs = dofs[num_dofs_per_element
+                                                  * other_index:
+                                                  num_dofs_per_element
+                                                  * other_index
+                                                  + num_dofs_per_element]
 
-                                    masters.append(global_indices[dof])
-                                    local_coeff = flatten_values[local_idx]
-                                    # Check if x coordinate scale by normal y
+                                # Get basis values, and add coeffs of sub space
+                                # to masters with corresponding coeff
+                                basis_values = get_basis(V._cpp_object,
+                                                         slave_coords,
+                                                         other_index)
+                                for local_idx, dof in enumerate(other_dofs):
+                                    l_coeff = 0
                                     if dof in interface_x_dofs:
-                                        local_coeff *= (n_vec[master_x] /
-                                                        n_vec[slave_l])
+                                        l_coeff = basis_values[local_idx,
+                                                               0]
+                                        l_coeff *= (n_vec[master_x] /
+                                                    n_vec[slave_l])
+                                    elif dof in interface_y_dofs:
+                                        l_coeff = basis_values[local_idx,
+                                                               1]
                                     elif dof in interface_z_dofs:
-                                        local_coeff *= (n_vec[master_z] /
-                                                        n_vec[slave_l])
-
-                                    coeffs.append(local_coeff)
-                            offsets.append(len(masters))
-                            break
+                                        l_coeff = basis_values[local_idx,
+                                                               2]
+                                        l_coeff *= (n_vec[master_z] /
+                                                    n_vec[slave_l])
+                                    if not np.isclose(l_coeff, 0):
+                                        masters.append(global_indices[dof])
+                                        coeffs.append(l_coeff)
+                                offsets.append(len(masters))
+                                break
 
     slaves, masters, coeffs, offsets = (np.array(slaves), np.array(masters),
                                         np.array(coeffs), np.array(offsets))
