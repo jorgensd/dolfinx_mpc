@@ -1,18 +1,26 @@
-import dolfinx.geometry as geometry
-import dolfinx.mesh as dmesh
-import dolfinx.fem as fem
+# Copyright (C) 2020 Jørgen S. Dokken
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    LGPL-3.0-or-later
+#
+# Multi point constraint problem for linear elasticity with slip conditions
+# between two cubes.
 import dolfinx
+import dolfinx.fem as fem
 import dolfinx.io
+
 import dolfinx_mpc
 import dolfinx_mpc.utils
+
 import numpy as np
 import pygmsh
 import ufl
-from petsc4py import PETSc
-from create_and_export_mesh import mesh_3D_rot
 
-comp_col_pts = geometry.compute_collisions_point
-get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
+from petsc4py import PETSc
+
+from create_and_export_mesh import mesh_3D_rot
+from helpers import find_master_slave_relationship
 
 
 def find_plane_function(p0, p1, p2):
@@ -30,6 +38,10 @@ def find_plane_function(p0, p1, p2):
 
 
 def over_plane(p0, p1, p2):
+    """
+    Returns function that checks if a point is over a plane defined
+    by the points p0, p1 and p2.
+    """
     v1 = np.array(p1)-np.array(p0)
     v2 = np.array(p2)-np.array(p0)
 
@@ -39,9 +51,12 @@ def over_plane(p0, p1, p2):
 
 
 def demo_stacked_cubes(theta):
+    # Create rotated mesh
     if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
         mesh_3D_rot(theta)
 
+    # Helpers for indentifying the rotated points to generate cell and
+    # facet functions
     r_matrix = pygmsh.helpers.rotation_matrix(
         [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
     bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
@@ -53,6 +68,7 @@ def demo_stacked_cubes(theta):
     left_points = np.dot(r_matrix, np.array(
         [[0, 0, 0], [0, 1, 0], [0, 0, 1]]).T)
 
+    # Create facet and cell identification functions
     bottom = find_plane_function(
         bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
     interface = find_plane_function(
@@ -64,45 +80,46 @@ def demo_stacked_cubes(theta):
     top_cube = over_plane(
         interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
 
+    # Load mesh and create coordinate map
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                              "meshes/mesh3D_rot.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
     cmap = fem.create_coordinate_map(mesh.ufl_domain())
     mesh.geometry.coord_mapping = cmap
-
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))``
+    tdim = mesh.topology.dim
+    fdim = tdim - 1
 
     # Create a cell function with markers = 3 for top cube
-    cf = dolfinx.MeshFunction("size_t", mesh, mesh.topology.dim, 0)
-    num_cells = mesh.num_entities(mesh.topology.dim)
-    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, mesh.topology.dim,
+    cf = dolfinx.MeshFunction("size_t", mesh, tdim, 0)
+    num_cells = mesh.num_entities(tdim)
+    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
     top_cube_marker = 3
     for cell_index in range(num_cells):
         if top_cube(cell_midpoints[cell_index]):
             cf.values[cell_index] = top_cube_marker
 
-    # Traction on top of domain
-    tdim = mesh.topology.dim
-
-    fdim = tdim - 1
+    # Crate a facet function for the difference interfaces
     markers = {top: 3, interface: 4, bottom: 5, left_side: 6}
     mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
     for key in markers.keys():
         mf.mark(key, markers[key])
 
-    # dolfinx.io.VTKFile("mf.pvd").write(mf)
-    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
-    g = dolfinx.Constant(mesh, g_vec)
+    # Create function space
+    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-    # Define boundary conditions (HAS TO BE NON-MASTER NODES)
+    # Define boundary conditions
+    # Bottom boundary is fixed in all directions
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
-    bottom_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                           bottom)
+    bottom_facets = np.flatnonzero(mf.values == markers[bottom])
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
+
+    # Top boundary has a given deformation normal to the interface
+    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
+    g = dolfinx.Constant(mesh, g_vec)
 
     def top_v(x):
         values = np.empty((3, x.shape[1]))
@@ -112,15 +129,11 @@ def demo_stacked_cubes(theta):
         return values
     u_top = dolfinx.function.Function(V)
     u_top.interpolate(top_v)
-    top_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                        top)
+    top_facets = np.flatnonzero(mf.values == markers[top])
     top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
     bc_top = fem.DirichletBC(u_top, top_dofs)
-    bcs = [bc_bottom, bc_top]
 
-    # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
+    bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
     E = 1.0e3
@@ -142,143 +155,9 @@ def demo_stacked_cubes(theta):
     lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
-    def find_master_slave_relationship(V, interface_info, cell_info):
-        """
-        Function return the master, slaves, coefficients and offsets
-        for coupling two interfaces.
-        Input:
-            V - The function space that should be constrained.
-            interface_info - Tuple containing a mesh function
-                             (for facets) and an int indicating
-                             the marked interface.
-            cell_info - Tuple containing a mesh function (for cells)
-                        and an int indicating which cells should be
-                        master cells.
-        """
-        # Extract mesh info
-        tdim = V.mesh.topology.dim
-        fdim = tdim - 1
-
-        # Collapse sub spaces
-        Vs = [V.sub(i).collapse() for i in range(tdim)]
-
-        # Extract interface_info
-        (mf, interface_value) = interface_info
-        (cf, master_value) = cell_info
-
-        # Locate dofs on both interfaces
-        i_facets = np.flatnonzero(mf.values == interface_value)
-
-        interface_dofs = []
-        for i in range(tdim):
-            i_dofs = fem.locate_dofs_topological((V.sub(i), Vs[i]),
-                                                 fdim, i_facets)[:, 0]
-            interface_dofs.append(i_dofs)
-
-        # Get dof info
-        global_indices = V.dofmap.index_map.global_indices(False)
-        dofs = V.dofmap.list.array()
-        dof_coords = V.tabulate_dof_coordinates()
-        num_dofs_per_element = V.dofmap.dof_layout.num_dofs
-
-        # Create facet-to-cell-connectivity
-        mesh.create_connectivity(fdim, tdim)
-        facet_tree = geometry.BoundingBoxTree(mesh, fdim)
-        facet_to_cell = mesh.topology.connectivity(fdim, tdim)
-
-        # Compute approximate facet normals for the interface
-        # (Does not have unit length)
-        nh = dolfinx_mpc.facet_normal_approximation(V, mf, markers[interface])
-        n_vec = nh.vector.getArray()
-
-        slaves, masters, coeffs, offsets = [], [], [], [0]
-
-        for facet in i_facets:
-            # Find cells connected to facets (Should only be one)
-            cell_indices = facet_to_cell.links(facet)
-            assert(len(cell_indices) == 1)
-            cell_index = cell_indices[0]
-            cell_dofs = dofs[num_dofs_per_element * cell_index:
-                             num_dofs_per_element * cell_index
-                             + num_dofs_per_element]
-            local_indices = []
-            # Find local indices for dofs on interface for each dimension
-            for i in range(tdim):
-                dofs_on_interface = np.isin(cell_dofs, interface_dofs[i])
-                local_indices.append(np.flatnonzero(dofs_on_interface))
-
-            # Cache for slave dof location, used for computing coefficients
-            # of masters on other cell
-            # Use the highest dim as the slave dof
-            for dof_index in local_indices[tdim-1]:
-                slave_l = cell_dofs[dof_index]
-                slave_coords = dof_coords[slave_l]
-                is_slave_cell = not (cf.values[cell_index] == master_value)
-                global_slave = global_indices[slave_l]
-                slave_indices = []
-
-                if is_slave_cell and global_slave not in slaves:
-                    slaves.append(global_slave)
-                    # Find the other dofs in same dof coordinate and
-                    # add as master
-                    for i in range(tdim - 1):
-                        for index in local_indices[i]:
-                            dof_i = cell_dofs[index]
-                            if np.allclose(dof_coords[dof_i], slave_coords):
-                                global_master = global_indices[dof_i]
-                                coeff = - n_vec[dof_i]/n_vec[slave_l]
-                                masters.append(global_master)
-                                coeffs.append(coeff)
-                                slave_indices.append(dof_i)
-                                break
-                    slave_indices.append(slave_l)
-                    assert(len(slave_indices) == 3)
-                    # Find facets that possibly contain the slave dof
-                    possible_facets = comp_col_pts(
-                        facet_tree, slave_coords)[0]
-                    for o_facet in possible_facets:
-                        facet_on_interface = o_facet in i_facets
-                        c_cells = facet_to_cell.links(o_facet)
-                        in_top_cube = False
-                        if facet_on_interface:
-                            assert(len(c_cells) == 1)
-                            in_top_cube = cf.values[c_cells[0]] == master_value
-                        if in_top_cube:
-                            other_index = c_cells[0]
-                            other_dofs = dofs[num_dofs_per_element
-                                              * other_index:
-                                              num_dofs_per_element
-                                              * other_index
-                                              + num_dofs_per_element]
-
-                            # Get basis values, and add coeffs of sub space
-                            # to masters with corresponding coeff
-                            basis_values = get_basis(V._cpp_object,
-                                                     slave_coords,
-                                                     other_index)
-                            for k in range(tdim):
-                                for local_idx, dof in enumerate(other_dofs):
-                                    l_coeff = 0
-                                    if dof in interface_dofs[k]:
-                                        l_coeff = basis_values[local_idx,
-                                                               k]
-                                        l_coeff *= (n_vec[slave_indices[k]] /
-                                                    n_vec[slave_indices[tdim
-                                                                        - 1]])
-                                    if not np.isclose(l_coeff, 0):
-                                        masters.append(global_indices[dof])
-                                        coeffs.append(l_coeff)
-                            offsets.append(len(masters))
-                            break
-
-        return (np.array(slaves, dtype=np.int64),
-                np.array(masters, dtype=np.int64),
-                np.array(coeffs, dtype=np.float64),
-                np.array(offsets, dtype=np.int64))
-
+    # Find slave master relationship and initialize MPC class
     slaves, masters, coeffs, offsets = find_master_slave_relationship(
         V, (mf, 4), (cf, 3))
-
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
 
@@ -317,14 +196,14 @@ def demo_stacked_cubes(theta):
     u_h.name = "u_mpc"
     dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                         "results/uh3D_rot.xdmf").write(u_h)
-    print("FIN")
+
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
-
+    print("Solving reference problem with global matrix (using numpy)")
     # Generate reference matrices and unconstrained solution
     A_org = fem.assemble_matrix(a, bcs)
 
