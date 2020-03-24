@@ -1,3 +1,9 @@
+# Copyright (C) 2020 Jørgen S. Dokken
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    LGPL-3.0-or-later
+#
 import dolfinx
 import dolfinx.geometry as geometry
 import dolfinx.mesh as dmesh

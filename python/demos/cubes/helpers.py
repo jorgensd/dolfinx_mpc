@@ -65,7 +65,6 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     # (Does not have unit length)
     nh = dolfinx_mpc.facet_normal_approximation(V, mf, interface_value)
     n_vec = nh.vector.getArray()
-
     slaves, masters, coeffs, offsets = [], [], [], [0]
 
     for facet in i_facets:
@@ -91,7 +90,6 @@ def find_master_slave_relationship(V, interface_info, cell_info):
             is_slave_cell = not (cf.values[cell_index] == master_value)
             global_slave = global_indices[slave_l]
             slave_indices = []
-
             if is_slave_cell and global_slave not in slaves:
                 slaves.append(global_slave)
                 # Find the other dofs in same dof coordinate and
@@ -102,13 +100,16 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                         if np.allclose(dof_coords[dof_i], slave_coords):
                             global_master = global_indices[dof_i]
                             coeff = - n_vec[dof_i]/n_vec[slave_l]
-                            masters.append(global_master)
-                            coeffs.append(coeff)
+                            if not np.isclose(coeff, 0):
+                                masters.append(global_master)
+                                coeffs.append(coeff)
                             slave_indices.append(dof_i)
                             break
                 slave_indices.append(slave_l)
-                assert(len(slave_indices) == 3)
+                assert(len(slave_indices) == tdim)
                 # Find facets that possibly contain the slave dof
+                # FIXME: Does not work for quads, possibly due to
+                # https://github.com/FEniCS/dolfinx/issues/767
                 possible_facets = comp_col_pts(
                     facet_tree, slave_coords)[0]
                 for o_facet in possible_facets:

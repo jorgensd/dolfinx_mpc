@@ -8,80 +8,26 @@ import dolfinx_mpc.utils
 import numpy as np
 import ufl
 from petsc4py import PETSc
+from create_and_export_mesh import mesh_2D_rot, mesh_2D_dolfin
 
 comp_col_pts = geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 
 def demo_stacked_cubes(celltype="quad"):
-    # Using built in meshes, stacking cubes on top of each other
-    if celltype == "quad":
-        N = 2
-        ct = dolfinx.cpp.mesh.CellType.quadrilateral
-        mesh0 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N, ct)
-        mesh1 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 2*N, 2*N, ct)
-        nv = 4
+    if celltype == "tri":
+        mesh_2D_dolfin("tri")
+        filename = "meshes/mesh_tri.xdmf"
+    elif celltype == "quad":
+        mesh_2D_dolfin("quad")
+        filename = "meshes/mesh_quad.xdmf"
     else:
-        N = 2
-        ct = dolfinx.cpp.mesh.CellType.triangle
-        mesh0 = dolfinx.RectangleMesh(dolfinx.MPI.comm_world,
-                                      [np.array([0.0, 0.0, 0]),
-                                       np.array([1.0, 1.0, 0])], [N, N],
-                                      ct, diagonal="crossed")
+        mesh_2D_rot(0)
+        filename = "meshes/mesh_rot.xdmf"
 
-        mesh1 = dolfinx.RectangleMesh(dolfinx.MPI.comm_world,
-                                      [np.array([0.0, 0.0, 0]),
-                                       np.array([1.0, 1.0, 0])], [2*N, 2*N],
-                                      ct, diagonal="crossed")
-        nv = 3
-
-    # Stack the two meshes in one mesh
-    x0 = mesh0.geometry.x
-    x0 = x0[:, :-1]
-    x0[:, 1] += 1
-    points = np.vstack([x0, mesh1.geometry.x[:, :-1]])
-
-    # Transform topology info into geometry info
-    c2v = mesh0.topology.connectivity(mesh0.topology.dim, 0)
-    x_dofmap = mesh0.geometry.dofmap()
-    imap = mesh0.topology.index_map(0)
-    num_mesh_vertices = imap.size_local + imap.num_ghosts
-    vertex_to_node = np.zeros(num_mesh_vertices, dtype=np.int64)
-    for c in range(c2v.num_nodes):
-        vertices = c2v.links(c)
-        x_dofs = x_dofmap.links(c)
-        for i in range(vertices.shape[0]):
-            vertex_to_node[vertices[i]] = x_dofs[i]
-    cells0 = np.zeros((c2v.num_nodes, nv), dtype=np.int64)
-    for cell in range(c2v.num_nodes):
-        for v in range(nv):
-            cells0[cell, v] = vertex_to_node[c2v.links(cell)[v]]
-    # Transform topology info into geometry info
-    c2v = mesh1.topology.connectivity(mesh1.topology.dim, 0)
-    x_dofmap = mesh1.geometry.dofmap()
-    imap = mesh1.topology.index_map(0)
-    num_mesh_vertices = imap.size_local + imap.num_ghosts
-    vertex_to_node = np.zeros(num_mesh_vertices, dtype=np.int64)
-    for c in range(c2v.num_nodes):
-        vertices = c2v.links(c)
-        x_dofs = x_dofmap.links(c)
-        for i in range(vertices.shape[0]):
-            vertex_to_node[vertices[i]] = x_dofs[i]
-    cells1 = np.zeros((c2v.num_nodes, nv), dtype=np.int64)
-    for cell in range(c2v.num_nodes):
-        for v in range(nv):
-            cells1[cell, v] = vertex_to_node[c2v.links(cell)[v]] + x0.shape[0]
-    cells = np.vstack([cells0, cells1])
-    mesh = dolfinx.Mesh(dolfinx.MPI.comm_world,
-                        ct, points, cells, [],
-                        dolfinx.cpp.mesh.GhostMode.none)
-    cmap = fem.create_coordinate_map(mesh.ufl_domain())
-    if celltype == "unstr":
-        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                                 "meshes/mesh.xdmf") as xdmf:
-            mesh = xdmf.read_mesh()
-
-    mesh.geometry.coord_mapping = cmap
+    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                             filename) as xdmf:
+        mesh = xdmf.read_mesh()
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -96,7 +42,7 @@ def demo_stacked_cubes(celltype="quad"):
     mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
     mf.mark(top, 3)
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
-    g = dolfinx.Constant(mesh, (0, -9.81e2))
+    g = dolfinx.Constant(mesh, (0,  -1.25e2))
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
     u_bc = dolfinx.function.Function(V)
@@ -129,7 +75,7 @@ def demo_stacked_cubes(celltype="quad"):
     v = ufl.TestFunction(V)
 
     # Elasticity parameters
-    E = 1.0e4
+    E = 1.0e3
     nu = 0
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -183,45 +129,6 @@ def demo_stacked_cubes(celltype="quad"):
     for cell_index in range(num_cells):
         midpoint = cell_midpoints[cell_index]
         cell_dofs = V.dofmap.cell_dofs(cell_index)
-
-        # Fix single central node in x-direction to avoid sliding
-        # if cell_midpoints[cell_index][1] < 1:
-        #     has_x_dofs_on_interface = np.isin(cell_dofs, interface_x_dofs)
-        #     x_dofs_local = np.flatnonzero(has_x_dofs_on_interface)
-        #     for dof_index in x_dofs_local:
-        #         global_slave = global_indices[cell_dofs[dof_index]]
-        #         new_slave = global_slave not in slaves
-        #         if np.allclose(x_coords[cell_dofs[dof_index]],
-        #                        [0.5, 1, 0]) and new_slave:
-        #             slaves.append(global_slave)
-        #             # Find master_cell
-        #             possible_cells = comp_col_pts(tree,
-        #                                           x_coords[cell_dofs[
-        #                                               dof_index]])
-        #             for other_index in possible_cells[0]:
-        #                 facets = cell_to_facet.links(other_index)
-        #                 facet_in_cell = np.any(np.isin(facets,
-        #                                                i_facets))
-        #                 other_dofs = V.dofmap.cell_dofs(other_index)
-        #                 dofs_on_interface = np.isin(other_dofs,
-        #                                             interface_x_dofs)
-        #                 other_midpoint = cell_midpoints[other_index]
-        #                 is_master_cell = ((other_index != cell_index) and
-        #                                   np.any(dofs_on_interface) and
-        #                                   (other_midpoint[1] > 1) and
-        #                                   facet_in_cell)
-        #                 if is_master_cell:
-        #                     x_dofs = V.sub(0).dofmap.cell_dofs(other_index)
-        #                     other_local_indices = np.flatnonzero(
-        #                         np.isin(other_dofs, x_dofs))
-        #                     for local_idx in other_local_indices:
-        #                         if np.allclose(x_coords[x_dofs[local_idx]],
-        #                                        [0.5, 1, 0]):
-        #                             masters.append(
-        #                                 global_indices[other_dofs[local_idx]])
-        #                             coeffs.append(1)
-        #                     offsets.append(len(masters))
-        #                     break
 
         # Check if any dofs in cell is on interface
         has_dofs_on_interface = np.isin(cell_dofs, interface_y_dofs)
@@ -329,16 +236,6 @@ def demo_stacked_cubes(celltype="quad"):
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
-    # solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
-    # solver.setType(PETSc.KSP.Type.PREONLY)
-    # solver.getPC().setType(PETSc.PC.Type.LU)
-    # solver.setOperators(A_org)
-    # u_ = dolfinx.Function(V)
-    # solver.solve(L_org, u_.vector)
-    # u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-    #                       mode=PETSc.ScatterMode.FORWARD)
-    # u_.name = "u_unperturbed"
-    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/u_.xdmf").write(u_)
 
     # Create global transformation matrix
     K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
@@ -365,5 +262,5 @@ def demo_stacked_cubes(celltype="quad"):
 
 if __name__ == "__main__":
     demo_stacked_cubes("quad")
-    demo_stacked_cubes("triangle")
-    demo_stacked_cubes("unstr")
+    # demo_stacked_cubes("tri")
+    # demo_stacked_cubes("unstr")
