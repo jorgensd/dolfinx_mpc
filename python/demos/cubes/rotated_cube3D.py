@@ -70,12 +70,7 @@ def demo_stacked_cubes(theta):
     cmap = fem.create_coordinate_map(mesh.ufl_domain())
     mesh.geometry.coord_mapping = cmap
 
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
-
-    # Move top in y-dir
-    V0 = V.sub(0).collapse()
-    V1 = V.sub(1).collapse()
-    V2 = V.sub(2).collapse()
+    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))``
 
     # Create a cell function with markers = 3 for top cube
     cf = dolfinx.MeshFunction("size_t", mesh, mesh.topology.dim, 0)
@@ -147,144 +142,142 @@ def demo_stacked_cubes(theta):
     lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
-    # Create MPC
-    slaves = []
-    masters = []
-    coeffs = []
-    offsets = [0]
+    def find_master_slave_relationship(V, interface_info, cell_info):
+        """
+        Function return the master, slaves, coefficients and offsets
+        for coupling two interfaces.
+        Input:
+            V - The function space that should be constrained.
+            interface_info - Tuple containing a mesh function
+                             (for facets) and an int indicating
+                             the marked interface.
+            cell_info - Tuple containing a mesh function (for cells)
+                        and an int indicating which cells should be
+                        master cells.
+        """
+        # Extract mesh info
+        tdim = V.mesh.topology.dim
+        fdim = tdim - 1
 
-    # Locate dofs on both interfaces
-    i_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                      interface)
+        # Collapse sub spaces
+        Vs = [V.sub(i).collapse() for i in range(tdim)]
 
-    # Slicing of list is due to the fact that we only require y-components
-    interface_x_dofs = fem.locate_dofs_topological((V.sub(0), V0),
-                                                   fdim, i_facets)[:, 0]
-    interface_y_dofs = fem.locate_dofs_topological((V.sub(1), V1),
-                                                   fdim,
-                                                   i_facets)[:, 0]
-    interface_z_dofs = fem.locate_dofs_topological((V.sub(2), V2),
-                                                   fdim,
-                                                   i_facets)[:, 0]
-    # Get some cell info
-    global_indices = V.dofmap.index_map.global_indices(False)
-    x_coords = V.tabulate_dof_coordinates()
+        # Extract interface_info
+        (mf, interface_value) = interface_info
+        (cf, master_value) = cell_info
 
-    mesh.create_connectivity(fdim, tdim)
-    facet_tree = geometry.BoundingBoxTree(mesh, fdim)
-    facet_to_cell = mesh.topology.connectivity(fdim, tdim)
+        # Locate dofs on both interfaces
+        i_facets = np.flatnonzero(mf.values == interface_value)
 
-    # Compute approximate facet normals for the interface
-    # (Does not have unit length)
-    nh = dolfinx_mpc.facet_normal_approximation(V, mf, markers[interface])
-    n_vec = nh.vector.getArray()
+        interface_dofs = []
+        for i in range(tdim):
+            i_dofs = fem.locate_dofs_topological((V.sub(i), Vs[i]),
+                                                 fdim, i_facets)[:, 0]
+            interface_dofs.append(i_dofs)
 
-    # Extract dofmap info to avoid calling non-numpy functions
-    dofs = V.dofmap.list.array()
-    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
-    for i_facet in i_facets:
-        cell_indices = facet_to_cell.links(i_facet)
-        for cell_index in cell_indices:
-            # Local dof position
+        # Get dof info
+        global_indices = V.dofmap.index_map.global_indices(False)
+        dofs = V.dofmap.list.array()
+        dof_coords = V.tabulate_dof_coordinates()
+        num_dofs_per_element = V.dofmap.dof_layout.num_dofs
+
+        # Create facet-to-cell-connectivity
+        mesh.create_connectivity(fdim, tdim)
+        facet_tree = geometry.BoundingBoxTree(mesh, fdim)
+        facet_to_cell = mesh.topology.connectivity(fdim, tdim)
+
+        # Compute approximate facet normals for the interface
+        # (Does not have unit length)
+        nh = dolfinx_mpc.facet_normal_approximation(V, mf, markers[interface])
+        n_vec = nh.vector.getArray()
+
+        slaves, masters, coeffs, offsets = [], [], [], [0]
+
+        for facet in i_facets:
+            # Find cells connected to facets (Should only be one)
+            cell_indices = facet_to_cell.links(facet)
+            assert(len(cell_indices) == 1)
+            cell_index = cell_indices[0]
             cell_dofs = dofs[num_dofs_per_element * cell_index:
                              num_dofs_per_element * cell_index
                              + num_dofs_per_element]
-            # Check if any dofs in cell is on interface
-            has_dofs_on_interface = np.isin(cell_dofs, interface_y_dofs)
-            if np.any(has_dofs_on_interface):
-                x_on_interface = np.isin(cell_dofs, interface_x_dofs)
-                local_x_indices = np.flatnonzero(x_on_interface)
+            local_indices = []
+            # Find local indices for dofs on interface for each dimension
+            for i in range(tdim):
+                dofs_on_interface = np.isin(cell_dofs, interface_dofs[i])
+                local_indices.append(np.flatnonzero(dofs_on_interface))
 
-                z_on_interface = np.isin(cell_dofs, interface_z_dofs)
-                local_z_indices = np.flatnonzero(z_on_interface)
+            # Cache for slave dof location, used for computing coefficients
+            # of masters on other cell
+            # Use the highest dim as the slave dof
+            for dof_index in local_indices[tdim-1]:
+                slave_l = cell_dofs[dof_index]
+                slave_coords = dof_coords[slave_l]
+                is_slave_cell = not (cf.values[cell_index] == master_value)
+                global_slave = global_indices[slave_l]
+                slave_indices = []
 
-                local_indices = np.flatnonzero(has_dofs_on_interface)
-                for dof_index in local_indices:
-                    slave_l = cell_dofs[dof_index]
-                    slave_coords = x_coords[slave_l]
-                    is_slave_cell = not (cf.values[cell_index] ==
-                                         top_cube_marker)
-                    global_slave = global_indices[slave_l]
-                    if is_slave_cell and global_slave not in slaves:
-                        slaves.append(global_slave)
-                        # Find corresponding x-coordinate of this slave
-                        master_x = -1
-                        for x_index in local_x_indices:
-                            if np.allclose(x_coords[cell_dofs[x_index]],
-                                           x_coords[slave_l]):
-                                master_x = cell_dofs[x_index]
+                if is_slave_cell and global_slave not in slaves:
+                    slaves.append(global_slave)
+                    # Find the other dofs in same dof coordinate and
+                    # add as master
+                    for i in range(tdim - 1):
+                        for index in local_indices[i]:
+                            dof_i = cell_dofs[index]
+                            if np.allclose(dof_coords[dof_i], slave_coords):
+                                global_master = global_indices[dof_i]
+                                coeff = - n_vec[dof_i]/n_vec[slave_l]
+                                masters.append(global_master)
+                                coeffs.append(coeff)
+                                slave_indices.append(dof_i)
                                 break
-                        assert master_x != -1
-                        global_first_master = global_indices[master_x]
-                        global_first_coeff = -\
-                            n_vec[master_x]/n_vec[slave_l]
-                        masters.append(global_first_master)
-                        coeffs.append(global_first_coeff)
-                        # Find corresponding z-coordinate of this slave
-                        master_z = -1
-                        for z_index in local_z_indices:
-                            if np.allclose(x_coords[cell_dofs[z_index]],
-                                           x_coords[slave_l]):
-                                master_z = cell_dofs[z_index]
-                                break
-                        assert master_z != -1
-                        global_second_master = global_indices[master_z]
-                        global_second_coeff = -\
-                            n_vec[master_z]/n_vec[slave_l]
-                        masters.append(global_second_master)
-                        coeffs.append(global_second_coeff)
-                        # Need some parallel comm here
-                        # Need to add check that point is on a facet in cell.
-                        possible_facets = comp_col_pts(
-                            facet_tree, slave_coords)[0]
-                        for facet in possible_facets:
-                            facet_on_interface = facet in i_facets
-                            c_cells = facet_to_cell.links(facet)
-
-                            interface_facet = len(c_cells) == 1
+                    slave_indices.append(slave_l)
+                    assert(len(slave_indices) == 3)
+                    # Find facets that possibly contain the slave dof
+                    possible_facets = comp_col_pts(
+                        facet_tree, slave_coords)[0]
+                    for o_facet in possible_facets:
+                        facet_on_interface = o_facet in i_facets
+                        c_cells = facet_to_cell.links(o_facet)
+                        in_top_cube = False
+                        if facet_on_interface:
+                            assert(len(c_cells) == 1)
+                            in_top_cube = cf.values[c_cells[0]] == master_value
+                        if in_top_cube:
                             other_index = c_cells[0]
-                            in_top_cube = (cf.values[other_index] ==
-                                           top_cube_marker)
+                            other_dofs = dofs[num_dofs_per_element
+                                              * other_index:
+                                              num_dofs_per_element
+                                              * other_index
+                                              + num_dofs_per_element]
 
-                            is_master_cell = (facet_on_interface and
-                                              interface_facet and
-                                              in_top_cube)
-
-                            if is_master_cell:
-                                other_dofs = dofs[num_dofs_per_element
-                                                  * other_index:
-                                                  num_dofs_per_element
-                                                  * other_index
-                                                  + num_dofs_per_element]
-
-                                # Get basis values, and add coeffs of sub space
-                                # to masters with corresponding coeff
-                                basis_values = get_basis(V._cpp_object,
-                                                         slave_coords,
-                                                         other_index)
+                            # Get basis values, and add coeffs of sub space
+                            # to masters with corresponding coeff
+                            basis_values = get_basis(V._cpp_object,
+                                                     slave_coords,
+                                                     other_index)
+                            for k in range(tdim):
                                 for local_idx, dof in enumerate(other_dofs):
                                     l_coeff = 0
-                                    if dof in interface_x_dofs:
+                                    if dof in interface_dofs[k]:
                                         l_coeff = basis_values[local_idx,
-                                                               0]
-                                        l_coeff *= (n_vec[master_x] /
-                                                    n_vec[slave_l])
-                                    elif dof in interface_y_dofs:
-                                        l_coeff = basis_values[local_idx,
-                                                               1]
-                                    elif dof in interface_z_dofs:
-                                        l_coeff = basis_values[local_idx,
-                                                               2]
-                                        l_coeff *= (n_vec[master_z] /
-                                                    n_vec[slave_l])
+                                                               k]
+                                        l_coeff *= (n_vec[slave_indices[k]] /
+                                                    n_vec[slave_indices[tdim
+                                                                        - 1]])
                                     if not np.isclose(l_coeff, 0):
                                         masters.append(global_indices[dof])
                                         coeffs.append(l_coeff)
-                                offsets.append(len(masters))
-                                break
+                            offsets.append(len(masters))
+                            break
 
-    slaves, masters, coeffs, offsets = (np.array(slaves), np.array(masters),
-                                        np.array(coeffs), np.array(offsets))
+        return (np.array(slaves, dtype=np.int64),
+                np.array(masters, dtype=np.int64),
+                np.array(coeffs, dtype=np.float64),
+                np.array(offsets, dtype=np.int64))
+
+    slaves, masters, coeffs, offsets = find_master_slave_relationship(
+        V, (mf, 4), (cf, 3))
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
