@@ -25,7 +25,6 @@ import numpy as np
 import time
 from petsc4py import PETSc
 
-dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 
 # Create mesh and finite element
 N = 12
@@ -42,8 +41,9 @@ def DirichletBoundary(x):
     return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
 
 
-facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
-                                                       DirichletBoundary)
+facets = dolfinx.mesh.locate_entities_geometrical(mesh, 1,
+                                                  DirichletBoundary,
+                                                  boundary_only=True)
 topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
 bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
@@ -67,9 +67,6 @@ for i in range(1, N):
 
 (slaves, masters,
  coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
-# Tmp fix
-# slaves = slaves[0]
-# masters = masters[0]
 
 # Define variational problem
 u = ufl.TrialFunction(V)

@@ -39,11 +39,16 @@ def demo_stacked_cubes(celltype="quad"):
     def top(x):
         return np.isclose(x[1], 2)
     fdim = mesh.topology.dim - 1
-    mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
-    mf.mark(top, 3)
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
-    g = dolfinx.Constant(mesh, (0,  -1.25e2))
 
+    top_facets = dmesh.locate_entities_geometrical(
+        mesh, fdim, top, boundary_only=True)
+    top_values = np.full(len(top_facets), 3, dtype=np.intc)
+    mt = dolfinx.mesh.MeshTags(mesh, fdim,
+                               top_facets,
+                               top_values)
+
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
+    g = dolfinx.Constant(mesh, (0,  -1.25e2))
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
@@ -53,8 +58,8 @@ def demo_stacked_cubes(celltype="quad"):
     def bottom(x):
         return np.isclose(x[1], 0)
 
-    bottom_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                           bottom)
+    bottom_facets = dmesh.locate_entities_geometrical(
+        mesh, fdim, bottom, boundary_only=True)
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
@@ -102,8 +107,8 @@ def demo_stacked_cubes(celltype="quad"):
     # Locate dofs on both interfaces
     def interface_locater(x):
         return np.isclose(x[1], 1)
-    i_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                      interface_locater)
+    i_facets = dmesh.locate_entities_geometrical(
+        mesh, fdim, interface_locater, boundary_only=True)
     # Slicing of list is due to the fact that we only require y-components
     # interface_x_dofs = fem.locate_dofs_topological((V.sub(0), V0),
     #                    fdim, i_facets)[:, 0]

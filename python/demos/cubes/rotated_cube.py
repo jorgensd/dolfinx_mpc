@@ -54,42 +54,72 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
                 mesh_2D_dolfin("quad")
                 filename = "meshes/mesh_quad.xdmf"
 
-    r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
-    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
-                                               [1, 1, 0], [0, 1, 0]]).T)
-    bottom = find_line_function(bottom_points[:, 0], bottom_points[:, 1])
-    interface = find_line_function(bottom_points[:, 2], bottom_points[:, 3])
-    top_points = np.dot(r_matrix, np.array([[0, 1, 0], [1, 1, 0],
-                                            [1, 2, 0], [0, 2, 0]]).T)
-    top = find_line_function(top_points[:, 2], top_points[:, 3])
-    top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
-
-    left_side = find_line_function(top_points[:, 0], top_points[:, 3])
-    right_side = find_line_function(top_points[:, 1], top_points[:, 2])
-
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                              filename) as xdmf:
         mesh = xdmf.read_mesh()
+    fdim = mesh.topology.dim - 1
 
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    # Helper until MeshTags can be read in from xdmf
+    r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
 
-    # Traction on top of domain
+    # Find information about facets to be used in MeshTags
+    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
+                                               [1, 1, 0], [0, 1, 0]]).T)
+    bottom = find_line_function(bottom_points[:, 0], bottom_points[:, 1])
+    bottom_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, bottom, boundary_only=True)
+
+    top_points = np.dot(r_matrix, np.array([[0, 1, 0], [1, 1, 0],
+                                            [1, 2, 0], [0, 2, 0]]).T)
+    top = find_line_function(top_points[:, 2], top_points[:, 3])
+    top_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, top, boundary_only=True)
+
+    left_side = find_line_function(top_points[:, 0], top_points[:, 3])
+    left_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, left_side, boundary_only=True)
+
+    right_side = find_line_function(top_points[:, 1], top_points[:, 2])
+    right_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, right_side, boundary_only=True)
+
+    interface = find_line_function(bottom_points[:, 2], bottom_points[:, 3])
+    i_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, interface, boundary_only=True)
+
+    top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
 
     tdim = mesh.topology.dim
-    cf = dolfinx.MeshFunction("size_t", mesh, tdim, 0)
     num_cells = mesh.num_entities(tdim)
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
     top_cube_marker = 3
+    indices = []
+    values = []
     for cell_index in range(num_cells):
         if top_cube(cell_midpoints[cell_index]):
-            cf.values[cell_index] = top_cube_marker
-    dolfinx.io.VTKFile("results/cf.pvd").write(cf)
+            indices.append(cell_index)
+            values.append(top_cube_marker)
+    ct = dolfinx.mesh.MeshTags(mesh, fdim, np.array(
+        indices, dtype=np.intc), np.array(values, dtype=np.intc))
     fdim = mesh.topology.dim - 1
-    markers = {top: 3, interface: 4, bottom: 5, left_side: 6, right_side: 7}
-    mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
+
+    # Create meshtags for facet data
+    markers = {3: top_facets, 4: i_facets,
+               5: bottom_facets, 6: left_facets, 7: right_facets}
+    indices = np.array([], dtype=np.intc)
+    values = np.array([], dtype=np.intc)
+
     for key in markers.keys():
-        mf.mark(key, markers[key])
+        indices = np.append(indices, markers[key])
+        values = np.append(values, np.full(len(markers[key]), key,
+                                           dtype=np.intc))
+    mt = dolfinx.mesh.MeshTags(mesh, fdim,
+                               indices, values)
+
+    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V0 = V.sub(0).collapse()
+    V1 = V.sub(1).collapse()
 
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
     g = dolfinx.Constant(mesh, g_vec[:2])
@@ -98,10 +128,20 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
-    bottom_facets = np.flatnonzero(mf.values == markers[bottom])
+
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
-    bcs = [bc_bottom]
+
+    # def top_v(x):
+    #     values = np.empty((2, x.shape[1]))
+    #     values[0] = g_vec[0]
+    #     values[1] = g_vec[1]
+    #     return values
+    # u_top = dolfinx.function.Function(V)
+    # u_top.interpolate(top_v)
+    # top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
+    # bc_top = fem.DirichletBC(u_top, top_dofs)
+    bcs = [bc_bottom]  # , bc_top]
 
     # Elasticity parameters
     E = 1.0e3
@@ -118,13 +158,14 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
+                     subdomain_id=3)
     lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
     # Create standard master slave relationsship
     slaves, masters, coeffs, offsets = find_master_slave_relationship(
-        V, (mf, 4), (cf, 3))
+        V, (mt, 4), (ct, 3))
 
     # Set normal sliding of a single on each side of the cube to zero to
     # avoid translational invariant problem
@@ -145,8 +186,9 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
         V0 = V.sub(0).collapse()
         V1 = V.sub(1).collapse()
         m_side, s_side, c_side, o_side = [], [], [], []
-        for key, corners in zip([left_side, right_side], [[0, 3], [1, 2]]):
-            side_facets = np.flatnonzero(mf.values == markers[key])
+        for key, corners in zip([6, 7], [[0, 3], [1, 2]]):
+            local_side_facets = np.flatnonzero(mt.values == key)
+            side_facets = mt.indices[local_side_facets]
 
             dofs_x = fem.locate_dofs_topological(
                 (V.sub(0), V0), fdim, side_facets)[:, 0]
@@ -155,11 +197,10 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
 
             top_cube_side_x = np.flatnonzero(top_cube(x_coords[dofs_x].T))
             top_cube_side_y = np.flatnonzero(top_cube(x_coords[dofs_y].T))
-            slip = False
-            n_side = dolfinx_mpc.facet_normal_approximation(
-                V, mf, markers[key])
-            n_side_vec = n_side.vector.getArray()
 
+            slip = False
+            n_side = dolfinx_mpc.facet_normal_approximation(V, mt, key)
+            n_side_vec = n_side.vector.getArray()
             for id_x in top_cube_side_x:
                 x_dof = dofs_x[id_x]
                 corner_1 = np.allclose(
@@ -191,10 +232,12 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
         m_side = np.array(m_side, dtype=np.int64)
         s_side = np.array(s_side, dtype=np.int64)
         o_side = np.array(o_side, dtype=np.int64)
+
         masters = np.append(masters, m_side)
         slaves = np.append(slaves, s_side)
         coeffs = np.append(coeffs, c_side)
         offsets = np.append(offsets, o_side)
+
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
 

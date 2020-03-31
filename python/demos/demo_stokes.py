@@ -13,7 +13,7 @@ from petsc4py import PETSc
 # Length, width and rotation of channel
 L = 2
 H = 1
-theta = np.pi/9
+theta = np.pi/8
 
 
 def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
@@ -53,10 +53,6 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
     meshio.xdmf.write("meshes/facet_mesh.xdmf", facet_mesh)
 
 
-# Create cache for numba functions
-# dolfinx_mpc.utils.cache_numba(matrix=True, vector=True,
-# backsubstitution=True)
-
 # Create mesh
 if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
     create_mesh_gmsh()
@@ -64,6 +60,7 @@ if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
 # Load mesh and corresponding facet markers
 with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "meshes/mesh.xdmf") as xdmf:
     mesh = xdmf.read_mesh()
+fdim = mesh.topology.dim - 1
 
 
 def find_line_function(p0, p1):
@@ -83,11 +80,27 @@ outlet = find_line_function(rotated_points[:, 1], rotated_points[:, 2])
 slip_1 = find_line_function(rotated_points[:, 2], rotated_points[:, 3])
 inlet = find_line_function(rotated_points[:, 3], rotated_points[:, 0])
 
-mf = dolfinx.MeshFunction("size_t", mesh, mesh.topology.dim-1, 0)
-mf.mark(slip_0, 1)
-mf.mark(slip_1, 1)
-mf.mark(outlet, 2)
-mf.mark(inlet, 3)
+slip_0_facets = dolfinx.mesh.locate_entities_geometrical(
+    mesh, fdim, slip_0, boundary_only=True)
+slip_0_values = np.full(len(slip_0_facets), 1, dtype=np.intc)
+slip_1_facets = dolfinx.mesh.locate_entities_geometrical(
+    mesh, fdim, slip_1, boundary_only=True)
+slip_1_values = np.full(len(slip_1_facets), 1, dtype=np.intc)
+outlet_facets = dolfinx.mesh.locate_entities_geometrical(
+    mesh, fdim, outlet, boundary_only=True)
+outlet_values = np.full(len(outlet_facets), 2, dtype=np.intc)
+
+inlet_facets = dolfinx.mesh.locate_entities_geometrical(
+    mesh, fdim, inlet, boundary_only=True)
+inlet_values = np.full(len(inlet_facets), 3, dtype=np.intc)
+
+fdim = mesh.topology.dim - 1
+mt = dolfinx.mesh.MeshTags(mesh, fdim,
+                           np.hstack([
+                               slip_0_facets, slip_1_facets,
+                               outlet_facets, inlet_facets]),
+                           np.hstack([slip_0_values, slip_1_values,
+                                      outlet_values, inlet_values]))
 
 # Create the function space
 P2 = ufl.VectorElement("Lagrange", mesh.ufl_cell(), 2)
@@ -106,7 +119,6 @@ def inlet_velocity_expression(x):
 
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
-inlet_facets = np.where(mf.values == 3)[0]
 dofs = dolfinx.fem.locate_dofs_topological((W.sub(0), V), 1, inlet_facets)
 bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W.sub(0))
 
@@ -127,15 +139,15 @@ bcs = [bc1, bc2]
 # Find all dofs that corresponding to places where we require MPC constraints.
 # x and y components are found separately.
 
-def set_master_slave_slip_relationship(W, V, mf, value, bcs):
+def set_master_slave_slip_relationship(W, V, mt, value, bcs):
     """
     Set a slip condition for all dofs in W (where V is the collapsed
-    0th subspace of W) that corresponds to the facets in mf marked with value
+    0th subspace of W) that corresponds to the facets in mt marked with value
     """
     x = W.tabulate_dof_coordinates()
     global_indices = W.dofmap.index_map.global_indices(False)
 
-    wall_facets = np.where(mf.values == value)[0]
+    wall_facets = mt.indices[np.flatnonzero(mt.values == value)]
     bc_dofs = []
     for bc in bcs:
         bc_g = [global_indices[bdof] for bdof in bc.dof_indices[:, 0]]
@@ -154,7 +166,7 @@ def set_master_slave_slip_relationship(W, V, mf, value, bcs):
     masters = []
     coeffs = []
 
-    nh = dolfinx_mpc.facet_normal_approximation(V, mf, 1)
+    nh = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
     nhx, nhy = nh.sub(0).collapse(), nh.sub(1).collapse()
     nh_out = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/nh.xdmf")
     nh_out.write(nh)
@@ -194,7 +206,7 @@ def set_master_slave_slip_relationship(W, V, mf, value, bcs):
 
 start = time.time()
 (masters, slaves,
- coeffs, offsets) = set_master_slave_slip_relationship(W, V, mf, 1, bcs)
+ coeffs, offsets) = set_master_slave_slip_relationship(W, V, mt, 1, bcs)
 end = time.time()
 print("Setup master slave relationship: {0:.2e}".format(end-start))
 

@@ -55,65 +55,89 @@ def demo_stacked_cubes(theta):
     if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
         mesh_3D_rot(theta)
 
-    # Helpers for indentifying the rotated points to generate cell and
-    # facet functions
-    r_matrix = pygmsh.helpers.rotation_matrix(
-        [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
-    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
-                                               [1, 1, 0], [0, 1, 0]]).T)
-    interface_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
-                                                  [1, 1, 1], [0, 1, 1]]).T)
-    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
-                                            [1, 1, 2], [0, 1, 2]]).T)
-    left_points = np.dot(r_matrix, np.array(
-        [[0, 0, 0], [0, 1, 0], [0, 0, 1]]).T)
-
-    # Create facet and cell identification functions
-    bottom = find_plane_function(
-        bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
-    interface = find_plane_function(
-        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
-    top = find_plane_function(
-        top_points[:, 0], top_points[:, 1], top_points[:, 2])
-    left_side = find_plane_function(
-        left_points[:, 0], left_points[:, 1], left_points[:, 2])
-    top_cube = over_plane(
-        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
-
-    # Load mesh and create coordinate map
+    # Read in mesh
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                              "meshes/mesh3D_rot.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
-    cmap = fem.create_coordinate_map(mesh.ufl_domain())
-    mesh.geometry.coord_mapping = cmap
     tdim = mesh.topology.dim
     fdim = tdim - 1
 
-    # Create a cell function with markers = 3 for top cube
-    cf = dolfinx.MeshFunction("size_t", mesh, tdim, 0)
+    # Helper until MeshTags can be read in from xdmf
+    r_matrix = pygmsh.helpers.rotation_matrix(
+        [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
+
+    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
+                                               [1, 1, 0], [0, 1, 0]]).T)
+
+    bottom = find_plane_function(
+        bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
+    bottom_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, bottom, boundary_only=True)
+
+    interface_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
+                                                  [1, 1, 1], [0, 1, 1]]).T)
+    interface = find_plane_function(
+        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
+    i_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, interface, boundary_only=True)
+
+    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
+                                            [1, 1, 2], [0, 1, 2]]).T)
+    top = find_plane_function(
+        top_points[:, 0], top_points[:, 1], top_points[:, 2])
+    top_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, top, boundary_only=True)
+
+    left_points = np.dot(r_matrix, np.array(
+        [[0, 0, 0], [0, 1, 0], [0, 0, 1]]).T)
+    left_side = find_plane_function(
+        left_points[:, 0], left_points[:, 1], left_points[:, 2])
+    left_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, left_side, boundary_only=True)
+
+    top_cube = over_plane(
+        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
+
+    top_cube_marker = 3
+    indices = []
+    values = []
+    tdim = mesh.topology.dim
     num_cells = mesh.num_entities(tdim)
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
-    top_cube_marker = 3
     for cell_index in range(num_cells):
         if top_cube(cell_midpoints[cell_index]):
-            cf.values[cell_index] = top_cube_marker
+            indices.append(cell_index)
+            values.append(top_cube_marker)
+    ct = dolfinx.mesh.MeshTags(mesh, fdim, np.array(
+        indices, dtype=np.intc), np.array(values, dtype=np.intc))
 
-    # Crate a facet function for the difference interfaces
-    markers = {top: 3, interface: 4, bottom: 5, left_side: 6}
-    mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
-    for key in markers.keys():
-        mf.mark(key, markers[key])
-
-    # Create function space
+    # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+
+    # Create meshtags for facet data
+    markers = {3: top_facets, 4: i_facets,
+               5: bottom_facets, 6: left_facets}
+    indices = np.array([], dtype=np.intc)
+    values = np.array([], dtype=np.intc)
+
+    for key in markers.keys():
+        indices = np.append(indices, markers[key])
+        values = np.append(values, np.full(len(markers[key]), key,
+                                           dtype=np.intc))
+    mt = dolfinx.mesh.MeshTags(mesh, fdim,
+                               indices, values)
+
+    # dolfinx.io.VTKFile("mt.pvd").write(mt)
+    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
+    g = dolfinx.Constant(mesh, g_vec)
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
-    bottom_facets = np.flatnonzero(mf.values == markers[bottom])
+
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
@@ -129,7 +153,7 @@ def demo_stacked_cubes(theta):
         return values
     u_top = dolfinx.function.Function(V)
     u_top.interpolate(top_v)
-    top_facets = np.flatnonzero(mf.values == markers[top])
+
     top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
     bc_top = fem.DirichletBC(u_top, top_dofs)
 
@@ -150,14 +174,14 @@ def demo_stacked_cubes(theta):
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf,
-                     subdomain_id=markers[top])
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
+                     subdomain_id=3)
     lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
     # Find slave master relationship and initialize MPC class
     slaves, masters, coeffs, offsets = find_master_slave_relationship(
-        V, (mf, 4), (cf, 3))
+        V, (mt, 4), (ct, 3))
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
 

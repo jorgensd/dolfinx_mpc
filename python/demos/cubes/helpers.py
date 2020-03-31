@@ -38,11 +38,11 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     Vs = [V.sub(i).collapse() for i in range(tdim)]
 
     # Extract interface_info
-    (mf, interface_value) = interface_info
-    (cf, master_value) = cell_info
+    (mt, interface_value) = interface_info
+    (ct, master_value) = cell_info
 
     # Locate dofs on both interfaces
-    i_facets = np.flatnonzero(mf.values == interface_value)
+    i_facets = mt.indices[np.flatnonzero(mt.values == interface_value)]
 
     interface_dofs = []
     for i in range(tdim):
@@ -63,7 +63,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
 
     # Compute approximate facet normals for the interface
     # (Does not have unit length)
-    nh = dolfinx_mpc.facet_normal_approximation(V, mf, interface_value)
+    nh = dolfinx_mpc.facet_normal_approximation(V, mt, interface_value)
     n_vec = nh.vector.getArray()
     slaves, masters, coeffs, offsets = [], [], [], [0]
 
@@ -72,6 +72,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
         cell_indices = facet_to_cell.links(facet)
         assert(len(cell_indices) == 1)
         cell_index = cell_indices[0]
+        local_celltag_index = np.flatnonzero(ct.indices == cell_index)
         cell_dofs = dofs[num_dofs_per_element * cell_index:
                          num_dofs_per_element * cell_index
                          + num_dofs_per_element]
@@ -81,13 +82,20 @@ def find_master_slave_relationship(V, interface_info, cell_info):
             dofs_on_interface = np.isin(cell_dofs, interface_dofs[i])
             local_indices.append(np.flatnonzero(dofs_on_interface))
 
+        if len(local_celltag_index) > 0:
+            assert(len(local_celltag_index) == 1)
+            is_slave_cell = not (
+                ct.values[local_celltag_index[0]] == master_value)
+        else:
+            is_slave_cell = True
+
         # Cache for slave dof location, used for computing coefficients
         # of masters on other cell
         # Use the highest dim as the slave dof
         for dof_index in local_indices[tdim-1]:
             slave_l = cell_dofs[dof_index]
             slave_coords = dof_coords[slave_l]
-            is_slave_cell = not (cf.values[cell_index] == master_value)
+
             global_slave = global_indices[slave_l]
             slave_indices = []
             if is_slave_cell and global_slave not in slaves:
@@ -118,7 +126,15 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                     in_top_cube = False
                     if facet_on_interface:
                         assert(len(c_cells) == 1)
-                        in_top_cube = cf.values[c_cells[0]] == master_value
+                        local_celltag_index2 = np.flatnonzero(
+                            ct.indices == c_cells[0])
+
+                        if len(local_celltag_index2 > 0):
+                            assert(len(local_celltag_index2 == 1))
+                            in_top_cube = ct.values[
+                                local_celltag_index2[0]] == master_value
+                        else:
+                            in_top_cube = False
                     if in_top_cube:
                         other_index = c_cells[0]
                         other_dofs = dofs[num_dofs_per_element
