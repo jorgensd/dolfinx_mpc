@@ -42,49 +42,67 @@ def demo_stacked_cubes(theta):
     if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
         mesh_3D_rot(theta)
 
-    r_matrix = pygmsh.helpers.rotation_matrix(
-        [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
-    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
-                                               [1, 1, 0], [0, 1, 0]]).T)
-    interface_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
-                                                  [1, 1, 1], [0, 1, 1]]).T)
-    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
-                                            [1, 1, 2], [0, 1, 2]]).T)
-    left_points = np.dot(r_matrix, np.array(
-        [[0, 0, 0], [0, 1, 0], [0, 0, 1]]).T)
-
-    bottom = find_plane_function(
-        bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
-    interface = find_plane_function(
-        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
-    top = find_plane_function(
-        top_points[:, 0], top_points[:, 1], top_points[:, 2])
-    left_side = find_plane_function(
-        left_points[:, 0], left_points[:, 1], left_points[:, 2])
-
+    # Read in mesh
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                              "meshes/mesh3D_rot.xdmf") as xdmf:
         mesh = xdmf.read_mesh()
+    tdim = mesh.topology.dim
+    fdim = tdim - 1
+
+    # Helper until MeshTags can be read in from xdmf
+    r_matrix = pygmsh.helpers.rotation_matrix(
+        [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
+
+    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
+                                               [1, 1, 0], [0, 1, 0]]).T)
+    bottom = find_plane_function(
+        bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
+    bottom_facets = dmesh.locate_entities_geometrical(
+        mesh, fdim, bottom, boundary_only=True)
+
+    interface_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
+                                                  [1, 1, 1], [0, 1, 1]]).T)
+    interface = find_plane_function(
+        interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
+    i_facets = dmesh.locate_entities_geometrical(
+        mesh, fdim, interface, boundary_only=True)
+
+    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
+                                            [1, 1, 2], [0, 1, 2]]).T)
+    top = find_plane_function(
+        top_points[:, 0], top_points[:, 1], top_points[:, 2])
+    top_facets = dmesh.locate_entities_geometrical(
+        mesh, fdim, top, boundary_only=True)
+
+    left_points = np.dot(r_matrix, np.array(
+        [[0, 0, 0], [0, 1, 0], [0, 0, 1]]).T)
+    left_side = find_plane_function(
+        left_points[:, 0], left_points[:, 1], left_points[:, 2])
+    left_facets = dmesh.locate_entities_geometrical(
+        mesh, fdim, left_side, boundary_only=True)
 
     top_cube = over_plane(
         interface_points[:, 0], interface_points[:, 1], interface_points[:, 2])
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-    # Move top in y-dir
+    # Create functionspaces
+    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     V0 = V.sub(0).collapse()
     V1 = V.sub(1).collapse()
     V2 = V.sub(2).collapse()
 
-    # Traction on top of domain
-    tdim = mesh.topology.dim
+    # Create meshtags for facet data
+    markers = {3: top_facets, 4: i_facets, 5: bottom_facets, 6: left_facets}
+    indices = np.array([], dtype=np.intc)
+    values = np.array([], dtype=np.intc)
 
-    fdim = tdim - 1
-    markers = {top: 3, interface: 4, bottom: 5, left_side: 6}
-    mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
     for key in markers.keys():
-        mf.mark(key, markers[key])
+        indices = np.append(indices, markers[key])
+        values = np.append(values, np.full(len(markers[key]), key,
+                                           dtype=np.intc))
+    mt = dolfinx.mesh.MeshTags(mesh, fdim,
+                               indices, values)
 
-    # dolfinx.io.VTKFile("mf.pvd").write(mf)
+    # dolfinx.io.VTKFile("mt.pvd").write(mt)
     g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
     g = dolfinx.Constant(mesh, g_vec)
 
@@ -92,8 +110,6 @@ def demo_stacked_cubes(theta):
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
-    bottom_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                           bottom)
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
@@ -105,8 +121,6 @@ def demo_stacked_cubes(theta):
         return values
     u_top = dolfinx.function.Function(V)
     u_top.interpolate(top_v)
-    top_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                        top)
     top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
     bc_top = fem.DirichletBC(u_top, top_dofs)
     bcs = [bc_bottom, bc_top]
@@ -130,8 +144,8 @@ def demo_stacked_cubes(theta):
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf,
-                     subdomain_id=markers[top])
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
+                     subdomain_id=3)
     lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
@@ -140,10 +154,6 @@ def demo_stacked_cubes(theta):
     masters = []
     coeffs = []
     offsets = [0]
-
-    # Locate dofs on both interfaces
-    i_facets = dmesh.compute_marked_boundary_entities(mesh, fdim,
-                                                      interface)
 
     # Slicing of list is due to the fact that we only require y-components
     interface_x_dofs = fem.locate_dofs_topological((V.sub(0), V0),
@@ -166,7 +176,7 @@ def demo_stacked_cubes(theta):
     mesh.create_connectivity(fdim, tdim)
     facet_tree = geometry.BoundingBoxTree(mesh, fdim)
     facet_to_cell = mesh.topology.connectivity(fdim, tdim)
-    nh = dolfinx_mpc.facet_normal_approximation(V, mf, markers[interface])
+    nh = dolfinx_mpc.facet_normal_approximation(V, mt, 4)
     n_vec = nh.vector.getArray()
 
     for cell_index in range(num_cells):

@@ -13,35 +13,25 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
 
-dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
-
 
 def demo_elasticity():
     mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 10, 10)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-    # Define boundary conditions (HAS TO BE NON-MASTER NODES)
+    # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
-    # V1 = V.sub(1).collapse()
-    # u_disp = dolfinx.function.Function(V1)
-    # with u_disp.vector.localForm() as u_local:
-    #     u_local.set(0.1)
-
-    # def point_load(x):
-    #     return np.isclose(x.T, [1, 0.5, 0]).all(axis=1)
-    # bdofsV1 = dolfinx.fem.locate_dofs_geometrical((V.sub(1), V1), point_load)
-    # bc_p = dolfinx.fem.dirichletbc.DirichletBC(u_disp, bdofsV1, V.sub(1))
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
-    facets = dolfinx.mesh.compute_marked_boundary_entities(mesh, 1,
-                                                           boundaries)
+    facets = dolfinx.mesh.locate_entities_geometrical(mesh, 1,
+                                                      boundaries,
+                                                      boundary_only=True)
     topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
     bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
-    bcs = [bc]  # , bc_p]
+    bcs = [bc]
 
     # Define variational problem
     u = ufl.TrialFunction(V)
