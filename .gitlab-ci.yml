@@ -42,7 +42,7 @@ test-complex:
     - python3 demo_stokes.py
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
-    # - mpirun -n 4 python3 demo_periodic3d.py
+    - mpirun -n 4 python3 demo_periodic3d.py
     - cd cubes
     - mkdir meshes
     - mkdir results
@@ -94,7 +94,7 @@ test-real:
     - python3 demo_stokes.py
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
-    # - mpirun -n 4 python3 demo_periodic3d.py
+    - mpirun -n 4 python3 demo_periodic3d.py
     - cd cubes
     - mkdir meshes
     - mkdir results
