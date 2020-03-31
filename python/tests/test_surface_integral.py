@@ -13,8 +13,6 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
 
-dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
-
 
 def test_surface_integrals():
     N = 4
@@ -26,9 +24,10 @@ def test_surface_integrals():
         return np.isclose(x[0], np.finfo(float).eps)
 
     fdim = mesh.topology.dim - 1
-    left_facets = dolfinx.mesh.compute_marked_boundary_entities(mesh,
-                                                                fdim,
-                                                                left_wall)
+    left_facets = dolfinx.mesh.locate_entities_geometrical(mesh,
+                                                           fdim,
+                                                           left_wall,
+                                                           boundary_only=True)
     bc_dofs = dolfinx.fem.locate_dofs_topological(V, 1, left_facets)
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
@@ -39,9 +38,11 @@ def test_surface_integrals():
     # Traction on top of domain
     def top(x):
         return np.isclose(x[1], 1)
-    mf = dolfinx.MeshFunction("size_t", mesh, fdim, 0)
-    mf.mark(top, 3)
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mf, subdomain_id=3)
+    top_facets = dolfinx.mesh.locate_entities_geometrical(mesh, 1, top,
+                                                          boundary_only=True)
+    mt = dolfinx.mesh.MeshTags(mesh, fdim, top_facets, 3)
+
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
     g = dolfinx.Constant(mesh, (0, -9.81e2))
 
     # Define variational problem
@@ -74,7 +75,7 @@ def test_surface_integrals():
 
     s_m_c = {}
     for i in range(1, N):
-        s_m_c[slave_locater(i, N)] = {lambda x: dof_at(x, [1, 1]): 1}
+        s_m_c[slave_locater(i, N)] = {lambda x: dof_at(x, [1, 1]): 0.8}
 
     (slaves, masters,
      coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,

@@ -160,7 +160,7 @@ def dof_close_to(x, point):
         return ValueError("Point has to be 1D, 2D or 3D")
 
 
-def facet_normal_approximation(V, mf, mf_id):
+def facet_normal_approximation(V, mt, mt_id):
     import dolfinx
     import ufl
     n = dolfinx.FacetNormal(V.mesh)
@@ -168,7 +168,7 @@ def facet_normal_approximation(V, mf, mf_id):
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
     a = (dolfinx.Constant(V.mesh, 0)*ufl.inner(u, v)*ufl.dx
          + ufl.inner(u, v)*ufl.ds)
-    ds = ufl.ds(domain=V.mesh, subdomain_data=mf, subdomain_id=mf_id)
+    ds = ufl.ds(domain=V.mesh, subdomain_data=mt, subdomain_id=mt_id)
     L = ufl.inner(n, v)*ds
 
     A = dolfinx.fem.assemble_matrix(a)
