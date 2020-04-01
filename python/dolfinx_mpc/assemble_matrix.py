@@ -279,8 +279,7 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
         local_pos = dofmap[num_dofs_per_element * cell_index:
                            num_dofs_per_element * cell_index
                            + num_dofs_per_element]
-        print(A_local)
-        print("modifiying", local_pos)
+
         # Remove all contributions for dofs that are in the Dirichlet bcs
         if len(bcs) > 0:
             for k in range(len(local_pos)):
@@ -298,7 +297,6 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
         A_contribution = A_local - A_local_copy
 
         # Insert local contribution
-        print("CONTRIBUTION", A_contribution)
         ierr_loc = set_values_local(A,
                                     num_dofs_per_element, ffi.from_buffer(
                                         local_pos),
