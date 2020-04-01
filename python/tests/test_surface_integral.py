@@ -251,7 +251,5 @@ def test_surface_integral_dependency():
 
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    from IPython import embed
-    embed()
     # assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
     #                                       uh.owner_range[1]])
