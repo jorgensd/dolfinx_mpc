@@ -40,7 +40,6 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
 
     # Generate ufc_form
     ufc_form = dolfinx.jit.ffcx_jit(form)
-    kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
 
     # Generate matrix with MPC sparsity pattern
     cpp_form = dolfinx.Form(form)._cpp_object
@@ -73,18 +72,30 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
 
+    # Get integrals as FormInegral
+    formintegral = cpp_form.integrals()
+
     # Assemble over cells
-    V.mesh.create_entity_permutations()
-    permutation_info = V.mesh.topology.get_cell_permutation_info()
-    assemble_cells(A.handle, kernel, (pos, x_dofs, x), gdim,
-                   form_coeffs, form_consts,
-                   permutation_info,
-                   dofs, num_dofs_per_element, mpc_data,
-                   ghost_info, bc_array)
+    subdomain_ids = formintegral.integral_ids(
+        dolfinx.cpp.fem.FormIntegrals.Type.cell)
+    num_cell_integrals = len(subdomain_ids)
+    if num_cell_integrals > 0:
+        V.mesh.create_entity_permutations()
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
+
+    for i in range(num_cell_integrals):
+        subdomain_id = subdomain_ids[i]
+        cell_kernel = ufc_form.create_cell_integral(
+            subdomain_id).tabulate_tensor
+        active_cells = numpy.array(formintegral.integral_domains(
+            dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
+        assemble_cells(A.handle, cell_kernel, active_cells, (pos, x_dofs, x),
+                       gdim, form_coeffs, form_consts,
+                       permutation_info,
+                       dofs, num_dofs_per_element, mpc_data,
+                       ghost_info, bc_array)
 
     # Assemble over exterior facets
-    # Get subdomain ids for the exterior facet integrals
-    formintegral = cpp_form.integrals()
     subdomain_ids = formintegral.integral_ids(
         dolfinx.cpp.fem.FormIntegrals.Type.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
@@ -153,7 +164,7 @@ def in_numpy_array(array, value):
 
 
 @numba.njit
-def assemble_cells(A, kernel, mesh, gdim, coeffs, constants,
+def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
                    permutation_info, dofmap,
                    num_dofs_per_element, mpc, ghost_info, bcs):
     """
@@ -177,13 +188,14 @@ def assemble_cells(A, kernel, mesh, gdim, coeffs, constants,
 
     # Loop over all cells
     slave_cell_index = 0
-    for cell_index, cell in enumerate(pos[:-1]):
+    for cell_index in active_cells:
         if not in_numpy_array(slave_cells, cell_index):
             continue
         num_vertices = pos[cell_index + 1] - pos[cell_index]
 
         # Compute vertices of cell from mesh data
         # FIXME: This assumes a particular geometry dof layout
+        cell = pos[cell_index]
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
             for k in range(gdim):

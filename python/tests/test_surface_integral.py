@@ -170,24 +170,33 @@ def test_surface_integral_dependency():
     mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-    # Traction on top of domain
     def top(x):
         return np.isclose(x[1], 1)
-    mf = dolfinx.MeshFunction("size_t", mesh, mesh.topology.dim-1, 0)
-    mf.mark(top, 3)
-    ds = ufl.Measure("ds", domain=mesh)  # , subdomain_data=mf, subdomain_id=3)
+    fdim = mesh.topology.dim - 1
+    top_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, top, boundary_only=True)
+
+    indices = np.array([], dtype=np.intc)
+    values = np.array([], dtype=np.intc)
+    markers = {3: top_facets}
+    for key in markers.keys():
+        indices = np.append(indices, markers[key])
+        values = np.append(values, np.full(len(markers[key]), key,
+                                           dtype=np.intc))
+
+    mt = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim-1,
+                               np.array(indices, dtype=np.intc),
+                               np.array(values, dtype=np.intc))
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
     g = dolfinx.Constant(mesh, [2, 1])
+    h = dolfinx.Constant(mesh, [3, 2])
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    a = dolfinx.Constant(mesh, 0)*ufl.inner(ufl.grad(u),
-                                            ufl.grad(v)) * ufl.dx \
-        + ufl.inner(u, v)*ds
+    a = ufl.inner(u, v)*ds(3) + ufl.inner(ufl.grad(u), ufl.grad(v))*ds
 
-    lhs = ufl.inner(dolfinx.Constant(mesh, [1, 2]), v)*ufl.dx
-    + ufl.inner(g, v)*ds
+    lhs = ufl.inner(g, v)*ds + ufl.inner(h, v)*ds(3)
 
-    # Create MPC (y-displacement of right wall is constant)
     dof_at = dolfinx_mpc.dof_close_to
 
     def slave_locater(i, N):
@@ -195,7 +204,7 @@ def test_surface_integral_dependency():
 
     s_m_c = {}
     for i in range(1, N):
-        s_m_c[slave_locater(i, N)] = {lambda x: dof_at(x, [1, 1]): 1}
+        s_m_c[slave_locater(i, N)] = {lambda x: dof_at(x, [1, 1]): 0.3}
 
     (slaves, masters,
      coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c, 1, 1)
@@ -242,6 +251,7 @@ def test_surface_integral_dependency():
 
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-
+    from IPython import embed
+    embed()
     # assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
     #                                       uh.owner_range[1]])
