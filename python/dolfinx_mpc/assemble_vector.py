@@ -67,14 +67,18 @@ def assemble_vector(form, multipointconstraint,
                        dofs, num_dofs_per_element, mpc_data,
                        ghost_info, (bc_dofs, bc_values))
 
+    # Get subdomain ids for the exterior facet integrals
+    formintegral = cpp_form.integrals()
+    subdomain_ids = formintegral.integral_ids(
+        dolfinx.cpp.fem.FormIntegrals.Type.exterior_facet)
+    num_exterior_integrals = len(subdomain_ids)
+
     exterior_integrals = form.integrals_by_type("exterior_facet")
-    if len(exterior_integrals) > 0:
+    if num_exterior_integrals > 0:
         # Assemble exterior facet integrals
         for i in range(len(exterior_integrals)):
             facet_info = dolfinx.cpp.fem.pack_exterior_facets(cpp_form, i)
-            subdomain_id = exterior_integrals[i].subdomain_id()
-            if subdomain_id == "everywhere":
-                subdomain_id = -1
+            subdomain_id = subdomain_ids[i]
             facet_kernel = ufc_form.create_exterior_facet_integral(
                 subdomain_id).tabulate_tensor
             with vector.localForm() as b:
@@ -152,8 +156,8 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim,
 
     cell_perms, facet_perms = permutation_info
 
-    facet_index = numpy.zeros(0, dtype=numpy.int32)
-    facet_perm = numpy.zeros(0, dtype=numpy.uint8)
+    facet_index = numpy.zeros(1, dtype=numpy.int32)
+    facet_perm = numpy.zeros(1, dtype=numpy.uint8)
 
     # Unpack mesh data
     pos, x_dofmap, x = mesh
