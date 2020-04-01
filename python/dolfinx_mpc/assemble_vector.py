@@ -70,9 +70,8 @@ def assemble_vector(form, multipointconstraint,
     exterior_integrals = form.integrals_by_type("exterior_facet")
     if len(exterior_integrals) > 0:
         # Assemble exterior facet integrals
-        integrals = cpp_form.integrals()
         for i in range(len(exterior_integrals)):
-            facet_info = pack_facet_info(V.mesh, integrals, i)
+            facet_info = dolfinx.cpp.fem.pack_exterior_facets(cpp_form, i)
             subdomain_id = exterior_integrals[i].subdomain_id()
             if subdomain_id == "everywhere":
                 subdomain_id = -1
@@ -91,34 +90,6 @@ def assemble_vector(form, multipointconstraint,
                                          (bc_dofs, bc_values))
 
     return vector
-
-
-def pack_facet_info(mesh, integrals, i):
-    """
-    Given the mesh, FormIntgrals and the index of the i-th exterior
-    facet integral, for each active facet, find the cell index and
-    local facet index and pack them in a numpy nd array
-    """
-    # FIXME: Should be moved to dolfinx C++ layer
-    # Set up data required for exterior facet assembly
-    tdim = mesh.topology.dim
-    fdim = mesh.topology.dim-1
-    # This connectivities has been computed by normal assembly
-    c_to_f = mesh.topology.connectivity(tdim, fdim)
-    f_to_c = mesh.topology.connectivity(fdim, tdim)
-
-    active_facets = integrals.integral_domains(
-        dolfinx.fem.FormIntegrals.Type.exterior_facet, i)
-    facet_info = numpy.zeros((len(active_facets), 2),
-                             dtype=numpy.int64)
-    for j, facet in enumerate(active_facets):
-        cells = f_to_c.links(facet)
-        assert(len(cells) == 1)
-        local_facets = c_to_f.links(cells[0])
-        # Should be wrapped in convenience numba function
-        local_index = numpy.flatnonzero(facet == local_facets)[0]
-        facet_info[j, :] = [cells[0], local_index]
-    return facet_info
 
 
 @numba.njit
