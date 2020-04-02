@@ -26,7 +26,7 @@ def backsubstitution(mpc, vector, dofmap):
     masters_local = masters.array()
     offsets = masters.offsets()
     mpc_wrapper = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
-           masters_local, coefficients, offsets)
+                   masters_local, coefficients, offsets)
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     index_map = mpc.index_map()
     global_indices = index_map.indices(True)

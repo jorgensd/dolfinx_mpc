@@ -39,7 +39,6 @@ def assemble_vector(form, multipointconstraint,
     mpc_data = (slaves, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)
 
-
     # Get index map and ghost info
     index_map = multipointconstraint.index_map()
 
