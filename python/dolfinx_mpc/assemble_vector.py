@@ -9,7 +9,7 @@ import numpy
 import dolfinx
 
 from .numba_setup import PETSc, ffi
-from .assemble_matrix import in_numpy_array
+from .assemble_matrix import in_numpy_array, pack_facet_info
 
 
 def assemble_vector(form, multipointconstraint,
@@ -92,7 +92,7 @@ def assemble_vector(form, multipointconstraint,
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
     for i in range(len(exterior_integrals)):
-        facet_info = dolfinx.cpp.fem.pack_exterior_facets(cpp_form, i)
+        facet_info = pack_facet_info(V.mesh, formintegral, i)
         subdomain_id = subdomain_ids[i]
         facet_kernel = ufc_form.create_exterior_facet_integral(
             subdomain_id).tabulate_tensor

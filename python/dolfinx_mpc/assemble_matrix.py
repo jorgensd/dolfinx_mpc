@@ -109,7 +109,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         perm = (permutation_info, facet_permutation_info)
 
     for j in range(num_exterior_integrals):
-        facet_info = dolfinx.cpp.fem.pack_exterior_facets(cpp_form, j)
+        facet_info = pack_facet_info(V.mesh, formintegral, j)
+
         subdomain_id = subdomain_ids[j]
         facet_kernel = ufc_form.create_exterior_facet_integral(
             subdomain_id).tabulate_tensor
@@ -161,6 +162,45 @@ def in_numpy_array(array, value):
             in_array = True
             break
     return in_array
+
+
+def pack_facet_info(mesh, integrals, i):
+    """
+    Given the mesh, FormIntgrals and the index of the i-th exterior
+    facet integral, for each active facet, find the cell index and
+    local facet index and pack them in a numpy nd array
+    """
+    # FIXME: Should be moved to dolfinx C++ layer
+    # Set up data required for exterior facet assembly
+    tdim = mesh.topology.dim
+    fdim = mesh.topology.dim-1
+    # This connectivities has been computed by normal assembly
+    c_to_f = mesh.topology.connectivity(tdim, fdim)
+    f_to_c = mesh.topology.connectivity(fdim, tdim)
+    active_facets = integrals.integral_domains(
+        dolfinx.fem.FormIntegrals.Type.exterior_facet, i)
+    facet_info = pack_facet_info_numba(active_facets,
+                                       (c_to_f.array(), c_to_f.offsets()),
+                                       (f_to_c.array(), f_to_c.offsets()))
+    return facet_info
+
+
+@numba.njit(fastmath=True, cache=True)
+def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
+    facet_info = numpy.zeros((len(active_facets), 2),
+                             dtype=numpy.int64)
+    c_to_f_pos, c_to_f_offs = c_to_f
+    f_to_c_pos, f_to_c_offs = f_to_c
+
+    for j, facet in enumerate(active_facets):
+        cells = f_to_c_pos[f_to_c_offs[facet]:f_to_c_offs[facet+1]]
+        assert(len(cells) == 1)
+        local_facets = c_to_f_pos[c_to_f_offs[cells[0]]:
+                                  c_to_f_offs[cells[0]+1]]
+        # Should be wrapped in convenience numba function
+        local_index = numpy.flatnonzero(facet == local_facets)[0]
+        facet_info[j, :] = [cells[0], local_index]
+    return facet_info
 
 
 @numba.njit

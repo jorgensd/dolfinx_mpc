@@ -11,6 +11,7 @@ import dolfinx
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
+import time
 import ufl
 
 
@@ -127,7 +128,6 @@ def test_surface_integrals():
 
     # Generate reference matrices and unconstrained solution
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
-
     A_org.assemble()
     L_org = dolfinx.fem.assemble_vector(lhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
@@ -166,7 +166,7 @@ def test_surface_integrals():
 
 
 def test_surface_integral_dependency():
-    N = 12
+    N = 10
     mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -213,8 +213,16 @@ def test_surface_integral_dependency():
                                                    masters, coeffs, offsets)
 
     # Setup MPC system
-    A = dolfinx_mpc.assemble_matrix(a, mpc)
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    for j in range(3):
+        start = time.time()
+        A = dolfinx_mpc.assemble_matrix(a, mpc)
+        end = time.time()
+        print("Matrix assembly {1:d}: {0:2e}".format(end-start, j))
+        start = time.time()
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
+        end = time.time()
+        print("Vector assembly {1:d}: {0:2e}".format(end-start, j))
+
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
