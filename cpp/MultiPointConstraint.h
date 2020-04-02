@@ -12,6 +12,7 @@
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 
 namespace dolfinx_mpc
@@ -47,7 +48,7 @@ public:
       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
       Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
-      Eigen::Array<std::int64_t, Eigen::Dynamic, 1> offsets);
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets);
 
   /// Add sparsity pattern for multi-point constraints to existing
   /// sparsity pattern
@@ -63,7 +64,7 @@ public:
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves() { return _slaves; };
 
   /// Return local_indices of master coefficients
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> masters_local()
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters_local()
   {
     return _masters_local;
   };
@@ -77,24 +78,17 @@ public:
   /// Return the index_map for the test and trial space
   std::shared_ptr<dolfinx::common::IndexMap> index_map() { return _index_map; };
 
-  /// Return master offset data
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_offsets()
-  {
-    return _offsets_masters;
-  };
-
   /// Return the array of master dofs and corresponding coefficients
   Eigen::Array<double, Eigen::Dynamic, 1> coefficients()
   {
     return _coefficients;
   };
 
-  /// Return map from cell with slaves to the dof numbers
-  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-            Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
-  cell_to_slave_mapping()
+  /// Return map from cell with slaves to the slave degrees of freedom
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>
+  slave_cell_to_dofs()
   {
-    return std::pair(_cell_to_slave, _offsets_cell_to_slave);
+    return _cells_to_dofs[0];
   };
 
   /// Return dofmap with MPC ghost values.
@@ -107,17 +101,16 @@ private:
 
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
 
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _masters;
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _masters_local;
+  // AdjacencyList for master and local master
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _masters;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _masters_local;
 
   Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_masters;
 
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_slave;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_slave;
-
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _cell_to_master;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _offsets_cell_to_master;
+  // AdjacencyLists for slave cells and master cells
+  Eigen::Array<std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>,
+               Eigen::Dynamic, 1>
+      _cells_to_dofs;
 
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;

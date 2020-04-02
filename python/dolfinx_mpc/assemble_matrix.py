@@ -64,10 +64,13 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     # Unravel data from MPC
     slave_cells = multipointconstraint.slave_cells()
     coefficients = multipointconstraint.coefficients()
-    masters_local = multipointconstraint.masters_local()
-    cell_to_slave, c_to_s_off = multipointconstraint.cell_to_slave_mapping()
+    masters = multipointconstraint.masters_local()
+    slave_cell_to_dofs = multipointconstraint.slave_cell_to_dofs()
+    cell_to_slave = slave_cell_to_dofs.array()
+    c_to_s_off = slave_cell_to_dofs.offsets()
     slaves = multipointconstraint.slaves()
-    offsets = multipointconstraint.master_offsets()
+    masters_local = masters.array()
+    offsets = masters.offsets()
     mpc_data = (slaves, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)
 
