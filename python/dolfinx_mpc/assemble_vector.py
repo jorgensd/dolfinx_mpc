@@ -23,10 +23,6 @@ def assemble_vector(form, multipointconstraint,
     x = V.mesh.geometry.x
     dofs = V.dofmap.list.array()
 
-    # Get cell orientation data
-    permutation_info = V.mesh.topology.get_cell_permutation_info()
-    facet_permutation_info = V.mesh.topology.get_facet_permutations()
-
     # Data from multipointconstraint
     slave_cells = multipointconstraint.slave_cells()
     coefficients = multipointconstraint.coefficients()
