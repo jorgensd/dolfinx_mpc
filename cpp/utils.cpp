@@ -11,6 +11,7 @@
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
@@ -20,8 +21,7 @@
 using namespace dolfinx_mpc;
 
 std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-          std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-                    Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>>
+          std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>
 dolfinx_mpc::locate_cells_with_dofs(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> dofs)
@@ -33,7 +33,7 @@ dolfinx_mpc::locate_cells_with_dofs(
 
   /// Data structures
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cell_to_dofs;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cell_to_dofs_offsets;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> cell_to_dofs_offsets;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cells_with_dofs;
 
   /// Loop over all cells on this process
@@ -70,13 +70,14 @@ dolfinx_mpc::locate_cells_with_dofs(
       cell_to_dofs_offsets.tail(1) = offset_index;
     }
   }
-  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-            Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
-      cells_to_dofs_map(cell_to_dofs, cell_to_dofs_offsets);
 
-  return std::make_pair(cells_with_dofs, cells_to_dofs_map);
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> cell_adj
+      = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
+          cell_to_dofs, cell_to_dofs_offsets);
+
+  return std::make_pair(cells_with_dofs, cell_adj);
 }
-//-----------------------------------------------------------------------------
+// //-----------------------------------------------------------------------------
 void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
                                          const dolfinx::fem::Form& a)
 {
