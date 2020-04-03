@@ -9,7 +9,7 @@ import numpy
 import dolfinx
 
 from .numba_setup import PETSc, ffi
-from .assemble_matrix import in_numpy_array
+from .assemble_matrix import in_numpy_array, pack_facet_info
 
 
 def assemble_vector(form, multipointconstraint,
@@ -22,9 +22,6 @@ def assemble_vector(form, multipointconstraint,
     x_dofs = V.mesh.geometry.dofmap().array()
     x = V.mesh.geometry.x
     dofs = V.dofmap.list.array()
-
-    # Get cell orientation data
-    permutation_info = V.mesh.topology.get_cell_permutation_info()
 
     # Data from multipointconstraint
     slave_cells = multipointconstraint.slave_cells()
@@ -53,29 +50,72 @@ def assemble_vector(form, multipointconstraint,
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
-    kernel = ufc_form.create_cell_integral(-1).tabulate_tensor
+    formintegral = cpp_form.integrals()
     gdim = V.mesh.geometry.dim
+    tdim = V.mesh.topology.dim
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Assemble vector with all entries
     dolfinx.cpp.fem.assemble_vector(vector, cpp_form)
 
-    # Assemble over slave cells and add extra contributions elsewhere
-    with vector.localForm() as b:
-        assemble_vector_numba(numpy.asarray(b), kernel, (pos, x_dofs, x), gdim,
-                              form_coeffs, form_consts,
-                              permutation_info,
-                              dofs, num_dofs_per_element, mpc_data,
-                              ghost_info, (bc_dofs, bc_values))
+    # Assemble over cells
+    subdomain_ids = formintegral.integral_ids(
+        dolfinx.cpp.fem.FormIntegrals.Type.cell)
+    num_cell_integrals = len(subdomain_ids)
+    if num_cell_integrals > 0:
+        V.mesh.create_entity_permutations()
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
+
+    for i in range(num_cell_integrals):
+        subdomain_id = subdomain_ids[i]
+        cell_kernel = ufc_form.create_cell_integral(
+            subdomain_id).tabulate_tensor
+        active_cells = numpy.array(formintegral.integral_domains(
+            dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
+        with vector.localForm() as b:
+            assemble_cells(numpy.asarray(b), cell_kernel, active_cells,
+                           (pos, x_dofs, x), gdim,
+                           form_coeffs, form_consts,
+                           permutation_info,
+                           dofs, num_dofs_per_element, mpc_data,
+                           ghost_info, (bc_dofs, bc_values))
+
+    # Assemble exterior facet integrals
+    subdomain_ids = formintegral.integral_ids(
+        dolfinx.cpp.fem.FormIntegrals.Type.exterior_facet)
+    num_exterior_integrals = len(subdomain_ids)
+    exterior_integrals = form.integrals_by_type("exterior_facet")
+    if num_exterior_integrals > 0:
+        V.mesh.create_entities(tdim - 1)
+        V.mesh.create_connectivity(tdim - 1, tdim)
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
+        facet_permutation_info = V.mesh.topology.get_facet_permutations()
+    for i in range(len(exterior_integrals)):
+        facet_info = pack_facet_info(V.mesh, formintegral, i)
+        subdomain_id = subdomain_ids[i]
+        facet_kernel = ufc_form.create_exterior_facet_integral(
+            subdomain_id).tabulate_tensor
+        with vector.localForm() as b:
+            assemble_exterior_facets(numpy.asarray(b), facet_kernel,
+                                     facet_info,
+                                     (pos, x_dofs, x),
+                                     gdim, form_coeffs, form_consts,
+                                     (permutation_info,
+                                         facet_permutation_info),
+                                     dofs,
+                                     num_dofs_per_element,
+                                     mpc_data, ghost_info,
+                                     (bc_dofs, bc_values))
+
     return vector
 
 
 @numba.njit
-def assemble_vector_numba(b, kernel, mesh, gdim,
-                          coeffs, constants,
-                          permutation_info, dofmap, num_dofs_per_element,
-                          mpc, ghost_info, bcs):
-    """Assemble provided FFC/UFC kernel over a mesh into the array b"""
+def assemble_cells(b, kernel, active_cells, mesh, gdim,
+                   coeffs, constants,
+                   permutation_info, dofmap, num_dofs_per_element,
+                   mpc, ghost_info, bcs):
+    """Assemble additional MPC contributions for cell integrals"""
     ffi_fb = ffi.from_buffer
     (bcs, values) = bcs
 
@@ -90,19 +130,19 @@ def assemble_vector_numba(b, kernel, mesh, gdim,
     b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
     slave_cell_index = 0
     slave_cells = mpc[4]
-    for cell_index, cell in enumerate(pos[:-1]):
+    for cell_index in active_cells:
         if not in_numpy_array(slave_cells, cell_index):
             continue
 
         num_vertices = pos[cell_index + 1] - pos[cell_index]
         # FIXME: This assumes a particular geometry dof layout
+        cell = pos[cell_index]
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
         b_local.fill(0.0)
 
-        # FIXME: Numba does not support edge reflections
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
                ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
                ffi_fb(facet_perm),
@@ -114,6 +154,57 @@ def assemble_vector_numba(b, kernel, mesh, gdim,
                                  num_dofs_per_element, ghost_info)
         slave_cell_index += 1
 
+        for j in range(num_dofs_per_element):
+            position = dofmap[cell_index * num_dofs_per_element + j]
+            b[position] += (b_local[j] - b_local_copy[j])
+
+
+@numba.njit
+def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim,
+                             coeffs, constants,
+                             permutation_info, dofmap,
+                             num_dofs_per_element,
+                             mpc, ghost_info, bcs):
+    """Assemble additional MPC contributions for facets"""
+    ffi_fb = ffi.from_buffer
+    (bcs, values) = bcs
+
+    cell_perms, facet_perms = permutation_info
+
+    facet_index = numpy.zeros(1, dtype=numpy.int32)
+    facet_perm = numpy.zeros(1, dtype=numpy.uint8)
+
+    # Unpack mesh data
+    pos, x_dofmap, x = mesh
+
+    geometry = numpy.zeros((pos[1]-pos[0], gdim))
+    b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
+    slave_cells = mpc[4]
+    for i in range(facet_info.shape[0]):
+        cell_index, local_facet = facet_info[i]
+        cell = pos[cell_index]
+        facet_index[0] = local_facet
+        if not in_numpy_array(slave_cells, cell_index):
+            continue
+        slave_cell_index = numpy.flatnonzero(slave_cells == cell_index)[0]
+        num_vertices = pos[cell_index + 1] - pos[cell_index]
+        # FIXME: This assumes a particular geometry dof layout
+        c = x_dofmap[cell:cell + num_vertices]
+        for j in range(num_vertices):
+            for k in range(gdim):
+                geometry[j, k] = x[c[j], k]
+        b_local.fill(0.0)
+        facet_perm[0] = facet_perms[local_facet, cell_index]
+        kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
+               ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
+               ffi_fb(facet_perm),
+               cell_perms[cell_index])
+
+        b_local_copy = b_local.copy()
+
+        modify_mpc_contributions(b, cell_index, slave_cell_index, b_local,
+                                 b_local_copy, mpc, dofmap,
+                                 num_dofs_per_element, ghost_info)
         for j in range(num_dofs_per_element):
             position = dofmap[cell_index * num_dofs_per_element + j]
             b[position] += (b_local[j] - b_local_copy[j])

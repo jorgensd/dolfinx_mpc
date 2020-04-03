@@ -122,6 +122,7 @@ def compare_matrices(reduced_A, A, global_ones):
     if D[max_index] > 1e-6:
         print("Unequal ({0:.2e}) at ".format(D[max_index]), max_index)
         print(A_numpy_padded[max_index], A[max_index])
+        print("Unequal at:", np.argwhere(D != 0))
 
     # Check that all entities are close
     assert np.allclose(A, A_numpy_padded)

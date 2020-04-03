@@ -8,6 +8,6 @@
 # flake8: noqa
 
 from .multipointconstraint import backsubstitution, slave_master_structure, dof_close_to, facet_normal_approximation
-from .assemble_matrix import assemble_matrix_numba, assemble_matrix
-from .assemble_vector import assemble_vector_numba, assemble_vector
+from .assemble_matrix import assemble_matrix
+from .assemble_vector import assemble_vector
 import dolfinx_mpc.cpp
