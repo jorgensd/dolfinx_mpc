@@ -115,6 +115,7 @@ def demo_periodic3D(celltype=dolfinx.cpp.mesh.CellType.tetrahedron):
     opts["ksp_rtol"] = 1.0e-12
     opts["pc_type"] = "gamg"
     opts["pc_gamg_type"] = "agg"
+    opts["pc_gamg_sym_graph"] = True
 
     # Use Chebyshev smoothing for multigrid
     opts["mg_levels_ksp_type"] = "richardson"

@@ -30,14 +30,13 @@ void mpc(py::module& m)
                     Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
                     Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
                     Eigen::Array<double, Eigen::Dynamic, 1>,
-                    Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>())
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>())
       .def("slave_cells", &dolfinx_mpc::MultiPointConstraint::slave_cells)
-      .def("cell_to_slave_mapping",
-           &dolfinx_mpc::MultiPointConstraint::cell_to_slave_mapping)
+      .def("slave_cell_to_dofs",
+           &dolfinx_mpc::MultiPointConstraint::slave_cell_to_dofs)
       .def("coefficients", &dolfinx_mpc::MultiPointConstraint::coefficients)
       .def("slaves", &dolfinx_mpc::MultiPointConstraint::slaves)
       .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
-      .def("master_offsets", &dolfinx_mpc::MultiPointConstraint::master_offsets)
       .def("masters_local", &dolfinx_mpc::MultiPointConstraint::masters_local)
       .def("create_sparsity_pattern",
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)

@@ -28,14 +28,17 @@ def assemble_vector(form, multipointconstraint,
     facet_permutation_info = V.mesh.topology.get_facet_permutations()
 
     # Data from multipointconstraint
-    coefficients = multipointconstraint.coefficients()
-    cell_to_slave, c2s_offset = multipointconstraint.cell_to_slave_mapping()
-    slaves = multipointconstraint.slaves()
-    offsets = multipointconstraint.master_offsets()
-    masters_local = multipointconstraint.masters_local()
     slave_cells = multipointconstraint.slave_cells()
-    mpc_data = (slaves, masters_local, coefficients,
-                offsets, slave_cells, cell_to_slave, c2s_offset)
+    coefficients = multipointconstraint.coefficients()
+    masters = multipointconstraint.masters_local()
+    slave_cell_to_dofs = multipointconstraint.slave_cell_to_dofs()
+    cell_to_slave = slave_cell_to_dofs.array()
+    c_to_s_off = slave_cell_to_dofs.offsets()
+    slaves = multipointconstraint.slaves()
+    masters_local = masters.array()
+    offsets = masters.offsets()
+    mpc_data = (slaves, masters_local, coefficients, offsets,
+                slave_cells, cell_to_slave, c_to_s_off)
 
     # Get index map and ghost info
     index_map = multipointconstraint.index_map()

@@ -14,19 +14,24 @@ import numpy
 
 
 def backsubstitution(mpc, vector, dofmap):
-    slaves = mpc.slaves()
-    coefficients = mpc.coefficients()
-    masters_local = mpc.masters_local()
-    offsets = mpc.master_offsets()
-    index_map = mpc.index_map()
+
+    # Unravel data from MPC
     slave_cells = mpc.slave_cells()
-    cell_to_slave, cell_to_slave_offset = mpc.cell_to_slave_mapping()
-    mpc = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
-           masters_local, coefficients, offsets)
+    coefficients = mpc.coefficients()
+    masters = mpc.masters_local()
+    slave_cell_to_dofs = mpc.slave_cell_to_dofs()
+    cell_to_slave = slave_cell_to_dofs.array()
+    cell_to_slave_offset = slave_cell_to_dofs.offsets()
+    slaves = mpc.slaves()
+    masters_local = masters.array()
+    offsets = masters.offsets()
+    mpc_wrapper = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
+                   masters_local, coefficients, offsets)
     num_dofs_per_element = dofmap.dof_layout.num_dofs
+    index_map = mpc.index_map()
     global_indices = index_map.indices(True)
     backsubstitution_numba(vector, dofmap.list.array(),
-                           num_dofs_per_element, mpc, global_indices)
+                           num_dofs_per_element, mpc_wrapper, global_indices)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
     return vector
