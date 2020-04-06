@@ -21,8 +21,8 @@ get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 def demo_stacked_cubes():
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                             "meshes/mesh3D.xdmf") as xdmf:
-        mesh = xdmf.read_mesh()
+                             "meshes/mesh3D.xdmf", "r") as xdmf:
+        mesh = xdmf.read_mesh(name="Grid")
     mesh.create_connectivity_all()
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
@@ -129,7 +129,7 @@ def demo_stacked_cubes():
     # Get some cell info
     # (range should be reduced with mesh function and markers)
     global_indices = V.dofmap.index_map.global_indices(False)
-    num_cells = mesh.num_entities(mesh.topology.dim)
+    num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, mesh.topology.dim,
                                                 range(num_cells))
     x_coords = V.tabulate_dof_coordinates()
@@ -226,7 +226,10 @@ def demo_stacked_cubes():
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/uh3D.xdmf").write(u_h)
+    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                                  "results/cube_bench3d.xdmf", "w")
+    outfile.write_mesh(mesh)
+    outfile.write_function(u_h)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)

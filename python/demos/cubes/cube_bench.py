@@ -14,7 +14,8 @@ comp_col_pts = geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 
-def demo_stacked_cubes(celltype="quad"):
+def demo_stacked_cubes(outfile, celltype="quad"):
+    mesh_name = "mesh"
     if celltype == "tri":
         mesh_2D_dolfin("tri")
         filename = "meshes/mesh_tri.xdmf"
@@ -22,13 +23,14 @@ def demo_stacked_cubes(celltype="quad"):
         mesh_2D_dolfin("quad")
         filename = "meshes/mesh_quad.xdmf"
     else:
+        mesh_name = "Grid"
         mesh_2D_rot(0)
         filename = "meshes/mesh_rot.xdmf"
 
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                             filename) as xdmf:
-        mesh = xdmf.read_mesh()
-
+                             filename, "r") as xdmf:
+        mesh = xdmf.read_mesh(name=mesh_name)
+        mesh.name = "mesh_" + celltype
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Move top in y-dir
@@ -119,8 +121,9 @@ def demo_stacked_cubes(celltype="quad"):
     # Get some cell info
     # (range should be reduced with mesh function and markers)
     # cmap = fem.create_coordinate_map(mesh.ufl_domain())
+    tdim = mesh.topology.dim
     global_indices = V.dofmap.index_map.global_indices(False)
-    num_cells = mesh.num_entities(mesh.topology.dim)
+    num_cells = mesh.topology.index_map(tdim).size_local
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, mesh.topology.dim,
                                                 range(num_cells))
     cmap = fem.create_coordinate_map(mesh.ufl_domain())
@@ -221,9 +224,12 @@ def demo_stacked_cubes(celltype="quad"):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc"
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                        "results/uh_{0:s}.xdmf".format(celltype)).write(u_h)
+    u_h.name = "u_mpc" + celltype
+    outfile.write_mesh(mesh)
+    outfile.write_function(u_h, 0.0,
+                           "Xdmf/Domain/"
+                           + "Grid[@Name='{0:s}'][1]"
+                           .format(mesh.name))
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -266,6 +272,10 @@ def demo_stacked_cubes(celltype="quad"):
 
 
 if __name__ == "__main__":
-    demo_stacked_cubes("quad")
-    # demo_stacked_cubes("tri")
-    # demo_stacked_cubes("unstr")
+    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                                  "results/cube_bench.xdmf", "w")
+
+    demo_stacked_cubes(outfile, "quad")
+    demo_stacked_cubes(outfile, "tri")
+    demo_stacked_cubes(outfile, "unstr")
+    outfile.close()

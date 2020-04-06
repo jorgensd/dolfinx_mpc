@@ -26,7 +26,7 @@ import time
 from petsc4py import PETSc
 
 
-def demo_periodic3D(celltype=dolfinx.cpp.mesh.CellType.tetrahedron):
+def demo_periodic3D(celltype, out_periodic):
     # Create mesh and finite element
     if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
         # Tet setup
@@ -152,16 +152,19 @@ def demo_periodic3D(celltype=dolfinx.cpp.mesh.CellType.tetrahedron):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc"
     if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
-
-        out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                                           "results/u_periodic_tet.xdmf")
+        ext = "tet"
     else:
-        out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                                           "results/u_periodic_hex.xdmf")
-    out_periodic.write(u_h)
-    out_periodic.close()
+        ext = "hex"
+
+    mesh.name = "mesh_" + ext
+    u_h.name = "u_" + ext
+
+    out_periodic.write_mesh(mesh)
+    out_periodic.write_function(u_h, 0.0,
+                                "Xdmf/Domain/"
+                                + "Grid[@Name='{0:s}'][1]"
+                                .format(mesh.name))
 
     print("----Verification----")
     # --------------------VERIFICATION-------------------------
@@ -178,10 +181,11 @@ def demo_periodic3D(celltype=dolfinx.cpp.mesh.CellType.tetrahedron):
     solver.solve(L_org, u_.vector)
     u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                           mode=PETSc.ScatterMode.FORWARD)
-    # out_ref = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-    #                               "u_nonperiodic.xdmf")
-    # out_ref.write(u_)
-    # out_ref.close()
+    u_.name = "u_" + ext + "_unconstrained"
+    out_periodic.write_function(u_, 0.0,
+                                "Xdmf/Domain/"
+                                + "Grid[@Name='{0:s}'][1]"
+                                .format(mesh.name))
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -210,6 +214,10 @@ def demo_periodic3D(celltype=dolfinx.cpp.mesh.CellType.tetrahedron):
 
 
 if __name__ == "__main__":
+    fname = "results/demo_periodic3d.xdmf"
+    out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                                       fname, "w")
     for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron,
                      dolfinx.cpp.mesh.CellType.hexahedron]:
-        demo_periodic3D(celltype)
+        demo_periodic3D(celltype, out_periodic)
+    out_periodic.close()

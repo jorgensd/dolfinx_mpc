@@ -143,8 +143,10 @@ Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 u_h = dolfinx.Function(Vmpc)
 u_h.vector.setArray(uh.array)
 u_h.name = "u_mpc"
-dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                    "results/u_periodic.xdmf").write(u_h)
+outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                              "results/demo_periodic.xdmf", "w")
+outfile.write_mesh(mesh)
+outfile.write_function(u_h)
 
 
 print("----Verification----")
@@ -162,8 +164,8 @@ u_ = dolfinx.Function(V)
 solver.solve(L_org, u_.vector)
 u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
-dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                    "results/u_nonperiodic.xdmf").write(u_)
+u_.name = "u_unconstrained"
+outfile.write_function(u_)
 
 # Transfer data from the MPC problem to numpy arrays for comparison
 A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)

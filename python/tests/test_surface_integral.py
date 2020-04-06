@@ -109,15 +109,15 @@ def test_surface_integrals():
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
     # Create functionspace and function for mpc vector
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.mpc_dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+    # Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+    #                                               mpc.mpc_dofmap())
+    # Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 
     # Write solution to file
-    u_h = dolfinx.Function(Vmpc)
-    u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc"
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
+    # u_h = dolfinx.Function(Vmpc)
+    # u_h.vector.setArray(uh.array)
+    # u_h.name = "u_mpc"
+    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
