@@ -50,15 +50,16 @@ def over_plane(p0, p1, p2):
     return lambda x: n[0]*x[0] + n[1]*x[1] + D > -n[2]*x[2]
 
 
-def demo_stacked_cubes(theta):
+def demo_stacked_cubes(outfile, theta):
     # Create rotated mesh
     if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
         mesh_3D_rot(theta)
 
     # Read in mesh
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                             "meshes/mesh3D_rot.xdmf") as xdmf:
-        mesh = xdmf.read_mesh()
+                             "meshes/mesh3D_rot.xdmf", "r") as xdmf:
+        mesh = xdmf.read_mesh(name="Grid")
+        mesh.name = "mesh-{0:.2f}".format(theta)
     tdim = mesh.topology.dim
     fdim = tdim - 1
 
@@ -101,8 +102,7 @@ def demo_stacked_cubes(theta):
     top_cube_marker = 3
     indices = []
     values = []
-    tdim = mesh.topology.dim
-    num_cells = mesh.num_entities(tdim)
+    num_cells = mesh.topology.index_map(tdim).size_local
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
     for cell_index in range(num_cells):
@@ -217,9 +217,12 @@ def demo_stacked_cubes(theta):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc"
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                        "results/uh3D_rot.xdmf").write(u_h)
+    u_h.name = "u_{0:.2f}".format(theta)
+    outfile.write_mesh(mesh)
+    outfile.write_function(u_h, 0.0,
+                           "Xdmf/Domain/"
+                           + "Grid[@Name='{0:s}'][1]"
+                           .format(mesh.name))
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -262,4 +265,8 @@ def demo_stacked_cubes(theta):
 
 
 if __name__ == "__main__":
-    demo_stacked_cubes(theta=np.pi/3)
+    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                                  "results/rotated_cube3D.xdmf", "w")
+    demo_stacked_cubes(outfile, theta=np.pi/3)
+    demo_stacked_cubes(outfile, theta=np.pi/5)
+    outfile.close()

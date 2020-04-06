@@ -29,7 +29,7 @@ def test_cell_domains():
         return x[0] < 0.5
 
     tdim = mesh.topology.dim
-    num_cells = mesh.num_entities(tdim)
+    num_cells = mesh.topology.index_map(tdim).size_local
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
     values = []
@@ -87,11 +87,6 @@ def test_cell_domains():
     A = dolfinx_mpc.assemble_matrix(a, mpc)
     end = time.time()
     print("Runtime: {0:.2e}".format(end-start))
-    mf = dolfinx.MeshFunction("size_t", mesh, 1, 0)
-
-    def boundary(x):
-        return np.full(x.shape[1], True)
-    mf.mark(boundary, 1)
 
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,

@@ -58,8 +58,13 @@ if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
     create_mesh_gmsh()
 
 # Load mesh and corresponding facet markers
-with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "meshes/mesh.xdmf") as xdmf:
-    mesh = xdmf.read_mesh()
+with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                         "meshes/mesh.xdmf", "r") as xdmf:
+    mesh = xdmf.read_mesh(name="Grid")
+
+outfile = dolfinx.io.XDMFFile(
+    dolfinx.cpp.MPI.comm_world, "results/demo_stokes.xdmf", "w")
+outfile.write_mesh(mesh)
 fdim = mesh.topology.dim - 1
 
 
@@ -168,9 +173,9 @@ def set_master_slave_slip_relationship(W, V, mt, value, bcs):
 
     nh = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
     nhx, nhy = nh.sub(0).collapse(), nh.sub(1).collapse()
-    nh_out = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "results/nh.xdmf")
-    nh_out.write(nh)
-    nh_out.close()
+    nh.name = "n"
+    outfile.write_function(nh)
+
     nx = nhx.vector.getArray()
     ny = nhy.vector.getArray()
 
@@ -265,16 +270,11 @@ U.vector.setArray(uh.array)
 # Split the mixed solution and collapse
 u = U.sub(0).collapse()
 p = U.sub(1).collapse()
-
-u_out = dolfinx.io.XDMFFile(
-    dolfinx.cpp.MPI.comm_world, "results/stokes_u.xdmf")
-u_out.write(u)
-u_out.close()
-p_out = dolfinx.io.XDMFFile(
-    dolfinx.cpp.MPI.comm_world, "results/stokes_p.xdmf")
-p_out.write(p)
-p_out.close()
-
+u.name = "u"
+p.name = "p"
+outfile.write_function(u)
+outfile.write_function(p)
+outfile.close()
 
 # Transfer data from the MPC problem to numpy arrays for comparison
 A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)

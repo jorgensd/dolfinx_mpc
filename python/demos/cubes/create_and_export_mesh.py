@@ -233,8 +233,8 @@ def mesh_2D_dolfin(celltype):
                         ct, points, cells, [],
                         dolfinx.cpp.mesh.GhostMode.none)
     o_f = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                              "meshes/mesh_{0:s}.xdmf".format(celltype))
-    o_f.write(mesh)
+                              "meshes/mesh_{0:s}.xdmf".format(celltype), "w")
+    o_f.write_mesh(mesh)
 
 
 if __name__ == "__main__":

@@ -65,11 +65,6 @@ def test_pipeline(master_point):
     A = dolfinx_mpc.assemble_matrix(a, mpc)
     end = time.time()
     print("Runtime: {0:.2e}".format(end-start))
-    mf = dolfinx.MeshFunction("size_t", mesh, 1, 0)
-
-    def boundary(x):
-        return np.full(x.shape[1], True)
-    mf.mark(boundary, 1)
 
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,

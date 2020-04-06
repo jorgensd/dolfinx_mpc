@@ -8,6 +8,7 @@ import dolfinx.geometry as geometry
 import dolfinx.fem as fem
 import dolfinx
 import dolfinx.io
+import dolfinx.log
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
@@ -16,6 +17,8 @@ import ufl
 from petsc4py import PETSc
 from create_and_export_mesh import mesh_2D_rot, mesh_2D_dolfin
 from helpers import find_master_slave_relationship
+
+dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
 comp_col_pts = geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
@@ -41,23 +44,33 @@ def over_line(p0, p1):
     return lambda x: x[1] > p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0])
 
 
-def demo_stacked_cubes(theta, gmsh=True, triangle=True):
-    if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
-        if gmsh:
+def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
+    if gmsh:
+        mesh_name = "Grid"
+        if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
             mesh_2D_rot(theta)
-            filename = "meshes/mesh_rot.xdmf"
-        else:
-            if triangle:
+        filename = "meshes/mesh_rot.xdmf"
+        ext = "gmsh" + "{0:.2f}".format(theta)
+    else:
+        mesh_name = "mesh"
+        if triangle:
+            if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
                 mesh_2D_dolfin("tri")
-                filename = "meshes/mesh_tri.xdmf"
-            else:
+            filename = "meshes/mesh_tri.xdmf"
+            ext = "tri" + "{0:.2f}".format(theta)
+        else:
+            if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
                 mesh_2D_dolfin("quad")
-                filename = "meshes/mesh_quad.xdmf"
+            filename = "meshes/mesh_quad.xdmf"
+            ext = "quad" + "{0:.2f}".format(theta)
 
     with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                             filename) as xdmf:
-        mesh = xdmf.read_mesh()
-    fdim = mesh.topology.dim - 1
+                             filename, "r") as xdmf:
+        mesh = xdmf.read_mesh(mesh_name)
+        mesh.name = "mesh_" + ext
+
+    tdim = mesh.topology.dim
+    fdim = tdim - 1
 
     # Helper until MeshTags can be read in from xdmf
     r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
@@ -89,8 +102,7 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
 
     top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
 
-    tdim = mesh.topology.dim
-    num_cells = mesh.num_entities(tdim)
+    num_cells = mesh.topology.index_map(tdim).size_local
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
     top_cube_marker = 3
@@ -102,7 +114,6 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
             values.append(top_cube_marker)
     ct = dolfinx.mesh.MeshTags(mesh, fdim, np.array(
         indices, dtype=np.intc), np.array(values, dtype=np.intc))
-    fdim = mesh.topology.dim - 1
 
     # Create meshtags for facet data
     markers = {3: top_facets, 4: i_facets,
@@ -273,9 +284,12 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc"
-    dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-                        "results/uh_rot.xdmf").write(u_h)
+    u_h.name = "u_mpc_" + ext
+    outfile.write_mesh(mesh)
+    outfile.write_function(u_h, 0.0,
+                           "Xdmf/Domain/"
+                           + "Grid[@Name='{0:s}'][1]"
+                           .format(mesh.name))
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -318,8 +332,11 @@ def demo_stacked_cubes(theta, gmsh=True, triangle=True):
 
 
 if __name__ == "__main__":
-    demo_stacked_cubes(theta=0, gmsh=False, triangle=True)
+    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                                  "results/rotated_cube.xdmf", "w")
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
     # FIXME: Does not work due to collision detection
     # demo_stacked_cubes(theta=0, gmsh=False, triangle=False)
-    demo_stacked_cubes(theta=0, gmsh=True)
-    demo_stacked_cubes(theta=np.pi/7, gmsh=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=True)
+    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
+    outfile.close()
