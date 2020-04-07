@@ -110,6 +110,7 @@ add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
 if (UFC_FOUND)
     target_include_directories(dolfinx_mpc PRIVATE ${UFC_INCLUDE_DIRS})
 endif()
+target_link_libraries(dolfinx_mpc PUBLIC dolfinx)
 
 
 # Delcare the library (target)
