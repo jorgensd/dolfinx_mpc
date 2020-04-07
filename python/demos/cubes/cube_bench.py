@@ -276,6 +276,6 @@ if __name__ == "__main__":
                                   "results/cube_bench.xdmf", "w")
 
     demo_stacked_cubes(outfile, "quad")
-    demo_stacked_cubes(outfile, "tri")
-    demo_stacked_cubes(outfile, "unstr")
+    # demo_stacked_cubes(outfile, "tri")
+    # demo_stacked_cubes(outfile, "unstr")
     outfile.close()

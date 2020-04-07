@@ -16,7 +16,7 @@ H = 1
 theta = np.pi/8
 
 
-def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
+def create_mesh_gmsh():
     """
     Create a channel of length 2, height one, rotated pi/6 degrees
     around origin, and corresponding facet markers:
@@ -37,17 +37,19 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
     mesh = pygmsh.generate_mesh(geom, dim=2, prune_z_0=True)
     cells = np.vstack(np.array([cells.data for cells in mesh.cells
                                 if cells.type == "triangle"]))
-    triangle_mesh = meshio.Mesh(points=mesh.points,
-                                cells=[("triangle", cells)])
 
     facet_cells = np.vstack(np.array([cells.data for cells in mesh.cells
                                       if cells.type == "line"]))
+
     facet_data = mesh.cell_data_dict["gmsh:physical"]["line"]
+    cell_data = mesh.cell_data_dict["gmsh:physical"]["triangle"]
+    triangle_mesh = meshio.Mesh(points=mesh.points,
+                                cells=[("triangle", cells)],
+                                cell_data={"name_to_read": [cell_data]})
 
     facet_mesh = meshio.Mesh(points=mesh.points,
                              cells=[("line", facet_cells)],
                              cell_data={"name_to_read": [facet_data]})
-
     # Write mesh
     meshio.xdmf.write("meshes/mesh.xdmf", triangle_mesh)
     meshio.xdmf.write("meshes/facet_mesh.xdmf", facet_mesh)
@@ -56,56 +58,19 @@ def create_mesh_gmsh(dim=2, shape=dolfinx.cpp.mesh.CellType.triangle, order=1):
 # Create mesh
 if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
     create_mesh_gmsh()
-
 # Load mesh and corresponding facet markers
 with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                          "meshes/mesh.xdmf", "r") as xdmf:
-    mesh = xdmf.read_mesh(name="Grid")
+    mesh = xdmf.read_mesh("Grid")
+mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
+with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+                         "meshes/facet_mesh.xdmf", "r") as xdmf:
+    mt = xdmf.read_meshtags(mesh, "Grid")
 
 outfile = dolfinx.io.XDMFFile(
     dolfinx.cpp.MPI.comm_world, "results/demo_stokes.xdmf", "w")
 outfile.write_mesh(mesh)
 fdim = mesh.topology.dim - 1
-
-
-def find_line_function(p0, p1):
-    """
-    Find line y=ax+b for each of the lines in the mesh
-    https://mathworld.wolfram.com/Two-PointForm.html
-    """
-    return lambda x: np.isclose(x[1],
-                                p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0]))
-
-
-points = np.array([[0, 0, 0], [L, 0, 0], [L, H, 0], [0, H, 0]])
-r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
-rotated_points = np.dot(r_matrix, points.T)
-slip_0 = find_line_function(rotated_points[:, 0], rotated_points[:, 1])
-outlet = find_line_function(rotated_points[:, 1], rotated_points[:, 2])
-slip_1 = find_line_function(rotated_points[:, 2], rotated_points[:, 3])
-inlet = find_line_function(rotated_points[:, 3], rotated_points[:, 0])
-
-slip_0_facets = dolfinx.mesh.locate_entities_geometrical(
-    mesh, fdim, slip_0, boundary_only=True)
-slip_0_values = np.full(len(slip_0_facets), 1, dtype=np.intc)
-slip_1_facets = dolfinx.mesh.locate_entities_geometrical(
-    mesh, fdim, slip_1, boundary_only=True)
-slip_1_values = np.full(len(slip_1_facets), 1, dtype=np.intc)
-outlet_facets = dolfinx.mesh.locate_entities_geometrical(
-    mesh, fdim, outlet, boundary_only=True)
-outlet_values = np.full(len(outlet_facets), 2, dtype=np.intc)
-
-inlet_facets = dolfinx.mesh.locate_entities_geometrical(
-    mesh, fdim, inlet, boundary_only=True)
-inlet_values = np.full(len(inlet_facets), 3, dtype=np.intc)
-
-fdim = mesh.topology.dim - 1
-mt = dolfinx.mesh.MeshTags(mesh, fdim,
-                           np.hstack([
-                               slip_0_facets, slip_1_facets,
-                               outlet_facets, inlet_facets]),
-                           np.hstack([slip_0_values, slip_1_values,
-                                      outlet_values, inlet_values]))
 
 # Create the function space
 P2 = ufl.VectorElement("Lagrange", mesh.ufl_cell(), 2)
@@ -122,6 +87,7 @@ def inlet_velocity_expression(x):
                      5*x[1]*np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2))))
 
 
+inlet_facets = mt.indices[np.flatnonzero(mt.values == 3)]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
 dofs = dolfinx.fem.locate_dofs_topological((W.sub(0), V), 1, inlet_facets)
