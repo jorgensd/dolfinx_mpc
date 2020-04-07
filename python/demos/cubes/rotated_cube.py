@@ -275,8 +275,9 @@ if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                                   "results/rotated_cube.xdmf", "w")
     demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
+    # demo_stacked_cubes(outfile, theta=0, gmsh=True)
+    # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
     # FIXME: Does not work due to collision detection
     # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
-    demo_stacked_cubes(outfile, theta=0, gmsh=True)
-    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
+
     outfile.close()
