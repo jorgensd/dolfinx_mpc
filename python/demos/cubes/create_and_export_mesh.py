@@ -160,6 +160,11 @@ def mesh_3D_rot(theta=np.pi/2):
     bbox = geom0.add_box(0, 1, 0, 1, 0, 1, res)
     bbox.dimension = 3
     bbox.id = bbox.volume.id
+    # for i in range(len(bbox.surface_loop.surfaces)):
+    #     geom0.add_physical([bbox.surface_loop.surfaces[i]], i + 3)
+    geom0.add_physical([bbox.surface_loop.surfaces[2]], 4)
+    geom0.add_physical([bbox.surface_loop.surfaces[3]], 5)
+
     geom0.rotate(bbox, [0, 0, 0], -theta, [0, 1, 1])
     geom0.add_physical([bbox.volume], 0)
     msh0 = pygmsh.generate_mesh(geom0, verbose=False)
@@ -170,31 +175,46 @@ def mesh_3D_rot(theta=np.pi/2):
     tbox.dimension = 3
     geom1.rotate(tbox, [0, 0, 0], -theta, [0, 1, 1])
     geom1.add_physical([tbox.volume], 2)
+    # for i in range(len(tbox.surface_loop.surfaces)):
+    #     geom1.add_physical([tbox.surface_loop.surfaces[i]], i + 9)
+    # Top 3, Interface 4
+    geom1.add_physical(tbox.surface_loop.surfaces[2], 3)
+    geom1.add_physical(tbox.surface_loop.surfaces[3], 4)
+
     msh1 = pygmsh.generate_mesh(geom1, verbose=False)
 
     points0 = msh0.points
-    tetra_cells0 = np.vstack([cells.data for cells in msh0.cells
-                              if cells.type == "tetra"])
-    tetra_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
-                             for key in
-                             msh0.cell_data_dict["gmsh:physical"].keys()
-                             if key == "tetra"])
-    points1 = msh1.points
-    points = np.vstack([points0, points1])
-    tetra_cells1 = np.vstack([cells.data for cells in msh1.cells
-                              if cells.type == "tetra"])
-    tetra_data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
-                             for key in
-                             msh1.cell_data_dict["gmsh:physical"].keys()
-                             if key == "tetra"])
-    tetra_cells1 += points0.shape[0]
-    tetra_cells = np.vstack([tetra_cells0, tetra_cells1])
 
-    tetra_data = np.hstack([tetra_data0, tetra_data1])
-    tetra_mesh = meshio.Mesh(points=points,
-                             cells=[("tetra", tetra_cells)],
-                             cell_data={"name_to_read": tetra_data})
-    meshio.write("meshes/mesh3D_rot.xdmf", tetra_mesh)
+    def merge_and_write_mesh(msh0, msh1, celltype, meshname):
+        """
+        Merge two meshio meshes of a given celltype and write to file.
+        (The meshio mesh can contain multiple cell types).
+        """
+        cells0 = np.vstack([cells.data for cells in msh0.cells
+                            if cells.type == celltype])
+        data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
+                           for key in
+                           msh0.cell_data_dict["gmsh:physical"].keys()
+                           if key == celltype])
+        points1 = msh1.points
+        points = np.vstack([points0, points1])
+        cells1 = np.vstack([cells.data for cells in msh1.cells
+                            if cells.type == celltype])
+        data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
+                           for key in
+                           msh1.cell_data_dict["gmsh:physical"].keys()
+                           if key == celltype])
+        cells1 += points0.shape[0]
+        cells = np.vstack([cells0, cells1])
+
+        data = np.hstack([data0, data1])
+        mesh = meshio.Mesh(points=points,
+                           cells=[(celltype, cells)],
+                           cell_data={"name_to_read": data})
+        meshio.xdmf.write(meshname, mesh)
+
+    merge_and_write_mesh(msh0, msh1, "tetra", "meshes/mesh3D_rot.xdmf")
+    merge_and_write_mesh(msh0, msh1, "triangle", "meshes/facet3D_rot.xdmf")
 
 
 def mesh_2D_dolfin(celltype, theta=0):
@@ -348,6 +368,33 @@ def mesh_2D_dolfin(celltype, theta=0):
     o_f.write_meshtags(ct)
     o_f.write_meshtags(mt)
     o_f.close()
+
+
+def find_plane_function(p0, p1, p2):
+    """
+    Find plane function given three points:
+    http://www.nabla.hr/CG-LinesPlanesIn3DA3.htm
+    """
+    v1 = np.array(p1)-np.array(p0)
+    v2 = np.array(p2)-np.array(p0)
+
+    n = np.cross(v1, v2)
+    D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
+    return lambda x: np.isclose(0,
+                                np.dot(n, x) + D)
+
+
+def over_plane(p0, p1, p2):
+    """
+    Returns function that checks if a point is over a plane defined
+    by the points p0, p1 and p2.
+    """
+    v1 = np.array(p1)-np.array(p0)
+    v2 = np.array(p2)-np.array(p0)
+
+    n = np.cross(v1, v2)
+    D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
+    return lambda x: n[0]*x[0] + n[1]*x[1] + D > -n[2]*x[2]
 
 
 if __name__ == "__main__":
