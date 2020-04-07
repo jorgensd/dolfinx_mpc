@@ -77,30 +77,36 @@ def mesh_3D():
 
 def mesh_2D_rot(theta=np.pi/2):
     res = 0.1
+
+    # Lower Cube
+    # Top: 4, Bottom 5, Left 6, Right 7
     geom0 = pygmsh.built_in.Geometry()
     rect = geom0.add_rectangle(0.0, 1, 0.0, 1.0, 0.0, res)
     geom0.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
-    geom0.add_physical([rect.surface], 7)
+    geom0.add_physical([rect.surface], 0)
 
-    # Top: 1, Bottom 2, Side walls: 3
-    # geom.add_physical([rect.line_loop.lines[2]], 1)
-    # geom.add_physical([rect.line_loop.lines[0]], 2)
-    # geom.add_physical([rect.line_loop.lines[1], rect.line_loop.lines[3]], 3)
+    geom0.add_physical([rect.line_loop.lines[2]], 4)
+    geom0.add_physical([rect.line_loop.lines[0]], 5)
+    geom0.add_physical([rect.line_loop.lines[1]], 6)
+    geom0.add_physical([rect.line_loop.lines[3]], 7)
     msh0 = pygmsh.generate_mesh(geom0, prune_z_0=True, verbose=False)
+
+    # Upper box:
+    # Top: 3, Bottom 4, Left 8, Right 9
     geom1 = pygmsh.built_in.Geometry()
     rect1 = geom1.add_rectangle(0.0, 1, 1.0, 2.0, 0.0, 2*res)
     geom1.rotate(rect1, [0, 0, 0], theta, [0, 0, 1])
-    geom1.add_physical([rect1.surface], 8)
+
+    geom1.add_physical([rect1.line_loop.lines[2]], 3)
+    geom1.add_physical([rect1.line_loop.lines[0]], 4)
+    geom1.add_physical([rect1.line_loop.lines[1]], 8)
+    geom1.add_physical([rect1.line_loop.lines[3]], 9)
+    geom1.add_physical([rect1.surface], 2)
     msh1 = pygmsh.generate_mesh(geom1, prune_z_0=True, verbose=False)
 
-    # Upper box:
-    # Top: 4, Bottom 5, Side walls: 6
-    # geom.add_physical([rect1.line_aloop.lines[2]], 4)
-    # geom.add_physical([rect1.line_loop.lines[0]], 5)
-    # geom.add_physical([rect1.line_loop.lines[1],
-    # rect1.line_loop.lines[3]], 6)
-    # geom.add_physical([rect1.surface], 8)
     points0 = msh0.points
+
+    # Write triangle mesh
     tri_cells0 = np.vstack([cells.data for cells in msh0.cells
                             if cells.type == "triangle"])
     tri_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
@@ -117,12 +123,35 @@ def mesh_2D_rot(theta=np.pi/2):
                            if key == "triangle"])
     tri_cells1 += points0.shape[0]
     tri_cells = np.vstack([tri_cells0, tri_cells1])
-
     tri_data = np.hstack([tri_data0, tri_data1])
     triangle_mesh = meshio.Mesh(points=points,
                                 cells=[("triangle", tri_cells)],
                                 cell_data={"name_to_read": tri_data})
     meshio.write("meshes/mesh_rot.xdmf", triangle_mesh)
+
+    # Write line mesh
+    facet_cells0 = np.vstack([cells.data for cells in msh0.cells
+                              if cells.type == "line"])
+    facet_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
+                             for key in
+                             msh0.cell_data_dict["gmsh:physical"].keys()
+                             if key == "line"])
+    points1 = msh1.points
+    points = np.vstack([points0, points1])
+    facet_cells1 = np.vstack([cells.data for cells in msh1.cells
+                              if cells.type == "line"])
+    facet_data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
+                             for key in
+                             msh1.cell_data_dict["gmsh:physical"].keys()
+                             if key == "line"])
+    facet_cells1 += points0.shape[0]
+    facet_cells = np.vstack([facet_cells0, facet_cells1])
+
+    facet_data = np.hstack([facet_data0, facet_data1])
+    facet_mesh = meshio.Mesh(points=points,
+                             cells=[("line", facet_cells)],
+                             cell_data={"name_to_read": facet_data})
+    meshio.write("meshes/facet_rot.xdmf", facet_mesh)
 
 
 def mesh_3D_rot(theta=np.pi/2):
@@ -132,7 +161,7 @@ def mesh_3D_rot(theta=np.pi/2):
     bbox.dimension = 3
     bbox.id = bbox.volume.id
     geom0.rotate(bbox, [0, 0, 0], -theta, [0, 1, 1])
-    geom0.add_physical([bbox.volume], 1)
+    geom0.add_physical([bbox.volume], 0)
     msh0 = pygmsh.generate_mesh(geom0, verbose=False)
 
     geom1 = pygmsh.built_in.Geometry()
@@ -168,7 +197,30 @@ def mesh_3D_rot(theta=np.pi/2):
     meshio.write("meshes/mesh3D_rot.xdmf", tetra_mesh)
 
 
-def mesh_2D_dolfin(celltype):
+def mesh_2D_dolfin(celltype, theta=0):
+    """
+    Create two 2D cubes stacked on top of each other,
+    and the corresponding mesh markers using dolfin built-in meshes
+    """
+    def find_line_function(p0, p1):
+        """
+        Find line y=ax+b for each of the lines in the mesh
+        https://mathworld.wolfram.com/Two-PointForm.html
+        """
+        # Line aligned with y axis
+        if np.isclose(p1[0], p0[0]):
+            return lambda x: np.isclose(x[0], p0[0])
+        return lambda x: np.isclose(x[1],
+                                    p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])
+                                    * (x[0]-p0[0]))
+
+    def over_line(p0, p1):
+        """
+        Check if a point is over or under y=ax+b for each of the
+        lines in the mesh https://mathworld.wolfram.com/Two-PointForm.html
+        """
+        return lambda x: x[1] > p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0])
+
     # Using built in meshes, stacking cubes on top of each other
     if celltype == "quad":
         N = 2
@@ -189,6 +241,7 @@ def mesh_2D_dolfin(celltype):
                                        np.array([1.0, 1.0, 0])], [2*N, 2*N],
                                       ct, diagonal="crossed")
         nv = 3
+
     else:
         raise ValueError("celltype has to be tri or quad")
 
@@ -232,9 +285,69 @@ def mesh_2D_dolfin(celltype):
     mesh = dolfinx.Mesh(dolfinx.MPI.comm_world,
                         ct, points, cells, [],
                         dolfinx.cpp.mesh.GhostMode.none)
+    tdim = mesh.topology.dim
+    fdim = tdim - 1
+    r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
+
+    # Find information about facets to be used in MeshTags
+    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
+                                               [1, 1, 0], [0, 1, 0]]).T)
+    bottom = find_line_function(bottom_points[:, 0], bottom_points[:, 1])
+    bottom_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, bottom, boundary_only=True)
+
+    top_points = np.dot(r_matrix, np.array([[0, 1, 0], [1, 1, 0],
+                                            [1, 2, 0], [0, 2, 0]]).T)
+    top = find_line_function(top_points[:, 2], top_points[:, 3])
+    top_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, top, boundary_only=True)
+
+    left_side = find_line_function(top_points[:, 0], top_points[:, 3])
+    left_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, left_side, boundary_only=True)
+
+    right_side = find_line_function(top_points[:, 1], top_points[:, 2])
+    right_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, right_side, boundary_only=True)
+
+    interface = find_line_function(bottom_points[:, 2], bottom_points[:, 3])
+    i_facets = dolfinx.mesh.locate_entities_geometrical(
+        mesh, fdim, interface, boundary_only=True)
+
+    top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
+
+    num_cells = mesh.topology.index_map(tdim).size_local
+    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
+                                                range(num_cells))
+    top_cube_marker = 2
+    indices = []
+    values = []
+    for cell_index in range(num_cells):
+        if top_cube(cell_midpoints[cell_index]):
+            indices.append(cell_index)
+            values.append(top_cube_marker)
+    ct = dolfinx.mesh.MeshTags(mesh, tdim, np.array(
+        indices, dtype=np.intc), np.array(values, dtype=np.intc))
+
+    # Create meshtags for facet data
+    markers = {3: top_facets, 4: i_facets,
+               5: bottom_facets, 6: left_facets, 7: right_facets}
+    indices = np.array([], dtype=np.intc)
+    values = np.array([], dtype=np.intc)
+
+    for key in markers.keys():
+        indices = np.append(indices, markers[key])
+        values = np.append(values, np.full(len(markers[key]), key,
+                                           dtype=np.intc))
+    mt = dolfinx.mesh.MeshTags(mesh, fdim,
+                               indices, values)
+    mt.name = "facet_tags"
     o_f = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                               "meshes/mesh_{0:s}.xdmf".format(celltype), "w")
     o_f.write_mesh(mesh)
+    o_f.write_meshtags(ct)
+    o_f.write_meshtags(mt)
+    o_f.close()
 
 
 if __name__ == "__main__":
