@@ -8,6 +8,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/geometry/CollisionPredicates.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>
@@ -42,5 +43,9 @@ void mpc(py::module& m)
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
       .def("mpc_dofmap", &dolfinx_mpc::MultiPointConstraint::mpc_dofmap);
   m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
+  m.def("check_cell_point_collision", &dolfinx_mpc::check_cell_point_collision);
+  m.def("collides_tetrahedron_point_3d",
+
+        &dolfinx::geometry::CollisionPredicates::collides_tetrahedron_point_3d);
 }
 } // namespace dolfinx_mpc_wrappers

@@ -62,6 +62,8 @@ if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
 with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                          "meshes/mesh.xdmf", "r") as xdmf:
     mesh = xdmf.read_mesh("Grid")
+
+
 mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
 with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                          "meshes/facet_mesh.xdmf", "r") as xdmf:
@@ -87,7 +89,7 @@ def inlet_velocity_expression(x):
                      5*x[1]*np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2))))
 
 
-inlet_facets = mt.indices[np.flatnonzero(mt.values == 3)]
+inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
 dofs = dolfinx.fem.locate_dofs_topological((W.sub(0), V), 1, inlet_facets)

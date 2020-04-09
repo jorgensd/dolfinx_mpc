@@ -8,16 +8,17 @@
 #include <Eigen/Dense>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DofMap.h>
+#include <dolfinx/fem/ElementDofLayout.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/geometry/CollisionPredicates.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/MeshIterator.h>
-
 using namespace dolfinx_mpc;
 
 std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
@@ -223,3 +224,44 @@ dolfinx_mpc::get_basis_functions(
   return basis_array;
 }
 //-----------------------------------------------------------------------------
+Eigen::Array<bool, Eigen::Dynamic, 1> dolfinx_mpc::check_cell_point_collision(
+    const Eigen::Ref<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> cells,
+    std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+    const Eigen::Vector3d point)
+{
+  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
+  dolfinx::fem::ElementDofLayout layout = *(dofmap->element_dof_layout);
+  dolfinx::mesh::CellType celltype = V->mesh()->topology().cell_type();
+  std::int32_t num_vertices = dolfinx::mesh::num_cell_vertices(celltype);
+  // NOTE: Assume same structure on all vertices
+  std::int32_t num_vertex_dofs = layout.num_entity_closure_dofs(0);
+  // Find all dofs on vertices and structure them in a Matrix
+  Eigen::Matrix<std::int32_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      vertex_dofs(num_vertices, num_vertex_dofs);
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> x
+      = V->tabulate_dof_coordinates();
+  Eigen::Array<bool, Eigen::Dynamic, 1> collisions(cells.size());
+  for (std::int32_t i = 0; i < num_vertices; ++i)
+  {
+    vertex_dofs.row(i) = layout.entity_dofs(0, i);
+  }
+  // Loop through all cells and check collision with point
+  for (std::int32_t i = 0; i < cells.size(); ++i)
+  {
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+        vertices(num_vertices, 3);
+    for (std::int32_t j = 0; j < num_vertices; ++j)
+    {
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> cell_dofs
+          = dofmap->cell_dofs(cells[i]);
+      std::int32_t first_dof = vertex_dofs(j, 0);
+      vertices.row(j) = x.row(cell_dofs(first_dof));
+    }
+    // FIXME: Need to add wrapper for all celltypes
+    collisions[i]
+        = dolfinx::geometry::CollisionPredicates::collides_tetrahedron_point_3d(
+            vertices.row(0), vertices.row(1), vertices.row(2), vertices.row(3),
+            point);
+  }
+  return collisions;
+}

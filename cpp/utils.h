@@ -41,4 +41,15 @@ get_basis_functions(
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index);
 
+/// Check collision between a cell and a point, for the cell built by the
+/// dof coordinates rather than mesh coordinates.
+/// @param[in] cells   List of possible cells
+/// @param[in] V       The function space
+/// @param[in] point   The collision coordinate
+/// @return Boolean array corresponding to the input cells
+Eigen::Array<bool, Eigen::Dynamic, 1> check_cell_point_collision(
+    const Eigen::Ref<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> cells,
+    std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+    const Eigen::Vector3d point);
+
 } // namespace dolfinx_mpc
