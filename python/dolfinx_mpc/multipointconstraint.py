@@ -6,9 +6,10 @@
 
 import typing
 import numba
+from mpi4py import MPI
 from petsc4py import PETSc
 import types
-from dolfinx import function, fem, MPI
+from dolfinx import function, fem
 from .assemble_matrix import in_numpy_array, add_diagonal
 import numpy
 
@@ -115,7 +116,7 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
         offsets.append(len(masters))
         if subspace_slave is None:
             dof = fem.locate_dofs_geometrical(V, slave) + local_min
-            dof_global = numpy.vstack(MPI.comm_world.allgather(dof))[0]
+            dof_global = numpy.vstack(MPI.COMM_WORLD.allgather(dof))[0]
 
         else:
             dof = fem.locate_dofs_geometrical((V.sub(subspace_slave),
@@ -123,19 +124,19 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
                                               slave)
             for (i, d) in enumerate(dof):
                 dof[i] += local_min
-            dof_global = numpy.vstack(MPI.comm_world.allgather(dof))[0, 0]
+            dof_global = numpy.vstack(MPI.COMM_WORLD.allgather(dof))[0, 0]
         slaves.append(dof_global)
         for master in slave_master_dict[slave].keys():
             if subspace_master is None:
                 dof_m = fem.locate_dofs_geometrical(V, master) + local_min
-                dof_m = numpy.vstack(MPI.comm_world.allgather(dof_m))[0]
+                dof_m = numpy.vstack(MPI.COMM_WORLD.allgather(dof_m))[0]
             else:
                 dof_m = fem.locate_dofs_geometrical((V.sub(subspace_master),
                                                      Vsub_master),
                                                     master)
                 for (i, d) in enumerate(dof_m):
                     dof_m[i] += local_min
-                dof_m = numpy.vstack(MPI.comm_world.allgather(dof_m))[0, 0]
+                dof_m = numpy.vstack(MPI.COMM_WORLD.allgather(dof_m))[0, 0]
 
             masters.append(dof_m)
             coeffs.append(slave_master_dict[slave][master])

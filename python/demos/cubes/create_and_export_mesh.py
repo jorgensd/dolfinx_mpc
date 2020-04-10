@@ -274,7 +274,7 @@ def mesh_2D_dolfin(celltype, theta=0):
 
     # Transform topology info into geometry info
     c2v = mesh0.topology.connectivity(mesh0.topology.dim, 0)
-    x_dofmap = mesh0.geometry.dofmap()
+    x_dofmap = mesh0.geometry.dofmap
     imap = mesh0.topology.index_map(0)
     num_mesh_vertices = imap.size_local + imap.num_ghosts
     vertex_to_node = np.zeros(num_mesh_vertices, dtype=np.int64)
@@ -289,7 +289,7 @@ def mesh_2D_dolfin(celltype, theta=0):
             cells0[cell, v] = vertex_to_node[c2v.links(cell)[v]]
     # Transform topology info into geometry info
     c2v = mesh1.topology.connectivity(mesh1.topology.dim, 0)
-    x_dofmap = mesh1.geometry.dofmap()
+    x_dofmap = mesh1.geometry.dofmap
     imap = mesh1.topology.index_map(0)
     num_mesh_vertices = imap.size_local + imap.num_ghosts
     vertex_to_node = np.zeros(num_mesh_vertices, dtype=np.int64)
@@ -304,8 +304,8 @@ def mesh_2D_dolfin(celltype, theta=0):
             cells1[cell, v] = vertex_to_node[c2v.links(cell)[v]] + x0.shape[0]
     cells = np.vstack([cells0, cells1])
     mesh = dolfinx.Mesh(MPI.COMM_WORLD,
-                        ct, points, cells, [],
-                        dolfinx.cpp.mesh.GhostMode.none)
+                        ct, points, cells, [], degree=1,
+                        ghost_mode=dolfinx.cpp.mesh.GhostMode.none)
     tdim = mesh.topology.dim
     fdim = tdim - 1
     r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)

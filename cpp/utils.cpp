@@ -150,13 +150,7 @@ dolfinx_mpc::get_basis_functions(
       coordinate_dofs(num_dofs_g, gdim);
 
   // Get coordinate mapping
-  std::shared_ptr<const dolfinx::fem::CoordinateElement> cmap
-      = mesh.geometry().coord_mapping;
-  if (!cmap)
-  {
-    throw std::runtime_error(
-        "dolfinx::fem::CoordinateElement has not been attached to mesh.");
-  }
+  const dolfinx::fem::CoordinateElement& cmap = mesh.geometry().cmap();
 
   // Get element
   assert(V->element());
@@ -202,8 +196,7 @@ dolfinx_mpc::get_basis_functions(
       coordinate_dofs(i, j) = x_g(cell_g[pos_g[index] + i], j);
 
   // Compute reference coordinates X, and J, detJ and K
-  cmap->compute_reference_geometry(X, J, detJ, K, x.head(gdim),
-                                   coordinate_dofs);
+  cmap.compute_reference_geometry(X, J, detJ, K, x.head(gdim), coordinate_dofs);
 
   // Compute basis on reference element
   element.evaluate_reference_basis(basis_reference_values, X);

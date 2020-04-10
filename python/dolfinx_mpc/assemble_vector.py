@@ -18,8 +18,8 @@ def assemble_vector(form, multipointconstraint,
     V = form.arguments()[0].ufl_function_space()
 
     # Unpack mesh and dofmap data
-    pos = V.mesh.geometry.dofmap().offsets()
-    x_dofs = V.mesh.geometry.dofmap().array()
+    pos = V.mesh.geometry.dofmap.offsets()
+    x_dofs = V.mesh.geometry.dofmap.array()
     x = V.mesh.geometry.x
     dofs = V.dofmap.list.array()
 
