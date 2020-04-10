@@ -1,3 +1,4 @@
+from IPython import embed
 import dolfinx.cpp
 import dolfinx.io
 import dolfinx_mpc
@@ -8,7 +9,7 @@ import pygmsh
 import time
 import ufl
 from petsc4py import PETSc
-
+from mpi4py import MPI
 
 # Length, width and rotation of channel
 L = 2
@@ -56,19 +57,21 @@ def create_mesh_gmsh():
 
 
 # Create mesh
-if dolfinx.MPI.size(dolfinx.MPI.comm_world) == 1:
+if MPI.COMM_WORLD.size == 1:
     create_mesh_gmsh()
 # Load mesh and corresponding facet markers
-with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                          "meshes/mesh.xdmf", "r") as xdmf:
     mesh = xdmf.read_mesh("Grid")
+
+
 mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
-with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                          "meshes/facet_mesh.xdmf", "r") as xdmf:
     mt = xdmf.read_meshtags(mesh, "Grid")
 
 outfile = dolfinx.io.XDMFFile(
-    dolfinx.cpp.MPI.comm_world, "results/demo_stokes.xdmf", "w")
+    MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w")
 outfile.write_mesh(mesh)
 fdim = mesh.topology.dim - 1
 
@@ -87,7 +90,7 @@ def inlet_velocity_expression(x):
                      5*x[1]*np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2))))
 
 
-inlet_facets = mt.indices[np.flatnonzero(mt.values == 3)]
+inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
 dofs = dolfinx.fem.locate_dofs_topological((W.sub(0), V), 1, inlet_facets)
@@ -122,7 +125,7 @@ def set_master_slave_slip_relationship(W, V, mt, value, bcs):
     bc_dofs = []
     for bc in bcs:
         bc_g = [global_indices[bdof] for bdof in bc.dof_indices[:, 0]]
-        bc_dofs.append(np.hstack(dolfinx.MPI.comm_world.allgather(bc_g)))
+        bc_dofs.append(np.hstack(MPI.COMM_WORLD.allgather(bc_g)))
     bc_dofs = np.hstack(bc_dofs)
     Vx = V.sub(0).collapse()
     Vy = V.sub(1).collapse()
@@ -166,9 +169,9 @@ def set_master_slave_slip_relationship(W, V, mt, value, bcs):
                 coeffs.append(local_coeff)
     # As all dofs is in the same block, we do not need to communicate
     # all master and slave nodes have been found
-    global_slaves = np.hstack(dolfinx.MPI.comm_world.allgather(slaves))
-    global_masters = np.hstack(dolfinx.MPI.comm_world.allgather(masters))
-    global_coeffs = np.hstack(dolfinx.MPI.comm_world.allgather(coeffs))
+    global_slaves = np.hstack(MPI.COMM_WORLD.allgather(slaves))
+    global_masters = np.hstack(MPI.COMM_WORLD.allgather(masters))
+    global_coeffs = np.hstack(MPI.COMM_WORLD.allgather(coeffs))
     offsets = np.arange(len(global_slaves)+1)
 
     return (np.array(global_masters), np.array(global_slaves),
@@ -266,7 +269,7 @@ dolfinx.fem.apply_lifting(L_org, [a], [bcs])
 L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.set_bc(L_org, bcs)
-solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+solver = PETSc.KSP().create(MPI.COMM_WORLD)
 ksp.setType("preonly")
 ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("mumps")
