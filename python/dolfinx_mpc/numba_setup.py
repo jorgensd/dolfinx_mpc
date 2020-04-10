@@ -16,7 +16,7 @@ import numpy as np
 from petsc4py import PETSc
 from petsc4py import get_config as PETSc_get_config
 
-from dolfinx import MPI
+from mpi4py import MPI
 
 petsc_dir = PETSc_get_config()['PETSC_DIR']
 
@@ -95,7 +95,7 @@ MatSetValuesLocal_abi = petsc_lib_cffi.MatSetValuesLocal
 # Make MatSetValuesLocal from PETSc available via cffi in API mode
 worker = os.getenv('ASSEMBLE_XDIST_WORKER', None)
 module_name = "_petsc_cffi_{}".format(worker)
-if MPI.comm_world.Get_rank() == 0:
+if MPI.COMM_WORLD.Get_rank() == 0:
     os.environ["CC"] = "mpicc"
     ffibuilder = cffi.FFI()
     ffibuilder.cdef("""
@@ -118,7 +118,7 @@ if MPI.comm_world.Get_rank() == 0:
                           extra_compile_args=[])
     ffibuilder.compile(verbose=False)
 
-MPI.comm_world.barrier()
+MPI.COMM_WORLD.barrier()
 
 spec = importlib.util.find_spec(module_name)
 if spec is None:

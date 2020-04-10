@@ -34,8 +34,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
                   indexmap.global_indices(False), indexmap.ghosts)
 
     # Get data from mesh
-    pos = V.mesh.geometry.dofmap().offsets()
-    x_dofs = V.mesh.geometry.dofmap().array()
+    pos = V.mesh.geometry.dofmap.offsets()
+    x_dofs = V.mesh.geometry.dofmap.array()
     x = V.mesh.geometry.x
 
     # Generate ufc_form

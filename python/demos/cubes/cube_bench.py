@@ -127,8 +127,6 @@ def demo_stacked_cubes(outfile, celltype="quad"):
     num_cells = mesh.topology.index_map(tdim).size_local
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, mesh.topology.dim,
                                                 range(num_cells))
-    cmap = fem.create_coordinate_map(mesh.ufl_domain())
-    mesh.geometry.coord_mapping = cmap
     x_coords = V.tabulate_dof_coordinates()
     tree = geometry.BoundingBoxTree(mesh, mesh.topology.dim)
     mesh.create_connectivity(mesh.topology.dim, mesh.topology.dim-1)
