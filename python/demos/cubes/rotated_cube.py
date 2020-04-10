@@ -44,22 +44,22 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                                  facet_file, "r") as xdmf:
             mt = xdmf.read_meshtags(mesh, "Grid")
-
     else:
         mesh_name = "mesh"
         if triangle:
             if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
-                mesh_2D_dolfin("tri")
+                mesh_2D_dolfin("tri", theta)
             filename = "meshes/mesh_tri.xdmf"
-            ext = "tri"
+            ext = "tri" + "{0:.2f}".format(theta)
         else:
             if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
-                mesh_2D_dolfin("quad")
+                mesh_2D_dolfin("quad", theta)
             filename = "meshes/mesh_quad.xdmf"
-            ext = "quad"
+            ext = "quad" + "{0:.2f}".format(theta)
         with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(mesh_name)
+
             mesh.name = "mesh_" + ext
             tdim = mesh.topology.dim
             fdim = tdim - 1
@@ -67,9 +67,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mesh.create_connectivity(fdim, tdim)
             ct = xdmf.read_meshtags(mesh, "mesh_tags")
             mt = xdmf.read_meshtags(mesh, "facet_tags")
-
     # Helper until MeshTags can be read in from xdmf
-
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     V0 = V.sub(0).collapse()
     V1 = V.sub(1).collapse()
@@ -87,16 +85,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
-    # def top_v(x):
-    #     values = np.empty((2, x.shape[1]))
-    #     values[0] = g_vec[0]
-    #     values[1] = g_vec[1]
-    #     return values
-    # u_top = dolfinx.function.Function(V)
-    # u_top.interpolate(top_v)
-    # top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
-    # bc_top = fem.DirichletBC(u_top, top_dofs)
-    bcs = [bc_bottom]  # , bc_top]
+    bcs = [bc_bottom]
 
     # Elasticity parameters
     E = 1.0e3
@@ -122,72 +111,35 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     slaves, masters, coeffs, offsets = find_master_slave_relationship(
         V, (mt, 4), (ct, 2))
 
-    # Set normal sliding of a single on each side of the cube to zero to
-    # avoid translational invariant problem
+    def left_corner(x):
+        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
+
     if np.isclose(theta, 0):
-        def in_corner(x):
-            return np.logical_or(np.isclose(x.T, [0, 2, 0]).all(axis=1),
-                                 np.isclose(x.T, [1, 2, 0]).all(axis=1))
+        # Restrict normal sliding by restricting one dof in the top corner
         V0 = V.sub(0).collapse()
         zero = dolfinx.Function(V0)
         with zero.vector.localForm() as zero_local:
             zero_local.set(0.0)
-        dofs = fem.locate_dofs_geometrical((V.sub(0), V0), in_corner)
+        dofs = fem.locate_dofs_geometrical((V.sub(0), V0), left_corner)
         bc_corner = dolfinx.DirichletBC(zero, dofs, V.sub(0))
         bcs.append(bc_corner)
     else:
-        top_points = np.dot(r_matrix, np.array([[0, 1, 0], [1, 1, 0],
-                                                [1, 2, 0], [0, 2, 0]]).T)
-        global_indices = V.dofmap.index_map.global_indices(False)
-        x_coords = V.tabulate_dof_coordinates()
-        V0 = V.sub(0).collapse()
-        V1 = V.sub(1).collapse()
-        m_side, s_side, c_side, o_side = [], [], [], []
-        for key, corners in zip([8, 9], [[0, 3], [1, 2]]):
-            local_side_facets = np.flatnonzero(mt.values == key)
-            side_facets = mt.indices[local_side_facets]
+        # approximate tangent with normal on left side.
+        tangent = dolfinx_mpc.facet_normal_approximation(V, mt, 6)
+        t_vec = tangent.vector.getArray()
 
-            dofs_x = fem.locate_dofs_topological(
-                (V.sub(0), V0), fdim, side_facets)[:, 0]
-            dofs_y = fem.locate_dofs_topological(
-                (V.sub(1), V1), fdim, side_facets)[:, 0]
-
-            slip = False
-            n_side = dolfinx_mpc.facet_normal_approximation(V, mt, key)
-            n_side_vec = n_side.vector.getArray()
-            for x_dof in dofs_x:
-                corner_1 = np.allclose(
-                    x_coords[x_dof], top_points[:, corners[0]])
-                corner_2 = np.allclose(
-                    x_coords[x_dof], top_points[:, corners[1]])
-                if corner_1 or corner_2:
-                    continue
-                for y_dof in dofs_y:
-                    same_coord = np.allclose(x_coords[x_dof], x_coords[y_dof])
-                    corner_1 = np.allclose(
-                        x_coords[y_dof], top_points[:, corners[0]])
-                    corner_2 = np.allclose(
-                        x_coords[y_dof], top_points[:, corners[1]])
-                    coeff = -n_side_vec[y_dof] / n_side_vec[x_dof]
-                    not_zero = not np.isclose(coeff, 0)
-                    not_corners = not corner_1 and not corner_2
-                    if not_corners and same_coord and not_zero:
-                        s_side.append(global_indices[x_dof])
-                        m_side.append(global_indices[y_dof])
-                        c_side.append(coeff)
-
-                        o_side.append(len(masters)+len(m_side))
-                        slip = True
-                        break
-                if slip:
-                    break
-        m_side = np.array(m_side, dtype=np.int64)
-        s_side = np.array(s_side, dtype=np.int64)
-        o_side = np.array(o_side, dtype=np.int64)
+        dofx = fem.locate_dofs_geometrical((V.sub(0), V0), left_corner)[0, 0]
+        dofy = fem.locate_dofs_geometrical((V.sub(1), V1), left_corner)[0, 0]
+        s_side = np.array([dofx], dtype=np.int64)
+        m_side = np.array([dofy], dtype=np.int64)
+        o_side = len(masters) + 1
+        c_side = np.array([-t_vec[dofy]/t_vec[dofx]])
         masters = np.append(masters, m_side)
         slaves = np.append(slaves, s_side)
         coeffs = np.append(coeffs, c_side)
         offsets = np.append(offsets, o_side)
+        assert(len(slaves) == len(offsets)-1)
+        assert(not np.all(np.isin(slaves, masters)))
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
@@ -275,9 +227,9 @@ if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
                                   "results/rotated_cube.xdmf", "w")
     demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
-    # demo_stacked_cubes(outfile, theta=0, gmsh=True)
-    # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
-    # FIXME: Does not work due to collision detection
-    # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=0, gmsh=True)
+    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
 
     outfile.close()

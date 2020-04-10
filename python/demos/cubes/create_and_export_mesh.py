@@ -79,7 +79,7 @@ def mesh_2D_rot(theta=np.pi/2):
     res = 0.1
 
     # Lower Cube
-    # Top: 4, Bottom 5, Left 6, Right 7
+    # Top: 4, Bottom 5, Left 8, Right 9
     geom0 = pygmsh.built_in.Geometry()
     rect = geom0.add_rectangle(0.0, 1, 0.0, 1.0, 0.0, res)
     geom0.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
@@ -87,20 +87,20 @@ def mesh_2D_rot(theta=np.pi/2):
 
     geom0.add_physical([rect.line_loop.lines[2]], 4)
     geom0.add_physical([rect.line_loop.lines[0]], 5)
-    geom0.add_physical([rect.line_loop.lines[1]], 6)
-    geom0.add_physical([rect.line_loop.lines[3]], 7)
+    geom0.add_physical([rect.line_loop.lines[1]], 8)
+    geom0.add_physical([rect.line_loop.lines[3]], 9)
     msh0 = pygmsh.generate_mesh(geom0, prune_z_0=True, verbose=False)
 
     # Upper box:
-    # Top: 3, Bottom 4, Left 8, Right 9
+    # Top: 3, Bottom 4, Left 6, Right 7
     geom1 = pygmsh.built_in.Geometry()
     rect1 = geom1.add_rectangle(0.0, 1, 1.0, 2.0, 0.0, 2*res)
     geom1.rotate(rect1, [0, 0, 0], theta, [0, 0, 1])
 
     geom1.add_physical([rect1.line_loop.lines[2]], 3)
     geom1.add_physical([rect1.line_loop.lines[0]], 4)
-    geom1.add_physical([rect1.line_loop.lines[1]], 8)
-    geom1.add_physical([rect1.line_loop.lines[3]], 9)
+    geom1.add_physical([rect1.line_loop.lines[1]], 6)
+    geom1.add_physical([rect1.line_loop.lines[3]], 7)
     geom1.add_physical([rect1.surface], 2)
     msh1 = pygmsh.generate_mesh(geom1, prune_z_0=True, verbose=False)
 
@@ -245,31 +245,23 @@ def mesh_2D_dolfin(celltype, theta=0):
     if celltype == "quad":
         N = 2
         ct = dolfinx.cpp.mesh.CellType.quadrilateral
-        mesh0 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N, ct)
-        mesh1 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 2*N, 2*N, ct)
         nv = 4
     elif celltype == "tri":
         N = 2
         ct = dolfinx.cpp.mesh.CellType.triangle
-        mesh0 = dolfinx.RectangleMesh(dolfinx.MPI.comm_world,
-                                      [np.array([0.0, 0.0, 0]),
-                                       np.array([1.0, 1.0, 0])], [N, N],
-                                      ct, diagonal="crossed")
-
-        mesh1 = dolfinx.RectangleMesh(dolfinx.MPI.comm_world,
-                                      [np.array([0.0, 0.0, 0]),
-                                       np.array([1.0, 1.0, 0])], [2*N, 2*N],
-                                      ct, diagonal="crossed")
         nv = 3
-
     else:
         raise ValueError("celltype has to be tri or quad")
 
+    mesh0 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N, ct)
+    mesh1 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 2*N, 2*N, ct)
+    mesh0.geometry.x[:, 1] += 1
+
     # Stack the two meshes in one mesh
-    x0 = mesh0.geometry.x
-    x0 = x0[:, :-1]
-    x0[:, 1] += 1
-    points = np.vstack([x0, mesh1.geometry.x[:, :-1]])
+    r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
+    points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
+    points = np.dot(r_matrix, points.T)
+    points = points[:2, :].T
 
     # Transform topology info into geometry info
     c2v = mesh0.topology.connectivity(mesh0.topology.dim, 0)
@@ -300,14 +292,14 @@ def mesh_2D_dolfin(celltype, theta=0):
     cells1 = np.zeros((c2v.num_nodes, nv), dtype=np.int64)
     for cell in range(c2v.num_nodes):
         for v in range(nv):
-            cells1[cell, v] = vertex_to_node[c2v.links(cell)[v]] + x0.shape[0]
+            cells1[cell, v] = vertex_to_node[c2v.links(
+                cell)[v]] + mesh0.geometry.x.shape[0]
     cells = np.vstack([cells0, cells1])
     mesh = dolfinx.Mesh(dolfinx.MPI.comm_world,
                         ct, points, cells, [],
                         dolfinx.cpp.mesh.GhostMode.none)
     tdim = mesh.topology.dim
     fdim = tdim - 1
-    r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
 
     # Find information about facets to be used in MeshTags
     bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
