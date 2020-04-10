@@ -1,4 +1,3 @@
-from IPython import embed
 import dolfinx.cpp
 import dolfinx.io
 import dolfinx_mpc
