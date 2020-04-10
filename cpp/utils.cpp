@@ -229,6 +229,8 @@ Eigen::Array<bool, Eigen::Dynamic, 1> dolfinx_mpc::check_cell_point_collision(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     const Eigen::Vector3d point)
 {
+  // FIXME: Should probably add some exception for vector spaces where we cannot
+  // recontruct the element.
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
   dolfinx::fem::ElementDofLayout layout = *(dofmap->element_dof_layout);
   dolfinx::mesh::CellType celltype = V->mesh()->topology().cell_type();
@@ -257,11 +259,50 @@ Eigen::Array<bool, Eigen::Dynamic, 1> dolfinx_mpc::check_cell_point_collision(
       std::int32_t first_dof = vertex_dofs(j, 0);
       vertices.row(j) = x.row(cell_dofs(first_dof));
     }
-    // FIXME: Need to add wrapper for all celltypes
-    collisions[i]
-        = dolfinx::geometry::CollisionPredicates::collides_tetrahedron_point_3d(
-            vertices.row(0), vertices.row(1), vertices.row(2), vertices.row(3),
-            point);
+    collisions[i] = collision_cell_point(vertices, celltype, point);
   }
   return collisions;
+}
+//-----------------------------------------------------------------------------
+bool dolfinx_mpc::collision_cell_point(
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+        vertices,
+    dolfinx::mesh::CellType celltype, Eigen::Vector3d point)
+{
+  switch (celltype)
+  {
+  case dolfinx::mesh::CellType::tetrahedron:
+  {
+    return dolfinx::geometry::CollisionPredicates::
+        collides_tetrahedron_point_3d(vertices.row(0), vertices.row(1),
+                                      vertices.row(2), vertices.row(3), point);
+  }
+  case dolfinx::mesh::CellType::hexahedron:
+  {
+    throw std::runtime_error(
+        "Collsion between hexahedron and point not implemented.");
+  }
+  case dolfinx::mesh::CellType::quadrilateral:
+  {
+    // FIXME: Should really be a 3D collision detection
+    return dolfinx::geometry::CollisionPredicates::collides_quad_point_2d(
+        vertices.row(0), vertices.row(1), vertices.row(2), vertices.row(3),
+        point);
+  }
+  case dolfinx::mesh::CellType::triangle:
+  {
+    return dolfinx::geometry::CollisionPredicates::collides_triangle_point_3d(
+        vertices.row(0), vertices.row(1), vertices.row(2), point);
+  }
+  case dolfinx::mesh::CellType::interval:
+  {
+    return dolfinx::geometry::CollisionPredicates::collides_segment_point_3d(
+        vertices.row(0), vertices.row(1), point);
+  }
+  default:
+  {
+    throw std::runtime_error(
+        "Collision between cell and point not implemented.");
+  }
+  };
 }
