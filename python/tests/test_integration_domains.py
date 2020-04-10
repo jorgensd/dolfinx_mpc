@@ -8,6 +8,7 @@ import time
 
 import numpy as np
 
+from mpi4py import MPI
 from petsc4py import PETSc
 import dolfinx
 import dolfinx.io
@@ -22,7 +23,7 @@ def test_cell_domains():
     """
     N = 5
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 15, N)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 15, N)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
 
     def left_side(x):
@@ -92,7 +93,7 @@ def test_cell_domains():
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -114,9 +115,6 @@ def test_cell_domains():
     # u_h = dolfinx.Function(Vmpc)
     # u_h.vector.setArray(uh.array)
     # u_h.name = "u_mpc"
-
-    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
-    #                     "uh_subd.xdmf").write(u_h)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)

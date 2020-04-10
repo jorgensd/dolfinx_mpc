@@ -13,6 +13,7 @@ import dolfinx_mpc.utils
 import time
 import ufl
 
+from mpi4py import MPI
 
 dolfinx_mpc.utils.cache_numba(matrix=True)
 
@@ -24,7 +25,7 @@ dolfinx_mpc.utils.cache_numba(matrix=True)
 def test_mpc_assembly(master_point, degree, celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 5, 3, celltype)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 5, 3, celltype)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Test against generated code and general assembler
@@ -72,7 +73,7 @@ def test_mpc_assembly(master_point, degree, celltype):
 def test_slave_on_same_cell(master_point, degree, celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 1, 8, celltype)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 1, 8, celltype)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Build master slave map

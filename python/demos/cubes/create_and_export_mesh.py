@@ -4,6 +4,7 @@ import numpy as np
 import dolfinx
 import dolfinx.fem
 import dolfinx.io
+from mpi4py import MPI
 
 
 def mesh_2D():
@@ -245,18 +246,18 @@ def mesh_2D_dolfin(celltype, theta=0):
     if celltype == "quad":
         N = 2
         ct = dolfinx.cpp.mesh.CellType.quadrilateral
-        mesh0 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N, ct)
-        mesh1 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 2*N, 2*N, ct)
+        mesh0 = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N, ct)
+        mesh1 = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 2*N, 2*N, ct)
         nv = 4
     elif celltype == "tri":
         N = 2
         ct = dolfinx.cpp.mesh.CellType.triangle
-        mesh0 = dolfinx.RectangleMesh(dolfinx.MPI.comm_world,
+        mesh0 = dolfinx.RectangleMesh(MPI.COMM_WORLD,
                                       [np.array([0.0, 0.0, 0]),
                                        np.array([1.0, 1.0, 0])], [N, N],
                                       ct, diagonal="crossed")
 
-        mesh1 = dolfinx.RectangleMesh(dolfinx.MPI.comm_world,
+        mesh1 = dolfinx.RectangleMesh(MPI.COMM_WORLD,
                                       [np.array([0.0, 0.0, 0]),
                                        np.array([1.0, 1.0, 0])], [2*N, 2*N],
                                       ct, diagonal="crossed")
@@ -302,7 +303,7 @@ def mesh_2D_dolfin(celltype, theta=0):
         for v in range(nv):
             cells1[cell, v] = vertex_to_node[c2v.links(cell)[v]] + x0.shape[0]
     cells = np.vstack([cells0, cells1])
-    mesh = dolfinx.Mesh(dolfinx.MPI.comm_world,
+    mesh = dolfinx.Mesh(MPI.COMM_WORLD,
                         ct, points, cells, [],
                         dolfinx.cpp.mesh.GhostMode.none)
     tdim = mesh.topology.dim
@@ -362,7 +363,7 @@ def mesh_2D_dolfin(celltype, theta=0):
     mt = dolfinx.mesh.MeshTags(mesh, fdim,
                                indices, values)
     mt.name = "facet_tags"
-    o_f = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    o_f = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                               "meshes/mesh_{0:s}.xdmf".format(celltype), "w")
     o_f.write_mesh(mesh)
     o_f.write_meshtags(ct)

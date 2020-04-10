@@ -17,6 +17,7 @@ import numpy as np
 import pygmsh
 import ufl
 
+from mpi4py import MPI
 from petsc4py import PETSc
 
 from create_and_export_mesh import mesh_3D_rot
@@ -25,11 +26,11 @@ from helpers import find_master_slave_relationship
 
 def demo_stacked_cubes(outfile, theta):
     # Create rotated mesh
-    if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
+    if MPI.COMM_WORLD.rank == 0:
         mesh_3D_rot(theta)
 
     # Read in mesh
-    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                              "meshes/mesh3D_rot.xdmf", "r") as xdmf:
         mesh = xdmf.read_mesh(name="Grid")
         mesh.name = "mesh-{0:.2f}".format(theta)
@@ -41,7 +42,7 @@ def demo_stacked_cubes(outfile, theta):
     mesh.create_connectivity(fdim, tdim)
     top_cube_marker = 2
 
-    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                              "meshes/facet3D_rot.xdmf", "r") as xdmf:
         mt = xdmf.read_meshtags(mesh, "Grid")
 
@@ -121,7 +122,7 @@ def demo_stacked_cubes(outfile, theta):
     fem.set_bc(b, bcs)
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -190,7 +191,7 @@ def demo_stacked_cubes(outfile, theta):
 
 
 if __name__ == "__main__":
-    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube3D.xdmf", "w")
     demo_stacked_cubes(outfile, theta=np.pi/3)
     # demo_stacked_cubes(outfile, theta=np.pi/5)

@@ -9,6 +9,7 @@ import pytest
 import numpy as np
 
 from petsc4py import PETSc
+from mpi4py import MPI
 import dolfinx
 import dolfinx.io
 import dolfinx_mpc
@@ -25,7 +26,7 @@ dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 @pytest.mark.parametrize("master_space", [0, 1])
 def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, Nx, Ny)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     def boundary(x):
@@ -72,7 +73,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)

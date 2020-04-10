@@ -9,6 +9,7 @@ import time
 import numpy as np
 import pytest
 
+from mpi4py import MPI
 from petsc4py import PETSc
 import dolfinx
 import dolfinx.io
@@ -24,7 +25,7 @@ dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
 def test_pipeline(master_point):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 3, 5)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 3, 5)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
@@ -70,7 +71,7 @@ def test_pipeline(master_point):
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
