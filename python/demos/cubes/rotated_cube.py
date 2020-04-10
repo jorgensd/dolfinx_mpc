@@ -4,6 +4,13 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 #
+# This demo demonstrates how to solve a contact problem between
+# two stacked cubes.
+# The bottom cube is fixed at the bottom surface
+# The top cube has a force applied normal to its to surface.
+# A slip condition is implemented at the interface of the cube.
+# Additional constraints to avoid tangential movement is
+# added to the to left corner of the top cube.
 import dolfinx.geometry as geometry
 import dolfinx.fem as fem
 import dolfinx
