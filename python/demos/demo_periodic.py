@@ -23,12 +23,13 @@ import dolfinx_mpc.utils
 import ufl
 import numpy as np
 import time
+from mpi4py import MPI
 from petsc4py import PETSc
 
 
 # Create mesh and finite element
 N = 12
-mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
+mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N)
 V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition
@@ -86,7 +87,6 @@ u = dolfinx.Function(V)
 u.name = "uh"
 mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                masters, coeffs, offsets)
-# print("Slavecell" ,dolfinx.MPI.comm_world.rank, mpc.slave_cells())
 # Setup MPC system
 
 A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
@@ -112,7 +112,7 @@ opts["mg_levels_pc_type"] = "sor"
 # opts["mg_levels_esteig_ksp_type"] = "cg"
 # opts["mg_levels_ksp_chebyshev_esteig_steps"] = 20
 
-solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+solver = PETSc.KSP().create(MPI.COMM_WORLD)
 pc = solver.getPC()
 
 solver.setFromOptions()
@@ -143,7 +143,7 @@ Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 u_h = dolfinx.Function(Vmpc)
 u_h.vector.setArray(uh.array)
 u_h.name = "u_mpc"
-outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                               "results/demo_periodic.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(u_h)

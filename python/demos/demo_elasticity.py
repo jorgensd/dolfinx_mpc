@@ -7,6 +7,7 @@
 import numpy as np
 
 from petsc4py import PETSc
+from mpi4py import MPI
 import dolfinx
 import dolfinx.io
 import dolfinx_mpc
@@ -15,7 +16,7 @@ import ufl
 
 
 def demo_elasticity():
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 10, 10)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 10, 10)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -75,7 +76,7 @@ def demo_elasticity():
     dolfinx.fem.set_bc(b, bcs)
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -97,7 +98,7 @@ def demo_elasticity():
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
-    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/demo_elasticity.xdmf", "w")
     outfile.write_mesh(mesh)
     outfile.write_function(u_h)
@@ -118,7 +119,7 @@ def demo_elasticity():
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(L_org, bcs)
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A_org)

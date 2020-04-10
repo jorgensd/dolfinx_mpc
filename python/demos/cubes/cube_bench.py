@@ -8,6 +8,7 @@ import dolfinx_mpc.utils
 import numpy as np
 import ufl
 from petsc4py import PETSc
+from mpi4py import MPI
 from create_and_export_mesh import mesh_2D_rot, mesh_2D_dolfin
 
 comp_col_pts = geometry.compute_collisions_point
@@ -27,7 +28,7 @@ def demo_stacked_cubes(outfile, celltype="quad"):
         mesh_2D_rot(0)
         filename = "meshes/mesh_rot.xdmf"
 
-    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                              filename, "r") as xdmf:
         mesh = xdmf.read_mesh(name=mesh_name)
         mesh.name = "mesh_" + celltype
@@ -203,7 +204,7 @@ def demo_stacked_cubes(outfile, celltype="quad"):
     fem.set_bc(b, bcs)
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -272,7 +273,7 @@ def demo_stacked_cubes(outfile, celltype="quad"):
 
 
 if __name__ == "__main__":
-    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/cube_bench.xdmf", "w")
 
     demo_stacked_cubes(outfile, "quad")

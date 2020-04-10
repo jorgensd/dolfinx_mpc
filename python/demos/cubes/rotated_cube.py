@@ -15,6 +15,7 @@ import numpy as np
 import pygmsh
 import ufl
 from petsc4py import PETSc
+from mpi4py import MPI
 from create_and_export_mesh import mesh_2D_rot, mesh_2D_dolfin
 from helpers import find_master_slave_relationship
 
@@ -27,12 +28,12 @@ get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     if gmsh:
         mesh_name = "Grid"
-        if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
+        if MPI.COMM_WORLD.rank == 0:
             mesh_2D_rot(theta)
         filename = "meshes/mesh_rot.xdmf"
         facet_file = "meshes/facet_rot.xdmf"
         ext = "gmsh" + "{0:.2f}".format(theta)
-        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(mesh_name)
             mesh.name = "mesh_" + ext
@@ -41,23 +42,23 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mesh.create_connectivity(tdim, tdim)
             mesh.create_connectivity(fdim, tdim)
             ct = xdmf.read_meshtags(mesh, "Grid")
-        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  facet_file, "r") as xdmf:
             mt = xdmf.read_meshtags(mesh, "Grid")
 
     else:
         mesh_name = "mesh"
         if triangle:
-            if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
+            if MPI.COMM_WORLD.rank == 0:
                 mesh_2D_dolfin("tri")
             filename = "meshes/mesh_tri.xdmf"
             ext = "tri"
         else:
-            if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
+            if MPI.COMM_WORLD.rank == 0:
                 mesh_2D_dolfin("quad")
             filename = "meshes/mesh_quad.xdmf"
             ext = "quad"
-        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(mesh_name)
             mesh.name = "mesh_" + ext
@@ -203,7 +204,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     fem.set_bc(b, bcs)
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -272,7 +273,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
 
 if __name__ == "__main__":
-    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube.xdmf", "w")
     demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
     # demo_stacked_cubes(outfile, theta=0, gmsh=True)

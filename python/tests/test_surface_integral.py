@@ -6,6 +6,7 @@
 
 import numpy as np
 
+from mpi4py import MPI
 from petsc4py import PETSc
 import dolfinx
 import dolfinx.io
@@ -17,7 +18,7 @@ import ufl
 
 def test_surface_integrals():
     N = 4
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N)
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Fixed Dirichlet BC on the left wall
@@ -95,7 +96,7 @@ def test_surface_integrals():
     dolfinx.fem.set_bc(b, bcs)
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -117,7 +118,7 @@ def test_surface_integrals():
     # u_h = dolfinx.Function(Vmpc)
     # u_h.vector.setArray(uh.array)
     # u_h.name = "u_mpc"
-    # dolfinx.io.XDMFFile(dolfinx.MPI.comm_world, "uh.xdmf").write(u_h)
+    # dolfinx.io.XDMFFile(MPI.COMM_WORLD, "uh.xdmf").write(u_h)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -167,7 +168,7 @@ def test_surface_integrals():
 
 def test_surface_integral_dependency():
     N = 10
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N)
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     def top(x):
