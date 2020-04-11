@@ -55,7 +55,7 @@ def demo_periodic3D(celltype, out_periodic):
                              np.logical_or(np.isclose(x[2], 0),
                                            np.isclose(x[2], 1)))
 
-    mesh.create_connectivity(2, 1)
+    mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(
         V, DirichletBoundary)
     bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)

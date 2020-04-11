@@ -64,7 +64,7 @@ with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
     mesh = xdmf.read_mesh("Grid")
 
 
-mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
+mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                          "meshes/facet_mesh.xdmf", "r") as xdmf:
     mt = xdmf.read_meshtags(mesh, "Grid")
