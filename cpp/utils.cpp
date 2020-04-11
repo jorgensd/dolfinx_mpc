@@ -101,8 +101,9 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       > 0)
   {
 
-    mesh.create_entities(mesh.topology().dim() - 1);
-    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
+    mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
+    mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
+                                                mesh.topology().dim());
     dolfinx::fem::SparsityPatternBuilder::interior_facets(
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
@@ -111,8 +112,9 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
           dolfinx::fem::FormIntegrals::Type::exterior_facet)
       > 0)
   {
-    mesh.create_entities(mesh.topology().dim() - 1);
-    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
+    mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
+    mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
+                                                mesh.topology().dim());
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
@@ -180,7 +182,7 @@ dolfinx_mpc::get_basis_functions(
   assert(V->dofmap());
   const dolfinx::fem::DofMap& dofmap = *V->dofmap();
 
-  mesh.create_entity_permutations();
+  mesh.topology_mutable().create_entity_permutations();
 
   const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& permutation_info
       = mesh.topology().get_cell_permutation_info();

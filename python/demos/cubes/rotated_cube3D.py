@@ -36,10 +36,10 @@ def demo_stacked_cubes(outfile, theta):
         mesh.name = "mesh-{0:.2f}".format(theta)
         tdim = mesh.topology.dim
         fdim = tdim - 1
-        mesh.create_connectivity(tdim, tdim)
+        mesh.topology.create_connectivity(tdim, tdim)
         ct = xdmf.read_meshtags(mesh, "Grid")
 
-    mesh.create_connectivity(fdim, tdim)
+    mesh.topology.create_connectivity(fdim, tdim)
     top_cube_marker = 2
 
     with dolfinx.io.XDMFFile(MPI.COMM_WORLD,

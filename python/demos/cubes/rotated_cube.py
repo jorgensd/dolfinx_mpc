@@ -39,8 +39,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mesh.name = "mesh_" + ext
             tdim = mesh.topology.dim
             fdim = tdim - 1
-            mesh.create_connectivity(tdim, tdim)
-            mesh.create_connectivity(fdim, tdim)
+            mesh.topology.create_connectivity(tdim, tdim)
+            mesh.topology.create_connectivity(fdim, tdim)
             ct = xdmf.read_meshtags(mesh, "Grid")
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  facet_file, "r") as xdmf:
@@ -64,8 +64,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mesh.name = "mesh_" + ext
             tdim = mesh.topology.dim
             fdim = tdim - 1
-            mesh.create_connectivity(tdim, tdim)
-            mesh.create_connectivity(fdim, tdim)
+            mesh.topology.create_connectivity(tdim, tdim)
+            mesh.topology.create_connectivity(fdim, tdim)
             ct = xdmf.read_meshtags(mesh, "mesh_tags")
             mt = xdmf.read_meshtags(mesh, "facet_tags")
 

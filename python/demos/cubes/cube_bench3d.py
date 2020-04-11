@@ -23,7 +23,7 @@ def demo_stacked_cubes():
     with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                              "meshes/mesh3D.xdmf", "r") as xdmf:
         mesh = xdmf.read_mesh(name="Grid")
-    mesh.create_connectivity_all()
+    mesh.topology.create_connectivity_all()
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -134,8 +134,8 @@ def demo_stacked_cubes():
                                                 range(num_cells))
     x_coords = V.tabulate_dof_coordinates()
     tree = geometry.BoundingBoxTree(mesh, mesh.topology.dim)
-    mesh.create_connectivity(mesh.topology.dim, mesh.topology.dim-1)
-    mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
+    mesh.topology.create_connectivity(mesh.topology.dim, mesh.topology.dim-1)
+    mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
     cell_to_facet = mesh.topology.connectivity(mesh.topology.dim,
                                                mesh.topology.dim-1)
     for cell_index in range(num_cells):

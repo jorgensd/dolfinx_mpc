@@ -57,7 +57,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Create facet-to-cell-connectivity
-    mesh.create_connectivity(fdim, tdim)
+    mesh.topology.create_connectivity(fdim, tdim)
     facet_tree = geometry.BoundingBoxTree(mesh, fdim)
     facet_to_cell = mesh.topology.connectivity(fdim, tdim)
 
