@@ -15,7 +15,7 @@
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
-#include <dolfinx/mesh/MeshIterator.h>
+#include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/Topology.h>
 using namespace dolfinx_mpc;
 

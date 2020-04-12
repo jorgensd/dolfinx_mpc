@@ -6,6 +6,7 @@
 
 #include "utils.h"
 #include <Eigen/Dense>
+#include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
@@ -16,7 +17,6 @@
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
-#include <dolfinx/mesh/MeshIterator.h>
 
 using namespace dolfinx_mpc;
 
