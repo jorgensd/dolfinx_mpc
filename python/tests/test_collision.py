@@ -3,6 +3,7 @@ import dolfinx
 import dolfinx.geometry as geometry
 import numpy as np
 import pytest
+from mpi4py import MPI
 
 
 @pytest.mark.parametrize("coordinate", [[0, 0, 0], [1, 0, 0], [1, 1, 1]])
@@ -12,14 +13,14 @@ def test_collision_tetrahedron(coordinate):
     from dof coordinates
     """
     mesh = dolfinx.UnitCubeMesh(
-        dolfinx.MPI.comm_world, 1, 1, 1)
+        MPI.COMM_WORLD, 1, 1, 1)
     tdim = mesh.topology.dim
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     x_coords = V.tabulate_dof_coordinates()
 
     # Create cell-to-facet-connectivity
-    mesh.create_connectivity_all()
+    mesh.topology.create_connectivity_all()
     tree = dolfinx.geometry.BoundingBoxTree(mesh, tdim)
     # Find index of coordinate in dof coordinates
     coordinate_index = -1
@@ -75,14 +76,14 @@ def test_collision_2D(celltype, coordinate):
     from dof coordinates
     """
     mesh = dolfinx.UnitSquareMesh(
-        dolfinx.MPI.comm_world, 2, 2, celltype)
+        MPI.COMM_WORLD, 2, 2, celltype)
     tdim = mesh.topology.dim
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     x_coords = V.tabulate_dof_coordinates()
 
     # Create cell-to-facet-connectivity
-    mesh.create_connectivity_all()
+    mesh.topology.create_connectivity_all()
     tree = dolfinx.geometry.BoundingBoxTree(mesh, tdim)
     # Find index of coordinate in dof coordinates
     coordinate_index = -1
@@ -136,14 +137,14 @@ def test_collision_1D(coordinate):
     from dof coordinates
     """
     mesh = dolfinx.UnitIntervalMesh(
-        dolfinx.MPI.comm_world, 6)
+        MPI.COMM_WORLD, 6)
     tdim = mesh.topology.dim
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     x_coords = V.tabulate_dof_coordinates()
 
     # Create cell-to-facet-connectivity
-    mesh.create_connectivity_all()
+    mesh.topology.create_connectivity_all()
     tree = dolfinx.geometry.BoundingBoxTree(mesh, tdim)
     # Find index of coordinate in dof coordinates
     coordinate_index = -1
