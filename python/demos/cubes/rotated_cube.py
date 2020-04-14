@@ -55,16 +55,16 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     else:
         mesh_name = "mesh"
         if triangle:
-            if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
+            if MPI.COMM_WORLD.rank == 0:
                 mesh_2D_dolfin("tri", theta)
             filename = "meshes/mesh_tri.xdmf"
             ext = "tri" + "{0:.2f}".format(theta)
         else:
-            if dolfinx.MPI.rank(dolfinx.MPI.comm_world) == 0:
+            if MPI.COMM_WORLD.rank == 0:
                 mesh_2D_dolfin("quad", theta)
             filename = "meshes/mesh_quad.xdmf"
             ext = "quad" + "{0:.2f}".format(theta)
-        with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(mesh_name)
 
@@ -117,7 +117,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     # Create standard master slave relationsship
     slaves, masters, coeffs, offsets = find_master_slave_relationship(
-        V, (mt, 4), (ct, 2))
+        V, (mt, 4, 9), (ct, 2))
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
@@ -175,6 +175,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     # Back substitute to slave dofs
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    print(uh.norm())
 
     # Create functionspace and function for mpc vector
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
@@ -228,16 +229,17 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
                                           uh.owner_range[1]])
-    print(uh.norm())
 
 
 if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube.xdmf", "w")
     demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
     demo_stacked_cubes(outfile, theta=0, gmsh=True)
     demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
-    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
     demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
 
     outfile.close()

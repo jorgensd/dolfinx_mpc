@@ -20,7 +20,8 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
-from create_and_export_mesh import mesh_3D_rot
+from create_and_export_mesh import mesh_3D_rot  # , mesh_3D_dolfin
+
 from helpers import find_master_slave_relationship
 
 
@@ -28,7 +29,7 @@ def demo_stacked_cubes(outfile, theta):
     # Create rotated mesh
     if MPI.COMM_WORLD.rank == 0:
         mesh_3D_rot(theta)
-
+        # mesh_3D_dolfin(theta)
     # Read in mesh
     with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                              "meshes/mesh3D_rot.xdmf", "r") as xdmf:
@@ -45,6 +46,17 @@ def demo_stacked_cubes(outfile, theta):
     with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                              "meshes/facet3D_rot.xdmf", "r") as xdmf:
         mt = xdmf.read_meshtags(mesh, "Grid")
+    # with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+    #                          "meshes/mesh_tetrahedron.xdmf", "r") as xdmf:
+    #     mesh = xdmf.read_mesh("mesh")
+    #     mesh.name = "mesh_tetrahedron_{0:.2f}".format(theta)
+    #     tdim = mesh.topology.dim
+    #     fdim = tdim - 1
+    #     mesh.topology.create_connectivity(tdim, tdim)
+    #     mesh.topology.create_connectivity(fdim, tdim)
+    #     ct = xdmf.read_meshtags(mesh, "mesh_tags")
+    #     mt = xdmf.read_meshtags(mesh, "facet_tags")
+    #     top_cube_marker = 2
 
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
@@ -107,7 +119,8 @@ def demo_stacked_cubes(outfile, theta):
 
     # Find slave master relationship and initialize MPC class
     slaves, masters, coeffs, offsets = find_master_slave_relationship(
-        V, (mt, 4), (ct, top_cube_marker))
+        V, (mt, 4, 9), (ct, top_cube_marker))
+
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
 
@@ -193,6 +206,8 @@ def demo_stacked_cubes(outfile, theta):
 if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube3D.xdmf", "w")
+    demo_stacked_cubes(outfile, theta=0)
+
     demo_stacked_cubes(outfile, theta=np.pi/3)
-    # demo_stacked_cubes(outfile, theta=np.pi/5)
+    demo_stacked_cubes(outfile, theta=np.pi/5)
     outfile.close()
