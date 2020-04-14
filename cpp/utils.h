@@ -52,14 +52,4 @@ Eigen::Array<bool, Eigen::Dynamic, 1> check_cell_point_collision(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     const Eigen::Vector3d point);
 
-/// Check collision between a cell and a point, given a set of vertices.
-/// @param[in] vertices The vertices of the cell
-/// @param[in] celltype The celltype
-/// @param[in] point   The collision coordinate
-/// @return Boolean
-bool collision_cell_point(
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-        vertices,
-    dolfinx::mesh::CellType celltype, Eigen::Vector3d point);
-
 } // namespace dolfinx_mpc
