@@ -101,5 +101,5 @@ test-real:
     - cd cubes
     - mkdir meshes
     - mkdir results
-    - python3 cube_bench3d.py
+    - python3 rotated_cube.py
     - python3 rotated_cube3D.py
