@@ -18,8 +18,8 @@ def assemble_vector(form, multipointconstraint,
     V = form.arguments()[0].ufl_function_space()
 
     # Unpack mesh and dofmap data
-    pos = V.mesh.geometry.dofmap().offsets()
-    x_dofs = V.mesh.geometry.dofmap().array()
+    pos = V.mesh.geometry.dofmap.offsets()
+    x_dofs = V.mesh.geometry.dofmap.array()
     x = V.mesh.geometry.x
     dofs = V.dofmap.list.array()
 
@@ -63,7 +63,7 @@ def assemble_vector(form, multipointconstraint,
         dolfinx.cpp.fem.FormIntegrals.Type.cell)
     num_cell_integrals = len(subdomain_ids)
     if num_cell_integrals > 0:
-        V.mesh.create_entity_permutations()
+        V.mesh.topology.create_entity_permutations()
         permutation_info = V.mesh.topology.get_cell_permutation_info()
 
     for i in range(num_cell_integrals):
@@ -86,8 +86,8 @@ def assemble_vector(form, multipointconstraint,
     num_exterior_integrals = len(subdomain_ids)
     exterior_integrals = form.integrals_by_type("exterior_facet")
     if num_exterior_integrals > 0:
-        V.mesh.create_entities(tdim - 1)
-        V.mesh.create_connectivity(tdim - 1, tdim)
+        V.mesh.topology.create_entities(tdim - 1)
+        V.mesh.topology.create_connectivity(tdim - 1, tdim)
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
     for i in range(len(exterior_integrals)):

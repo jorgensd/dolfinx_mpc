@@ -1,3 +1,4 @@
+
 # This demo program solves Poisson's equation
 #
 #     - div grad u(x, y) = f(x, y)
@@ -24,6 +25,7 @@ import ufl
 import numpy as np
 import time
 from petsc4py import PETSc
+from mpi4py import MPI
 
 
 def demo_periodic3D(celltype, out_periodic):
@@ -31,13 +33,13 @@ def demo_periodic3D(celltype, out_periodic):
     if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
         # Tet setup
         N = 4
-        mesh = dolfinx.UnitCubeMesh(dolfinx.MPI.comm_world, N, N, N)
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
         V = dolfinx.FunctionSpace(mesh, ("CG", 2))
         M = 2*N
     else:
         # Hex setup
         N = 12
-        mesh = dolfinx.UnitCubeMesh(dolfinx.MPI.comm_world, N, N, N,
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
                                     dolfinx.cpp.mesh.CellType.hexahedron)
         V = dolfinx.FunctionSpace(mesh, ("CG", 1))
         M = N
@@ -53,7 +55,7 @@ def demo_periodic3D(celltype, out_periodic):
                              np.logical_or(np.isclose(x[2], 0),
                                            np.isclose(x[2], 1)))
 
-    mesh.create_connectivity(2, 1)
+    mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(
         V, DirichletBoundary)
     bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
@@ -121,7 +123,7 @@ def demo_periodic3D(celltype, out_periodic):
     opts["mg_levels_ksp_type"] = "richardson"
     opts["mg_levels_pc_type"] = "sor"
 
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     # pc = solver.getPC()
 
     solver.setFromOptions()
@@ -215,7 +217,7 @@ def demo_periodic3D(celltype, out_periodic):
 
 if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
-    out_periodic = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                        fname, "w")
     for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron,
                      dolfinx.cpp.mesh.CellType.hexahedron]:

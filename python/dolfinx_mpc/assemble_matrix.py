@@ -34,8 +34,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
                   indexmap.global_indices(False), indexmap.ghosts)
 
     # Get data from mesh
-    pos = V.mesh.geometry.dofmap().offsets()
-    x_dofs = V.mesh.geometry.dofmap().array()
+    pos = V.mesh.geometry.dofmap.offsets()
+    x_dofs = V.mesh.geometry.dofmap.array()
     x = V.mesh.geometry.x
 
     # Generate ufc_form
@@ -83,7 +83,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         dolfinx.cpp.fem.FormIntegrals.Type.cell)
     num_cell_integrals = len(subdomain_ids)
     if num_cell_integrals > 0:
-        V.mesh.create_entity_permutations()
+        V.mesh.topology.create_entity_permutations()
         permutation_info = V.mesh.topology.get_cell_permutation_info()
 
     for i in range(num_cell_integrals):
@@ -105,8 +105,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
 
     # Get cell orientation data
     if num_exterior_integrals > 0:
-        V.mesh.create_entities(tdim - 1)
-        V.mesh.create_connectivity(tdim - 1, tdim)
+        V.mesh.topology.create_entities(tdim - 1)
+        V.mesh.topology.create_connectivity(tdim - 1, tdim)
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         perm = (permutation_info, facet_permutation_info)

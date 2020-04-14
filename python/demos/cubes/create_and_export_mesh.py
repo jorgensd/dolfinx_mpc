@@ -4,6 +4,7 @@ import numpy as np
 import dolfinx
 import dolfinx.fem
 import dolfinx.io
+from mpi4py import MPI
 
 
 def mesh_2D():
@@ -245,14 +246,13 @@ def mesh_2D_dolfin(celltype, theta=0):
     if celltype == "quad":
         N = 2
         ct = dolfinx.cpp.mesh.CellType.quadrilateral
-        nv = 4
     elif celltype == "tri":
         N = 2
         ct = dolfinx.cpp.mesh.CellType.triangle
-        nv = 3
     else:
         raise ValueError("celltype has to be tri or quad")
 
+    nv = dolfinx.cpp.mesh.cell_num_vertices(ct)
     mesh0 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, N, N, ct)
     mesh1 = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 2*N, 2*N, ct)
     mesh0.geometry.x[:, 1] += 1
@@ -265,7 +265,7 @@ def mesh_2D_dolfin(celltype, theta=0):
 
     # Transform topology info into geometry info
     c2v = mesh0.topology.connectivity(mesh0.topology.dim, 0)
-    x_dofmap = mesh0.geometry.dofmap()
+    x_dofmap = mesh0.geometry.dofmap
     imap = mesh0.topology.index_map(0)
     num_mesh_vertices = imap.size_local + imap.num_ghosts
     vertex_to_node = np.zeros(num_mesh_vertices, dtype=np.int64)
@@ -280,7 +280,7 @@ def mesh_2D_dolfin(celltype, theta=0):
             cells0[cell, v] = vertex_to_node[c2v.links(cell)[v]]
     # Transform topology info into geometry info
     c2v = mesh1.topology.connectivity(mesh1.topology.dim, 0)
-    x_dofmap = mesh1.geometry.dofmap()
+    x_dofmap = mesh1.geometry.dofmap
     imap = mesh1.topology.index_map(0)
     num_mesh_vertices = imap.size_local + imap.num_ghosts
     vertex_to_node = np.zeros(num_mesh_vertices, dtype=np.int64)
@@ -295,9 +295,9 @@ def mesh_2D_dolfin(celltype, theta=0):
             cells1[cell, v] = vertex_to_node[c2v.links(
                 cell)[v]] + mesh0.geometry.x.shape[0]
     cells = np.vstack([cells0, cells1])
-    mesh = dolfinx.Mesh(dolfinx.MPI.comm_world,
-                        ct, points, cells, [],
-                        dolfinx.cpp.mesh.GhostMode.none)
+    mesh = dolfinx.Mesh(MPI.COMM_WORLD,
+                        ct, points, cells, [], degree=1,
+                        ghost_mode=dolfinx.cpp.mesh.GhostMode.none)
     tdim = mesh.topology.dim
     fdim = tdim - 1
 
@@ -354,7 +354,7 @@ def mesh_2D_dolfin(celltype, theta=0):
     mt = dolfinx.mesh.MeshTags(mesh, fdim,
                                indices, values)
     mt.name = "facet_tags"
-    o_f = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    o_f = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                               "meshes/mesh_{0:s}.xdmf".format(celltype), "w")
     o_f.write_mesh(mesh)
     o_f.write_meshtags(ct)

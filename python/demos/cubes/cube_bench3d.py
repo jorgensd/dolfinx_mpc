@@ -14,16 +14,16 @@ import dolfinx_mpc.utils
 import numpy as np
 import ufl
 from petsc4py import PETSc
-
+from mpi4py import MPI
 comp_col_pts = geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 
 def demo_stacked_cubes():
-    with dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                              "meshes/mesh3D.xdmf", "r") as xdmf:
         mesh = xdmf.read_mesh(name="Grid")
-    mesh.create_connectivity_all()
+    mesh.topology.create_connectivity_all()
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -134,8 +134,8 @@ def demo_stacked_cubes():
                                                 range(num_cells))
     x_coords = V.tabulate_dof_coordinates()
     tree = geometry.BoundingBoxTree(mesh, mesh.topology.dim)
-    mesh.create_connectivity(mesh.topology.dim, mesh.topology.dim-1)
-    mesh.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
+    mesh.topology.create_connectivity(mesh.topology.dim, mesh.topology.dim-1)
+    mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
     cell_to_facet = mesh.topology.connectivity(mesh.topology.dim,
                                                mesh.topology.dim-1)
     for cell_index in range(num_cells):
@@ -204,7 +204,7 @@ def demo_stacked_cubes():
     fem.set_bc(b, bcs)
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(dolfinx.MPI.comm_world)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -226,7 +226,7 @@ def demo_stacked_cubes():
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
-    outfile = dolfinx.io.XDMFFile(dolfinx.MPI.comm_world,
+    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/cube_bench3d.xdmf", "w")
     outfile.write_mesh(mesh)
     outfile.write_function(u_h)

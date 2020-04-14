@@ -10,6 +10,8 @@ import dolfinx_mpc
 import ufl
 import time
 
+from mpi4py import MPI
+
 
 def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
     """
@@ -56,7 +58,7 @@ def PETScVector_to_global_numpy(vector):
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
     numpy_vec[l_min:l_max] += vector.array
-    numpy_vec = sum(dolfinx.MPI.comm_world.allgather(numpy_vec))
+    numpy_vec = sum(MPI.COMM_WORLD.allgather(numpy_vec))
     return numpy_vec
 
 
@@ -71,7 +73,7 @@ def PETScMatrix_to_global_numpy(A):
     A_numpy = np.zeros((A.size[0], A.size[1]), dtype=B_np.dtype)
     o_range = A.getOwnershipRange()
     A_numpy[o_range[0]:o_range[1], :] = B_np
-    A_numpy = sum(dolfinx.MPI.comm_world.allgather(A_numpy))
+    A_numpy = sum(MPI.COMM_WORLD.allgather(A_numpy))
     return A_numpy
 
 
@@ -133,9 +135,9 @@ def cache_numba(matrix=False, vector=False, backsubstitution=False):
     Build a minimal numba cache for all operations
     """
     print("Building Numba cache...")
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world,
-                                  dolfinx.MPI.comm_world.size,
-                                  dolfinx.MPI.comm_world.size)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD,
+                                  MPI.COMM_WORLD.size,
+                                  MPI.COMM_WORLD.size)
     V = dolfinx.FunctionSpace(mesh, ("CG", 1))
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
     a = ufl.inner(u, v) * ufl.dx

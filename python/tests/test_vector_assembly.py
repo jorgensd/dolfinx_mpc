@@ -7,7 +7,7 @@
 import numpy as np
 import pytest
 from petsc4py import PETSc
-
+from mpi4py import MPI
 import dolfinx
 import dolfinx_mpc
 import dolfinx_mpc.utils
@@ -24,7 +24,7 @@ dolfinx_mpc.utils.cache_numba(vector=True)
 def test_mpc_assembly(master_point, degree, celltype):
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(dolfinx.MPI.comm_world, 3, 5, celltype)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 3, 5, celltype)
     V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Generate reference vector

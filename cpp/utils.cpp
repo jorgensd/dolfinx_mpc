@@ -6,6 +6,7 @@
 
 #include "utils.h"
 #include <Eigen/Dense>
+#include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/ElementDofLayout.h>
@@ -18,7 +19,7 @@
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
-#include <dolfinx/mesh/MeshIterator.h>
+
 using namespace dolfinx_mpc;
 
 std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
@@ -102,8 +103,9 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       > 0)
   {
 
-    mesh.create_entities(mesh.topology().dim() - 1);
-    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
+    mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
+    mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
+                                                mesh.topology().dim());
     dolfinx::fem::SparsityPatternBuilder::interior_facets(
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
@@ -112,8 +114,9 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
           dolfinx::fem::FormIntegrals::Type::exterior_facet)
       > 0)
   {
-    mesh.create_entities(mesh.topology().dim() - 1);
-    mesh.create_connectivity(mesh.topology().dim() - 1, mesh.topology().dim());
+    mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
+    mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
+                                                mesh.topology().dim());
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
@@ -151,13 +154,7 @@ dolfinx_mpc::get_basis_functions(
       coordinate_dofs(num_dofs_g, gdim);
 
   // Get coordinate mapping
-  std::shared_ptr<const dolfinx::fem::CoordinateElement> cmap
-      = mesh.geometry().coord_mapping;
-  if (!cmap)
-  {
-    throw std::runtime_error(
-        "dolfinx::fem::CoordinateElement has not been attached to mesh.");
-  }
+  const dolfinx::fem::CoordinateElement& cmap = mesh.geometry().cmap();
 
   // Get element
   assert(V->element());
@@ -187,7 +184,7 @@ dolfinx_mpc::get_basis_functions(
   assert(V->dofmap());
   const dolfinx::fem::DofMap& dofmap = *V->dofmap();
 
-  mesh.create_entity_permutations();
+  mesh.topology_mutable().create_entity_permutations();
 
   const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& permutation_info
       = mesh.topology().get_cell_permutation_info();
@@ -203,8 +200,7 @@ dolfinx_mpc::get_basis_functions(
       coordinate_dofs(i, j) = x_g(cell_g[pos_g[index] + i], j);
 
   // Compute reference coordinates X, and J, detJ and K
-  cmap->compute_reference_geometry(X, J, detJ, K, x.head(gdim),
-                                   coordinate_dofs);
+  cmap.compute_reference_geometry(X, J, detJ, K, x.head(gdim), coordinate_dofs);
 
   // Compute basis on reference element
   element.evaluate_reference_basis(basis_reference_values, X);
