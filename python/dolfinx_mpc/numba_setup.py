@@ -128,12 +128,12 @@ if spec is None:
     raise ImportError("Failed to find CFFI generated module")
 module = importlib.util.module_from_spec(spec)
 
-numba.cffi_support.register_module(module)
+cffi_support.register_module(module)
 MatSetValues_api = module.lib.MatSetValues
 MatSetValuesLocal_api = module.lib.MatSetValuesLocal
 
-numba.cffi_support.register_type(module.ffi.typeof("PetscScalar"),
-                                 numba_scalar_t)
+cffi_support.register_type(module.ffi.typeof("PetscScalar"),
+                           numba_scalar_t)
 set_values = MatSetValues_api
 set_values_local = MatSetValuesLocal_api
 mode = PETSc.InsertMode.ADD_VALUES
