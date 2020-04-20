@@ -8,6 +8,7 @@
 #include "utils.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
+#include <dolfinx/common/Timer.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/DofMapBuilder.h>
 #include <dolfinx/fem/Form.h>
@@ -16,7 +17,6 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/mesh/Mesh.h>
-#include <dolfinx/common/Timer.h>
 #include <dolfinx/mesh/Topology.h>
 using namespace dolfinx_mpc;
 
@@ -30,29 +30,28 @@ MultiPointConstraint::MultiPointConstraint(
       _masters(), _masters_local(), _coefficients(coefficients),
       _cells_to_dofs(2, 1), _slave_cells(), _master_cells()
 {
-  dolfinx::common::Timer timer("MPC: Init in C ++");
+  dolfinx::common::Timer timer("MPC: Initialize MultiPointConstraint class");
   _masters = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
       masters, offsets_master);
+  std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dof_lists(2);
+  dof_lists[0] = slaves;
+  dof_lists[1] = masters;
+  /// Locate all cells containing slaves and masters locally and create a
+  /// cell_to_slave/master map
+  auto cell_info = dolfinx_mpc::locate_cells_with_dofs(V, dof_lists);
+  auto [q, cell_to_slave] = cell_info[0];
 
-  dolfinx::common::Timer sc_timer("MPC: Locate slave cells (C++)");
-  /// Locate all cells containing slaves locally and create a cell_to_slave map
-  auto [q, cell_to_slave] = dolfinx_mpc::locate_cells_with_dofs(V, slaves);
   _cells_to_dofs(0) = cell_to_slave;
   _slave_cells = q;
-  sc_timer.stop();
 
-  dolfinx::common::Timer mc_timer("MPC: Locate  master cells (C++)");
-  /// Locate all cells containing masters locally and create a cell_to_master
-  /// map
-  auto [t, cell_to_master] = dolfinx_mpc::locate_cells_with_dofs(V, masters);
-  mc_timer.stop();
+  auto [t, cell_to_master] = cell_info[1];
   _cells_to_dofs(1) = cell_to_master;
   _master_cells = t;
 
   /// Generate MPC specific index map
   _index_map = generate_index_map();
 
-  // /// Find all local indices for master
+  /// Find all local indices for master
   std::vector<std::int64_t> master_vec(masters.data(),
                                        masters.data() + masters.size());
   std::vector<std::int32_t> masters_local
@@ -68,6 +67,7 @@ MultiPointConstraint::MultiPointConstraint(
 std::shared_ptr<dolfinx::common::IndexMap>
 MultiPointConstraint::generate_index_map()
 {
+  dolfinx::common::Timer timer("MPC: Generate index map with correct ghosting");
   const dolfinx::mesh::Mesh& mesh = *(_function_space->mesh());
   const dolfinx::fem::DofMap& dofmap = *(_function_space->dofmap());
 
@@ -168,7 +168,8 @@ MultiPointConstraint::generate_index_map()
 dolfinx::la::SparsityPattern
 MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 {
-
+  dolfinx::common::Timer timer(
+      "MPC: Build sparsity pattern (with MPC additions)");
   if (a.rank() != 2)
   {
     throw std::runtime_error(
@@ -221,6 +222,8 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   // Add non-zeros for each slave cell to sparsity pattern.
   // For the i-th cell with a slave, all local entries has to be from the j-th
   // slave to the k-th master degree of freedom
+  dolfinx::common::Timer timer1("MPC: Build sparsity pattern (first loop )");
+
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
 
@@ -235,7 +238,8 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
           slave_index = counter;
 
       // Insert pattern for each master
-      for (Eigen::Index k = 0; k < _masters_local->links(slave_index).size(); k++)
+      for (Eigen::Index k = 0; k < _masters_local->links(slave_index).size();
+           k++)
       {
         /// Arrays replacing slave dof with master dof in sparsity pattern
         std::array<Eigen::Array<PetscInt, Eigen::Dynamic, 1>, 2>
@@ -271,41 +275,33 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
       }
     }
   }
-  // Loop over local master cells
-  for (std::int64_t i = 0; i < unsigned(_master_cells.size()); i++)
+  timer1.stop();
+  // Add pattern for all combinations of masters
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_array
+      = _masters_local->array();
+  for (Eigen::Index i = 0; i < master_array.size(); i++)
   {
-    for (Eigen::Index j = 0; j < _cells_to_dofs[1]->links(i).size(); j++)
+    std::int32_t local_master = master_array[i];
+    const std::div_t div = std::div(local_master, block_size);
+    const int index = div.quot;
+    Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
+    for (std::size_t comp = 0; comp < block_size; comp++)
+      local_master_dof[comp] = block_size * index + comp;
+
+    Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(block_size);
+    for (Eigen::Index k = i + 1; k < master_array.size(); k++)
     {
-      // Map first master to local dof and add remainder of block
-      Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
-      std::int64_t master_int = _cells_to_dofs[1]->links(i)[j];
-      const std::vector<std::int64_t> master_indices{master_int};
-      std::vector<std::int32_t> local_master
-          = _index_map->global_to_local(master_indices, false);
-      const std::div_t div = std::div(local_master[0], block_size);
+      // Map other master to local dof and add remainder of block
+      std::int32_t local_master = master_array[k];
+      const std::div_t div = std::div(local_master, block_size);
       const int index = div.quot;
       for (std::size_t comp = 0; comp < block_size; comp++)
-        local_master_dof[comp] = block_size * index + comp;
+        other_master_dof[comp] = block_size * index + comp;
 
-      Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(block_size);
-      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_array
-          = _masters_local->array();
-      for (Eigen::Index k = 0; k < master_array.size(); k++)
-      {
-        if (master_array[k] != _cells_to_dofs[1]->links(i)[j])
-        {
-          // Map other master to local dof and add remainder of block
-          std::int32_t local_master = master_array[k];
-          const std::div_t div = std::div(local_master, block_size);
-          const int index = div.quot;
-          for (std::size_t comp = 0; comp < block_size; comp++)
-            other_master_dof[comp] = block_size * index + comp;
-
-          pattern.insert(local_master_dof, other_master_dof);
-          pattern.insert(other_master_dof, local_master_dof);
-        }
-      }
+      pattern.insert(local_master_dof, other_master_dof);
+      pattern.insert(other_master_dof, local_master_dof);
     }
   }
+
   return pattern;
 }

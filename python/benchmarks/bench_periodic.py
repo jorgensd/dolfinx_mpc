@@ -39,7 +39,7 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
         mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
         for i in range(r_lvl):
             mesh = refine(mesh, redistribute=False)
-            N *=2
+            N *= 2
         V = dolfinx.FunctionSpace(mesh, ("CG", 2))
         M = 2*N
     else:
@@ -50,7 +50,7 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
         V = dolfinx.FunctionSpace(mesh, ("CG", 1))
         for i in range(r_lvl):
             mesh = refine(mesh, redistribute=False)
-            N *=2
+            N *= 2
         M = N
     print(r_lvl, V.dim())
     # Create Dirichlet boundary condition
@@ -106,13 +106,12 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
     # Compute solution
     u = dolfinx.Function(V)
     u.name = "uh"
-    with dolfinx.common.Timer("MPC: Init MPC") as t:
-        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                       masters, coeffs, offsets)
+    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                   masters, coeffs, offsets)
     # Setup MPC system
-    with dolfinx.common.Timer("MPC: assemble matrix"):
+    with dolfinx.common.Timer("MPC: Assemble matrix (Total time)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("MPC: assemble vector"):        
+    with dolfinx.common.Timer("MPC: Assemble vector (Total time)"):
         b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     # Apply boundary conditions
@@ -134,14 +133,15 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
     # opts["mg_levels_pc_type"] = "sor"
 
     # Create nullspace
-    nullspace = PETSc.NullSpace().create(constant=True) 
+    nullspace = PETSc.NullSpace().create(constant=True)
     PETSc.Mat.setNearNullSpace(A, nullspace)
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    
+
     # pc = solver.getPC()
     def monitor(ksp, its, rnorm, r_lvl=-1):
         print("{}: Iteration: {}, rel. residual: {}".format(r_lvl, its, rnorm))
-    pmonitor = lambda ksp, its, rnorm: monitor(ksp, its, rnorm, r_lvl=r_lvl)
+
+    def pmonitor(ksp, its, rnorm): return monitor(ksp, its, rnorm, r_lvl=r_lvl)
 
     solver.setFromOptions()
     solver.setOperators(A)
@@ -151,8 +151,7 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
     with dolfinx.common.Timer("MPC: Solve") as t:
         solver.solve(b, uh)
 
-    #solver.view()
-
+    # solver.view()
 
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
@@ -160,7 +159,6 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
     # Back substitute to slave dofs
     with dolfinx.common.Timer("MPC: Backsubstitute") as t:
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
-
 
     # Create functionspace and function for mpc vector
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
@@ -213,7 +211,7 @@ if __name__ == "__main__":
     #                                    fname, "w")
     # for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron,
     #                  dolfinx.cpp.mesh.CellType.hexahedron]:
-    for i in range(2,3):
+    for i in range(2, 3):
         for j in range(2):
             fname = "results/demo_periodic3d_{0:d}.xdmf".format(i)
             out_periodic = None
@@ -222,4 +220,5 @@ if __name__ == "__main__":
             for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron]:
                 demo_periodic3D(celltype, out_periodic, r_lvl=i)
             # out_periodic.close()
-            dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall]) 
+            dolfinx.common.list_timings(
+                MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
