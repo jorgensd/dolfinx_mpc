@@ -13,7 +13,7 @@ import cffi
 import numba
 try:
     import numba.core.typing.cffi_utils as cffi_support
-except:
+except ModuleNotFoundError:
     from numba import cffi_support
 import numpy as np
 from petsc4py import PETSc
@@ -64,9 +64,9 @@ petsc_lib_name = ctypes.util.find_library("petsc")
 # CFFI - register complex types
 ffi = cffi.FFI()
 cffi_support.register_type(ffi.typeof('double _Complex'),
-                                 numba.types.complex128)
+                           numba.types.complex128)
 cffi_support.register_type(ffi.typeof('float _Complex'),
-                                 numba.types.complex64)
+                           numba.types.complex64)
 
 
 # Get MatSetValues from PETSc available via cffi in ABI mode
