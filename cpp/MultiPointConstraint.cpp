@@ -246,7 +246,6 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   // Add non-zeros for each slave cell to sparsity pattern.
   // For the i-th cell with a slave, all local entries has to be from the j-th
   // slave to the k-th master degree of freedom
-  dolfinx::common::Timer timer1("MPC: Build sparsity pattern (first loop )");
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
     // Find index for slave in test and trial space
@@ -280,7 +279,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
       }
     }
   }
-  timer1.stop();
+
   // Add pattern for all combinations of masters
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_array
       = _masters_local->array();
@@ -307,6 +306,5 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
       pattern.insert(other_master_dof, local_master_dof);
     }
   }
-
   return pattern;
 }
