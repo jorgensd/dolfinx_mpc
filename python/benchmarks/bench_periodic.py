@@ -27,7 +27,7 @@ import numpy as np
 from petsc4py import PETSc
 from mpi4py import MPI
 from dolfinx.mesh import refine
-from dolfinx_mpc.utils import cache_numba
+# from dolfinx_mpc.utils import cache_numba
 # cache_numba(True, True, True)
 
 
@@ -159,6 +159,7 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
     # Back substitute to slave dofs
     with dolfinx.common.Timer("MPC: Backsubstitute") as t:
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+        print(t.elapsed)
 
     # Create functionspace and function for mpc vector
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
@@ -211,8 +212,8 @@ if __name__ == "__main__":
     #                                    fname, "w")
     # for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron,
     #                  dolfinx.cpp.mesh.CellType.hexahedron]:
-    for i in range(2, 3):
-        for j in range(2):
+    for i in range(1, 4):
+        for j in range(1):
             fname = "results/demo_periodic3d_{0:d}.xdmf".format(i)
             out_periodic = None
             # out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,

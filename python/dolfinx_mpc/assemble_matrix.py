@@ -126,15 +126,18 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         facet_info = pack_facet_info(V.mesh, formintegral, j)
 
         subdomain_id = subdomain_ids[j]
-        with dolfinx.common.Timer("MPC: Assemble matrix (ext. facet kernel)") as t:
+        with dolfinx.common.Timer("MPC: Assemble matrix (ext. facet kernel)"
+                                  ) as t:
             facet_kernel = ufc_form.create_exterior_facet_integral(
                 subdomain_id).tabulate_tensor
-        with dolfinx.common.Timer("MPC: Assemble matrix (numba ext. facet)") as t:
+        with dolfinx.common.Timer("MPC: Assemble matrix (numba ext. facet)"
+                                  ) as t:
             assemble_exterior_facets(A.handle, facet_kernel,
                                      (pos, x_dofs, x), gdim,
                                      form_coeffs, form_consts,
                                      perm, dofs, num_dofs_per_element,
-                                     facet_info, mpc_data, ghost_info, bc_array)
+                                     facet_info, mpc_data, ghost_info,
+                                     bc_array)
 
     with dolfinx.common.Timer("MPC: Assemble matrix (diagonal handling)") as t:
         A.assemble()
@@ -147,6 +150,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
                 dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_space(0),
                                              bcs, 1.0)
         A.assemble()
+        t.elapsed()
     return A
 
 
@@ -228,7 +232,6 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
     Assemble MPC contributions for cell integrals
     """
     ffi_fb = ffi.from_buffer
-    slave_cells = mpc[4]  # Note: packing order for MPC really important
 
     # Get mesh and geometry data
     pos, x_dofmap, x = mesh
