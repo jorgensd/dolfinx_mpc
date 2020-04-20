@@ -7,6 +7,8 @@ import numba
 import numpy
 
 import dolfinx
+import dolfinx.common
+
 
 from .numba_setup import (PETSc, ffi, insert, mode, set_values,
                           set_values_local, sink)
@@ -47,15 +49,18 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     # Pack constants and coefficients
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
-
-    pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
-    pattern.assemble()
+    with dolfinx.common.Timer("MPC: Sparsitypattern") as t:
+        pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
+        pattern.assemble()
 
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
-    dolfinx.cpp.fem.assemble_matrix(A, cpp_form, bcs)
+    with dolfinx.common.Timer("MPC: NORMAL ASSEMBLY") as t:
+        dolfinx.cpp.fem.assemble_matrix(A, cpp_form, bcs)
+
+    t = dolfinx.common.Timer("MPC: Prepare variables")
 
     # Unravel data from MPC
     slave_cells = multipointconstraint.slave_cells()
@@ -67,6 +72,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     slaves = multipointconstraint.slaves()
     masters_local = masters.array()
     offsets = masters.offsets()
+    t.stop()
     mpc_data = (slaves, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)
 
@@ -86,17 +92,19 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         V.mesh.topology.create_entity_permutations()
         permutation_info = V.mesh.topology.get_cell_permutation_info()
 
-    for i in range(num_cell_integrals):
-        subdomain_id = subdomain_ids[i]
-        cell_kernel = ufc_form.create_cell_integral(
-            subdomain_id).tabulate_tensor
-        active_cells = numpy.array(formintegral.integral_domains(
-            dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
-        assemble_cells(A.handle, cell_kernel, active_cells, (pos, x_dofs, x),
-                       gdim, form_coeffs, form_consts,
-                       permutation_info,
-                       dofs, num_dofs_per_element, mpc_data,
-                       ghost_info, bc_array)
+    with dolfinx.common.Timer("MPC: Cell ASSEMBLY") as t:
+        for i in range(num_cell_integrals):
+            subdomain_id = subdomain_ids[i]
+            cell_kernel = ufc_form.create_cell_integral(
+                subdomain_id).tabulate_tensor
+            active_cells = numpy.array(formintegral.integral_domains(
+                dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
+            slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
+            assemble_cells(A.handle, cell_kernel, active_cells[slave_cell_indices], (pos, x_dofs, x),
+                        gdim, form_coeffs, form_consts,
+                        permutation_info,
+                        dofs, num_dofs_per_element, mpc_data,
+                        ghost_info, bc_array)
 
     # Assemble over exterior facets
     subdomain_ids = formintegral.integral_ids(
@@ -111,17 +119,18 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         perm = (permutation_info, facet_permutation_info)
 
-    for j in range(num_exterior_integrals):
-        facet_info = pack_facet_info(V.mesh, formintegral, j)
+    with dolfinx.common.Timer("MPC: FACET ASSEMBLY") as t:
+        for j in range(num_exterior_integrals):
+            facet_info = pack_facet_info(V.mesh, formintegral, j)
 
-        subdomain_id = subdomain_ids[j]
-        facet_kernel = ufc_form.create_exterior_facet_integral(
-            subdomain_id).tabulate_tensor
-        assemble_exterior_facets(A.handle, facet_kernel,
-                                 (pos, x_dofs, x), gdim,
-                                 form_coeffs, form_consts,
-                                 perm, dofs, num_dofs_per_element,
-                                 facet_info, mpc_data, ghost_info, bc_array)
+            subdomain_id = subdomain_ids[j]
+            facet_kernel = ufc_form.create_exterior_facet_integral(
+                subdomain_id).tabulate_tensor
+            assemble_exterior_facets(A.handle, facet_kernel,
+                                    (pos, x_dofs, x), gdim,
+                                    form_coeffs, form_consts,
+                                    perm, dofs, num_dofs_per_element,
+                                    facet_info, mpc_data, ghost_info, bc_array)
 
     A.assemble()
 
@@ -232,8 +241,6 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
     # Loop over all cells
     slave_cell_index = 0
     for cell_index in active_cells:
-        if not in_numpy_array(slave_cells, cell_index):
-            continue
         num_vertices = pos[cell_index + 1] - pos[cell_index]
 
         # Compute vertices of cell from mesh data

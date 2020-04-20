@@ -17,7 +17,7 @@
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
-
+#include <dolfinx/common/Timer.h>
 using namespace dolfinx_mpc;
 
 std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
@@ -32,14 +32,13 @@ dolfinx_mpc::locate_cells_with_dofs(
       = dofmap.index_map->global_indices(false);
 
   /// Data structures
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cell_to_dofs;
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> cell_to_dofs_offsets;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cells_with_dofs;
+  std::vector<std::int64_t> cell_to_dofs_vec;
+  std::vector<std::int32_t> cell_to_dofs_offsets_vec;
+  std::vector<std::int64_t> cells_with_dofs_vec;
 
   /// Loop over all cells on this process
   std::int64_t offset_index = 0;
-  cell_to_dofs_offsets.conservativeResize(1);
-  cell_to_dofs_offsets.tail(1) = offset_index;
+  cell_to_dofs_offsets_vec.push_back(offset_index);
   const int tdim = mesh.topology().dim();
   const int num_cells = mesh.topology().index_map(tdim)->size_local();
   for (int cell_index = 0; cell_index < num_cells; cell_index++)
@@ -55,8 +54,7 @@ dolfinx_mpc::locate_cells_with_dofs(
       {
         if (global_indices[cell_dofs[i]] == dofs[j])
         {
-          cell_to_dofs.conservativeResize(cell_to_dofs.size() + 1);
-          cell_to_dofs.tail(1) = dofs[j];
+          cell_to_dofs_vec.push_back(dofs[j]);
           offset_index++;
           in_cell = true;
         }
@@ -64,12 +62,16 @@ dolfinx_mpc::locate_cells_with_dofs(
     }
     if (in_cell)
     {
-      cells_with_dofs.conservativeResize(cells_with_dofs.size() + 1);
-      cells_with_dofs.tail(1) = cell_index;
-      cell_to_dofs_offsets.conservativeResize(cell_to_dofs_offsets.size() + 1);
-      cell_to_dofs_offsets.tail(1) = offset_index;
+      cells_with_dofs_vec.push_back(cell_index);
+      cell_to_dofs_offsets_vec.push_back(offset_index);
     }
   }
+  Eigen::Map<const Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> cell_to_dofs(
+      cell_to_dofs_vec.data(), cell_to_dofs_vec.size());
+  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> cell_to_dofs_offsets(
+      cell_to_dofs_offsets_vec.data(), cell_to_dofs_offsets_vec.size());
+  Eigen::Map<const Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> cells_with_dofs(
+      cells_with_dofs_vec.data(), cells_with_dofs_vec.size());
 
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> cell_adj
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
