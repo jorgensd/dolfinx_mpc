@@ -11,7 +11,10 @@ import os
 
 import cffi
 import numba
-import numba.cffi_support
+try:
+    import numba.core.typing.cffi_utils as cffi_support
+except:
+    from numba import cffi_support
 import numpy as np
 from petsc4py import PETSc
 from petsc4py import get_config as PETSc_get_config
@@ -60,9 +63,9 @@ petsc_lib_name = ctypes.util.find_library("petsc")
 
 # CFFI - register complex types
 ffi = cffi.FFI()
-numba.cffi_support.register_type(ffi.typeof('double _Complex'),
+cffi_support.register_type(ffi.typeof('double _Complex'),
                                  numba.types.complex128)
-numba.cffi_support.register_type(ffi.typeof('float _Complex'),
+cffi_support.register_type(ffi.typeof('float _Complex'),
                                  numba.types.complex64)
 
 
