@@ -111,7 +111,9 @@ private:
   Eigen::Array<std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>,
                Eigen::Dynamic, 1>
       _cells_to_dofs;
-
+  // Cell to _slaves index (will have same offsets as _cells to dofs)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>
+      _cell_to_slave_index;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
 };

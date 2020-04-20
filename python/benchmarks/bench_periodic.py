@@ -212,7 +212,7 @@ if __name__ == "__main__":
     #                                    fname, "w")
     # for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron,
     #                  dolfinx.cpp.mesh.CellType.hexahedron]:
-    for i in range(1, 4):
+    for i in range(4):
         for j in range(1):
             fname = "results/demo_periodic3d_{0:d}.xdmf".format(i)
             out_periodic = None
