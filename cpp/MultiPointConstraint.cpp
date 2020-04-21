@@ -9,6 +9,7 @@
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
+#include <dolfinx/common/log.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/DofMapBuilder.h>
 #include <dolfinx/fem/Form.h>
@@ -27,10 +28,11 @@ MultiPointConstraint::MultiPointConstraint(
     Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets_master)
     : _function_space(V), _index_map(), _mpc_dofmap(), _slaves(slaves),
-      _masters(), _masters_local(), _coefficients(coefficients),
-      _cells_to_dofs(2, 1), _cell_to_slave_index(), _slave_cells(),
-      _master_cells()
+      _masters(), _masters_local(), _slaves_local(),
+      _coefficients(coefficients), _cells_to_dofs(2, 1), _cell_to_slave_index(),
+      _slave_cells(), _master_cells()
 {
+  LOG(INFO) << "Initializing MPC class";
   dolfinx::common::Timer timer("MPC: Initialize MultiPointConstraint class");
   _masters = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
       masters, offsets_master);
@@ -82,12 +84,21 @@ MultiPointConstraint::MultiPointConstraint(
   _masters_local
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
           masters_eigen, offsets_master);
+  /// Find all local indices for slaves
+  std::vector<std::int64_t> slaves_vec(slaves.data(),
+                                       slaves.data() + slaves.size());
+  std::vector<std::int32_t> slaves_local
+      = _index_map->global_to_local(slaves_vec, false);
+  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+      __slaves_local(slaves_local.data(), slaves_local.size(), 1);
+  _slaves_local = __slaves_local;
 }
 
 // /// Generate MPC specific index map with the correct ghosting
 std::shared_ptr<dolfinx::common::IndexMap>
 MultiPointConstraint::generate_index_map()
 {
+  LOG(INFO) << "Generating MPC index map with additional ghosts";
   dolfinx::common::Timer timer("MPC: Generate index map with correct ghosting");
   const dolfinx::mesh::Mesh& mesh = *(_function_space->mesh());
   const dolfinx::fem::DofMap& dofmap = *(_function_space->dofmap());
@@ -187,6 +198,7 @@ MultiPointConstraint::generate_index_map()
 dolfinx::la::SparsityPattern
 MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 {
+  LOG(INFO) << "Generating MPC sparsity pattern";
   dolfinx::common::Timer timer(
       "MPC: Build sparsity pattern (with MPC additions)");
   if (a.rank() != 2)

@@ -8,6 +8,7 @@ import numpy
 
 import dolfinx
 import dolfinx.common
+import dolfinx.log
 
 
 from .numba_setup import (PETSc, ffi, insert, mode, set_values,
@@ -20,6 +21,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     Dirichlet boundary conditions.
     NOTE: Dirichlet conditions cant be on master dofs.
     """
+    dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC matrix")
     bc_array = numpy.array([])
     if len(bcs) > 0:
         for bc in bcs:
@@ -70,10 +72,11 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     cell_to_slave = slave_cell_to_dofs.array()
     c_to_s_off = slave_cell_to_dofs.offsets()
     slaves = multipointconstraint.slaves()
+    slaves_local = multipointconstraint.slaves_local()
     masters_local = masters.array()
     offsets = masters.offsets()
     mpc_data = (slaves, masters_local, coefficients, offsets,
-                slave_cells, cell_to_slave, c_to_s_off)
+                slave_cells, cell_to_slave, c_to_s_off, slaves_local)
 
     # General assembly data
     num_dofs_per_element = dofmap.dof_layout.num_dofs
@@ -389,7 +392,7 @@ def modify_mpc_cell(A, slave_cell_index, A_local, A_local_copy, local_pos,
 
     # Unpack MPC data
     (slaves, masters_local, coefficients, offsets, slave_cells,
-     cell_to_slave, cell_to_slave_offset) = mpc
+     cell_to_slave, cell_to_slave_offset, slaves_local) = mpc
 
     # Unpack ghost data
     local_range, block_size, global_indices, ghosts = ghost_info
@@ -425,14 +428,8 @@ def modify_mpc_cell(A, slave_cell_index, A_local, A_local_copy, local_pos,
         cell_coeffs = coefficients[offsets[slave_index]:
                                    offsets[slave_index+1]]
         # Variable for local position of slave dof
-        slave_local = -1
-        for k in range(len(local_pos)):
-            g_pos = global_indices[local_pos[k]]
-            if g_pos == slaves[slave_index]:
-                slave_local = k
-                break
-        assert slave_local != -1
-
+        slave_local = numpy.flatnonzero(
+            slaves_local[slave_index] == local_pos)[0]
         # Loop through each master dof to take individual contributions
         for m_0 in range(len(cell_masters)):
             ce = cell_coeffs[m_0]
@@ -463,12 +460,8 @@ def modify_mpc_cell(A, slave_cell_index, A_local, A_local_copy, local_pos,
                 if other_slave == slave_index:
                     continue
                 # Find local index of the other slave
-                o_slave_local = -1
-                for k in range(len(local_pos)):
-                    if global_indices[local_pos[k]] == slaves[other_slave]:
-                        o_slave_local = k
-                        break
-                assert(o_slave_local != -1)
+                o_slave_local = numpy.flatnonzero(
+                    slaves_local[other_slave] == local_pos)[0]
 
                 other_cell_masters = masters_local[offsets[other_slave]:
                                                    offsets[other_slave+1]]
