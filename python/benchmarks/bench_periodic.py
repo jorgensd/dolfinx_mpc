@@ -31,7 +31,7 @@ from dolfinx.mesh import refine
 # from dolfinx_mpc.utils import cache_numba
 # cache_numba(True, True, True)
 
-dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+# dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
 
 
 def demo_periodic3D(celltype, out_periodic, r_lvl=0):
@@ -111,17 +111,21 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
                     slave_diff = np.abs(x_slaves-slave_coord).sum(axis=1)
                     if np.isclose(slave_diff[slave_diff.argmin()], 0):
                         # Only add if owned by processor
-                        if slave_dofs[slave_diff.argmin()] < local_max - local_min:
+                        if (slave_dofs[slave_diff.argmin()]
+                                < local_max - local_min):
                             slaves[(i-1)*(M-1)+j -
-                                   1] = slave_dofs[slave_diff.argmin()] + local_min
+                                   1] = (slave_dofs[slave_diff.argmin()]
+                                         + local_min)
                 if len(master_dofs) > 0:
                     master_coord = [0, i/M, j/M]
                     master_diff = np.abs(x_masters-master_coord).sum(axis=1)
                     if np.isclose(master_diff[master_diff.argmin()], 0):
                         # Only add if owned by processor
-                        if master_dofs[master_diff.argmin()] < local_max-local_min:
+                        if (master_dofs[master_diff.argmin()] <
+                                local_max-local_min):
                             masters[(i-1)*(M-1)+j -
-                                    1] = master_dofs[master_diff.argmin()] + local_min
+                                    1] = (master_dofs[master_diff.argmin()]
+                                          + local_min)
         timer.stop()
         return slaves, masters
     snew, mnew = create_master_slave_map(master_dofs, slave_dofs)
@@ -234,6 +238,8 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(L_org, bcs)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver.setFromOptions()
     solver.setOperators(A_org)
     u_ = dolfinx.Function(V)
 
@@ -258,7 +264,7 @@ if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
     out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                        fname, "w")
-    for i in [0, 4]:  # range(4, 5):
+    for i in range(6):  # range(4, 5):
         fname = "results/demo_periodic3d_{0:d}.xdmf".format(i)
         out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                            fname, "w")
