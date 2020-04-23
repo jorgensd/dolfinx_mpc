@@ -31,7 +31,7 @@ from dolfinx.mesh import refine
 # from dolfinx_mpc.utils import cache_numba
 # cache_numba(True, True, True)
 
-# dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
 
 
 def demo_periodic3D(celltype, out_periodic, r_lvl=0):
@@ -209,44 +209,44 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
-        ext = "tet"
-    else:
-        ext = "hex"
+    # if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
+    #     ext = "tet"
+    # else:
+    #     ext = "hex"
 
-    mesh.name = "mesh_" + ext
-    u_h.name = "u_" + ext
-    print(u_h.vector.norm())
-    out_periodic.write_mesh(mesh)
-    out_periodic.write_function(u_h, 0.0,
-                                "Xdmf/Domain/"
-                                + "Grid[@Name='{0:s}'][1]"
-                                .format(mesh.name))
+    # mesh.name = "mesh_" + ext
+    # u_h.name = "u_" + ext
+    # print(u_h.vector.norm())
+    # out_periodic.write_mesh(mesh)
+    # out_periodic.write_function(u_h, 0.0,
+    #                             "Xdmf/Domain/"
+    #                             + "Grid[@Name='{0:s}'][1]"
+    #                             .format(mesh.name))
 
     # print("----Verification----")
     # --------------------VERIFICATION-------------------------
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    # A_org = dolfinx.fem.assemble_matrix(a, bcs)
 
-    A_org.assemble()
-    PETSc.Mat.setNearNullSpace(A_org, nullspace)
-    L_org = dolfinx.fem.assemble_vector(lhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
-    solver.setOperators(A_org)
-    u_ = dolfinx.Function(V)
+    # A_org.assemble()
+    # PETSc.Mat.setNearNullSpace(A_org, nullspace)
+    # L_org = dolfinx.fem.assemble_vector(lhs)
+    # dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    # L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+    #                   mode=PETSc.ScatterMode.REVERSE)
+    # dolfinx.fem.set_bc(L_org, bcs)
+    # solver.setOperators(A_org)
+    # u_ = dolfinx.Function(V)
 
-    def umonitor(ksp, its, rnorm, r_lvl=-1):
-        print("UNCONSTRAINED{}: Iteration: {}, rel. residual: {}".format(
-            r_lvl, its, rnorm))
+    # def umonitor(ksp, its, rnorm, r_lvl=-1):
+    #     print("UNCONSTRAINED{}: Iteration: {}, rel. residual: {}".format(
+    #         r_lvl, its, rnorm))
 
-    def upmonitor(ksp, its, rnorm):
-        return umonitor(ksp, its, rnorm, r_lvl=r_lvl)
-    solver.setMonitor(upmonitor)
-    solver.solve(L_org, u_.vector)
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+    # def upmonitor(ksp, its, rnorm):
+    #     return umonitor(ksp, its, rnorm, r_lvl=r_lvl)
+    # solver.setMonitor(upmonitor)
+    # solver.solve(L_org, u_.vector)
+    # u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+    #                       mode=PETSc.ScatterMode.FORWARD)
     # u_.name = "u_" + ext + "_unconstrained"
     # out_periodic.write_function(u_, 0.0,
     #                             "Xdmf/Domain/"
@@ -258,7 +258,7 @@ if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
     out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                        fname, "w")
-    for i in range(4):
+    for i in [0, 4]:  # range(4, 5):
         fname = "results/demo_periodic3d_{0:d}.xdmf".format(i)
         out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                            fname, "w")
