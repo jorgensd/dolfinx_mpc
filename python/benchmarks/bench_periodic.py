@@ -225,26 +225,26 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
 
     # print("----Verification----")
     # --------------------VERIFICATION-------------------------
-    # A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org = dolfinx.fem.assemble_matrix(a, bcs)
 
-    # A_org.assemble()
-    # PETSc.Mat.setNearNullSpace(A_org, nullspace)
-    # L_org = dolfinx.fem.assemble_vector(lhs)
-    # dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    # L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-    #                   mode=PETSc.ScatterMode.REVERSE)
-    # dolfinx.fem.set_bc(L_org, bcs)
-    # solver.setOperators(A_org)
-    # u_ = dolfinx.Function(V)
+    A_org.assemble()
+    PETSc.Mat.setNearNullSpace(A_org, nullspace)
+    L_org = dolfinx.fem.assemble_vector(lhs)
+    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                      mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(L_org, bcs)
+    solver.setOperators(A_org)
+    u_ = dolfinx.Function(V)
 
-    # def umonitor(ksp, its, rnorm, r_lvl=-1):
-    #     print("UNCONSTRAINED{}: Iteration: {}, rel. residual: {}".format(
-    #         r_lvl, its, rnorm))
+    def umonitor(ksp, its, rnorm, r_lvl=-1):
+        print("UNCONSTRAINED{}: Iteration: {}, rel. residual: {}".format(
+            r_lvl, its, rnorm))
 
-    # def upmonitor(ksp, its, rnorm):
-    #     return umonitor(ksp, its, rnorm, r_lvl=r_lvl)
-    # solver.setMonitor(upmonitor)
-    # solver.solve(L_org, u_.vector)
+    def upmonitor(ksp, its, rnorm):
+        return umonitor(ksp, its, rnorm, r_lvl=r_lvl)
+    solver.setMonitor(upmonitor)
+    solver.solve(L_org, u_.vector)
     # u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
     #                       mode=PETSc.ScatterMode.FORWARD)
     # u_.name = "u_" + ext + "_unconstrained"
