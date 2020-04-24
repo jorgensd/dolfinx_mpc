@@ -455,23 +455,18 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
                 for (std::int64_t l = 0; l < _masters_local->links(k).size();
                      l++)
                 {
-                  // Check if other master is not locally owned
-                  if ((_masters->links(k)[l] < block_size * local_range[0])
-                      || (block_size * local_range[1] <= _masters->links(k)[l]))
-                  {
-                    const std::div_t other_div
-                        = std::div(_masters_local->links(k)[l], block_size);
-                    const int other_index = other_div.quot;
-                    Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(
-                        block_size);
+                  const std::div_t other_div
+                      = std::div(_masters_local->links(k)[l], block_size);
+                  const int other_index = other_div.quot;
+                  Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(
+                      block_size);
 
-                    for (std::int64_t comp = 0; comp < block_size; comp++)
-                      other_master_dof[comp] = block_size * other_index + comp;
-                    // Sparsity pattern insert is the local block each master
-                    // is in
-                    pattern.insert(local_master_dof, other_master_dof);
-                    pattern.insert(other_master_dof, local_master_dof);
-                  }
+                  for (std::int64_t comp = 0; comp < block_size; comp++)
+                    other_master_dof[comp] = block_size * other_index + comp;
+                  // Sparsity pattern insert is the local block each master
+                  // is in
+                  pattern.insert(local_master_dof, other_master_dof);
+                  pattern.insert(other_master_dof, local_master_dof);
                 }
               }
             }
