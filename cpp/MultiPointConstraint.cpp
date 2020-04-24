@@ -396,8 +396,6 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   }
 
   // Add pattern for all masters for the same slave
-  Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(block_size);
-  Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
   for (std::int64_t i = 0; i < _masters_local->num_nodes(); i++)
   {
     for (std::int64_t j = 0; j < _masters_local->links(i).size(); j++)
@@ -405,22 +403,88 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
       std::int32_t local_master = _masters_local->links(i)[j];
       const std::div_t div = std::div(local_master, block_size);
       const int index = div.quot;
+      Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
       for (std::int64_t comp = 0; comp < block_size; comp++)
         local_master_dof[comp] = block_size * index + comp;
-      for (std::int64_t k = j; k < _masters_local->links(i).size(); k++)
+      for (std::int64_t k = j + 1; k < _masters_local->links(i).size(); k++)
       {
         // Map other master to local dof and add remainder of block
-        std::int32_t local_master = _masters_local->links(i)[k];
-        const std::div_t div = std::div(local_master, block_size);
-        const int index = div.quot;
+        std::int32_t other_local_master = _masters_local->links(i)[k];
+        const std::div_t other_div = std::div(other_local_master, block_size);
+        const int other_index = other_div.quot;
+        Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(block_size);
+
         for (std::int64_t comp = 0; comp < block_size; comp++)
-          other_master_dof[comp] = block_size * index + comp;
+          other_master_dof[comp] = block_size * other_index + comp;
 
         pattern.insert(local_master_dof, other_master_dof);
         pattern.insert(other_master_dof, local_master_dof);
       }
     }
   }
+  // Add pattern for same master on different cell
+  for (std::int64_t i = 0; i < _masters->num_nodes(); i++)
+  {
+    for (std::int64_t j = 0; j < _masters->links(i).size(); j++)
+    {
+      // Only insert if master is in local range
+      if ((_masters->links(i)[j] >= block_size * local_range[0])
+          && (block_size * local_range[1] > _masters->links(i)[j]))
+      {
+        // Check if master occurs multiple times
+        std::int32_t occur
+            = (_masters->array() == _masters->links(i)[j]).count();
+        if (occur > 1)
+        {
+          std::int32_t local_master = _masters_local->links(i)[j];
+          const std::div_t div = std::div(local_master, block_size);
+          const int index = div.quot;
+          Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(
+              block_size);
+          for (std::int64_t comp = 0; comp < block_size; comp++)
+            local_master_dof[comp] = block_size * index + comp;
 
+          std::vector<Eigen::Index> occurs_at;
+          // Find where other masters are in global array
+          for (Eigen::Index k = 0; k < _masters->array().size(); k++)
+          {
+            if ((_masters->array()[i] == _masters->array()[k]) and (i != k))
+            {
+              occurs_at.push_back(k);
+            }
+          }
+          // Find which slaves the master belongs
+          for (std::int64_t o = 0; o < occurs_at.size(); o++)
+          {
+            for (std::int64_t k = 0; k < _masters->offsets().size() - 1; k++)
+            {
+              if (_masters->offsets()[k] <= occurs_at[o]
+                  && occurs_at[o] < _masters->offsets()[k + 1])
+              {
+                // Add pattern for all other masters for the other occurrence of
+                // the master
+                for (std::int64_t l = 0; l < _masters_local->links(k).size();
+                     l++)
+                {
+                  const std::div_t other_div
+                      = std::div(_masters_local->links(k)[l], block_size);
+                  const int other_index = other_div.quot;
+                  Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(
+                      block_size);
+
+                  for (std::int64_t comp = 0; comp < block_size; comp++)
+                    other_master_dof[comp] = block_size * other_index + comp;
+                  // Sparsity pattern insert is the local block each master is
+                  // in
+                  pattern.insert(local_master_dof, other_master_dof);
+                  pattern.insert(other_master_dof, local_master_dof);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
   return pattern;
 }

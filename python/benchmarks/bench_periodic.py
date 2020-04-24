@@ -264,7 +264,7 @@ if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
     out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                        fname, "w")
-    for i in range(6):  # range(4, 5):
+    for i in range(5):  # range(4, 5):
         fname = "results/demo_periodic3d_{0:d}.xdmf".format(i)
         out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                            fname, "w")
