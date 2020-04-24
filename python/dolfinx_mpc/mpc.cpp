@@ -38,6 +38,7 @@ void mpc(py::module& m)
       .def("slaves", &dolfinx_mpc::MultiPointConstraint::slaves)
       .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
       .def("masters_local", &dolfinx_mpc::MultiPointConstraint::masters_local)
+      .def("slaves_local", &dolfinx_mpc::MultiPointConstraint::slaves_local)
       .def("create_sparsity_pattern",
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
       .def("mpc_dofmap", &dolfinx_mpc::MultiPointConstraint::mpc_dofmap);

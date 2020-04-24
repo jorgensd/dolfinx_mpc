@@ -7,6 +7,7 @@
 #include "utils.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
+#include <dolfinx/common/Timer.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
@@ -17,70 +18,112 @@
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
-
 using namespace dolfinx_mpc;
 
-std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-          std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>
+std::vector<
+    std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+              std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>>
 dolfinx_mpc::locate_cells_with_dofs(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> dofs)
+    std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dofs)
 {
+  dolfinx::common::Timer timer(
+      "MPC: Locate slave and master cells given their dofs");
+  // Flatten data from dofs
+  std::vector<std::vector<std::int64_t>> flatten_dofs(dofs.size());
+  for (std::size_t c = 0; c < dofs.size(); ++c)
+  {
+    std::vector<std::int64_t> dofs_c(V->dim(), 0);
+    for (std::size_t i = 0; i < dofs[c].size(); ++i)
+    {
+      dofs_c[dofs[c][i]] = 1;
+    }
+    flatten_dofs[c] = dofs_c;
+  }
+
   const dolfinx::mesh::Mesh& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
   const std::vector<std::int64_t> global_indices
       = dofmap.index_map->global_indices(false);
 
   /// Data structures
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cell_to_dofs;
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> cell_to_dofs_offsets;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> cells_with_dofs;
+  std::vector<std::vector<std::int64_t>> cell_to_dofs_vec(dofs.size());
+  std::vector<std::vector<std::int32_t>> cell_to_dofs_offsets_vec(dofs.size());
+  std::vector<std::vector<std::int64_t>> cells_with_dofs_vec(dofs.size());
 
-  /// Loop over all cells on this process
-  std::int64_t offset_index = 0;
-  cell_to_dofs_offsets.conservativeResize(1);
-  cell_to_dofs_offsets.tail(1) = offset_index;
+  std::vector<std::int64_t> offset_index(dofs.size());
+  for (std::size_t c = 0; c < dofs.size(); ++c)
+  {
+    offset_index[c] = 0;
+    cell_to_dofs_offsets_vec[c].push_back(0);
+  }
   const int tdim = mesh.topology().dim();
   const int num_cells = mesh.topology().index_map(tdim)->size_local();
+
+  // Loop thorough all cells
   for (int cell_index = 0; cell_index < num_cells; cell_index++)
   {
-
     auto cell_dofs = dofmap.cell_dofs(cell_index);
+    std::vector<bool> in_cell(dofs.size(), false);
 
-    /// Check if dof is in cell
-    bool in_cell = false;
-    for (Eigen::Index i = 0; i < cell_dofs.size(); ++i)
+    for (std::size_t c = 0; c < dofs.size(); ++c)
     {
-      for (Eigen::Index j = 0; j < dofs.size(); ++j)
+      for (Eigen::Index i = 0; i < cell_dofs.size(); ++i)
       {
-        if (global_indices[cell_dofs[i]] == dofs[j])
+        // Check if cell dof is in any list
+        if (flatten_dofs[c][global_indices[cell_dofs[i]]] == 1)
         {
-          cell_to_dofs.conservativeResize(cell_to_dofs.size() + 1);
-          cell_to_dofs.tail(1) = dofs[j];
-          offset_index++;
-          in_cell = true;
+          in_cell[c] = true;
+          cell_to_dofs_vec[c].push_back(global_indices[cell_dofs[i]]);
+          offset_index[c]++;
         }
       }
     }
-    if (in_cell)
+    // Append cell to list if it has dofs in any list
+    for (std::size_t c = 0; c < dofs.size(); ++c)
     {
-      cells_with_dofs.conservativeResize(cells_with_dofs.size() + 1);
-      cells_with_dofs.tail(1) = cell_index;
-      cell_to_dofs_offsets.conservativeResize(cell_to_dofs_offsets.size() + 1);
-      cell_to_dofs_offsets.tail(1) = offset_index;
+      if (in_cell[c])
+      {
+        cells_with_dofs_vec[c].push_back(cell_index);
+        cell_to_dofs_offsets_vec[c].push_back(offset_index[c]);
+      }
     }
   }
+  std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> cell_to_dofs_list(
+      dofs.size());
+  std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
+      cell_to_dofs_offsets_list(dofs.size());
+  std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
+      cells_with_dofs_list(dofs.size());
+  std::vector<
+      std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+                std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>>
+      out_data(dofs.size());
 
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> cell_adj
-      = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
-          cell_to_dofs, cell_to_dofs_offsets);
+  // Create Eigen arrays for the vectors to wrap nicely to adjacency lists.
+  for (std::size_t c = 0; c < dofs.size(); ++c)
+  {
+    Eigen::Map<const Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
+        cell_to_dofs(cell_to_dofs_vec[c].data(), cell_to_dofs_vec[c].size());
+    Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+        cell_to_dofs_offsets(cell_to_dofs_offsets_vec[c].data(),
+                             cell_to_dofs_offsets_vec[c].size());
+    Eigen::Map<const Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
+        cells_with_dofs(cells_with_dofs_vec[c].data(),
+                        cells_with_dofs_vec[c].size());
+    std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> cell_adj
+        = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
+            cell_to_dofs, cell_to_dofs_offsets);
+    out_data[c] = std::make_pair(cells_with_dofs, cell_adj);
+  }
 
-  return std::make_pair(cells_with_dofs, cell_adj);
+  return out_data;
 }
 // //-----------------------------------------------------------------------------
 void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
                                          const dolfinx::fem::Form& a)
 {
+  dolfinx::common::Timer timer("MPC: Build classic sparsity pattern");
   // Get dof maps
   std::array<const dolfinx::fem::DofMap*, 2> dofmaps
       = {{a.function_space(0)->dofmap().get(),
@@ -100,7 +143,6 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
           dolfinx::fem::FormIntegrals::Type::interior_facet)
       > 0)
   {
-
     mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
     mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
                                                 mesh.topology().dim());
@@ -126,6 +168,8 @@ dolfinx_mpc::get_basis_functions(
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index)
 {
+  dolfinx::common::Timer timer(
+      "MPC: Evaluate basis functions for cell at point");
   // TODO: This could be easily made more efficient by exploiting points
   // being ordered by the cell to which they belong.
 

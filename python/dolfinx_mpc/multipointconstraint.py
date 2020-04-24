@@ -9,7 +9,7 @@ import numba
 from mpi4py import MPI
 from petsc4py import PETSc
 import types
-from dolfinx import function, fem
+from dolfinx import function, fem, log
 from .assemble_matrix import in_numpy_array, add_diagonal
 import numpy
 
@@ -102,6 +102,7 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
                             lambda x loc_u3:{lambda x loc_u4: beta,
                                              lambda x loc_u5: gamma}}
     """
+    log.log(log.LogLevel.INFO, "Creating master-slave structure")
     slaves = []
     masters = []
     coeffs = []
