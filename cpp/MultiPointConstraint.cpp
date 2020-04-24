@@ -159,125 +159,108 @@ MultiPointConstraint::generate_index_map()
   dolfinx::common::Timer timer3(
       "MPC: MASTER_MASTER index map with correct ghosting");
 
-  // Loop over master cells on local processor and add ghosts for all other
-  // masters (This could probably be optimized, but thats for later)
-
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters_arr = _masters->array();
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_offsets
-      = _masters->offsets();
-
-  // for (Eigen::Index i = 0; i < masters_arr.size(); i++)
-  // {
-  //   // Only add contributions from the other masters if this master is local
-  //   std::cout << masters_arr[i] << " " << block_size * local_range[0] << " ||
-  //   "
-  //             << block_size * local_range[1] << std::endl;
-  //   // if ((masters_arr[i] >= block_size * local_range[0])
-  //   //     && (block_size * local_range[1] > masters_arr[i]))
-  //   //{
-  //   // Add all other masters for same slave
-  //   for (std::int64_t j = 0; j < master_offsets.size() - 1; j++)
-  //   {
-  //     if (master_offsets[j] <= i && i < master_offsets[j + 1])
-  //     {
-  //       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> other_masters
-  //           = _masters->links(j);
-  //       // Check if other master is not owned locally
-  //       for (std::int64_t k = 0; k < other_masters.size(); k++)
-  //       {
-  //         if ((other_masters[k] < block_size * local_range[0])
-  //             || (block_size * local_range[1] <= other_masters[k]))
-  //         {
-  //           const int other_master_as_int = other_masters[k];
-  //           const std::div_t other_div
-  //               = std::div(other_master_as_int, block_size);
-  //           const int other_index = other_div.quot;
-  //           std::int32_t is_ghost = (new_ghosts == other_index).count() > 0;
-  //           auto is_new_ghost = std::find(additional_ghosts.begin(),
-  //                                         additional_ghosts.end(),
-  //                                         other_index);
-
-  //           if ((!is_ghost) && (is_new_ghost == additional_ghosts.end()))
-  //           {
-  //             std::cout
-  //                 << "Local master has other non-local master dependency\n"
-  //                 << masters_arr[i] << "-> " << other_index << "\n";
-  //             additional_ghosts.push_back(other_index);
-  //           }
-  //         }
-  //       }
-  //     }
-  //     // }
-  //   }
-
-  //   // Check if master is shared by other slaves (globally)
-  //   std::int32_t occur = (masters_arr == masters_arr[i]).count();
-  //   if (occur > 1)
-  //   {
-  //     std::vector<Eigen::Index> occurs_at;
-  //     for (Eigen::Index j = 0; j < masters_arr.size(); j++)
-  //     {
-  //       if ((masters_arr[i] == masters_arr[j]))
-  //       {
-  //         occurs_at.push_back(j);
-  //       }
-  //     }
-  //     // Find which slaves the master belongs
-  //     for (std::int64_t o = 0; o < occurs_at.size(); o++)
-  //     {
-  //       for (std::int64_t j = 0; j < master_offsets.size() - 1; j++)
-  //       {
-  //         if (master_offsets[j] <= occurs_at[o]
-  //             && occurs_at[o] < master_offsets[j + 1])
-  //         {
-  //           // If master belongs to slave j, add all other masters of this
-  //           // slave
-  //           Eigen::Array<std::int64_t, Eigen::Dynamic, 1> other_masters
-  //               = _masters->links(j);
-  //           for (std::int64_t k = 0; k < other_masters.size(); k++)
-  //           {
-  //             // Check if other master is not owned locally
-  //             if ((other_masters[k] < block_size * local_range[0])
-  //                 || (block_size * local_range[1] <= other_masters[k]))
-  //             {
-  //               const int other_master_as_int = other_masters[k];
-  //               const std::div_t other_div
-  //                   = std::div(other_master_as_int, block_size);
-  //               const int other_index = other_div.quot;
-  //               std::int32_t is_ghost = (new_ghosts == other_index).count() >
-  //               0; auto is_new_ghost
-  //                   = std::find(additional_ghosts.begin(),
-  //                               additional_ghosts.end(), other_index);
-
-  //               if ((!is_ghost) && (is_new_ghost == additional_ghosts.end()))
-  //               {
-  //                 additional_ghosts.push_back(other_index);
-  //               }
-  //             }
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
-  // Loop over master cells on local processor and add ghosts for all other
-  // masters (This could probably be optimized, but thats for later)
-  for (Eigen::Index i = 0; i < masters_arr.size(); ++i)
+  // Add ghosts for all other master for same slave
+  for (std::int64_t i = 0; i < _masters->num_nodes(); i++)
   {
-    // Check if master is owned by processor
-    if ((masters_arr[i] < block_size * local_range[0])
-        || (block_size * local_range[1] <= masters_arr[i]))
+    for (std::int64_t j = 0; j < _masters->links(i).size(); j++)
     {
-      // If master is not owned, check if it is ghosted
-      const int master_as_int = _masters->array()[i];
-      const std::div_t div = std::div(master_as_int, block_size);
-      const int index = div.quot;
-      std::int32_t is_already_ghost = (new_ghosts == index).count();
-      auto is_new_ghost = std::find(additional_ghosts.begin(),
-                                    additional_ghosts.end(), index);
-      if ((is_already_ghost == 0) && (is_new_ghost == additional_ghosts.end()))
+      // Only insert if master is in local range
+      if ((_masters->links(i)[j] >= block_size * local_range[0])
+          && (block_size * local_range[1] > _masters->links(i)[j]))
       {
-        additional_ghosts.push_back(index);
+        for (std::int64_t k = 0; k < _masters->links(i).size(); k++)
+        {
+          if (i != k)
+          {
+            // Check if other master is not locally owned
+            if ((_masters->links(i)[k] < block_size * local_range[0])
+                || (block_size * local_range[1] <= _masters->links(i)[k]))
+            {
+              const int other_master_as_int = _masters->links(i)[k];
+              const std::div_t other_div
+                  = std::div(other_master_as_int, block_size);
+              const int other_index = other_div.quot;
+              // Check if master has already been ghosted
+              std::int32_t is_ghost = (new_ghosts == other_index).count() > 0;
+              auto is_new_ghost
+                  = std::find(additional_ghosts.begin(),
+                              additional_ghosts.end(), other_index);
+
+              if ((!is_ghost) && (is_new_ghost == additional_ghosts.end()))
+                additional_ghosts.push_back(other_index);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Add ghosts for same master for different slave
+  for (std::int64_t i = 0; i < _masters->num_nodes(); i++)
+  {
+
+    for (std::int64_t j = 0; j < _masters->links(i).size(); j++)
+    {
+      // Only insert if master is in local range
+      if ((_masters->links(i)[j] >= block_size * local_range[0])
+          && (block_size * local_range[1] > _masters->links(i)[j]))
+      {
+        // Check if master occurs multiple times
+        std::int32_t occur
+            = (_masters->array() == _masters->links(i)[j]).count();
+
+        if (occur > 1)
+        {
+          const int master_as_int = _masters->links(i)[j];
+          const std::div_t div = std::div(master_as_int, block_size);
+          const int index = div.quot;
+          Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_block(block_size);
+
+          for (std::int64_t comp = 0; comp < block_size; comp++)
+            master_block[comp] = block_size * index + comp;
+          std::vector<Eigen::Index> occurs_at;
+          // Find where other masters are in global array
+          for (Eigen::Index k = 0; k < _masters->array().size(); k++)
+          {
+            if ((_masters->array()[i] == _masters->array()[k]) and (i != k))
+            {
+              occurs_at.push_back(k);
+            }
+          }
+          // Find which slaves the master belongs
+          for (std::int64_t o = 0; o < occurs_at.size(); o++)
+          {
+            for (std::int64_t k = 0; k < _masters->offsets().size() - 1; k++)
+            {
+              if (_masters->offsets()[k] <= occurs_at[o]
+                  && occurs_at[o] < _masters->offsets()[k + 1])
+              {
+                for (std::int64_t l = 0; l < _masters->links(k).size(); l++)
+                {
+                  // Check if other master is not locally owned
+                  if ((_masters->links(k)[l] < block_size * local_range[0])
+                      || (block_size * local_range[1] <= _masters->links(k)[l]))
+                  {
+                    const int other_master_as_int = _masters->links(k)[l];
+                    const std::div_t other_div
+                        = std::div(other_master_as_int, block_size);
+                    const int other_index = other_div.quot;
+                    // Check if master has already been ghosted
+                    std::int32_t is_ghost
+                        = (new_ghosts == other_index).count() > 0;
+                    auto is_new_ghost
+                        = std::find(additional_ghosts.begin(),
+                                    additional_ghosts.end(), other_index);
+
+                    if ((!is_ghost)
+                        && (is_new_ghost == additional_ghosts.end()))
+                      additional_ghosts.push_back(other_index);
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -395,34 +378,40 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
     }
   }
 
-  // Add pattern for all masters for the same slave
+  // Add pattern for all local masters for the same slave
   for (std::int64_t i = 0; i < _masters_local->num_nodes(); i++)
   {
     for (std::int64_t j = 0; j < _masters_local->links(i).size(); j++)
     {
-      std::int32_t local_master = _masters_local->links(i)[j];
-      const std::div_t div = std::div(local_master, block_size);
-      const int index = div.quot;
-      Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
-      for (std::int64_t comp = 0; comp < block_size; comp++)
-        local_master_dof[comp] = block_size * index + comp;
-      for (std::int64_t k = j + 1; k < _masters_local->links(i).size(); k++)
+      if ((_masters->links(i)[j] >= block_size * local_range[0])
+          && (block_size * local_range[1] > _masters->links(i)[j]))
       {
-        // Map other master to local dof and add remainder of block
-        std::int32_t other_local_master = _masters_local->links(i)[k];
-        const std::div_t other_div = std::div(other_local_master, block_size);
-        const int other_index = other_div.quot;
-        Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(block_size);
-
+        std::int32_t local_master = _masters_local->links(i)[j];
+        const std::div_t div = std::div(local_master, block_size);
+        const int index = div.quot;
+        Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
         for (std::int64_t comp = 0; comp < block_size; comp++)
-          other_master_dof[comp] = block_size * other_index + comp;
+          local_master_dof[comp] = block_size * index + comp;
+        for (std::int64_t k = j + 1; k < _masters_local->links(i).size(); k++)
+        {
+          // Map other master to local dof and add remainder of block
+          std::int32_t other_local_master = _masters_local->links(i)[k];
+          const std::div_t other_div = std::div(other_local_master, block_size);
+          const int other_index = other_div.quot;
+          Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(
+              block_size);
 
-        pattern.insert(local_master_dof, other_master_dof);
-        pattern.insert(other_master_dof, local_master_dof);
+          for (std::int64_t comp = 0; comp < block_size; comp++)
+            other_master_dof[comp] = block_size * other_index + comp;
+
+          pattern.insert(local_master_dof, other_master_dof);
+          pattern.insert(other_master_dof, local_master_dof);
+        }
       }
     }
   }
-  // Add pattern for same master on different cell
+
+  // Add pattern for same master for different slave
   for (std::int64_t i = 0; i < _masters->num_nodes(); i++)
   {
     for (std::int64_t j = 0; j < _masters->links(i).size(); j++)
@@ -461,23 +450,28 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
               if (_masters->offsets()[k] <= occurs_at[o]
                   && occurs_at[o] < _masters->offsets()[k + 1])
               {
-                // Add pattern for all other masters for the other occurrence of
-                // the master
+                // Add pattern for all other masters for the other occurrence
+                // of the master
                 for (std::int64_t l = 0; l < _masters_local->links(k).size();
                      l++)
                 {
-                  const std::div_t other_div
-                      = std::div(_masters_local->links(k)[l], block_size);
-                  const int other_index = other_div.quot;
-                  Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(
-                      block_size);
+                  // Check if other master is not locally owned
+                  if ((_masters->links(k)[l] < block_size * local_range[0])
+                      || (block_size * local_range[1] <= _masters->links(k)[l]))
+                  {
+                    const std::div_t other_div
+                        = std::div(_masters_local->links(k)[l], block_size);
+                    const int other_index = other_div.quot;
+                    Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(
+                        block_size);
 
-                  for (std::int64_t comp = 0; comp < block_size; comp++)
-                    other_master_dof[comp] = block_size * other_index + comp;
-                  // Sparsity pattern insert is the local block each master is
-                  // in
-                  pattern.insert(local_master_dof, other_master_dof);
-                  pattern.insert(other_master_dof, local_master_dof);
+                    for (std::int64_t comp = 0; comp < block_size; comp++)
+                      other_master_dof[comp] = block_size * other_index + comp;
+                    // Sparsity pattern insert is the local block each master
+                    // is in
+                    pattern.insert(local_master_dof, other_master_dof);
+                    pattern.insert(other_master_dof, local_master_dof);
+                  }
                 }
               }
             }
