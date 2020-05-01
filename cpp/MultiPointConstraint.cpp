@@ -341,6 +341,11 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   master_for_slave[0].resize(block_size);
   master_for_slave[1].resize(block_size);
 
+  std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> master_for_other_slave(
+      2);
+  master_for_other_slave[0].resize(block_size);
+  master_for_other_slave[1].resize(block_size);
+
   // Add non-zeros for each slave cell to sparsity pattern.
   // For the i-th cell with a slave, all local entries has to be from the
   // j-th slave to the k-th master degree of freedom
@@ -374,6 +379,28 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
         // Add all values on cell (including slave), to get complete blocks
         pattern.insert(master_for_slave[0], cell_dof_lists[1]);
         pattern.insert(cell_dof_lists[0], master_for_slave[1]);
+      }
+      // Add pattern for master owned by other slave on same cell
+      for (Eigen::Index k = j + 1; k < _cells_to_dofs[0]->links(i).size(); k++)
+      {
+        for (Eigen::Index l = 0;
+             l
+             < _masters_local->links(_cell_to_slave_index->links(i)[k]).size();
+             l++)
+        {
+          std::int32_t other_local_master
+              = _masters_local->links(_cell_to_slave_index->links(i)[k])[l];
+          const std::div_t odiv = std::div(other_local_master, block_size);
+          const int oindex = odiv.quot;
+          for (std::size_t m = 0; m < 2; m++)
+          {
+
+            for (std::size_t comp = 0; comp < block_size; comp++)
+              master_for_other_slave[m](comp) = block_size * oindex + comp;
+          }
+          pattern.insert(master_for_slave[0], master_for_other_slave[1]);
+          pattern.insert(master_for_other_slave[0], master_for_slave[1]);
+        }
       }
     }
   }
