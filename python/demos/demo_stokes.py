@@ -150,11 +150,11 @@ def set_master_slave_slip_relationship(W, V, mt, value, bcs):
     # Find index of each pair of x and y components.
     for d_x in dofx:
         # Skip if dof is a ghost
-        if d_x[1] > Vx.dofmap.index_map.size_local:
+        if d_x[1] >= Vx.dofmap.index_map.size_local:
             continue
         for d_y in dofy:
             # Skip if dof is a ghost
-            if d_y[1] > Vy.dofmap.index_map.size_local:
+            if d_y[1] >= Vy.dofmap.index_map.size_local:
                 continue
             # Skip if not at same physical coordinate
             if not np.allclose(x[d_x[0]], x[d_y[0]]):
