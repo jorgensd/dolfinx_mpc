@@ -26,10 +26,8 @@ def test_surface_integrals():
         return np.isclose(x[0], np.finfo(float).eps)
 
     fdim = mesh.topology.dim - 1
-    left_facets = dolfinx.mesh.locate_entities_geometrical(mesh,
-                                                           fdim,
-                                                           left_wall,
-                                                           boundary_only=True)
+    left_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
+                                                        left_wall)
     bc_dofs = dolfinx.fem.locate_dofs_topological(V, 1, left_facets)
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
@@ -40,8 +38,7 @@ def test_surface_integrals():
     # Traction on top of domain
     def top(x):
         return np.isclose(x[1], 1)
-    top_facets = dolfinx.mesh.locate_entities_geometrical(mesh, 1, top,
-                                                          boundary_only=True)
+    top_facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, top)
     mt = dolfinx.mesh.MeshTags(mesh, fdim, top_facets, 3)
 
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
@@ -174,8 +171,8 @@ def test_surface_integral_dependency():
     def top(x):
         return np.isclose(x[1], 1)
     fdim = mesh.topology.dim - 1
-    top_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, top, boundary_only=True)
+    top_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, top)
 
     indices = np.array([], dtype=np.intc)
     values = np.array([], dtype=np.intc)
