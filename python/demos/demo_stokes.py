@@ -61,13 +61,13 @@ if MPI.COMM_WORLD.size == 1:
 # Load mesh and corresponding facet markers
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                          "meshes/mesh.xdmf", "r") as xdmf:
-    mesh = xdmf.read_mesh("Grid")
+    mesh = xdmf.read_mesh(name="Grid")
 
 
 mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                          "meshes/facet_mesh.xdmf", "r") as xdmf:
-    mt = xdmf.read_meshtags(mesh, "Grid")
+    mt = xdmf.read_meshtags(mesh, name="Grid")
 
 outfile = dolfinx.io.XDMFFile(
     MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w")

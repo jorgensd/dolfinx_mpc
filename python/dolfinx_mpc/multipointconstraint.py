@@ -183,7 +183,7 @@ def dof_close_to(x, point):
 def facet_normal_approximation(V, mt, mt_id):
     import dolfinx
     import ufl
-    n = dolfinx.FacetNormal(V.mesh)
+    n = ufl.FacetNormal(V.mesh)
     nh = dolfinx.Function(V)
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
     a = (dolfinx.Constant(V.mesh, 0)*ufl.inner(u, v)*ufl.dx

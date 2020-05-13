@@ -27,9 +27,8 @@ def demo_elasticity():
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
-    facets = dolfinx.mesh.locate_entities_geometrical(mesh, 1,
-                                                      boundaries,
-                                                      boundary_only=True)
+    facets = dolfinx.mesh.locate_entities_boundary(mesh, 1,
+                                                   boundaries)
     topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
     bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
     bcs = [bc]
