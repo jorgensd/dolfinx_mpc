@@ -86,6 +86,41 @@ def generate_rectangle(x0, x1, y0, y1, theta,  res, markers,
     return mesh
 
 
+def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
+                     volume_marker=None):
+    """
+    Generate the box [x0,y0,z0]x[y0,y1,z0], rotated theta degrees around
+    the origin over axis [0,1,1] with resolution res,
+    where markers are is an array containing markers
+    array of markers for [left, back, top, bottom, front, right]
+    and an optional volume_marker.
+    """
+    geom = pygmsh.built_in.Geometry()
+
+    rect = geom.add_rectangle(x0, x1, y0, y1, 0.0, res)
+    geom.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
+
+    geom.add_raw_code("Mesh.RecombinationAlgorithm = 2;")
+    geom.add_raw_code("Recombine Surface {:};")
+    bottom, volume, sides = geom.extrude(rect, translation_axis=[0, 0, 1],
+                                         num_layers=int(1/res), recombine=True)
+
+    geom.add_physical(bottom, facet_markers[4])
+    if volume_marker is None:
+        geom.add_physical(volume, 0)
+    else:
+        geom.add_physical(volume, volume_marker)
+    geom.add_physical(rect.surface, facet_markers[1])
+    geom.add_physical(sides[0], facet_markers[3])
+    geom.add_physical(sides[1], facet_markers[5])
+    geom.add_physical(sides[2], facet_markers[2])
+    geom.add_physical(sides[3], facet_markers[0])
+    msh = pygmsh.generate_mesh(geom, verbose=False)
+
+    msh.points[:, -1] += z0
+    return msh
+
+
 def generate_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
                  volume_marker=None):
     """
@@ -118,7 +153,7 @@ def mesh_2D_rot_quad(theta=np.pi/5):
     """
     res = 0.2
     msh0 = generate_rectangle(0, 1, 0, 1, theta, res=res, markers=[
-                              5, 8, 4, 10], quad=True)
+        5, 8, 4, 10], quad=True)
     msh1 = generate_rectangle(0, 1, 1, 2, theta, res=2*res,
                               markers=[9, 6, 3, 7], volume_marker=True,
                               quad=True)
@@ -142,13 +177,22 @@ def mesh_2D_rot(theta=np.pi/5):
     meshio.write("meshes/facet_rot.xdmf", facet_mesh)
 
 
-def mesh_3D_rot(theta=np.pi/2):
+def mesh_3D_rot(theta=np.pi/2, ct="tetra"):
     res = 0.125
-    msh0 = generate_box(0, 0, 0, 1, 1, 1, theta, res,
-                        [11, 12, 4, 5, 13, 14, 15])
-    msh1 = generate_box(0, 0, 1, 1, 1, 2, theta, 2*res,
-                        [11, 12, 3, 9, 13, 14, 15], 2)
-    mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "tetra", "triangle")
+    if ct == "tetra":
+        msh0 = generate_box(0, 0, 0, 1, 1, 1, theta, res,
+                            [11, 12, 4, 5, 13, 14])
+        msh1 = generate_box(0, 0, 1, 1, 1, 2, theta, 2*res,
+                            [11, 12, 3, 9, 13, 14], 2)
+        mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "tetra", "triangle")
+    elif ct == "hexahedron":
+        msh0 = generate_hex_box(0, 0, 0, 1, 1, 1, theta, res,
+                                [11, 5, 12, 13, 4, 14])
+        msh1 = generate_hex_box(0, 0, 1, 1, 1, 2, theta, 2*res,
+                                [11, 9, 12, 13, 3, 14], 2)
+        mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "hexahedron", "quad")
+    else:
+        raise ValueError("Celltype has to be tetra or hex.")
     meshio.xdmf.write("meshes/mesh3D_rot.xdmf", mesh)
     meshio.xdmf.write("meshes/facet3D_rot.xdmf", facet_mesh)
 

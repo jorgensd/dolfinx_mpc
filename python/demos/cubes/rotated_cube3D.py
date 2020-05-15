@@ -36,7 +36,10 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         if dolfin_mesh:
             mesh_3D_dolfin(theta, ct, ext)
         else:
-            mesh_3D_rot(theta)
+            if ext == "tetrahedron":
+                mesh_3D_rot(theta, "tetra")
+            else:
+                mesh_3D_rot(theta, ext)
     # Read in mesh
     if dolfin_mesh:
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
@@ -54,7 +57,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  "meshes/mesh3D_rot.xdmf", "r") as xdmf:
             mesh = xdmf.read_mesh(name="Grid")
-            mesh.name = "mesh-{0:.2f}".format(theta)
+            mesh.name = "mesh_{0:s}_{1:.2f}".format(ext, theta)
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
@@ -220,5 +223,7 @@ if __name__ == "__main__":
     for ct in cts:
         demo_stacked_cubes(outfile, theta=0, dolfin_mesh=True, ct=ct)
         demo_stacked_cubes(outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct)
-    demo_stacked_cubes(outfile, theta=np.pi/5)
+    # NOTE: Unstructured hex meshes not working nicely as interfaces do not match.
+    demo_stacked_cubes(
+        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron)
     outfile.close()
