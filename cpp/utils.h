@@ -13,16 +13,17 @@
 namespace dolfinx_mpc
 {
 
-/// Returning the cell indices for all elements containing to input dofs, and a
-/// mapping from these cells to the corresponding dofs
+/// Returning the cell indices for all elements containing to a list of input
+/// dofs, and the mapping from these cells to the corresponding dofs
 /// @param[in] V The function space the multi point constraint is applied on
-/// @param[in] dofs A list of the global degrees of freedom for the dofs that
-/// should be located.
-std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-          std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>
+/// @param[in] dofs A nested list of the global degrees of freedom for the dofs
+/// that should be located.
+std::vector<
+    std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+              std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>>
 locate_cells_with_dofs(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> dofs);
+    std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dofs);
 
 /// Append standard sparsity pattern for a given form to a pre-initialized
 /// pattern and a DofMap

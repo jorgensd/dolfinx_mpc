@@ -9,7 +9,7 @@ import numba
 from mpi4py import MPI
 from petsc4py import PETSc
 import types
-from dolfinx import function, fem
+from dolfinx import function, fem, log
 from .assemble_matrix import in_numpy_array, add_diagonal
 import numpy
 
@@ -102,47 +102,61 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
                             lambda x loc_u3:{lambda x loc_u4: beta,
                                              lambda x loc_u5: gamma}}
     """
+    log.log(log.LogLevel.INFO, "Creating master-slave structure")
     slaves = []
     masters = []
     coeffs = []
     offsets = []
-    local_min = (V.dofmap.index_map.local_range[0]
-                 * V.dofmap.index_map.block_size)
+    local_to_global = V.dofmap.index_map.global_indices(False)
     if subspace_slave is not None:
         Vsub_slave = V.sub(subspace_slave).collapse()
     if subspace_master is not None:
         Vsub_master = V.sub(subspace_master).collapse()
+
     for slave in slave_master_dict.keys():
         offsets.append(len(masters))
         if subspace_slave is None:
-            dof = fem.locate_dofs_geometrical(V, slave) + local_min
-            dof_global = numpy.vstack(MPI.COMM_WORLD.allgather(dof))[0]
-
+            dof = fem.locate_dofs_geometrical(V, slave)[:, 0]
         else:
             dof = fem.locate_dofs_geometrical((V.sub(subspace_slave),
                                                Vsub_slave),
-                                              slave)
-            for (i, d) in enumerate(dof):
-                dof[i] += local_min
-            dof_global = numpy.vstack(MPI.COMM_WORLD.allgather(dof))[0, 0]
-        slaves.append(dof_global)
+                                              slave)[:, 0]
+
+        dof_global = []
+        if len(dof) > 0:
+            for d in dof:
+                dof_global.append(local_to_global[d])
+        else:
+            dof_global = []
+        dofs_global = numpy.hstack(MPI.COMM_WORLD.allgather(dof_global))
+        assert(len(set(dofs_global)) == 1)
+        slaves.append(dofs_global[0])
+
         for master in slave_master_dict[slave].keys():
             if subspace_master is None:
-                dof_m = fem.locate_dofs_geometrical(V, master) + local_min
-                dof_m = numpy.vstack(MPI.COMM_WORLD.allgather(dof_m))[0]
+                dof = fem.locate_dofs_geometrical(V, master)[:, 0]
             else:
-                dof_m = fem.locate_dofs_geometrical((V.sub(subspace_master),
-                                                     Vsub_master),
-                                                    master)
-                for (i, d) in enumerate(dof_m):
-                    dof_m[i] += local_min
-                dof_m = numpy.vstack(MPI.COMM_WORLD.allgather(dof_m))[0, 0]
+                dof = fem.locate_dofs_geometrical((V.sub(subspace_master),
+                                                   Vsub_master),
+                                                  master)[:, 0]
+            dof_m_global = []
+            if len(dof) > 0:
+                for d in dof:
+                    dof_m_global.append(local_to_global[d])
+            else:
+                dof_global = []
+            dofs_m_global = numpy.hstack(
+                MPI.COMM_WORLD.allgather(dof_m_global))
+            assert(len(set(dofs_m_global)) == 1)
 
-            masters.append(dof_m)
+            masters.append(dofs_m_global[0])
             coeffs.append(slave_master_dict[slave][master])
     offsets.append(len(masters))
-    return (numpy.array(slaves), numpy.array(masters),
-            numpy.array(coeffs, dtype=numpy.float64), numpy.array(offsets))
+    slaves = numpy.array(slaves, dtype=numpy.int64)
+    masters = numpy.array(masters, dtype=numpy.int64)
+    assert(not numpy.all(numpy.isin(masters, slaves)))
+    return (slaves, masters, numpy.array(coeffs, dtype=numpy.float64),
+            numpy.array(offsets))
 
 
 def dof_close_to(x, point):

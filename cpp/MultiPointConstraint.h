@@ -63,6 +63,12 @@ public:
   /// Return array of slave coefficients
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves() { return _slaves; };
 
+  /// Return array of slave coefficients
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves_local()
+  {
+    return _slaves_local;
+  };
+
   /// Return local_indices of master coefficients
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters_local()
   {
@@ -104,6 +110,7 @@ private:
   // AdjacencyList for master and local master
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _masters;
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _masters_local;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves_local;
 
   Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
 
@@ -111,7 +118,9 @@ private:
   Eigen::Array<std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>,
                Eigen::Dynamic, 1>
       _cells_to_dofs;
-
+  // Cell to _slaves index (will have same offsets as _cells to dofs)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>
+      _cell_to_slave_index;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
 };

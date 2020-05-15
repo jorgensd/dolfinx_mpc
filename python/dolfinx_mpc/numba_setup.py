@@ -11,7 +11,10 @@ import os
 
 import cffi
 import numba
-import numba.cffi_support
+try:
+    import numba.core.typing.cffi_utils as cffi_support
+except ModuleNotFoundError:
+    from numba import cffi_support
 import numpy as np
 from petsc4py import PETSc
 from petsc4py import get_config as PETSc_get_config
@@ -60,10 +63,10 @@ petsc_lib_name = ctypes.util.find_library("petsc")
 
 # CFFI - register complex types
 ffi = cffi.FFI()
-numba.cffi_support.register_type(ffi.typeof('double _Complex'),
-                                 numba.types.complex128)
-numba.cffi_support.register_type(ffi.typeof('float _Complex'),
-                                 numba.types.complex64)
+cffi_support.register_type(ffi.typeof('double _Complex'),
+                           numba.types.complex128)
+cffi_support.register_type(ffi.typeof('float _Complex'),
+                           numba.types.complex64)
 
 
 # Get MatSetValues from PETSc available via cffi in ABI mode
@@ -125,12 +128,12 @@ if spec is None:
     raise ImportError("Failed to find CFFI generated module")
 module = importlib.util.module_from_spec(spec)
 
-numba.cffi_support.register_module(module)
+cffi_support.register_module(module)
 MatSetValues_api = module.lib.MatSetValues
 MatSetValuesLocal_api = module.lib.MatSetValuesLocal
 
-numba.cffi_support.register_type(module.ffi.typeof("PetscScalar"),
-                                 numba_scalar_t)
+cffi_support.register_type(module.ffi.typeof("PetscScalar"),
+                           numba_scalar_t)
 set_values = MatSetValues_api
 set_values_local = MatSetValuesLocal_api
 mode = PETSc.InsertMode.ADD_VALUES

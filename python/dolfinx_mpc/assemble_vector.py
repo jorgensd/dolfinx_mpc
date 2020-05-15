@@ -7,6 +7,7 @@ import numba
 import numpy
 
 import dolfinx
+import dolfinx.log
 
 from .numba_setup import PETSc, ffi
 from .assemble_matrix import in_numpy_array, pack_facet_info
@@ -14,6 +15,7 @@ from .assemble_matrix import in_numpy_array, pack_facet_info
 
 def assemble_vector(form, multipointconstraint,
                     bcs=[numpy.array([]), numpy.array([])]):
+    dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
 
