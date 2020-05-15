@@ -7,146 +7,150 @@ import dolfinx.io
 from mpi4py import MPI
 
 
-def mesh_2D_rot(theta=np.pi/2):
-    res = 0.1
-
-    # Lower Cube
-    # Top: 4, Bottom 5, Left 8, Right 9
-    geom0 = pygmsh.built_in.Geometry()
-    rect = geom0.add_rectangle(0.0, 1, 0.0, 1.0, 0.0, res)
-    geom0.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
-    geom0.add_physical([rect.surface], 0)
-
-    geom0.add_physical([rect.line_loop.lines[2]], 4)
-    geom0.add_physical([rect.line_loop.lines[0]], 5)
-    geom0.add_physical([rect.line_loop.lines[1]], 8)
-    geom0.add_physical([rect.line_loop.lines[3]], 9)
-    msh0 = pygmsh.generate_mesh(geom0, prune_z_0=True, verbose=False)
-
-    # Upper box:
-    # Top: 3, Bottom 9, Left 6, Right 7
-    geom1 = pygmsh.built_in.Geometry()
-    rect1 = geom1.add_rectangle(0.0, 1, 1.0, 2.0, 0.0, 2*res)
-    geom1.rotate(rect1, [0, 0, 0], theta, [0, 0, 1])
-
-    geom1.add_physical([rect1.line_loop.lines[2]], 3)
-    geom1.add_physical([rect1.line_loop.lines[0]], 9)
-    geom1.add_physical([rect1.line_loop.lines[1]], 6)
-    geom1.add_physical([rect1.line_loop.lines[3]], 7)
-    geom1.add_physical([rect1.surface], 2)
-    msh1 = pygmsh.generate_mesh(geom1, prune_z_0=True, verbose=False)
-
+def merge_msh_meshes(msh0, msh1, celltype, facettype):
+    """
+    Merge two meshio meshes with the same celltype, and create
+    the mesh and corresponding facet mesh with domain markers.
+    """
     points0 = msh0.points
 
-    # Write triangle mesh
-    tri_cells0 = np.vstack([cells.data for cells in msh0.cells
-                            if cells.type == "triangle"])
-    tri_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
-                           for key in
-                           msh0.cell_data_dict["gmsh:physical"].keys()
-                           if key == "triangle"])
+    cells0 = np.vstack([cells.data for cells in msh0.cells
+                        if cells.type == celltype])
+    cell_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
+                            for key in
+                            msh0.cell_data_dict["gmsh:physical"].keys()
+                            if key == celltype])
     points1 = msh1.points
     points = np.vstack([points0, points1])
-    tri_cells1 = np.vstack([cells.data for cells in msh1.cells
-                            if cells.type == "triangle"])
-    tri_data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
-                           for key in
-                           msh1.cell_data_dict["gmsh:physical"].keys()
-                           if key == "triangle"])
-    tri_cells1 += points0.shape[0]
-    tri_cells = np.vstack([tri_cells0, tri_cells1])
-    tri_data = np.hstack([tri_data0, tri_data1])
-    triangle_mesh = meshio.Mesh(points=points,
-                                cells=[("triangle", tri_cells)],
-                                cell_data={"name_to_read": tri_data})
-    meshio.write("meshes/mesh_rot.xdmf", triangle_mesh)
+    cells1 = np.vstack([cells.data for cells in msh1.cells
+                        if cells.type == celltype])
+    cell_data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
+                            for key in
+                            msh1.cell_data_dict["gmsh:physical"].keys()
+                            if key == celltype])
+    cells1 += points0.shape[0]
+    cells = np.vstack([cells0, cells1])
+    cell_data = np.hstack([cell_data0, cell_data1])
+    mesh = meshio.Mesh(points=points,
+                       cells=[(celltype, cells)],
+                       cell_data={"name_to_read": cell_data})
 
     # Write line mesh
     facet_cells0 = np.vstack([cells.data for cells in msh0.cells
-                              if cells.type == "line"])
+                              if cells.type == facettype])
     facet_data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
                              for key in
                              msh0.cell_data_dict["gmsh:physical"].keys()
-                             if key == "line"])
+                             if key == facettype])
     points1 = msh1.points
     points = np.vstack([points0, points1])
     facet_cells1 = np.vstack([cells.data for cells in msh1.cells
-                              if cells.type == "line"])
+                              if cells.type == facettype])
     facet_data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
                              for key in
                              msh1.cell_data_dict["gmsh:physical"].keys()
-                             if key == "line"])
+                             if key == facettype])
     facet_cells1 += points0.shape[0]
     facet_cells = np.vstack([facet_cells0, facet_cells1])
 
     facet_data = np.hstack([facet_data0, facet_data1])
     facet_mesh = meshio.Mesh(points=points,
-                             cells=[("line", facet_cells)],
+                             cells=[(facettype, facet_cells)],
                              cell_data={"name_to_read": facet_data})
+    return mesh, facet_mesh
+
+
+def generate_rectangle(x0, x1, y0, y1, theta,  res, markers,
+                       volume_marker=None, quad=False):
+    """
+    Generate the rectangle [x0,y0]x[y0,y1], rotated theta degrees around
+    the origin with resolution res,
+    where markers are is an array of markers for [bottom, left, top, right].
+    Optional arguments is a volume marker (default 0), and a flag for
+    specifying triangle (default) or quad elements.
+    """
+    geom = pygmsh.built_in.Geometry()
+
+    rect = geom.add_rectangle(x0, x1, y0, y1, 0.0, res)
+    geom.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
+    if volume_marker is None:
+        geom.add_physical([rect.surface], 0)
+    else:
+        geom.add_physical([rect.surface], volume_marker)
+    for i in range(len(markers)):
+        geom.add_physical([rect.line_loop.lines[i]], markers[i])
+    if quad:
+        geom.add_raw_code("Recombine Surface {:};")
+        geom.add_raw_code("Mesh.RecombinationAlgorithm = 2;")
+    mesh = pygmsh.generate_mesh(geom, verbose=False, prune_z_0=True)
+    return mesh
+
+
+def generate_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
+                 volume_marker=None):
+    """
+    Generate the box [x0,y0,z0]x[y0,y1,z0], rotated theta degrees around
+    the origin over axis [0,1,1] with resolution res,
+    where markers are is an array containing markers
+    array of markers for [left, back, top, bottom, front, right]
+    and an optional volume_marker.
+    """
+    geom = pygmsh.built_in.Geometry()
+    bbox = geom.add_box(x0, x1, y0, y1, z0, z1, res)
+    bbox.dimension = 3
+    bbox.id = bbox.volume.id
+    for i in range(len(bbox.surface_loop.surfaces)):
+        geom.add_physical([bbox.surface_loop.surfaces[i]], facet_markers[i])
+
+    geom.rotate(bbox, [0, 0, 0], -theta, [0, 1, 1])
+    if volume_marker is None:
+        geom.add_physical([bbox.volume], 0)
+    else:
+        geom.add_physical([bbox.volume], volume_marker)
+    msh = pygmsh.generate_mesh(geom, verbose=False)
+    return msh
+
+
+def mesh_2D_rot_quad(theta=np.pi/5):
+    """
+    Create two stacked cubes rotated by degree theta with quadrilateral
+    elements
+    """
+    res = 0.2
+    msh0 = generate_rectangle(0, 1, 0, 1, theta, res=res, markers=[
+                              5, 8, 4, 10], quad=True)
+    msh1 = generate_rectangle(0, 1, 1, 2, theta, res=2*res,
+                              markers=[9, 6, 3, 7], volume_marker=True,
+                              quad=True)
+    mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "quad", "line")
+    meshio.write("meshes/quad_mesh.xdmf", mesh)
+    meshio.write("meshes/quad_mesh_facets.xdmf", facet_mesh)
+
+
+def mesh_2D_rot(theta=np.pi/5):
+    """
+    Create two stacked cubes rotated by degree theta with triangular
+    elements
+    """
+    res = 0.1
+    msh0 = generate_rectangle(
+        0, 1, 0, 1, theta, res=res, markers=[5, 8, 4, 10])
+    msh1 = generate_rectangle(
+        0, 1, 1, 2, theta, res=2*res, markers=[9, 6, 3, 7], volume_marker=2)
+    mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "triangle", "line")
+    meshio.write("meshes/mesh_rot.xdmf", mesh)
     meshio.write("meshes/facet_rot.xdmf", facet_mesh)
 
 
 def mesh_3D_rot(theta=np.pi/2):
     res = 0.125
-    geom0 = pygmsh.built_in.Geometry()
-    bbox = geom0.add_box(0, 1, 0, 1, 0, 1, res)
-    bbox.dimension = 3
-    bbox.id = bbox.volume.id
-    # for i in range(len(bbox.surface_loop.surfaces)):
-    #     geom0.add_physical([bbox.surface_loop.surfaces[i]], i + 3)
-    geom0.add_physical([bbox.surface_loop.surfaces[2]], 4)
-    geom0.add_physical([bbox.surface_loop.surfaces[3]], 5)
-
-    geom0.rotate(bbox, [0, 0, 0], -theta, [0, 1, 1])
-    geom0.add_physical([bbox.volume], 0)
-    msh0 = pygmsh.generate_mesh(geom0, verbose=False)
-
-    geom1 = pygmsh.built_in.Geometry()
-    tbox = geom1.add_box(0, 1, 0, 1, 1, 2, 2*res)
-    tbox.id = tbox.volume.id
-    tbox.dimension = 3
-    geom1.rotate(tbox, [0, 0, 0], -theta, [0, 1, 1])
-    geom1.add_physical([tbox.volume], 2)
-    # for i in range(len(tbox.surface_loop.surfaces)):
-    #     geom1.add_physical([tbox.surface_loop.surfaces[i]], i + 9)
-    # Top 3, Interface 4
-    geom1.add_physical(tbox.surface_loop.surfaces[2], 3)
-    geom1.add_physical(tbox.surface_loop.surfaces[3], 9)
-
-    msh1 = pygmsh.generate_mesh(geom1, verbose=False)
-
-    points0 = msh0.points
-
-    def merge_and_write_mesh(msh0, msh1, celltype, meshname):
-        """
-        Merge two meshio meshes of a given celltype and write to file.
-        (The meshio mesh can contain multiple cell types).
-        """
-        cells0 = np.vstack([cells.data for cells in msh0.cells
-                            if cells.type == celltype])
-        data0 = np.vstack([msh0.cell_data_dict["gmsh:physical"][key]
-                           for key in
-                           msh0.cell_data_dict["gmsh:physical"].keys()
-                           if key == celltype])
-        points1 = msh1.points
-        points = np.vstack([points0, points1])
-        cells1 = np.vstack([cells.data for cells in msh1.cells
-                            if cells.type == celltype])
-        data1 = np.vstack([msh1.cell_data_dict["gmsh:physical"][key]
-                           for key in
-                           msh1.cell_data_dict["gmsh:physical"].keys()
-                           if key == celltype])
-        cells1 += points0.shape[0]
-        cells = np.vstack([cells0, cells1])
-
-        data = np.hstack([data0, data1])
-        mesh = meshio.Mesh(points=points,
-                           cells=[(celltype, cells)],
-                           cell_data={"name_to_read": data})
-        meshio.xdmf.write(meshname, mesh)
-
-    merge_and_write_mesh(msh0, msh1, "tetra", "meshes/mesh3D_rot.xdmf")
-    merge_and_write_mesh(msh0, msh1, "triangle", "meshes/facet3D_rot.xdmf")
+    msh0 = generate_box(0, 0, 0, 1, 1, 1, theta, res,
+                        [11, 12, 4, 5, 13, 14, 15])
+    msh1 = generate_box(0, 0, 1, 1, 1, 2, theta, 2*res,
+                        [11, 12, 3, 9, 13, 14, 15], 2)
+    mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "tetra", "triangle")
+    meshio.xdmf.write("meshes/mesh3D_rot.xdmf", mesh)
+    meshio.xdmf.write("meshes/facet3D_rot.xdmf", facet_mesh)
 
 
 def mesh_2D_dolfin(celltype, theta=0):
@@ -305,7 +309,8 @@ def mesh_2D_dolfin(celltype, theta=0):
     o_f.close()
 
 
-def mesh_3D_dolfin(theta=0):
+def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
+                   ext="tetrahedron"):
     def find_plane_function(p0, p1, p2):
         """
         Find plane function given three points:
@@ -331,8 +336,8 @@ def mesh_3D_dolfin(theta=0):
         D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
         return lambda x: n[0]*x[0] + n[1]*x[1] + D > -n[2]*x[2]
 
-    N = 2
-    ct = dolfinx.cpp.mesh.CellType.tetrahedron
+    N = 3
+
     nv = dolfinx.cpp.mesh.cell_num_vertices(ct)
     mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
     mesh1 = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 2*N, 2*N, 2*N, ct)
@@ -455,7 +460,7 @@ def mesh_3D_dolfin(theta=0):
                                indices, values)
     mt.name = "facet_tags"
     o_f = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                              "meshes/mesh_tetrahedron.xdmf", "w")
+                              "meshes/mesh_{0:s}.xdmf".format(ext), "w")
     o_f.write_mesh(mesh)
     o_f.write_meshtags(ct)
     o_f.write_meshtags(mt)

@@ -20,43 +20,53 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
-from create_and_export_mesh import mesh_3D_rot  # , mesh_3D_dolfin
+from create_and_export_mesh import mesh_3D_rot, mesh_3D_dolfin
 
 from helpers import find_master_slave_relationship
 
 
-def demo_stacked_cubes(outfile, theta):
+def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
+                       ct=dolfinx.cpp.mesh.CellType.tetrahedron):
+    if ct == dolfinx.cpp.mesh.CellType.hexahedron:
+        ext = "hexahedron"
+    else:
+        ext = "tetrahedron"
     # Create rotated mesh
     if MPI.COMM_WORLD.rank == 0:
-        mesh_3D_rot(theta)
-        # mesh_3D_dolfin(theta)
+        if dolfin_mesh:
+            mesh_3D_dolfin(theta, ct, ext)
+        else:
+            mesh_3D_rot(theta)
     # Read in mesh
-    with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                             "meshes/mesh3D_rot.xdmf", "r") as xdmf:
-        mesh = xdmf.read_mesh(name="Grid")
-        mesh.name = "mesh-{0:.2f}".format(theta)
-        tdim = mesh.topology.dim
-        fdim = tdim - 1
-        mesh.topology.create_connectivity(tdim, tdim)
-        ct = xdmf.read_meshtags(mesh, "Grid")
+    if dolfin_mesh:
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+                                 "meshes/mesh_{0:s}.xdmf".format(ext),
+                                 "r") as xdmf:
+            mesh = xdmf.read_mesh(name="mesh")
+            mesh.name = "mesh_{0:s}_{1:.2f}".format(ext, theta)
+            tdim = mesh.topology.dim
+            fdim = tdim - 1
+            mesh.topology.create_connectivity(tdim, tdim)
+            mesh.topology.create_connectivity(fdim, tdim)
+            ct = xdmf.read_meshtags(mesh, "mesh_tags")
+            mt = xdmf.read_meshtags(mesh, "facet_tags")
+    else:
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+                                 "meshes/mesh3D_rot.xdmf", "r") as xdmf:
+            mesh = xdmf.read_mesh(name="Grid")
+            mesh.name = "mesh-{0:.2f}".format(theta)
+            tdim = mesh.topology.dim
+            fdim = tdim - 1
+            mesh.topology.create_connectivity(tdim, tdim)
+            mesh.topology.create_connectivity(fdim, tdim)
 
-    mesh.topology.create_connectivity(fdim, tdim)
+            ct = xdmf.read_meshtags(mesh, "Grid")
+
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+                                 "meshes/facet3D_rot.xdmf", "r") as xdmf:
+            mt = xdmf.read_meshtags(mesh, "Grid")
+
     top_cube_marker = 2
-
-    with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                             "meshes/facet3D_rot.xdmf", "r") as xdmf:
-        mt = xdmf.read_meshtags(mesh, "Grid")
-    # with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-    #                          "meshes/mesh_tetrahedron.xdmf", "r") as xdmf:
-    #     mesh = xdmf.read_mesh("mesh")
-    #     mesh.name = "mesh_tetrahedron_{0:.2f}".format(theta)
-    #     tdim = mesh.topology.dim
-    #     fdim = tdim - 1
-    #     mesh.topology.create_connectivity(tdim, tdim)
-    #     mesh.topology.create_connectivity(fdim, tdim)
-    #     ct = xdmf.read_meshtags(mesh, "mesh_tags")
-    #     mt = xdmf.read_meshtags(mesh, "facet_tags")
-    #     top_cube_marker = 2
 
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
@@ -156,13 +166,12 @@ def demo_stacked_cubes(outfile, theta):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_{0:.2f}".format(theta)
+    u_h.name = "u_{0:s}_{1:.2f}".format(ext, theta)
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0,
                            "Xdmf/Domain/"
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
-
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
@@ -206,8 +215,10 @@ def demo_stacked_cubes(outfile, theta):
 if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube3D.xdmf", "w")
-    demo_stacked_cubes(outfile, theta=0)
-
-    demo_stacked_cubes(outfile, theta=np.pi/3)
+    cts = [dolfinx.cpp.mesh.CellType.hexahedron,
+           dolfinx.cpp.mesh.CellType.tetrahedron]
+    for ct in cts:
+        demo_stacked_cubes(outfile, theta=0, dolfin_mesh=True, ct=ct)
+        demo_stacked_cubes(outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct)
     demo_stacked_cubes(outfile, theta=np.pi/5)
     outfile.close()
