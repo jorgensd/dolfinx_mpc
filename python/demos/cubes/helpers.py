@@ -58,7 +58,6 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     mesh.topology.create_connectivity(fdim, tdim)
     mesh.topology.create_connectivity(tdim, fdim)
     tree = geometry.BoundingBoxTree(mesh, tdim)
-    # cell_to_facet = mesh.topology.connectivity(tdim, fdim)
     facet_to_cell = mesh.topology.connectivity(fdim, tdim)
 
     # Extract all top cell values from MeshTags
@@ -110,50 +109,45 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                             break
                 slave_indices.append(slave_l)
                 assert(len(slave_indices) == tdim)
-                possible_cells = dolfinx.geometry.\
-                    compute_collisions_point(tree, slave_coords)[0]
+                possible_cells = np.array(dolfinx.geometry.
+                                          compute_collisions_point(tree,
+                                                                   slave_coords
+                                                                   ))
+
                 # Check if multiple possible cells is in top cube
                 top_cells = possible_cells[np.isin(possible_cells,
                                                    ct_top_cells)]
+                # Find cell a top cell within 1e-14 distance
+                close_cell = dolfinx.cpp.geometry.select_cells_from_candidates(
+                    mesh, list(top_cells), slave_coords, 1)
+
                 # Check if we have found any cells in master domain
-                if len(top_cells) == 0:
+                if len(close_cell) == 0:
                     raise RuntimeError("No top cells found for slave at"
-                                       + "({0:.2f}, {0:.2f}, {0:.2f})".format(
+                                       + "({0:.2f}, {1:.2f}, {2:.2f})".format(
                                            slave_coords[0], slave_coords[1],
                                            slave_coords[2]))
-                elif len(top_cells) == 1:
-                    cells = top_cells
-                else:
-                    # Check if it is actually colliding with a cell
-                    actual_collisions = dolfinx.geometry.\
-                        compute_entity_collisions_mesh(
-                            tree, mesh, slave_coords)[0]
-                    mesh_top_cells = actual_collisions[np.isin(
-                        actual_collisions, top_cells)]
-                    if len(mesh_top_cells) > 0:
-                        cells = mesh_top_cells
-                assert(len(cells) > 0)
-                for cell in cells:
-                    other_dofs = dofs[num_dofs_per_element * cell:
-                                      num_dofs_per_element * cell
-                                      + num_dofs_per_element]
+                cell = close_cell[0]
+                other_dofs = dofs[num_dofs_per_element * cell:
+                                  num_dofs_per_element * cell
+                                  + num_dofs_per_element]
 
-                    # Get basis values, and add coeffs of sub space
-                    # to masters with corresponding coeff
-                    basis_values = get_basis(V._cpp_object,
-                                             slave_coords, cell)
-                    for k in range(tdim):
-                        for local_idx, dof in enumerate(other_dofs):
-                            l_coeff = basis_values[local_idx,
-                                                   k]
-                            l_coeff *= (n_vec[slave_indices[k]] /
-                                        n_vec[slave_indices[tdim
-                                                            - 1]])
-                            if not np.isclose(l_coeff, 0):
-                                masters.append(global_indices[dof])
-                                coeffs.append(l_coeff)
-                    offsets.append(len(masters))
-                    break
+                # Get basis values, and add coeffs of sub space
+                # to masters with corresponding coeff
+                basis_values = get_basis(V._cpp_object,
+                                         slave_coords, cell)
+                for k in range(tdim):
+                    for local_idx, dof in enumerate(other_dofs):
+                        l_coeff = basis_values[local_idx,
+                                               k]
+                        l_coeff *= (n_vec[slave_indices[k]] /
+                                    n_vec[slave_indices[tdim
+                                                        - 1]])
+                        if not np.isclose(l_coeff, 0):
+                            masters.append(global_indices[dof])
+                            coeffs.append(l_coeff)
+                offsets.append(len(masters))
+
             if len(slaves) != len(offsets)-1:
                 raise RuntimeError(
                     "Something went wrong in master slave construction")

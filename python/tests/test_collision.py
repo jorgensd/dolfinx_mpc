@@ -1,4 +1,5 @@
 import dolfinx
+import dolfinx.cpp as cpp
 import dolfinx.geometry as geometry
 import numpy as np
 import pytest
@@ -29,12 +30,20 @@ def test_collision_tetrahedron(coordinate):
             break
 
     if coordinate_index != -1:
-        possible_cells = geometry.compute_collisions_point(
-            tree, x_coords[coordinate_index])[0]
+        # possible_cells = geometry.compute_collisions_point(
+        #     tree, x_coords[coordinate_index])
         # Compute collisions with boundingboxtree
         # Compute actual collisions with mesh
-        actual_collisions = dolfinx.geometry.compute_entity_collisions_mesh(
-            tree, mesh, x_coords[coordinate_index].T)
+        # actual_collisions = dolfinx.geometry.compute_entity_collisions_mesh(
+        #     tree, mesh, x_coords[coordinate_index].T)
+
+        possible_cells = np.array(dolfinx.geometry.
+                                  compute_collisions_point
+                                  (tree, x_coords[coordinate_index]))
+
+        # Find cell within 1e-14 distance
+        actual_collisions = cpp.geometry.select_cells_from_candidates(
+            mesh, list(possible_cells), x_coords[coordinate_index].T, 1)
 
     # Find index of coordinate in geometry
     node_index = -1
@@ -45,15 +54,16 @@ def test_collision_tetrahedron(coordinate):
     if node_index != -1:
         # Test same strategy with mesh coordinates
         possible_cells_mesh = geometry.compute_collisions_point(
-            tree, mesh.geometry.x[node_index])[0]
-        actual_collisions_mesh = geometry.compute_entity_collisions_mesh(
-            tree, mesh, mesh.geometry.x[node_index].T)
+            tree, mesh.geometry.x[node_index])
+        actual_collisions_mesh = cpp.geometry.select_cells_from_candidates(
+            mesh, list(possible_cells_mesh),
+            mesh.geometry.x[node_index].T, 1)
     if node_index != -1 and coordinate_index != -1:
         assert(np.allclose(possible_cells_mesh, possible_cells))
-        if len(actual_collisions[0]) == len(actual_collisions_mesh[0]):
+        if len(actual_collisions) == len(actual_collisions_mesh):
             print("\n Found points in mesh in standard way for tetrahedron")
             assert(np.allclose(
-                actual_collisions[0], actual_collisions_mesh[0]))
+                actual_collisions, actual_collisions_mesh))
     elif node_index == coordinate_index:
         pass
     else:
@@ -61,8 +71,8 @@ def test_collision_tetrahedron(coordinate):
         raise RuntimeError("Dofs and geometry lives on different processors.")
 
 
-@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.triangle,
-                                      dolfinx.cpp.mesh.CellType.quadrilateral])
+@pytest.mark.parametrize("celltype", [cpp.mesh.CellType.triangle,
+                                      cpp.mesh.CellType.quadrilateral])
 @pytest.mark.parametrize("coordinate", [[0, 0, 0], [1, 0, 0], [0.5, 1, 0]])
 def test_collision_2D(celltype, coordinate):
     """
@@ -89,10 +99,10 @@ def test_collision_2D(celltype, coordinate):
     if coordinate_index != -1:
         # Compute collisions with boundingboxtree
         possible_cells = geometry.compute_collisions_point(
-            tree, x_coords[coordinate_index])[0]
-        # Compute actual collisions with mesh
-        actual_collisions = dolfinx.geometry.compute_entity_collisions_mesh(
-            tree, mesh, x_coords[coordinate_index].T)
+            tree, x_coords[coordinate_index])
+        # Find cell within 1e-14 distance
+        actual_collisions = cpp.geometry.select_cells_from_candidates(
+            mesh, list(possible_cells), x_coords[coordinate_index].T, 1)
 
     # Find index of coordinate in geometry
     node_index = -1
@@ -103,15 +113,16 @@ def test_collision_2D(celltype, coordinate):
     if node_index != -1:
         # Test same strategy with mesh coordinates
         possible_cells_mesh = geometry.compute_collisions_point(
-            tree, mesh.geometry.x[node_index])[0]
-        actual_collisions_mesh = geometry.compute_entity_collisions_mesh(
-            tree, mesh, mesh.geometry.x[node_index].T)
+            tree, mesh.geometry.x[node_index])
+        actual_collisions_mesh = cpp.geometry.select_cells_from_candidates(
+            mesh, list(possible_cells_mesh),
+            mesh.geometry.x[node_index].T, 1)
     if node_index != -1 and coordinate_index != -1:
         assert(np.allclose(possible_cells_mesh, possible_cells))
-        if len(actual_collisions[0]) == len(actual_collisions_mesh[0]):
+        if len(actual_collisions) == len(actual_collisions_mesh):
             print("\n Found points in mesh in standard way for", celltype)
             assert(np.allclose(
-                actual_collisions[0], actual_collisions_mesh[0]))
+                actual_collisions, actual_collisions_mesh))
     elif node_index == coordinate_index:
         pass
     else:
@@ -145,10 +156,10 @@ def test_collision_1D(coordinate):
     if coordinate_index != -1:
         # Compute collisions with boundingboxtree
         possible_cells = geometry.compute_collisions_point(
-            tree, x_coords[coordinate_index])[0]
+            tree, x_coords[coordinate_index])
         # Compute actual collisions with mesh
-        actual_collisions = dolfinx.geometry.compute_entity_collisions_mesh(
-            tree, mesh, x_coords[coordinate_index].T)
+        actual_collisions = cpp.geometry.select_cells_from_candidates(
+            mesh, list(possible_cells), x_coords[coordinate_index].T, 1)
 
     # Find index of coordinate in geometry
     node_index = -1
@@ -159,15 +170,16 @@ def test_collision_1D(coordinate):
     if node_index != -1:
         # Test same strategy with mesh coordinates
         possible_cells_mesh = geometry.compute_collisions_point(
-            tree, mesh.geometry.x[node_index])[0]
-        actual_collisions_mesh = geometry.compute_entity_collisions_mesh(
-            tree, mesh, mesh.geometry.x[node_index].T)
+            tree, mesh.geometry.x[node_index])
+        actual_collisions_mesh = cpp.geometry.select_cells_from_candidates(
+            mesh, list(possible_cells_mesh),
+            mesh.geometry.x[node_index].T, 1)
     if node_index != -1 and coordinate_index != -1:
         assert(np.allclose(possible_cells_mesh, possible_cells))
-        if len(actual_collisions[0]) == len(actual_collisions_mesh[0]):
+        if len(actual_collisions) == len(actual_collisions_mesh):
             print("\n Found points in mesh in standard way for interval")
             assert(np.allclose(
-                actual_collisions[0], actual_collisions_mesh[0]))
+                actual_collisions, actual_collisions_mesh))
     elif node_index == coordinate_index:
         pass
     else:

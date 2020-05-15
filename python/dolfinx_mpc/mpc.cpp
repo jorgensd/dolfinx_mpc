@@ -8,7 +8,6 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
-#include <dolfinx/geometry/CollisionPredicates.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>

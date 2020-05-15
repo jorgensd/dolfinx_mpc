@@ -42,7 +42,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         ext = "gmsh" + "{0:.2f}".format(theta)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
-            mesh = xdmf.read_mesh(mesh_name)
+            mesh = xdmf.read_mesh(name=mesh_name)
             mesh.name = "mesh_" + ext
             tdim = mesh.topology.dim
             fdim = tdim - 1
@@ -66,7 +66,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             ext = "quad" + "{0:.2f}".format(theta)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
-            mesh = xdmf.read_mesh(mesh_name)
+            mesh = xdmf.read_mesh(name=mesh_name)
 
             mesh.name = "mesh_" + ext
             tdim = mesh.topology.dim

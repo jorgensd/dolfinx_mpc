@@ -10,11 +10,9 @@
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DofMap.h>
-#include <dolfinx/fem/ElementDofLayout.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
-#include <dolfinx/geometry/CollisionPredicates.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/utils.h>

@@ -236,22 +236,22 @@ def mesh_2D_dolfin(celltype, theta=0):
     bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
                                                [1, 1, 0], [0, 1, 0]]).T)
     bottom = find_line_function(bottom_points[:, 0], bottom_points[:, 1])
-    bottom_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, bottom, boundary_only=True)
+    bottom_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, bottom)
 
     top_points = np.dot(r_matrix, np.array([[0, 1, 0], [1, 1, 0],
                                             [1, 2, 0], [0, 2, 0]]).T)
     top = find_line_function(top_points[:, 2], top_points[:, 3])
-    top_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, top, boundary_only=True)
+    top_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, top)
 
     left_side = find_line_function(top_points[:, 0], top_points[:, 3])
-    left_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, left_side, boundary_only=True)
+    left_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, left_side)
 
     right_side = find_line_function(top_points[:, 1], top_points[:, 2])
-    right_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, right_side, boundary_only=True)
+    right_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, right_side)
 
     top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
 
@@ -259,8 +259,8 @@ def mesh_2D_dolfin(celltype, theta=0):
     cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
                                                 range(num_cells))
     interface = find_line_function(bottom_points[:, 2], bottom_points[:, 3])
-    i_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, interface, boundary_only=True)
+    i_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, interface)
     bottom_interface = []
     top_interface = []
     mesh.topology.create_connectivity(fdim, tdim)
@@ -387,29 +387,29 @@ def mesh_3D_dolfin(theta=0):
                                                [0, 1, 0], [1, 1, 0]]).T)
     bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1],
                                  bottom_points[:, 2])
-    bottom_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, bottom, boundary_only=True)
+    bottom_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, bottom)
     top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
                                             [0, 1, 2], [1, 1, 2]]).T)
     top = find_plane_function(top_points[:, 0], top_points[:, 1],
                               top_points[:, 2])
-    top_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, top, boundary_only=True)
+    top_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, top)
 
     # left_side = find_line_function(top_points[:, 0], top_points[:, 3])
-    # left_facets = dolfinx.mesh.locate_entities_geometrical(
-    #     mesh, fdim, left_side, boundary_only=True)
+    # left_facets = dolfinx.mesh.locate_entities_boundary(
+    #     mesh, fdim, left_side)
 
     # right_side = find_line_function(top_points[:, 1], top_points[:, 2])
-    # right_facets = dolfinx.mesh.locate_entities_geometrical(
-    #     mesh, fdim, right_side, boundary_only=True)
+    # right_facets = dolfinx.mesh.locate_entities_boundary(
+    #     mesh, fdim, right_side)
     if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
                                            [0, 1, 1], [1, 1, 1]]).T)
 
     interface = find_plane_function(if_points[:, 0], if_points[:, 1],
                                     if_points[:, 2])
-    i_facets = dolfinx.mesh.locate_entities_geometrical(
-        mesh, fdim, interface, boundary_only=True)
+    i_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, interface)
     mesh.topology.create_connectivity(fdim, tdim)
     top_interface = []
     bottom_interface = []

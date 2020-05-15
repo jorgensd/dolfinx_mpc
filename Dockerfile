@@ -10,7 +10,7 @@ RUN pip3 install --no-cache-dir ipython && \
     pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git && \
 	git clone https://github.com/FEniCS/dolfinx.git && \
     cd dolfinx && \
-	git checkout dokken/collision-tol && \
+	git checkout chris/add-opengjk && \
     mkdir build && \
     cd build && \
     cmake -G Ninja ../cpp && \
@@ -44,7 +44,7 @@ RUN pip3 install --no-cache-dir ipython && \
     pip3 install --no-cache-dir git+https://github.com/FEniCS/ffcx.git && \
     git clone https://github.com/FEniCS/dolfinx.git && \
     cd dolfinx && \
-	git checkout dokken/collision-tol && \
+	git checkout chris/add-opengjk && \
     mkdir build && \
     cd build && \
     cmake -G Ninja ../cpp && \
