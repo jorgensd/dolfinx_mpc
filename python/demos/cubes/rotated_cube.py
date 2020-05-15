@@ -51,7 +51,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             ct = xdmf.read_meshtags(mesh, "Grid")
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  facet_file, "r") as xdmf:
-            mt = xdmf.read_meshtags(mesh, "Grid")
+            mt = xdmf.read_meshtags(mesh, name="Grid")
     else:
         mesh_name = "mesh"
         if triangle:
@@ -67,14 +67,14 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
-
             mesh.name = "mesh_" + ext
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
             mesh.topology.create_connectivity(fdim, tdim)
-            ct = xdmf.read_meshtags(mesh, "mesh_tags")
-            mt = xdmf.read_meshtags(mesh, "facet_tags")
+            ct = xdmf.read_meshtags(mesh, name="mesh_tags")
+            mt = xdmf.read_meshtags(mesh, name="facet_tags")
+
     # Helper until MeshTags can be read in from xdmf
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     V0 = V.sub(0).collapse()
