@@ -223,7 +223,8 @@ if __name__ == "__main__":
     for ct in cts:
         demo_stacked_cubes(outfile, theta=0, dolfin_mesh=True, ct=ct)
         demo_stacked_cubes(outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct)
-    # NOTE: Unstructured hex meshes not working nicely as interfaces do not match.
+    # NOTE: Unstructured hex meshes not working nicely as interfaces
+    # do not match.
     demo_stacked_cubes(
         outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron)
     outfile.close()
