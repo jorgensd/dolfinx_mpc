@@ -269,11 +269,32 @@ MultiPointConstraint::generate_index_map()
   new_ghosts.conservativeResize(new_ghosts.size() + additional_ghosts.size());
   for (std::int64_t i = 0; i < additional_ghosts.size(); i++)
     new_ghosts(num_ghosts + i) = additional_ghosts[i];
-  dolfinx::common::Timer timer4("MPC: Make new indexmap");
+  /// Get ghosts owners
+  int mpi_size = -1;
+  std::int32_t local_size = index_map->size_local();
+  MPI_Comm_size(mesh.mpi_comm(), &mpi_size);
+  std::vector<std::int32_t> local_sizes(mpi_size);
+  MPI_Allgather(&local_size, 1, MPI_INT32_T, local_sizes.data(), 1, MPI_INT32_T,
+                mesh.mpi_comm());
 
+  std::vector<std::int64_t> all_ranges(mpi_size + 1, 0);
+  std::partial_sum(local_sizes.begin(), local_sizes.end(),
+                   all_ranges.begin() + 1);
+
+  // Compute rank of ghost owners
+  std::vector<int> ghost_ranks(new_ghosts.size(), -1);
+  for (int i = 0; i < new_ghosts.size(); ++i)
+  {
+    auto it
+        = std::upper_bound(all_ranges.begin(), all_ranges.end(), new_ghosts[i]);
+    const int p = std::distance(all_ranges.begin(), it) - 1;
+    ghost_ranks[i] = p;
+  }
+
+  dolfinx::common::Timer timer4("MPC: Make new indexmap");
   std::shared_ptr<dolfinx::common::IndexMap> new_index_map
       = std::make_shared<dolfinx::common::IndexMap>(
-          mesh.mpi_comm(), index_map->size_local(), new_ghosts,
+          mesh.mpi_comm(), index_map->size_local(), new_ghosts, ghost_ranks,
           index_map->block_size());
   timer4.stop();
 
