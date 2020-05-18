@@ -71,7 +71,7 @@ def demo_elasticity(r_lvl=1):
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        mesh = dolfinx.mesh.refine(mesh, redistribute=True)
+        mesh = dolfinx.mesh.refine(mesh, redistribute=False)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         N *= 2
     fdim = mesh.topology.dim - 1
@@ -84,9 +84,8 @@ def demo_elasticity(r_lvl=1):
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
-    facets = dolfinx.mesh.locate_entities_geometrical(mesh, fdim,
-                                                      boundaries,
-                                                      boundary_only=True)
+    facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
+                                                   boundaries)
     topological_dofs = dolfinx.fem.locate_dofs_topological(V, fdim, facets)
     bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
     bcs = [bc]
@@ -145,9 +144,8 @@ def demo_elasticity(r_lvl=1):
 
     def traction_boundary(x):
         return np.isclose(x[0], 1)
-    t_facets = dolfinx.mesh.locate_entities_geometrical(mesh, fdim,
-                                                        traction_boundary,
-                                                        boundary_only=True)
+    t_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
+                                                     traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
     mt = dolfinx.MeshTags(mesh, fdim, t_facets, facet_values)
 
@@ -310,7 +308,7 @@ def demo_elasticity(r_lvl=1):
 
 
 if __name__ == "__main__":
-    for i in range(6):
+    for i in range(3):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         # dolfinx.log.log(dolfinx.log.LogLevel.INFO,
         #                 "Run {0:1d} in progress".format(i))

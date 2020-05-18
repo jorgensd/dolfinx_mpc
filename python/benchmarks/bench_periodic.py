@@ -41,7 +41,7 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
         N = 4
         mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
         for i in range(r_lvl):
-            mesh = refine(mesh, redistribute=True)
+            mesh = refine(mesh, redistribute=False)
             N *= 2
         V = dolfinx.FunctionSpace(mesh, ("CG", 2))
         M = 2*N
@@ -52,7 +52,7 @@ def demo_periodic3D(celltype, out_periodic, r_lvl=0):
                                     dolfinx.cpp.mesh.CellType.hexahedron)
         V = dolfinx.FunctionSpace(mesh, ("CG", 1))
         for i in range(r_lvl):
-            mesh = refine(mesh, redistribute=True)
+            mesh = refine(mesh, redistribute=False)
             N *= 2
         M = N
     if MPI.COMM_WORLD.rank == 0:
@@ -264,7 +264,7 @@ if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
     out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                        fname, "w")
-    for i in range(5):  # range(4, 5):
+    for i in range(4):  # range(4, 5):
         fname = "results/demo_periodic3d_{0:d}.xdmf".format(i)
         out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                            fname, "w")
