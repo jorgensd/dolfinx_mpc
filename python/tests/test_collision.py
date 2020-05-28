@@ -42,7 +42,7 @@ def test_collision_tetrahedron(coordinate):
                                   (tree, x_coords[coordinate_index]))
 
         # Find cell within 1e-14 distance
-        actual_collisions = cpp.geometry.select_cells_from_candidates(
+        actual_collisions = cpp.geometry.select_colliding_cells(
             mesh, list(possible_cells), x_coords[coordinate_index].T, 1)
 
     # Find index of coordinate in geometry
@@ -55,7 +55,7 @@ def test_collision_tetrahedron(coordinate):
         # Test same strategy with mesh coordinates
         possible_cells_mesh = geometry.compute_collisions_point(
             tree, mesh.geometry.x[node_index])
-        actual_collisions_mesh = cpp.geometry.select_cells_from_candidates(
+        actual_collisions_mesh = cpp.geometry.select_colliding_cells(
             mesh, list(possible_cells_mesh),
             mesh.geometry.x[node_index].T, 1)
     if node_index != -1 and coordinate_index != -1:
@@ -101,7 +101,7 @@ def test_collision_2D(celltype, coordinate):
         possible_cells = geometry.compute_collisions_point(
             tree, x_coords[coordinate_index])
         # Find cell within 1e-14 distance
-        actual_collisions = cpp.geometry.select_cells_from_candidates(
+        actual_collisions = cpp.geometry.select_colliding_cells(
             mesh, list(possible_cells), x_coords[coordinate_index].T, 1)
 
     # Find index of coordinate in geometry
@@ -114,7 +114,7 @@ def test_collision_2D(celltype, coordinate):
         # Test same strategy with mesh coordinates
         possible_cells_mesh = geometry.compute_collisions_point(
             tree, mesh.geometry.x[node_index])
-        actual_collisions_mesh = cpp.geometry.select_cells_from_candidates(
+        actual_collisions_mesh = cpp.geometry.select_colliding_cells(
             mesh, list(possible_cells_mesh),
             mesh.geometry.x[node_index].T, 1)
     if node_index != -1 and coordinate_index != -1:
@@ -158,7 +158,7 @@ def test_collision_1D(coordinate):
         possible_cells = geometry.compute_collisions_point(
             tree, x_coords[coordinate_index])
         # Compute actual collisions with mesh
-        actual_collisions = cpp.geometry.select_cells_from_candidates(
+        actual_collisions = cpp.geometry.select_colliding_cells(
             mesh, list(possible_cells), x_coords[coordinate_index].T, 1)
 
     # Find index of coordinate in geometry
@@ -171,7 +171,7 @@ def test_collision_1D(coordinate):
         # Test same strategy with mesh coordinates
         possible_cells_mesh = geometry.compute_collisions_point(
             tree, mesh.geometry.x[node_index])
-        actual_collisions_mesh = cpp.geometry.select_cells_from_candidates(
+        actual_collisions_mesh = cpp.geometry.select_colliding_cells(
             mesh, list(possible_cells_mesh),
             mesh.geometry.x[node_index].T, 1)
     if node_index != -1 and coordinate_index != -1:

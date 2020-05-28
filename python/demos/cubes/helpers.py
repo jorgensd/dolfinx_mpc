@@ -118,7 +118,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                 top_cells = possible_cells[np.isin(possible_cells,
                                                    ct_top_cells)]
                 # Find cell a top cell within 1e-14 distance
-                close_cell = dolfinx.cpp.geometry.select_cells_from_candidates(
+                close_cell = dolfinx.cpp.geometry.select_colliding_cells(
                     mesh, list(top_cells), slave_coords, 1)
 
                 # Check if we have found any cells in master domain
