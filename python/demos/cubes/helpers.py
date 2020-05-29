@@ -12,7 +12,6 @@ import dolfinx_mpc
 import numpy as np
 
 
-comp_col_pts = dolfinx.geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 
@@ -23,8 +22,8 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     Input:
         V - The function space that should be constrained.
         interface_info - Tuple containing a mesh function
-                         (for facets) and an int indicating
-                         the marked interface.
+                         (for facets) and two ints, one specifying the
+                          slave interface, the other the master interface.
         cell_info - Tuple containing a mesh function (for cells)
                     and an int indicating which cells should be
                     master cells.
@@ -38,16 +37,15 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     Vs = [V.sub(i).collapse() for i in range(tdim)]
 
     # Extract interface_info
-    (mt, interface_value) = interface_info
+    (mt, slave_i_value, master_i_value) = interface_info
     (ct, master_value) = cell_info
 
     # Locate dofs on both interfaces
-    i_facets = mt.indices[np.flatnonzero(mt.values == interface_value)]
-
+    slave_facets = mt.indices[np.flatnonzero(mt.values == slave_i_value)]
     interface_dofs = []
     for i in range(tdim):
         i_dofs = fem.locate_dofs_topological((V.sub(i), Vs[i]),
-                                             fdim, i_facets)[:, 0]
+                                             fdim, slave_facets)[:, 0]
         interface_dofs.append(i_dofs)
 
     # Get dof info
@@ -58,21 +56,24 @@ def find_master_slave_relationship(V, interface_info, cell_info):
 
     # Create facet-to-cell-connectivity
     mesh.topology.create_connectivity(fdim, tdim)
-    facet_tree = geometry.BoundingBoxTree(mesh, fdim)
+    mesh.topology.create_connectivity(tdim, fdim)
+    tree = geometry.BoundingBoxTree(mesh, tdim)
     facet_to_cell = mesh.topology.connectivity(fdim, tdim)
+
+    # Extract all top cell values from MeshTags
+    ct_top_cells = ct.indices[ct.values == master_value]
 
     # Compute approximate facet normals for the interface
     # (Does not have unit length)
-    nh = dolfinx_mpc.facet_normal_approximation(V, mt, interface_value)
+    nh = dolfinx_mpc.facet_normal_approximation(V, mt, slave_i_value)
     n_vec = nh.vector.getArray()
     slaves, masters, coeffs, offsets = [], [], [], [0]
 
-    for facet in i_facets:
+    for facet in slave_facets:
         # Find cells connected to facets (Should only be one)
         cell_indices = facet_to_cell.links(facet)
         assert(len(cell_indices) == 1)
         cell_index = cell_indices[0]
-        local_celltag_index = np.flatnonzero(ct.indices == cell_index)
         cell_dofs = dofs[num_dofs_per_element * cell_index:
                          num_dofs_per_element * cell_index
                          + num_dofs_per_element]
@@ -81,13 +82,6 @@ def find_master_slave_relationship(V, interface_info, cell_info):
         for i in range(tdim):
             dofs_on_interface = np.isin(cell_dofs, interface_dofs[i])
             local_indices.append(np.flatnonzero(dofs_on_interface))
-
-        if len(local_celltag_index) > 0:
-            assert(len(local_celltag_index) == 1)
-            is_slave_cell = not (
-                ct.values[local_celltag_index[0]] == master_value)
-        else:
-            is_slave_cell = True
 
         # Cache for slave dof location, used for computing coefficients
         # of masters on other cell
@@ -98,7 +92,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
 
             global_slave = global_indices[slave_l]
             slave_indices = []
-            if is_slave_cell and global_slave not in slaves:
+            if global_slave not in slaves:
                 slaves.append(global_slave)
                 # Find the other dofs in same dof coordinate and
                 # add as master
@@ -115,54 +109,49 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                             break
                 slave_indices.append(slave_l)
                 assert(len(slave_indices) == tdim)
-                # Find facets that possibly contain the slave dof
-                # FIXME: Does not work for quads, possibly due to
-                # https://github.com/FEniCS/dolfinx/issues/767
-                possible_facets = comp_col_pts(
-                    facet_tree, slave_coords)[0]
-                for o_facet in possible_facets:
-                    facet_on_interface = o_facet in i_facets
-                    c_cells = facet_to_cell.links(o_facet)
-                    in_top_cube = False
-                    if facet_on_interface:
-                        assert(len(c_cells) == 1)
-                        local_celltag_index2 = np.flatnonzero(
-                            ct.indices == c_cells[0])
+                possible_cells = np.array(dolfinx.geometry.
+                                          compute_collisions_point(tree,
+                                                                   slave_coords
+                                                                   ))
 
-                        if len(local_celltag_index2 > 0):
-                            assert(len(local_celltag_index2 == 1))
-                            in_top_cube = ct.values[
-                                local_celltag_index2[0]] == master_value
-                        else:
-                            in_top_cube = False
-                    if in_top_cube:
-                        other_index = c_cells[0]
-                        other_dofs = dofs[num_dofs_per_element
-                                          * other_index:
-                                          num_dofs_per_element
-                                          * other_index
-                                          + num_dofs_per_element]
+                # Check if multiple possible cells is in top cube
+                top_cells = possible_cells[np.isin(possible_cells,
+                                                   ct_top_cells)]
+                # Find cell a top cell within 1e-14 distance
+                close_cell = dolfinx.cpp.geometry.select_colliding_cells(
+                    mesh, list(top_cells), slave_coords, 1)
 
-                        # Get basis values, and add coeffs of sub space
-                        # to masters with corresponding coeff
-                        basis_values = get_basis(V._cpp_object,
-                                                 slave_coords,
-                                                 other_index)
-                        for k in range(tdim):
-                            for local_idx, dof in enumerate(other_dofs):
-                                l_coeff = 0
-                                if dof in interface_dofs[k]:
-                                    l_coeff = basis_values[local_idx,
-                                                           k]
-                                    l_coeff *= (n_vec[slave_indices[k]] /
-                                                n_vec[slave_indices[tdim
-                                                                    - 1]])
-                                if not np.isclose(l_coeff, 0):
-                                    masters.append(global_indices[dof])
-                                    coeffs.append(l_coeff)
-                        offsets.append(len(masters))
-                        break
+                # Check if we have found any cells in master domain
+                if len(close_cell) == 0:
+                    raise RuntimeError("No top cells found for slave at"
+                                       + "({0:.2f}, {1:.2f}, {2:.2f})".format(
+                                           slave_coords[0], slave_coords[1],
+                                           slave_coords[2]))
+                cell = close_cell[0]
+                other_dofs = dofs[num_dofs_per_element * cell:
+                                  num_dofs_per_element * cell
+                                  + num_dofs_per_element]
 
+                # Get basis values, and add coeffs of sub space
+                # to masters with corresponding coeff
+                basis_values = get_basis(V._cpp_object,
+                                         slave_coords, cell)
+                for k in range(tdim):
+                    for local_idx, dof in enumerate(other_dofs):
+                        l_coeff = basis_values[local_idx,
+                                               k]
+                        l_coeff *= (n_vec[slave_indices[k]] /
+                                    n_vec[slave_indices[tdim
+                                                        - 1]])
+                        if not np.isclose(l_coeff, 0):
+                            masters.append(global_indices[dof])
+                            coeffs.append(l_coeff)
+                offsets.append(len(masters))
+
+            if len(slaves) != len(offsets)-1:
+                raise RuntimeError(
+                    "Something went wrong in master slave construction")
+    assert(not np.all(np.isin(slaves, masters)))
     return (np.array(slaves, dtype=np.int64),
             np.array(masters, dtype=np.int64),
             np.array(coeffs, dtype=np.float64),

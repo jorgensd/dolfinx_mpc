@@ -48,10 +48,7 @@ test-complex:
     - cd cubes
     - mkdir meshes
     - mkdir results
-    - python3 create_and_export_mesh.py
-    - python3 cube_bench.py
     - python3 rotated_cube.py
-    - python3 cube_bench3d.py
     - python3 rotated_cube3D.py
 
 test-real:
@@ -102,8 +99,5 @@ test-real:
     - cd cubes
     - mkdir meshes
     - mkdir results
-    - python3 create_and_export_mesh.py
-    - python3 cube_bench.py
     - python3 rotated_cube.py
-    - python3 cube_bench3d.py
     - python3 rotated_cube3D.py
