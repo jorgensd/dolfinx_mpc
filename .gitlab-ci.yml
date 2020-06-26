@@ -12,6 +12,7 @@ test-real:
     - cmake -G Ninja ../cpp
     - ninja ${MAKEFLAGS} install
     - cd ../python
+    - source /usr/local/share/dolfinx/dolfinx.conf
     - pip3 install .
     - cd ../../
     - mkdir -p build
