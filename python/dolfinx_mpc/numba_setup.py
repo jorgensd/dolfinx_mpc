@@ -4,8 +4,6 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import sys
-from IPython import embed
 import ctypes
 import ctypes.util
 import importlib
@@ -18,7 +16,6 @@ import numpy as np
 
 import cffi
 import petsc4py.lib
-import os
 from mpi4py import MPI
 from petsc4py import get_config as PETSc_get_config
 from petsc4py import PETSc
@@ -44,7 +41,8 @@ elif index_size == 4:
     ctypes_index = ctypes.c_int32
 else:
     raise RuntimeError(
-        "Cannot translate PETSc index size into a C type, index_size: {}.".format(index_size))
+        "Cannot translate PETSc index size into a C type, index_size: {}."
+        .format(index_size))
 
 if complex and scalar_size == 16:
     c_scalar_t = "double _Complex"
@@ -60,7 +58,8 @@ elif not complex and scalar_size == 4:
     numba_scalar_t = numba.types.float32
 else:
     raise RuntimeError(
-        "Cannot translate PETSc scalar type to a C type, complex: {} size: {}.".format(complex, scalar_size))
+        "Cannot translate PETSc scalar type to a C type, complex: {} size: {}."
+        .format(complex, scalar_size))
 
 
 # Load PETSc library via ctypes
@@ -81,7 +80,8 @@ else:
 # Get the PETSc MatSetValuesLocal function via ctypes
 MatSetValues_ctypes = petsc_lib_ctypes.MatSetValuesLocal
 MatSetValues_ctypes.argtypes = (ctypes.c_void_p, ctypes_index, ctypes.POINTER(
-    ctypes_index), ctypes_index, ctypes.POINTER(ctypes_index), ctypes.c_void_p, ctypes.c_int)
+    ctypes_index), ctypes_index, ctypes.POINTER(ctypes_index),
+    ctypes.c_void_p, ctypes.c_int)
 del petsc_lib_ctypes
 
 
@@ -100,7 +100,7 @@ ffi.cdef("""int MatSetValues(void* mat, {0} nrow, const {0}* irow,
                              const {1}* y, int addv);
 """.format(c_int_t, c_scalar_t))
 ffi.cdef("""int MatSetValuesLocal(void* mat, {0} nrow, const {0}* irow,
-                                  {0} ncol, const {0}* icol, const {1}* y, int addv);
+            {0} ncol, const {0}* icol, const {1}* y, int addv);
 """.format(c_int_t, c_scalar_t))
 
 if petsc_lib_name is not None:
@@ -139,7 +139,8 @@ if MPI.COMM_WORLD.Get_rank() == 0:
         # include "petscmat.h"
     """,
                           libraries=['petsc'],
-                          include_dirs=[os.path.join(petsc_dir, petsc_arch, 'include'),
+                          include_dirs=[os.path.join(petsc_dir, petsc_arch,
+                                                     'include'),
                                         os.path.join(petsc_dir, 'include')],
                           library_dirs=[os.path.join(
                               petsc_dir, petsc_arch, 'lib')],
