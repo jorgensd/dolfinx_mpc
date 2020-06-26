@@ -10,6 +10,7 @@
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DofMap.h>
+#include <dolfinx/fem/FiniteElement.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
