@@ -101,7 +101,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     dolfinx.fem.set_bc(L_org, bcs)
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
                                                        masters, coeffs,
                                                        offsets)
     # Create reduced A

@@ -194,7 +194,7 @@ def demo_periodic3D(celltype, out_periodic):
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
                                                        masters, coeffs,
                                                        offsets)
     # Create reduced A
