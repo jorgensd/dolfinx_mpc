@@ -1,25 +1,25 @@
-test-complex:
+test-real:
   stage: test
   image:
-    name: dolfinx/dev-env
+    name: dolfinx/dolfinx
     entrypoint: [""]
   before_script:
     - export PETSC_DIR=/usr/local/petsc
-    - export PETSC_ARCH=linux-gnu-complex-32
-    - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
-    - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
-    - git clone https://github.com/fenics/dolfinx.git
-    - cd dolfinx
-    - mkdir build
-    - cd build
-    - cmake -G Ninja ../cpp
-    - ninja ${MAKEFLAGS} install
-    - cd ../python
+    - export PETSC_ARCH=linux-gnu-real-32
+    # - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
+    # - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
+    # - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
+    # - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
+    # - git clone https://github.com/fenics/dolfinx.git
+    # - cd dolfinx
+    # - mkdir build
+    # - cd build
+    # - cmake -G Ninja ../cpp
+    # - ninja ${MAKEFLAGS} install
+    # - cd ../python
     - source /usr/local/share/dolfinx/dolfinx.conf
-    - pip3 install .
-    - cd ../../
+    # - pip3 install .
+    # - cd ../../
     - mkdir -p build
     - cd build
     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
@@ -28,6 +28,8 @@ test-complex:
     - pip3 install -e . --upgrade
 
   script:
+    - export PETSC_DIR=/usr/local/petsc
+    - export PETSC_ARCH=linux-gnu-real-32
     - flake8 .
     - cd tests
     - python3 -m pytest .
