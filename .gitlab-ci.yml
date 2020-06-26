@@ -28,8 +28,8 @@ test-real:
     - pip3 install -e . --upgrade
 
   script:
-    - export PETSC_DIR=/usr/local/petsc
-    - export PETSC_ARCH=linux-gnu-real-32
+    # - export PETSC_DIR=/usr/local/petsc
+    # - export PETSC_ARCH=linux-gnu-real-32
     - flake8 .
     - cd tests
     - python3 -m pytest .
