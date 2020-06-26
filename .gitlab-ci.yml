@@ -1,10 +1,14 @@
 test-real:
   stage: test
   image:
-    name: dolfinx/dolfinx
+    name: dolfinx/dev-env
     entrypoint: [""]
   before_script:
     - export PETSC_ARCH=linux-gnu-complex-32
+    - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
+    - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
+    - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
+    - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
     - git clone https://github.com/fenics/dolfinx.git
     - cd dolfinx
     - mkdir build
