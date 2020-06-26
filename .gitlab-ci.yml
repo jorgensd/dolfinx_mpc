@@ -1,9 +1,10 @@
-test-real:
+test-complex:
   stage: test
   image:
     name: dolfinx/dev-env
     entrypoint: [""]
   before_script:
+    - export PETSC_DIR=/usr/local/petsc
     - export PETSC_ARCH=linux-gnu-complex-32
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
