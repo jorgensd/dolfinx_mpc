@@ -275,7 +275,7 @@ ksp.getPC().setFactorSolverType("mumps")
 solver.setOperators(A_org)
 
 # Create global transformation matrix
-K = dolfinx_mpc.utils.create_transformation_matrix(W.dim(), slaves,
+K = dolfinx_mpc.utils.create_transformation_matrix(W.dim, slaves,
                                                    masters, coeffs,
                                                    offsets)
 # Create reduced A

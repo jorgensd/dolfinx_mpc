@@ -134,7 +134,7 @@ def test_surface_integrals():
     dolfinx.fem.set_bc(L_org, bcs)
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
                                                        masters, coeffs,
                                                        offsets)
     # Create reduced A
@@ -239,7 +239,7 @@ def test_surface_integral_dependency():
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
     # # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
                                                        masters, coeffs,
                                                        offsets)
     # Create reduced A

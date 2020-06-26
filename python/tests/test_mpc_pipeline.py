@@ -93,7 +93,7 @@ def test_pipeline(master_point):
     # and numpy solvers to get reference values
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
                                                        masters, coeffs,
                                                        offsets)
     # Create reduced A

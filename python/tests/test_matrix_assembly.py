@@ -55,7 +55,7 @@ def test_mpc_assembly(master_point, degree, celltype):
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
 
     # Create globally reduced system with numpy
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
                                                        masters, coeffs,
                                                        offsets)
     A_org = dolfinx.fem.assemble_matrix(a)
@@ -104,7 +104,7 @@ def test_slave_on_same_cell(master_point, degree, celltype):
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
 
     # Create globally reduced system with numpy
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
+    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
                                                        masters, coeffs,
                                                        offsets)
     A_org = dolfinx.fem.assemble_matrix(a)
