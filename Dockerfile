@@ -4,7 +4,7 @@ USER root
 
 WORKDIR /tmp
 
-RUN pip3 install --no-cache-dir ipython && \
+RUN pip3 install --no-cache-dir ipython
 
 RUN git clone https://github.com/jorgensd/dolfinx_mpc.git && \
     cd dolfinx_mpc && \
