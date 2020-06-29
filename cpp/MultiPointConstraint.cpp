@@ -366,7 +366,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
       2);
   master_for_other_slave[0].resize(block_size);
   master_for_other_slave[1].resize(block_size);
-
+  std::cout << _slave_cells.size() << std::endl;
   // Add non-zeros for each slave cell to sparsity pattern.
   // For the i-th cell with a slave, all local entries has to be from the
   // j-th slave to the k-th master degree of freedom
@@ -400,6 +400,8 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
         // Add all values on cell (including slave), to get complete blocks
         pattern.insert(master_for_slave[0], cell_dof_lists[1]);
         pattern.insert(cell_dof_lists[0], master_for_slave[1]);
+        std::cout << "A" << block_size
+                  << "We are adding masters replacing slaves" << std::endl;
       }
       // Add pattern for master owned by other slave on same cell
       for (Eigen::Index k = j + 1; k < _cells_to_dofs[0]->links(i).size(); k++)
@@ -421,6 +423,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
           }
           pattern.insert(master_for_slave[0], master_for_other_slave[1]);
           pattern.insert(master_for_other_slave[0], master_for_slave[1]);
+          std::cout << "We are also here" << std::endl;
         }
       }
     }
@@ -454,6 +457,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 
           pattern.insert(local_master_dof, other_master_dof);
           pattern.insert(other_master_dof, local_master_dof);
+          std::cout << "HERE" << std::endl;
         }
       }
     }
@@ -515,6 +519,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
                   // is in
                   pattern.insert(local_master_dof, other_master_dof);
                   pattern.insert(other_master_dof, local_master_dof);
+                  std::cout << "also here" << std::endl;
                 }
               }
             }

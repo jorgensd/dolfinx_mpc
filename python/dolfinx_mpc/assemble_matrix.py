@@ -56,6 +56,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     tt = dolfinx.common.Timer("MPC: Assemble matrix (sparsitypattern total)")
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
+    print("MPC pattern : {0:d} (V dim {1:d})".format(
+        pattern.num_nonzeros(), V.dim))
     tt.stop()
 
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
