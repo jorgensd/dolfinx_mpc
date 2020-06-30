@@ -18,7 +18,20 @@ import dolfinx.mesh
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
+import petsc4py
+petsc4py.init('-log_view')
+opts = PETSc.Options()
+opts["ksp_type"] = "cg"
+opts["ksp_rtol"] = 1.0e-10
+opts["pc_type"] = "gamg"
+opts["pc_gamg_type"] = "agg"
+opts["pc_gamg_sym_graph"] = True
+opts["mg_levels_ksp_type"] = "chebyshev"
+opts["mg_levels_pc_type"] = "jacobi"
+opts["mg_levels_esteig_ksp_type"] = "cg"
+opts["matptap_via"] = "scalable"
 
+import resource
 
 def build_elastic_nullspace(V):
     """Function to build nullspace for 2D/3D elasticity"""
@@ -70,7 +83,7 @@ def demo_elasticity(r_lvl=1):
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 4, 4, 4)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        mesh = dolfinx.mesh.refine(mesh, redistribute=False)
+        mesh = dolfinx.mesh.refine(mesh, redistribute=True)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
     fdim = mesh.topology.dim - 1
@@ -120,7 +133,8 @@ def demo_elasticity(r_lvl=1):
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     lhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
                                  subdomain_data=mt, subdomain_id=1)
-
+    if MPI.COMM_WORLD.rank == 0:
+        print("Problem size {0:d} ".format(V.dim))
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
     s_m_c = {lambda x: dof_at(x, [1, 0, 0]): {
@@ -149,128 +163,51 @@ def demo_elasticity(r_lvl=1):
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
-    def monitor(ksp, its, rnorm, r_lvl=-1):
-        if MPI.COMM_WORLD.rank == 0:
-            # print("{}: Iteration: {}, rel. residual: {}"
-            #      .format(r_lvl, its, rnorm))
-            pass
+    # def monitor(ksp, its, rnorm, r_lvl=-1):
+    #     if MPI.COMM_WORLD.rank == 0:
+    #         # print("{}: Iteration: {}, rel. residual: {}"
+    #         #      .format(r_lvl, its, rnorm))
+    #         pass
 
-    def pmonitor(ksp, its, rnorm):
-        return monitor(ksp, its, rnorm, r_lvl=r_lvl)
+    # def pmonitor(ksp, its, rnorm):
+    #     return monitor(ksp, its, rnorm, r_lvl=r_lvl)
 
     # Solve Linear problem
 
-    opts = PETSc.Options()
-    opts["ksp_type"] = "cg"
-    opts["ksp_rtol"] = 1.0e-10
-    opts["pc_type"] = "gamg"
-    opts["pc_gamg_type"] = "agg"
-    opts["pc_gamg_sym_graph"] = True
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setFromOptions()
-    solver.setMonitor(pmonitor)
+    # solver.setMonitor(pmonitor)
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
     solver.solve(b, uh)
+    mem = sum(MPI.COMM_WORLD.allgather(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
+    it = solver.getIterationNumber()
+    if MPI.COMM_WORLD.rank == 0:
+        print("Refinement level {0:d}, Iterations {1:d}".format(r_lvl, it))
+        print("Max usage {0:d} (kb)".format(mem))
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
     # Back substitute to slave dofs
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
-    # Write solution to file
-    u_h = dolfinx.Function(Vmpc)
-    u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc"
-    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                  "results/bench_elasticity.xdmf", "w")
-    outfile.write_mesh(mesh)
-    outfile.write_function(u_h)
-
-    # Generate reference matrices and unconstrained solution
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
-    A_org.assemble()
-    null_space_org = build_elastic_nullspace(V)
-    A_org.setNearNullSpace(null_space_org)
-
-    L_org = dolfinx.fem.assemble_vector(lhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
-
-    def org_monitor(ksp, its, rnorm, r_lvl=-1):
-        if MPI.COMM_WORLD.rank == 0:
-            # print("Orginal: {}: Iteration: {}, rel. residual: {}"
-            #      .format(r_lvl, its, rnorm))
-            pass
-
-    def org_pmonitor(ksp, its, rnorm):
-        return org_monitor(ksp, its, rnorm, r_lvl=r_lvl)
-
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setFromOptions()
-    solver.setMonitor(org_pmonitor)
-    solver.setOperators(A_org)
-    u_ = dolfinx.Function(V)
-    solver.solve(L_org, u_.vector)
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
-    u_.name = "u_unconstrained"
-    outfile.write_function(u_)
-    outfile.close()
-
-    # Create global transformation matrix
-    # K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
-    #                                                    masters, coeffs,
-    #                                                    offsets)
-
-    # # Create reduced A
-    # A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-    # reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-
-    # # Created reduced L
-    # vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    # reduced_L = np.dot(K.T, vec)
-
-    # # Solve linear system
-    # d = np.linalg.solve(reduced_A, reduced_L)
-
-    # # Back substitution to full solution vector
-    # uh_numpy = np.dot(K, d)
-
-    # # Transfer data from the MPC problem to numpy arrays for comparison
-    # A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    # mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
-    # # Compare LHS, RHS and solution with reference values
-    # dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    # dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    # assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-    #                                       uh.owner_range[1]])
-
-    # for i in range(len(masters)):
-    #     if uh.owner_range[0] < masters[i] and masters[i] < uh.owner_range[1]:
-    #         print("-"*10, i, "-"*10)
-    #         print("MASTER DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-    #               .format(uh.array[masters[i]-uh.owner_range[0]],
-    #                       u_.vector.array[masters[i]-uh.owner_range[0]]))
-    #         print("Slave (given as master*coeff) {0:.4e}".
-    #               format(uh.array[masters[i]-uh.owner_range[0]]*coeffs[0]))
-
-    #     if uh.owner_range[0] < slaves[i] and slaves[i] < uh.owner_range[1]:
-    #         print("SLAVE  DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-    #               .format(uh.array[slaves[i]-uh.owner_range[0]],
-    #                       u_.vector.array[slaves[i]-uh.owner_range[0]]))
-
+    # # Write solution to file
+    # u_h = dolfinx.Function(Vmpc)
+    # u_h.vector.setArray(uh.array)
+    # u_h.name = "u_mpc"
+    # outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+    #                               "results/bench_elasticity.xdmf", "w")
+    # outfile.write_mesh(mesh)
+    # outfile.write_function(u_h)
 
 if __name__ == "__main__":
-    for i in range(3):
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        # dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-        #                 "Run {0:1d} in progress".format(i))
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    for i in range(7):
+        if MPI.COMM_WORLD.rank == 0:
+            dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+            dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                            "Run {0:1d} in progress".format(i))
+            dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         demo_elasticity(i)
         # dolfinx.common.list_timings(
         #     MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

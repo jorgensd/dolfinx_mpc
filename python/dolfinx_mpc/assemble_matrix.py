@@ -54,10 +54,17 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
 
     # Create sparsity pattern
     tt = dolfinx.common.Timer("MPC: Assemble matrix (sparsitypattern total)")
+    trad_pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
+    trad_pattern.assemble()
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
-    print("MPC pattern : {0:d} (V dim {1:d})".format(
-        pattern.num_nonzeros(), V.dim))
+
+    extra_nonz_loc = pattern.num_nonzeros()-trad_pattern.num_nonzeros()
+    comm = V.mesh.mpi_comm()
+    extra_nonz_glob = sum(comm.allgather(extra_nonz_loc))
+    if comm.rank == 0:
+        print("Num extra Nonzeros: {0:d} (V dim {1:d})"
+                .format(extra_nonz_glob, V.dim))
     tt.stop()
 
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)

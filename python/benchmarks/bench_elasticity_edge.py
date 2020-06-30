@@ -18,7 +18,20 @@ import dolfinx.mesh
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
+import resource
+import petsc4py
 
+petsc4py.init('-log_view')
+opts = PETSc.Options()
+opts["ksp_type"] = "cg"
+opts["ksp_rtol"] = 1.0e-10
+opts["pc_type"] = "gamg"
+opts["pc_gamg_type"] = "agg"
+opts["pc_gamg_sym_graph"] = True
+opts["mg_levels_ksp_type"] = "chebyshev"
+opts["mg_levels_pc_type"] = "jacobi"
+opts["mg_levels_esteig_ksp_type"] = "cg"
+opts["matptap_via"] = "scalable"
 
 def build_elastic_nullspace(V):
     """Function to build nullspace for 2D/3D elasticity"""
@@ -71,7 +84,7 @@ def demo_elasticity(r_lvl=1):
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        mesh = dolfinx.mesh.refine(mesh, redistribute=False)
+        mesh = dolfinx.mesh.refine(mesh, redistribute=True)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         N *= 2
     fdim = mesh.topology.dim - 1
@@ -193,29 +206,30 @@ def demo_elasticity(r_lvl=1):
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
-    def monitor(ksp, its, rnorm, r_lvl=-1):
-        if MPI.COMM_WORLD.rank == 0:
-            print("{}: Iteration: {}, rel. residual: {}"
-                  .format(r_lvl, its, rnorm))
+    # def monitor(ksp, its, rnorm, r_lvl=-1):
+    #     if MPI.COMM_WORLD.rank == 0:
+    #         print("{}: Iteration: {}, rel. residual: {}"
+    #               .format(r_lvl, its, rnorm))
 
-    def pmonitor(ksp, its, rnorm):
-        return monitor(ksp, its, rnorm, r_lvl=r_lvl)
+    # def pmonitor(ksp, its, rnorm):
+    #     return monitor(ksp, its, rnorm, r_lvl=r_lvl)
 
     # Solve Linear problem
 
-    opts = PETSc.Options()
-    opts["ksp_type"] = "cg"
-    opts["ksp_rtol"] = 1.0e-10
-    opts["pc_type"] = "gamg"
-    opts["pc_gamg_type"] = "agg"
-    opts["pc_gamg_sym_graph"] = True
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setFromOptions()
-    solver.setMonitor(pmonitor)
+    # solver.setMonitor(pmonitor)
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
     solver.solve(b, uh)
+    mem = sum(MPI.COMM_WORLD.allgather(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
+    it = solver.getIterationNumber()
+    if MPI.COMM_WORLD.rank == 0:
+        print("Refinement level {0:d}, Iterations {1:d}".format(r_lvl, it))
+        print("Max usage {0:d} (kb)".format(mem))
+
+
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
@@ -226,42 +240,42 @@ def demo_elasticity(r_lvl=1):
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
-    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                  "results/bench_elasticity.xdmf", "w")
-    outfile.write_mesh(mesh)
-    outfile.write_function(u_h)
+    # outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+    #                               "results/bench_elasticity.xdmf", "w")
+    # outfile.write_mesh(mesh)
+    # outfile.write_function(u_h)
 
     # Generate reference matrices and unconstrained solution
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
-    A_org.assemble()
-    null_space_org = build_elastic_nullspace(V)
-    A_org.setNearNullSpace(null_space_org)
+    # A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    # A_org.assemble()
+    # null_space_org = build_elastic_nullspace(V)
+    # A_org.setNearNullSpace(null_space_org)
 
-    L_org = dolfinx.fem.assemble_vector(lhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
+    # L_org = dolfinx.fem.assemble_vector(lhs)
+    # dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    # L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+    #                   mode=PETSc.ScatterMode.REVERSE)
+    # dolfinx.fem.set_bc(L_org, bcs)
 
-    def org_monitor(ksp, its, rnorm, r_lvl=-1):
-        if MPI.COMM_WORLD.rank == 0:
-            print("Orginal: {}: Iteration: {}, rel. residual: {}".format(
-                  r_lvl, its, rnorm))
+    # def org_monitor(ksp, its, rnorm, r_lvl=-1):
+    #     if MPI.COMM_WORLD.rank == 0:
+    #         print("Orginal: {}: Iteration: {}, rel. residual: {}".format(
+    #               r_lvl, its, rnorm))
 
-    def org_pmonitor(ksp, its, rnorm):
-        return org_monitor(ksp, its, rnorm, r_lvl=r_lvl)
+    # def org_pmonitor(ksp, its, rnorm):
+    #     return org_monitor(ksp, its, rnorm, r_lvl=r_lvl)
 
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setFromOptions()
-    solver.setMonitor(org_pmonitor)
-    solver.setOperators(A_org)
-    u_ = dolfinx.Function(V)
-    solver.solve(L_org, u_.vector)
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
-    u_.name = "u_unconstrained"
-    outfile.write_function(u_)
-    outfile.close()
+    # solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    # solver.setFromOptions()
+    # solver.setMonitor(org_pmonitor)
+    # solver.setOperators(A_org)
+    # u_ = dolfinx.Function(V)
+    # solver.solve(L_org, u_.vector)
+    # u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+    #                       mode=PETSc.ScatterMode.FORWARD)
+    # u_.name = "u_unconstrained"
+    # outfile.write_function(u_)
+    # outfile.close()
 
     # Create global transformation matrix
     # K = dolfinx_mpc.utils.create_transformation_matrix(V.dim(), slaves,
@@ -308,11 +322,12 @@ def demo_elasticity(r_lvl=1):
 
 
 if __name__ == "__main__":
-    for i in range(3):
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        # dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-        #                 "Run {0:1d} in progress".format(i))
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    for i in range(7):
+        if MPI.COMM_WORLD.rank == 0:
+            dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+            dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                            "Run {0:1d} in progress".format(i))
+            dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         demo_elasticity(i)
         # dolfinx.common.list_timings(
         #     MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
