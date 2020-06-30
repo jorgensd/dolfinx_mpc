@@ -184,8 +184,8 @@ def demo_elasticity(r_lvl=1):
     mem = sum(MPI.COMM_WORLD.allgather(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
-        print("Refinement level {0:d}, Iterations {1:d}".format(r_lvl, it))
-        print("Max usage {0:d} (kb)".format(mem))
+        print("Rlvl {0:d}, Iterations {1:d}".format(r_lvl, it))
+        print("Rlvl {0:d}, Max usage {1:d} (kb), #dofs {2:d}".format(r_lvl, mem, V.dim))
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
