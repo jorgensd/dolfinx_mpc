@@ -45,7 +45,7 @@ opts["pc_hypre_boomeramg_print_statistics"] = 1
 # opts["matptap_via"] = "scalable"
 
 def demo_elasticity(r_lvl=1, outfile=None):
-    N = 4
+    N = 3
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -294,7 +294,7 @@ def demo_elasticity(r_lvl=1, outfile=None):
 
 
 if __name__ == "__main__":
-    n_level = 3
+    n_level = 6
     f = h5py.File('bench_edge_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
     f.create_dataset("its", (n_level,), dtype=np.int32)
     f.create_dataset("num_dofs", (n_level,), dtype=np.int32)

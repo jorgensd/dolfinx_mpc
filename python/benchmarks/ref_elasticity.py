@@ -4,25 +4,32 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import numpy as np
-
-from petsc4py import PETSc
-from mpi4py import MPI
+import resource
+import time
 from contextlib import ExitStack
+
+import h5py
+import numpy as np
+from petsc4py import PETSc
+
 import dolfinx
+import dolfinx.common
 import dolfinx.io
 import dolfinx.la
 import dolfinx.log
-import dolfinx.common
 import dolfinx.mesh
 import ufl
+from bench_elasticity import build_elastic_nullspace
+from mpi4py import MPI
 
 opts = PETSc.Options()
 opts["ksp_type"] = "cg"
+opts["ksp_rtol"] = 1.0e-5
 opts["pc_type"] = "hypre"
 opts['pc_hypre_type'] = 'boomeramg'
 opts["pc_hypre_boomeramg_max_iter"] = 1
 opts["pc_hypre_boomeramg_cycle_type"] = "v"
+opts["pc_hypre_boomeramg_print_statistics"] = 1
 
 # View solver info
 # opts['ksp_view'] = None
@@ -41,56 +48,9 @@ opts["pc_hypre_boomeramg_cycle_type"] = "v"
 # opts["matptap_via"] = "scalable"
 
 
-import resource
-# from bench_elasticity import build_elastic_nullspace
-
-def build_elastic_nullspace(V):
-    """Function to build nullspace for 2D/3D elasticity"""
-
-    # Get geometric dim
-    gdim = V.mesh.geometry.dim
-    assert gdim == 2 or gdim == 3
-
-    # Set dimension of nullspace
-    dim = 3 if gdim == 2 else 6
-
-    # Create list of vectors for null space
-    nullspace_basis = [dolfinx.cpp.la.create_vector(
-        V.dofmap.index_map) for i in range(dim)]
-
-    with ExitStack() as stack:
-        vec_local = [stack.enter_context(x.localForm())
-                     for x in nullspace_basis]
-        basis = [np.asarray(x) for x in vec_local]
-
-        # Build translational null space basis
-        for i in range(gdim):
-            dofs = V.sub(i).dofmap.list
-            basis[i][dofs.array()] = 1.0
-
-        # Build rotational null space basis
-        if gdim == 2:
-            V.sub(0).set_x(basis[2], -1.0, 1)
-            V.sub(1).set_x(basis[2], 1.0, 0)
-        elif gdim == 3:
-            V.sub(0).set_x(basis[3], -1.0, 1)
-            V.sub(1).set_x(basis[3], 1.0, 0)
-
-            V.sub(0).set_x(basis[4], 1.0, 2)
-            V.sub(2).set_x(basis[4], -1.0, 0)
-
-            V.sub(2).set_x(basis[5], 1.0, 1)
-            V.sub(1).set_x(basis[5], -1.0, 2)
-
-    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
-    basis.orthonormalize()
-
-    _x = [basis[i] for i in range(6)]
-    nsp = PETSc.NullSpace().create(vectors=_x)
-    return nsp
 
 
-def demo_elasticity(r_lvl=1):
+def demo_elasticity(r_lvl=1, outfile=None):
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 3, 3, 3)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -171,9 +131,18 @@ def demo_elasticity(r_lvl=1):
     solver.setFromOptions()
     solver.setOperators(A_org)
     u_ = dolfinx.Function(V)
+    start = time.time()
     solver.solve(L_org, u_.vector)
+    end = time.time()
     #solver.view()
     it = solver.getIterationNumber()
+    if outfile is not None:
+        d_set = f.get("its")
+        d_set[r_lvl] = it
+        d_set = f.get("num_dofs")
+        d_set[r_lvl] = V.dim
+        d_set = f.get("solve_time")
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = end-start
     if MPI.COMM_WORLD.rank == 0:
         print("Refinement level {0:d}, Iterations {1:d}".format(r_lvl, it))
 
@@ -185,12 +154,18 @@ def demo_elasticity(r_lvl=1):
     u_.name = "u_unconstrained"
 
 if __name__ == "__main__":
-    for i in range(5):
+    n_level = 6
+    f = h5py.File('ref_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
+    f.create_dataset("its", (n_level,), dtype=np.int32)
+    f.create_dataset("num_dofs", (n_level,), dtype=np.int32)
+    f.create_dataset("solve_time", (n_level, MPI.COMM_WORLD.size), dtype=np.float64)
+    for i in range(n_level):
         if MPI.COMM_WORLD.rank == 0:
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
             dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                             "Run {0:1d} in progress".format(i))
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-        demo_elasticity(i)
+        demo_elasticity(i, outfile=f)
         # dolfinx.common.list_timings(
         #     MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    f.close()
