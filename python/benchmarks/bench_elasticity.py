@@ -18,18 +18,24 @@ import dolfinx.mesh
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
-import petsc4py
-petsc4py.init('-log_view')
+
 opts = PETSc.Options()
 opts["ksp_type"] = "cg"
-opts["ksp_rtol"] = 1.0e-10
-opts["pc_type"] = "gamg"
-opts["pc_gamg_type"] = "agg"
-opts["pc_gamg_sym_graph"] = True
-opts["mg_levels_ksp_type"] = "chebyshev"
-opts["mg_levels_pc_type"] = "jacobi"
-opts["mg_levels_esteig_ksp_type"] = "cg"
-opts["matptap_via"] = "scalable"
+opts["pc_type"] = "hypre"
+opts['pc_hypre_type'] = 'boomeramg'
+opts["pc_hypre_boomeramg_max_iter"] = 1
+opts["pc_hypre_boomeramg_cycle_type"] = "v"
+
+# opts["ksp_type"] = "cg"
+# opts["ksp_rtol"] = 1.0e-10
+# opts["pc_type"] = "gamg"
+# opts["pc_gamg_type"] = "agg"
+# opts["pc_gamg_coarse_eq_limit"] = 1000
+# opts["pc_gamg_sym_graph"] = True
+# opts["mg_levels_ksp_type"] = "chebyshev"
+# opts["mg_levels_pc_type"] = "jacobi"
+# opts["mg_levels_esteig_ksp_type"] = "cg"
+# opts["matptap_via"] = "scalable"
 
 import resource
 
@@ -143,13 +149,13 @@ def demo_elasticity(r_lvl=1):
     (slaves, masters,
      coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
                                                            2, 2)
-
+  
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets)
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
-
+    
     # Create functionspace and function for mpc vector
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
@@ -162,7 +168,7 @@ def demo_elasticity(r_lvl=1):
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
-
+    
     # def monitor(ksp, its, rnorm, r_lvl=-1):
     #     if MPI.COMM_WORLD.rank == 0:
     #         # print("{}: Iteration: {}, rel. residual: {}"
@@ -173,7 +179,6 @@ def demo_elasticity(r_lvl=1):
     #     return monitor(ksp, its, rnorm, r_lvl=r_lvl)
 
     # Solve Linear problem
-
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setFromOptions()
     # solver.setMonitor(pmonitor)
@@ -181,6 +186,7 @@ def demo_elasticity(r_lvl=1):
     uh = b.copy()
     uh.set(0)
     solver.solve(b, uh)
+    solver.view()
     mem = sum(MPI.COMM_WORLD.allgather(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
@@ -202,7 +208,7 @@ def demo_elasticity(r_lvl=1):
     # outfile.write_function(u_h)
 
 if __name__ == "__main__":
-    for i in range(7):
+    for i in range(5):
         if MPI.COMM_WORLD.rank == 0:
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
             dolfinx.log.log(dolfinx.log.LogLevel.INFO,

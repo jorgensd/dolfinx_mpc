@@ -16,26 +16,82 @@ import dolfinx.log
 import dolfinx.common
 import dolfinx.mesh
 import ufl
-import petsc4py
-petsc4py.init('-log_view')
+
 opts = PETSc.Options()
 opts["ksp_type"] = "cg"
-opts["ksp_rtol"] = 1.0e-8
-opts["pc_type"] = "gamg"
-#opts["pc_gamg_type"] = "agg"
-opts["pc_gamg_coarse_eq_limit"] = 1000
-opts["pc_gamg_sym_graph"] = True
-opts["mg_levels_ksp_type"] = "chebyshev"
-opts["mg_levels_pc_type"] = "jacobi"
-opts["mg_levels_esteig_ksp_type"] = "cg"
-opts["matptap_via"] = "scalable"
+opts["pc_type"] = "hypre"
+opts['pc_hypre_type'] = 'boomeramg'
+opts["pc_hypre_boomeramg_max_iter"] = 1
+opts["pc_hypre_boomeramg_cycle_type"] = "v"
+
+# View solver info
+# opts['ksp_view'] = None
+
+# List all options
+# opts['help'] = None
+
+# opts["ksp_rtol"] = 1.0e-10
+# opts["pc_type"] = "gamg"
+# opts["pc_gamg_type"] = "classical"
+# opts["pc_gamg_coarse_eq_limit"] = 1000
+# opts["pc_gamg_sym_graph"] = True
+# opts["mg_levels_ksp_type"] = "chebyshev"
+# opts["mg_levels_pc_type"] = "jacobi"
+# opts["mg_levels_esteig_ksp_type"] = "cg"
+# opts["matptap_via"] = "scalable"
 
 
 import resource
-from bench_elasticity import build_elastic_nullspace
+# from bench_elasticity import build_elastic_nullspace
+
+def build_elastic_nullspace(V):
+    """Function to build nullspace for 2D/3D elasticity"""
+
+    # Get geometric dim
+    gdim = V.mesh.geometry.dim
+    assert gdim == 2 or gdim == 3
+
+    # Set dimension of nullspace
+    dim = 3 if gdim == 2 else 6
+
+    # Create list of vectors for null space
+    nullspace_basis = [dolfinx.cpp.la.create_vector(
+        V.dofmap.index_map) for i in range(dim)]
+
+    with ExitStack() as stack:
+        vec_local = [stack.enter_context(x.localForm())
+                     for x in nullspace_basis]
+        basis = [np.asarray(x) for x in vec_local]
+
+        # Build translational null space basis
+        for i in range(gdim):
+            dofs = V.sub(i).dofmap.list
+            basis[i][dofs.array()] = 1.0
+
+        # Build rotational null space basis
+        if gdim == 2:
+            V.sub(0).set_x(basis[2], -1.0, 1)
+            V.sub(1).set_x(basis[2], 1.0, 0)
+        elif gdim == 3:
+            V.sub(0).set_x(basis[3], -1.0, 1)
+            V.sub(1).set_x(basis[3], 1.0, 0)
+
+            V.sub(0).set_x(basis[4], 1.0, 2)
+            V.sub(2).set_x(basis[4], -1.0, 0)
+
+            V.sub(2).set_x(basis[5], 1.0, 1)
+            V.sub(1).set_x(basis[5], -1.0, 2)
+
+    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
+    basis.orthonormalize()
+
+    _x = [basis[i] for i in range(6)]
+    nsp = PETSc.NullSpace().create(vectors=_x)
+    return nsp
+
 
 def demo_elasticity(r_lvl=1):
-    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 4, 4, 4)
+    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 3, 3, 3)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         mesh = dolfinx.mesh.refine(mesh, redistribute=True)
@@ -113,7 +169,6 @@ def demo_elasticity(r_lvl=1):
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setFromOptions()
-    # solver.setMonitor(org_pmonitor)
     solver.setOperators(A_org)
     u_ = dolfinx.Function(V)
     solver.solve(L_org, u_.vector)
@@ -130,7 +185,7 @@ def demo_elasticity(r_lvl=1):
     u_.name = "u_unconstrained"
 
 if __name__ == "__main__":
-    for i in range(7):
+    for i in range(5):
         if MPI.COMM_WORLD.rank == 0:
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
             dolfinx.log.log(dolfinx.log.LogLevel.INFO,
