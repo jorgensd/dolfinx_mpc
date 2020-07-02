@@ -70,13 +70,23 @@ def build_elastic_nullspace(V):
     return nsp
 
 
-def ref_elasticity(out_xdmf=None, r_lvl=0, out_hdf5=None,
+def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
                    xdmf=False, boomeramg=False, kspview=False):
-    N = 3
-    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+    if tetra:
+        N = 3
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+    else:
+        N = 3
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
+                                    dolfinx.cpp.mesh.CellType.hexahedron)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        mesh = dolfinx.mesh.refine(mesh, redistribute=True)
+        N *= 2
+        if tetra:
+            mesh = dolfinx.mesh.refine(mesh, redistribute=True)
+        else:
+            mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
+                                        dolfinx.cpp.mesh.CellType.hexahedron)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
     fdim = mesh.topology.dim - 1
@@ -219,6 +229,11 @@ if __name__ == "__main__":
                         help="View PETSc progress")
     parser.add_argument("-o", default='elasticity_ref.hdf5', dest="hdf5",
                         help="Name of HDF5 output file")
+    ct_parser = parser.add_mutually_exclusive_group(required=False)
+    ct_parser.add_argument('--tet', dest='tetra', action='store_true',
+                           help="Tetrahedron elements")
+    ct_parser.add_argument('--hex', dest='tetra', action='store_false',
+                           help="Hexahedron elements")
     solver_parser = parser.add_mutually_exclusive_group(required=False)
     solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
                                action='store_true',
@@ -248,7 +263,7 @@ if __name__ == "__main__":
             dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                             "Run {0:1d} in progress".format(i))
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-        ref_elasticity(r_lvl=i, out_hdf5=h5f,
+        ref_elasticity(tetra=tetra, r_lvl=i, out_hdf5=h5f,
                        xdmf=xdmf, boomeramg=boomeramg, kspview=kspview)
         if timings:
             dolfinx.common.list_timings(
