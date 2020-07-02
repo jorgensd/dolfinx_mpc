@@ -74,7 +74,8 @@ def build_elastic_nullspace(V):
 
 def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
                          xdmf=False, boomeramg=False, kspview=False):
-    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 4, 4, 4)
+    N = 3
+    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         mesh = dolfinx.mesh.refine(mesh, redistribute=True)
@@ -133,11 +134,10 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         lambda x: dof_at(x, [1, 0, 1]): 0.5}}  # , lambda x: dof_at(x, [1, 1, 0]): {
     # lambda x: dof_at(x, [1, 1, 1]): 0.5}}
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                           2, 2)
-
+     coeffs, offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
+                                                                        2, 2)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets, owner_ranks)
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)

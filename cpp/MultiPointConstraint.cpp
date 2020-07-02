@@ -26,16 +26,20 @@ MultiPointConstraint::MultiPointConstraint(
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
     Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets_master)
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets_master,
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_owner_ranks)
     : _function_space(V), _index_map(), _mpc_dofmap(), _slaves(slaves),
       _masters(), _masters_local(), _slaves_local(),
       _coefficients(coefficients), _cells_to_dofs(2, 1), _cell_to_slave_index(),
-      _slave_cells(), _master_cells()
+      _slave_cells(), _master_cells(), _master_owner_ranks()
 {
   LOG(INFO) << "Initializing MPC class";
-  dolfinx::common::Timer timer("MPC: Initialize MultiPointConstraint class");
+  dolfinx::common::Timer timer("MPC-INIT: Total time");
   _masters = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
       masters, offsets_master);
+  _master_owner_ranks
+      = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
+          master_owner_ranks, offsets_master);
   std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dof_lists(2);
   dof_lists[0] = slaves;
   dof_lists[1] = masters;
@@ -99,7 +103,7 @@ std::shared_ptr<dolfinx::common::IndexMap>
 MultiPointConstraint::generate_index_map()
 {
   LOG(INFO) << "Generating MPC index map with additional ghosts";
-  dolfinx::common::Timer timer("MPC: Generate index map with correct ghosting");
+  dolfinx::common::Timer timer("MPC-INIT: Indexmap Total");
   const dolfinx::mesh::Mesh& mesh = *(_function_space->mesh());
   const dolfinx::fem::DofMap& dofmap = *(_function_space->dofmap());
 
@@ -112,8 +116,8 @@ MultiPointConstraint::generate_index_map()
   // Get old dofs that will be appended to
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> new_ghosts
       = index_map->ghosts();
-
   std::vector<std::int64_t> additional_ghosts;
+  std::vector<std::int32_t> additional_ghost_ranks;
 
   int num_ghosts = new_ghosts.size();
   // Offsets for slave and master
@@ -121,8 +125,7 @@ MultiPointConstraint::generate_index_map()
       = _cells_to_dofs[0]->offsets();
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_cell_offsets
       = _cells_to_dofs[1]->offsets();
-  dolfinx::common::Timer timer2(
-      "MPC: SLAVE_MASTER index map with correct ghosting");
+  dolfinx::common::Timer timer2("MPC-INIT: Indexmap New slave->master ghosts");
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
     // Loop over slaves in cell
@@ -150,14 +153,15 @@ MultiPointConstraint::generate_index_map()
             // Ghost insert should be the global number of the block
             // containing the master
             additional_ghosts.push_back(index);
+            additional_ghost_ranks.push_back(_master_owner_ranks->links(
+                _cell_to_slave_index->links(i)[j])[k]);
           }
         }
       }
     }
   }
   timer2.stop();
-  dolfinx::common::Timer timer3(
-      "MPC: MASTER_MASTER index map with correct ghosting");
+  dolfinx::common::Timer timer3("MPC-INIT: Indexmap Master-Master ghosting");
 
   // Add ghosts for all other master for same slave
   for (std::int64_t i = 0; i < _masters->num_nodes(); i++)
@@ -187,7 +191,11 @@ MultiPointConstraint::generate_index_map()
                               additional_ghosts.end(), other_index);
 
               if ((!is_ghost) && (is_new_ghost == additional_ghosts.end()))
+              {
                 additional_ghosts.push_back(other_index);
+                additional_ghost_ranks.push_back(
+                    _master_owner_ranks->links(i)[k]);
+              }
             }
           }
         }
@@ -254,7 +262,10 @@ MultiPointConstraint::generate_index_map()
 
                     if ((!is_ghost)
                         && (is_new_ghost == additional_ghosts.end()))
+                    {
                       additional_ghosts.push_back(other_index);
+                      additional_ghost_ranks.push_back(_masters->links(k)[l]);
+                    }
                   }
                 }
               }
@@ -266,32 +277,28 @@ MultiPointConstraint::generate_index_map()
   }
 
   timer3.stop();
+
+  dolfinx::common::Timer timerg(
+      "MPC-INIT: Indexmap Update ghosts and owner ranks");
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> new_ranks
+      = index_map->ghost_owner_rank();
+
   new_ghosts.conservativeResize(new_ghosts.size() + additional_ghosts.size());
   for (std::int64_t i = 0; i < additional_ghosts.size(); i++)
     new_ghosts(num_ghosts + i) = additional_ghosts[i];
-  /// Get ghosts owners
-  int mpi_size = -1;
-  std::int32_t local_size = index_map->size_local();
-  MPI_Comm_size(mesh.mpi_comm(), &mpi_size);
-  std::vector<std::int32_t> local_sizes(mpi_size);
-  MPI_Allgather(&local_size, 1, MPI_INT32_T, local_sizes.data(), 1, MPI_INT32_T,
-                mesh.mpi_comm());
 
-  std::vector<std::int64_t> all_ranges(mpi_size + 1, 0);
-  std::partial_sum(local_sizes.begin(), local_sizes.end(),
-                   all_ranges.begin() + 1);
+  // Append rank of new ghost owners
+  std::vector<int> ghost_ranks(new_ghosts.size());
+  for (std::int64_t i = 0; i < new_ranks.size(); i++)
+    ghost_ranks[i] = new_ranks[i];
 
-  // Compute rank of ghost owners
-  std::vector<int> ghost_ranks(new_ghosts.size(), -1);
-  for (int i = 0; i < new_ghosts.size(); ++i)
+  for (int i = 0; i < additional_ghosts.size(); ++i)
   {
-    auto it
-        = std::upper_bound(all_ranges.begin(), all_ranges.end(), new_ghosts[i]);
-    const int p = std::distance(all_ranges.begin(), it) - 1;
-    ghost_ranks[i] = p;
+    ghost_ranks[num_ghosts + i] = additional_ghost_ranks[i];
   }
+  timerg.stop();
 
-  dolfinx::common::Timer timer4("MPC: Make new indexmap");
+  dolfinx::common::Timer timer4("MPC-INIT: Indexmap Make new indexmap");
   std::shared_ptr<dolfinx::common::IndexMap> new_index_map
       = std::make_shared<dolfinx::common::IndexMap>(
           mesh.mpi_comm(), index_map->size_local(), new_ghosts, ghost_ranks,
@@ -306,8 +313,7 @@ dolfinx::la::SparsityPattern
 MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";
-  dolfinx::common::Timer timer(
-      "MPC: Build sparsity pattern (with MPC additions)");
+  dolfinx::common::Timer timer("MPC-INIT: Sparsitypattern Total");
   if (a.rank() != 2)
   {
     throw std::runtime_error(
@@ -356,7 +362,7 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
   ///  Create and build sparsity pattern for original form. Should be
   ///  equivalent to calling create_sparsity_pattern(Form a)
   dolfinx_mpc::build_standard_pattern(pattern, a);
-  
+
   /// Arrays replacing slave dof with master dof in sparsity pattern
   std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> master_for_slave(2);
   master_for_slave[0].resize(block_size);
@@ -400,8 +406,6 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
         // Add all values on cell (including slave), to get complete blocks
         pattern.insert(master_for_slave[0], cell_dof_lists[1]);
         pattern.insert(cell_dof_lists[0], master_for_slave[1]);
-        // std::cout << "A" << block_size
-        //           << "We are adding masters replacing slaves" << std::endl;
       }
       // Add pattern for master owned by other slave on same cell
       for (Eigen::Index k = j + 1; k < _cells_to_dofs[0]->links(i).size(); k++)
@@ -423,7 +427,6 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
           }
           pattern.insert(master_for_slave[0], master_for_other_slave[1]);
           pattern.insert(master_for_other_slave[0], master_for_slave[1]);
-          // std::cout << "We are also here" << std::endl;
         }
       }
     }
@@ -457,7 +460,6 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
 
           pattern.insert(local_master_dof, other_master_dof);
           pattern.insert(other_master_dof, local_master_dof);
-          // std::cout << "HERE" << std::endl;
         }
       }
     }
@@ -519,7 +521,6 @@ MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
                   // is in
                   pattern.insert(local_master_dof, other_master_dof);
                   pattern.insert(other_master_dof, local_master_dof);
-                  // std::cout << "also here" << std::endl;
                 }
               }
             }

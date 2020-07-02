@@ -48,7 +48,8 @@ public:
       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
       Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
-      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets);
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets,
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_owner_ranks);
 
   /// Add sparsity pattern for multi-point constraints to existing
   /// sparsity pattern
@@ -97,6 +98,13 @@ public:
     return _cells_to_dofs[0];
   };
 
+  // Return the rank of the owner of the master dof
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  master_owner_ranks()
+  {
+    return _master_owner_ranks;
+  }
+
   /// Return dofmap with MPC ghost values.
   std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap() { return _mpc_dofmap; };
 
@@ -123,6 +131,9 @@ private:
       _cell_to_slave_index;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
+
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _master_owner_ranks;
 };
 
 } // namespace dolfinx_mpc

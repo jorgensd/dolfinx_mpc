@@ -74,7 +74,7 @@ def build_elastic_nullspace(V):
 
 def bench_elasticity_edge(out_xdmf=None, r_lvl=0, out_hdf5=None,
                           xdmf=False, boomeramg=False, kspview=False):
-    N = 4
+    N = 3
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -113,6 +113,7 @@ def bench_elasticity_edge(out_xdmf=None, r_lvl=0, out_hdf5=None,
         x_slaves = x[slave_dofs, :]
         x_masters = x[master_dofs, :]
         masters = np.zeros(N+1, dtype=np.int64)
+        owner_ranks = np.zeros(N+1, dtype=np.int64)
         slaves = np.zeros(N+1, dtype=np.int64)
         for i in range(N+1):
             if len(slave_dofs) > 0:
@@ -133,12 +134,14 @@ def bench_elasticity_edge(out_xdmf=None, r_lvl=0, out_hdf5=None,
                                 local_max-local_min):
                             masters[i] = (master_dofs[master_diff.argmin()]
                                           + local_min)
+                            owner_ranks[i] = MPI.COMM_WORLD.rank
         timer.stop()
-        return slaves, masters
+        return slaves, masters, owner_ranks
 
     # Find all masters and slaves
     masters = []
     slaves = []
+    master_ranks = []
     for j in range(mesh.topology.dim):
         Vj = V.sub(j).collapse()
         slave_dofs = dolfinx.fem.locate_dofs_geometrical(
@@ -146,13 +149,16 @@ def bench_elasticity_edge(out_xdmf=None, r_lvl=0, out_hdf5=None,
         master_dofs = dolfinx.fem.locate_dofs_geometrical(
             (V.sub(j), Vj), master_locater).T[0]
 
-        snew, mnew = create_master_slave_map(master_dofs, slave_dofs)
+        snew, mnew, mranks = create_master_slave_map(master_dofs, slave_dofs)
         mastersj = sum(MPI.COMM_WORLD.allgather(mnew))
         slavesj = sum(MPI.COMM_WORLD.allgather(snew))
+        ownersj = sum(MPI.COMM_WORLD.allgather(mranks))
         masters.append(mastersj)
         slaves.append(slavesj)
+        master_ranks.append(ownersj)
     masters = np.hstack(masters)
     slaves = np.hstack(slaves)
+    master_ranks = np.hstack(master_ranks)
     offsets = np.array(range(len(slaves)+1), dtype=np.int64)
     coeffs = 0.5*np.ones(len(masters), dtype=np.float64)
 
@@ -186,8 +192,13 @@ def bench_elasticity_edge(out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Create MPC
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets, master_ranks)
     # Setup MPC system
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Assembling".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
@@ -214,7 +225,7 @@ def bench_elasticity_edge(out_xdmf=None, r_lvl=0, out_hdf5=None,
         opts["pc_hypre_boomeramg_cycle_type"] = "v"
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
     else:
-        opts["ksp_rtol"] = 1.0e-10
+        opts["ksp_rtol"] = 1.0e-8
         opts["pc_type"] = "gamg"
         opts["pc_gamg_type"] = "agg"
         opts["pc_gamg_coarse_eq_limit"] = 1000
@@ -235,6 +246,11 @@ def bench_elasticity_edge(out_xdmf=None, r_lvl=0, out_hdf5=None,
     uh = b.copy()
     uh.set(0)
     start = time.time()
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Solving".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     with dolfinx.common.Timer("Ref solve") as t:
         solver.solve(b, uh)
     end = time.time()
@@ -302,7 +318,6 @@ if __name__ == "__main__":
     thismodule = sys.modules[__name__]
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
-
     N = n_ref + 1
 
     h5f = h5py.File('bench_edge_output.hdf5', 'w',

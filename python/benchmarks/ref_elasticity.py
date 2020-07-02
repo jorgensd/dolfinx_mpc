@@ -72,7 +72,8 @@ def build_elastic_nullspace(V):
 
 def ref_elasticity(out_xdmf=None, r_lvl=0, out_hdf5=None,
                    xdmf=False, boomeramg=False, kspview=False):
-    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 4, 4, 4)
+    N = 3
+    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         mesh = dolfinx.mesh.refine(mesh, redistribute=True)
@@ -145,7 +146,7 @@ def ref_elasticity(out_xdmf=None, r_lvl=0, out_hdf5=None,
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
         assert(False)
     else:
-        opts["ksp_rtol"] = 1.0e-10
+        opts["ksp_rtol"] = 1.0e-8
         opts["pc_type"] = "gamg"
         opts["pc_gamg_type"] = "agg"
         opts["pc_gamg_coarse_eq_limit"] = 1000

@@ -111,6 +111,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         x_masters = x[master_dofs, :]
         masters = np.zeros((M-1)*(M-1), dtype=np.int64)
         slaves = np.zeros((M-1)*(M-1), dtype=np.int64)
+        master_rank = np.zeros((M-1)*(M-1), dtype=np.int64)
         for i in range(1, M):
             for j in range(1, M):
                 if len(slave_dofs) > 0:
@@ -133,12 +134,17 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                             masters[(i-1)*(M-1)+j -
                                     1] = (master_dofs[master_diff.argmin()]
                                           + local_min)
-        timer.stop()
-        return slaves, masters
+                            master_rank[(i-1)*(M-1)+j -
+                                        1] = MPI.COMM_WORLD.rank
 
-    snew, mnew = create_master_slave_map(master_dofs, slave_dofs)
+        timer.stop()
+        return slaves, masters, master_rank
+
+    snew, mnew, mrankloc = create_master_slave_map(master_dofs, slave_dofs)
     masters = sum(MPI.COMM_WORLD.allgather(mnew))
     slaves = sum(MPI.COMM_WORLD.allgather(snew))
+    mrank = sum(MPI.COMM_WORLD.allgather(mrankloc))
+
     offsets = np.array(range(len(slaves)+1), dtype=np.int64)
     coeffs = np.ones(len(masters), dtype=np.float64)
 
@@ -157,8 +163,14 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Setup multi-point constraint
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets, mrank)
     # Assemble LHS and RHS with multi-point constraint
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Assembling".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+
     with dolfinx.common.Timer("MPC: Assemble matrix (Total time)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("MPC: Assemble vector (Total time)"):
@@ -206,6 +218,11 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     uh = b.copy()
     uh.set(0)
     start = time.time()
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Solving".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     with dolfinx.common.Timer("MPC: Solve") as t:
         solver.solve(b, uh)
     end = time.time()
