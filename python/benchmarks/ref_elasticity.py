@@ -154,7 +154,7 @@ def demo_elasticity(r_lvl=1, outfile=None):
     u_.name = "u_unconstrained"
 
 if __name__ == "__main__":
-    n_level = 6
+    n_level = 7
     f = h5py.File('ref_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
     f.create_dataset("its", (n_level,), dtype=np.int32)
     f.create_dataset("num_dofs", (n_level,), dtype=np.int32)

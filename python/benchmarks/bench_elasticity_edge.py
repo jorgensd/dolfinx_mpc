@@ -196,13 +196,13 @@ def demo_elasticity(r_lvl=1, outfile=None):
     mem = sum(MPI.COMM_WORLD.allgather(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     it = solver.getIterationNumber()
     if outfile is not None:
-        d_set = f.get("its")
+        d_set = outfile.get("its")
         d_set[r_lvl] = it
-        d_set = f.get("num_dofs")
+        d_set = outfile.get("num_dofs")
         d_set[r_lvl] = V.dim
-        d_set = f.get("num_slaves")
+        d_set = outfile.get("num_slaves")
         d_set[r_lvl] = len(slaves)
-        d_set = f.get("solve_time")
+        d_set = outfile.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = end-start
     if MPI.COMM_WORLD.rank == 0:
         print("Rlvl {0:d}, Iterations {1:d}".format(r_lvl, it))
@@ -294,7 +294,7 @@ def demo_elasticity(r_lvl=1, outfile=None):
 
 
 if __name__ == "__main__":
-    n_level = 6
+    n_level = 7
     f = h5py.File('bench_edge_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
     f.create_dataset("its", (n_level,), dtype=np.int32)
     f.create_dataset("num_dofs", (n_level,), dtype=np.int32)
