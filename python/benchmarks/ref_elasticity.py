@@ -71,9 +71,12 @@ def build_elastic_nullspace(V):
 
 
 def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
-                   xdmf=False, boomeramg=False, kspview=False):
+                   xdmf=False, boomeramg=False, kspview=False, degree=1):
     if tetra:
-        N = 3
+        if degree == 1:
+            N = 3
+        else:
+            N = 2
         mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     else:
         N = 3
@@ -88,9 +91,9 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
             mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
                                         dolfinx.cpp.mesh.CellType.hexahedron)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-
+    N = degree*N
     fdim = mesh.topology.dim - 1
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", degree))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = dolfinx.function.Function(V)
@@ -221,6 +224,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
                         help="Number of spatial refinements")
+    parser.add_argument("--degree", default=1, type=np.int8, dest="degree",
+                        help="CG Function space degree")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf",
                         help="XDMF-output of function (Default false)")
     parser.add_argument('--timings', action='store_true', dest="timings",
@@ -264,7 +269,7 @@ if __name__ == "__main__":
                             "Run {0:1d} in progress".format(i))
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         ref_elasticity(tetra=tetra, r_lvl=i, out_hdf5=h5f,
-                       xdmf=xdmf, boomeramg=boomeramg, kspview=kspview)
+                       xdmf=xdmf, boomeramg=boomeramg, kspview=kspview, degree=degree)
         if timings:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

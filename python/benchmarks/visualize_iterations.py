@@ -44,7 +44,7 @@ def visualize_elasticity():
         solver.decode("utf-8")), fontsize=25)
     plt.legend(fontsize=15)
     ax.minorticks_on()
-    ax.set_ylim([0, max(iterations)+1])
+    ax.set_ylim([0, max([max(iterations), max(iterations_ref)])+1])
     ax.set_xlim([1e2, 1e8])
     locmax = LogLocator(
         base=10.0,
