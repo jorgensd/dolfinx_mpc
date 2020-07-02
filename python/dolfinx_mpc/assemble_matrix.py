@@ -53,22 +53,22 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     # Create sparsity pattern
+    # trad_pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
+    # trad_pattern.assemble()
     tt = dolfinx.common.Timer("MPC: Assemble matrix (sparsitypattern total)")
-    trad_pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
-    trad_pattern.assemble()
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
-
-    extra_nonz_loc = pattern.num_nonzeros()-trad_pattern.num_nonzeros()
-    if extra_nonz_loc < 0:
-        raise ValueError("Should not be less nonzeros locally")
-    comm = V.mesh.mpi_comm()
-    extra_nonz_glob = sum(comm.allgather(extra_nonz_loc))
-    glob_nonz = sum(comm.allgather(trad_pattern.num_nonzeros()))
-    if comm.rank == 0:
-        print("Num extra Nonzeros: {0:d} (Total {2:d}, #dofs {1:d})"
-                .format(extra_nonz_glob, V.dim, glob_nonz))
     tt.stop()
+
+    # # extra_nonz_loc = pattern.num_nonzeros()-trad_pattern.num_nonzeros()
+    # # if extra_nonz_loc < 0:
+    # #     raise ValueError("Should not be less nonzeros locally")
+    # # comm = V.mesh.mpi_comm()
+    # # extra_nonz_glob = sum(comm.allgather(extra_nonz_loc))
+    # # glob_nonz = sum(comm.allgather(trad_pattern.num_nonzeros()))
+    # if comm.rank == 0:
+    #     print("Num extra Nonzeros: {0:d} (Total {2:d}, #dofs {1:d})"
+    #             .format(extra_nonz_glob, V.dim, glob_nonz))
 
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()

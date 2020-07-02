@@ -57,9 +57,11 @@ def test_pipeline(master_point):
              lambda x: dof_at(x, [0, 0]):
              {lambda x: dof_at(x, master_point): 0.69}}
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
 
     # Setup MPC system
     start = time.time()

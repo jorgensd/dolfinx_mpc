@@ -150,7 +150,9 @@ def cache_numba(matrix=False, vector=False, backsubstitution=False):
                                                    np.array([],
                                                             dtype=np.float64),
                                                    np.array([],
-                                                            dtype=np.int64))
+                                                            dtype=np.int64),
+                                                   np.array([],
+                                                            dtype=np.int32))
     if matrix:
         start = time.time()
         A = dolfinx_mpc.assemble_matrix(a, mpc, [])

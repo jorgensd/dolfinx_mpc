@@ -30,6 +30,7 @@ void mpc(py::module& m)
                     Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
                     Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
                     Eigen::Array<double, Eigen::Dynamic, 1>,
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
                     Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>())
       .def("slave_cells", &dolfinx_mpc::MultiPointConstraint::slave_cells)
       .def("slave_cell_to_dofs",

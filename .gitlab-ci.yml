@@ -36,6 +36,10 @@ test-real:
     - mpirun -n 2 python3 -m pytest .
     - mpirun -n 3 python3 -m pytest .
     - mpirun -n 4 python3 -m pytest .
+    - cd ../benchmarks
+    - mkdir results
+    - mpirun -n 32 python3 bench_periodic.py --nref=2 --tet --boomeramg
+    - mpirun -n 32 python3 bench_elasticity_edge.py --nref=2 --gamg
     - cd ../demos
     - mkdir meshes
     - mkdir results
