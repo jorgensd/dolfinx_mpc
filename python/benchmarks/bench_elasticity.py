@@ -228,7 +228,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", default=1, type=np.int8, dest="n_ref",
+    parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
                         help="Number of spatial refinements")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf",
                         help="XDMF-output of function (Default false)")

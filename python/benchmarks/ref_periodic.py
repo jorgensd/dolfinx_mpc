@@ -49,12 +49,11 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     else:
         # Hex setup
         N = 3
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                    dolfinx.cpp.mesh.CellType.hexahedron)
         V = dolfinx.FunctionSpace(mesh, ("CG", 1))
         for i in range(r_lvl):
-            mesh = refine(mesh, redistribute=True)
             N *= 2
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
+                                    dolfinx.cpp.mesh.CellType.hexahedron)
         M = N
 
     # Create Dirichlet boundary condition
@@ -171,7 +170,7 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 if __name__ == "__main__":
     # Set Argparser defaults
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", default=1, type=np.int8, dest="n_ref",
+    parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
                         help="Number of spatial refinements")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf",
                         help="XDMF-output of function (Default false)")
@@ -183,7 +182,7 @@ if __name__ == "__main__":
                         help="Name of HDF5 output file")
     ct_parser = parser.add_mutually_exclusive_group(required=False)
     ct_parser.add_argument('--tet', dest='tetra', action='store_true',
-                           help="Tetrahedron elements")
+                           help="Tetrahedron elements", default=True)
     ct_parser.add_argument('--hex', dest='tetra', action='store_false',
                            help="Hexahedron elements")
     solver_parser = parser.add_mutually_exclusive_group(required=False)

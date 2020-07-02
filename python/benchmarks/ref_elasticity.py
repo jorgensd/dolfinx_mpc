@@ -21,8 +21,53 @@ import dolfinx.la
 import dolfinx.log
 import dolfinx.mesh
 import ufl
-from bench_elasticity import build_elastic_nullspace
 from mpi4py import MPI
+
+
+def build_elastic_nullspace(V):
+    """Function to build nullspace for 2D/3D elasticity"""
+
+    # Get geometric dim
+    gdim = V.mesh.geometry.dim
+    assert gdim == 2 or gdim == 3
+
+    # Set dimension of nullspace
+    dim = 3 if gdim == 2 else 6
+
+    # Create list of vectors for null space
+    nullspace_basis = [dolfinx.cpp.la.create_vector(
+        V.dofmap.index_map) for i in range(dim)]
+
+    with ExitStack() as stack:
+        vec_local = [stack.enter_context(x.localForm())
+                     for x in nullspace_basis]
+        basis = [np.asarray(x) for x in vec_local]
+
+        # Build translational null space basis
+        for i in range(gdim):
+            dofs = V.sub(i).dofmap.list
+            basis[i][dofs.array()] = 1.0
+
+        # Build rotational null space basis
+        if gdim == 2:
+            V.sub(0).set_x(basis[2], -1.0, 1)
+            V.sub(1).set_x(basis[2], 1.0, 0)
+        elif gdim == 3:
+            V.sub(0).set_x(basis[3], -1.0, 1)
+            V.sub(1).set_x(basis[3], 1.0, 0)
+
+            V.sub(0).set_x(basis[4], 1.0, 2)
+            V.sub(2).set_x(basis[4], -1.0, 0)
+
+            V.sub(2).set_x(basis[5], 1.0, 1)
+            V.sub(1).set_x(basis[5], -1.0, 2)
+
+    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
+    basis.orthonormalize()
+
+    _x = [basis[i] for i in range(6)]
+    nsp = PETSc.NullSpace().create(vectors=_x)
+    return nsp
 
 
 def ref_elasticity(out_xdmf=None, r_lvl=0, out_hdf5=None,
@@ -163,7 +208,7 @@ def ref_elasticity(out_xdmf=None, r_lvl=0, out_hdf5=None,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", default=1, type=np.int8, dest="n_ref",
+    parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
                         help="Number of spatial refinements")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf",
                         help="XDMF-output of function (Default false)")
