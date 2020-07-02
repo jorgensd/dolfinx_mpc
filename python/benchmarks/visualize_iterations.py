@@ -22,7 +22,7 @@ def visualize_elasticity():
 
     plt.plot(dofs, iterations, "-ro", label="MPC", markersize=12)
 
-    f_ref = h5py.File('ref_output.hdf5', 'r', driver='mpio',
+    f_ref = h5py.File('elasticity_ref.hdf5', 'r', driver='mpio',
                       comm=mpi4py.MPI.COMM_WORLD)
     iterations_ref = f_ref.get("its")[:]
     dofs_ref = f_ref.get("num_dofs")[:]
@@ -33,6 +33,8 @@ def visualize_elasticity():
     ax.tick_params(axis='both', which='major', labelsize=20)
     ax.set_xscale("log")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.set_ylim([0, max(iterations)+1])
+    ax.set_xlim([1e2, max(dofs)+1])
     plt.xlabel("# DOFS", fontsize=20)
     plt.ylabel("# Iterations", fontsize=20)
     trans_offset = mtransforms.offset_copy(ax.transData, fig=fig,
@@ -40,10 +42,11 @@ def visualize_elasticity():
     for i in range(len(iterations)):
         plt.text(dofs[i], iterations[i], slaves[i],
                  transform=trans_offset, fontsize=20)
-    plt.title("Linear elasticity with {0:s}".format(solver), fontsize=25)
+    plt.title("Linear elasticity with {0:s}".format(
+        solver.decode("utf-8")), fontsize=25)
     plt.legend(fontsize=15)
     plt.grid()
-    plt.savefig("fig.png", bbox_inches='tight')
+    plt.savefig("elasticity_iterations.png", bbox_inches='tight')
 
 
 def visualize_periodic():
@@ -82,7 +85,7 @@ def visualize_periodic():
     for i in range(len(iterations)):
         plt.text(dofs[i], iterations[i], slaves[i],
                  transform=trans_offset, fontsize=20)
-    plt.title("Periodic Poisson with " + solver, fontsize=25)
+    plt.title("Periodic Poisson with " + solver.decode("utf-8"), fontsize=25)
     plt.legend(fontsize=15)
     plt.grid(True, which="both")
     plt.savefig("periodic_iterations.png", bbox_inches='tight')
