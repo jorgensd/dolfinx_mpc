@@ -95,7 +95,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     N = degree*N
     fdim = mesh.topology.dim - 1
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", degree))
+    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = dolfinx.function.Function(V)
@@ -155,7 +155,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     masters = []
     slaves = []
     master_ranks = []
-    for j in range(mesh.topology.dim):
+    for j in [mesh.topology.dim-1]:  # range(mesh.topology.dim):
         Vj = V.sub(j).collapse()
         slave_dofs = dolfinx.fem.locate_dofs_geometrical(
             (V.sub(j), Vj), slaves_locater).T[0]
@@ -247,6 +247,8 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         opts["mg_levels_pc_type"] = "jacobi"
         opts["mg_levels_esteig_ksp_type"] = "cg"
         opts["matptap_via"] = "scalable"
+        opts["pc_gamg_square_graph"] = 2
+        opts["pc_gamg_threshold"] = 0.02
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
 
@@ -348,7 +350,10 @@ if __name__ == "__main__":
     sd = h5f.create_dataset("solve_time",
                             (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if boomeramg else "GAMG"
+    ct = "Tet" if tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)
+    sd.attrs["degree"] = np.string_(str(int(degree)))
+    sd.attrs["ct"] = np.string_(ct)
 
     for i in range(N):
         if MPI.COMM_WORLD.rank == 0:

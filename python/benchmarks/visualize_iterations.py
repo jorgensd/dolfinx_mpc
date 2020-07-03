@@ -14,9 +14,10 @@ def visualize_elasticity():
     iterations = f.get("its")[:]
     dofs = f.get("num_dofs")[:]
     slaves = f.get("num_slaves")[:]
-    solver = f.get("solve_time").attrs["solver"]
+    solver = f.get("solve_time").attrs["solver"].decode("utf-8")
+    ct = f.get("solve_time").attrs["ct"].decode("utf-8")
+    degree = f.get("solve_time").attrs["degree"].decode("utf-8")
     f.close()
-
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
 
@@ -40,8 +41,8 @@ def visualize_elasticity():
     for i in range(len(iterations)):
         plt.text(dofs[i], iterations[i], slaves[i],
                  transform=trans_offset, fontsize=20)
-    plt.title("Linear elasticity with {0:s}".format(
-        solver.decode("utf-8")), fontsize=25)
+    plt.title("Linear elasticity (CG{0:s}, {1:s}) with {2:s}".format(
+        degree, ct, solver), fontsize=25)
     plt.legend(fontsize=15)
     ax.minorticks_on()
     ax.set_ylim([0, max([max(iterations), max(iterations_ref)])+1])
@@ -64,7 +65,9 @@ def visualize_periodic():
     iterations = f.get("its")[:]
     dofs = f.get("num_dofs")[:]
     slaves = f.get("num_slaves")[:]
-    solver = f.get("solve_time").attrs["solver"]
+    solver = f.get("solve_time").attrs["solver"].decode("utf-8")
+    ct = f.get("solve_time").attrs["ct"].decode("utf-8")
+    degree = f.get("solve_time").attrs["degree"].decode("utf-8")
     f.close()
 
     fig = plt.figure()
@@ -93,7 +96,8 @@ def visualize_periodic():
     for i in range(len(iterations)):
         plt.text(dofs[i], iterations[i], slaves[i],
                  transform=trans_offset, fontsize=20)
-    plt.title("Periodic Poisson with " + solver.decode("utf-8"), fontsize=25)
+    plt.title("Periodic Poisson (CG {0:s}, {1:s}) with {2:s}".format(
+        degree, ct, solver), fontsize=25)
     plt.legend(fontsize=15)
     ax.minorticks_on()
     ax.set_ylim([0, max(iterations)+1])
