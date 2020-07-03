@@ -98,7 +98,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         """
         Helper function that creates the relationship between the correct
         master and slave nodes, where (1,i/M,j/M)->(0,i/M,j/M)
-        This function is much more efficient than calling 
+        This function is much more efficient than calling
         dolfinx.fem.locate_dofs_geometrical in a loop
         """
         timer = dolfinx.common.Timer("MPC: Create slave-master relationship")
@@ -109,11 +109,16 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                      * V.dofmap.index_map.block_size)
         x_slaves = x[slave_dofs, :]
         x_masters = x[master_dofs, :]
-        masters = np.zeros((M-1)*(M-1), dtype=np.int64)
-        slaves = np.zeros((M-1)*(M-1), dtype=np.int64)
-        master_rank = np.zeros((M-1)*(M-1), dtype=np.int64)
-        for i in range(1, M):
-            for j in range(1, M):
+        Dy = int(M/2)
+        Dz = int(M)
+        # masters = np.zeros((M-1)*(M-1), dtype=np.int64)
+        # slaves = np.zeros((M-1)*(M-1), dtype=np.int64)
+        # master_rank = np.zeros((M-1)*(M-1), dtype=np.int64)
+        masters = np.zeros((Dy-1)*(Dz-1), dtype=np.int64)
+        slaves = np.zeros((Dy-1)*(Dz-1), dtype=np.int64)
+        master_rank = np.zeros((Dy-1)*(Dz-1), dtype=np.int64)
+        for i in range(1, Dy):
+            for j in range(1, Dz):
                 if len(slave_dofs) > 0:
                     slave_coord = [1, i/M, j/M]
                     slave_diff = np.abs(x_slaves-slave_coord).sum(axis=1)
@@ -121,7 +126,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                         # Only add if owned by processor
                         if (slave_dofs[slave_diff.argmin()]
                                 < local_max - local_min):
-                            slaves[(i-1)*(M-1)+j -
+                            slaves[(i-1)*(Dz-1)+j -
                                    1] = (slave_dofs[slave_diff.argmin()]
                                          + local_min)
                 if len(master_dofs) > 0:
@@ -131,10 +136,10 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                         # Only add if owned by processor
                         if (master_dofs[master_diff.argmin()] <
                                 local_max-local_min):
-                            masters[(i-1)*(M-1)+j -
+                            masters[(i-1)*(Dz-1)+j -
                                     1] = (master_dofs[master_diff.argmin()]
                                           + local_min)
-                            master_rank[(i-1)*(M-1)+j -
+                            master_rank[(i-1)*(Dz-1)+j -
                                         1] = MPI.COMM_WORLD.rank
 
         timer.stop()
@@ -146,7 +151,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     mrank = sum(MPI.COMM_WORLD.allgather(mrankloc))
 
     offsets = np.array(range(len(slaves)+1), dtype=np.int64)
-    coeffs = np.ones(len(masters), dtype=np.float64)
+    coeffs = 0.8*np.ones(len(masters), dtype=np.float64)
 
     # Define variational problem
     u = ufl.TrialFunction(V)

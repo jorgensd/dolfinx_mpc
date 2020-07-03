@@ -156,10 +156,12 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         else:
             ext = "hex"
 
-        fname = "results/reference_periodic_{0:d}_{1:s}.xdmf".format(i, ext)
+        fname = "results/reference_periodic_{0:d}_{1:s}.xdmf".format(
+            r_lvl, ext)
         u_.name = "u_" + ext + "_unconstrained"
         out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                            fname, "w")
+        out_periodic.write_mesh(mesh)
         out_periodic.write_function(u_, 0.0,
                                     "Xdmf/Domain/"
                                     + "Grid[@Name='{0:s}'][1]"

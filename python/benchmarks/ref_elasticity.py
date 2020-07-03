@@ -122,6 +122,9 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
     g = dolfinx.Constant(mesh, (0, 0, -1e2))
+    x = ufl.SpatialCoordinate(mesh)
+    f = dolfinx.Constant(mesh, 1e4) * \
+        ufl.as_vector((0, -(x[2]-0.5)**2, (x[1]-0.5)**2))
 
     # Stress computation
     def sigma(v):
@@ -133,7 +136,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     lhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
-                                 subdomain_data=mt, subdomain_id=1)
+                                 subdomain_data=mt, subdomain_id=1) + ufl.inner(f, v)*ufl.dx
     if MPI.COMM_WORLD.rank == 0:
         print("Problem size {0:d} ".format(V.dim))
 
