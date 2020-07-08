@@ -8,6 +8,7 @@
 #include "utils.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
+#include <dolfinx/common/MPI.h>
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/common/log.h>
 #include <dolfinx/fem/DofMap.h>
@@ -301,8 +302,11 @@ MultiPointConstraint::generate_index_map()
   dolfinx::common::Timer timer4("MPC-INIT: Indexmap Make new indexmap");
   std::shared_ptr<dolfinx::common::IndexMap> new_index_map
       = std::make_shared<dolfinx::common::IndexMap>(
-          mesh.mpi_comm(), index_map->size_local(), new_ghosts, ghost_ranks,
-          index_map->block_size());
+          mesh.mpi_comm(), index_map->size_local(),
+          dolfinx::MPI::compute_graph_edges(
+              MPI_COMM_WORLD,
+              std::set<int>(ghost_ranks.begin(), ghost_ranks.end())),
+          new_ghosts, ghost_ranks, index_map->block_size());
   timer4.stop();
 
   return new_index_map;
