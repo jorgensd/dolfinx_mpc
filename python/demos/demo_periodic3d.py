@@ -78,8 +78,8 @@ def demo_periodic3D(celltype, out_periodic):
 
     (slaves, masters,
      coeffs,
-     offsets) = dolfinx_mpc.slave_master_structure(V,
-                                                   s_m_c)
+     offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V,
+                                                                s_m_c)
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -99,7 +99,8 @@ def demo_periodic3D(celltype, out_periodic):
     u = dolfinx.Function(V)
     u.name = "uh"
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   owner_ranks)
 
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)

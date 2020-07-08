@@ -67,8 +67,8 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     # (Does not have unit length)
     nh = dolfinx_mpc.facet_normal_approximation(V, mt, slave_i_value)
     n_vec = nh.vector.getArray()
-    slaves, masters, coeffs, offsets = [], [], [], [0]
-
+    slaves, masters, coeffs, offsets, owner_ranks = [], [], [], [0], []
+    comm = V.mesh.mpi_comm()
     for facet in slave_facets:
         # Find cells connected to facets (Should only be one)
         cell_indices = facet_to_cell.links(facet)
@@ -103,6 +103,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                             global_master = global_indices[dof_i]
                             coeff = - n_vec[dof_i]/n_vec[slave_l]
                             if not np.isclose(coeff, 0):
+                                owner_ranks.append(comm.rank)
                                 masters.append(global_master)
                                 coeffs.append(coeff)
                             slave_indices.append(dof_i)
@@ -144,6 +145,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                                     n_vec[slave_indices[tdim
                                                         - 1]])
                         if not np.isclose(l_coeff, 0):
+                            owner_ranks.append(comm.rank)
                             masters.append(global_indices[dof])
                             coeffs.append(l_coeff)
                 offsets.append(len(masters))
@@ -155,4 +157,5 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     return (np.array(slaves, dtype=np.int64),
             np.array(masters, dtype=np.int64),
             np.array(coeffs, dtype=np.float64),
-            np.array(offsets, dtype=np.int64))
+            np.array(offsets, dtype=np.int64),
+            np.array(owner_ranks, dtype=np.int32))
