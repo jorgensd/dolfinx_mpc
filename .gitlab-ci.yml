@@ -1,5 +1,7 @@
 test-real:
   stage: test
+  tags:
+    - docker
   image:
     name: dolfinx/dolfinx
     entrypoint: [""]
