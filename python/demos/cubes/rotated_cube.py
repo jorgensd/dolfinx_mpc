@@ -119,6 +119,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     (slaves, masters, coeffs,
      offsets, owner_ranks) = find_master_slave_relationship(
         V, (mt, 4, 9), (ct, 2))
+    return
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
@@ -168,16 +169,32 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     fem.set_bc(b, bcs)
 
     # Solve Linear problem
+    opts = PETSc.Options()
+    opts["ksp_rtol"] = 1.0e-8
+    opts["pc_type"] = "gamg"
+    opts["pc_gamg_type"] = "agg"
+    opts["pc_gamg_coarse_eq_limit"] = 1000
+    opts["pc_gamg_sym_graph"] = True
+    opts["mg_levels_ksp_type"] = "chebyshev"
+    opts["mg_levels_pc_type"] = "jacobi"
+    opts["mg_levels_esteig_ksp_type"] = "cg"
+    opts["matptap_via"] = "scalable"
+    opts["pc_gamg_square_graph"] = 2
+    opts["pc_gamg_threshold"] = 0.02
+    # opts["help"] = None # List all available options
+    # opts["ksp_view"] = None # List progress of solver
+
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
+    solver.setFromOptions()
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-
+    it = solver.getIterationNumber()
+    if MPI.COMM_WORLD.rank == 0:
+        print("Number of iterations: {0:d}".format(it))
     # Back substitute to slave dofs
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
     print(uh.norm())
@@ -239,12 +256,12 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube.xdmf", "w")
-    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
-    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
-    demo_stacked_cubes(outfile, theta=0, gmsh=True)
-    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
+    # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
+    # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    # demo_stacked_cubes(outfile, theta=0, gmsh=True)
+    # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
     demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
-    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
+    # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
+    # demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
 
     outfile.close()
