@@ -338,7 +338,7 @@ if __name__ == "__main__":
                         xdmf=xdmf, boomeramg=boomeramg, kspview=kspview)
 
         # List_timings
-        if timings:
+        if timings and i == N-1:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()

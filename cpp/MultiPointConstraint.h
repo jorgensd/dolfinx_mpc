@@ -131,9 +131,11 @@ private:
       _cell_to_slave_index;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
-
+  // AdjacencyList for the corresponding ranks owning each master
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _master_owner_ranks;
+  // AdjacencyList for the number of occurances of a local master
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _master_num_occ;
 };
 
 } // namespace dolfinx_mpc

@@ -29,7 +29,7 @@ dolfinx_mpc::locate_cells_with_dofs(
     std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dofs)
 {
   dolfinx::common::Timer timer(
-      "MPC: Locate slave and master cells given their dofs");
+      "MPC-INIT: Locate slave and master cells given their dofs");
   // Flatten data from dofs
   std::vector<std::vector<std::int64_t>> flatten_dofs(dofs.size());
   for (std::size_t c = 0; c < dofs.size(); ++c)
@@ -61,7 +61,7 @@ dolfinx_mpc::locate_cells_with_dofs(
   const int tdim = mesh.topology().dim();
   const int num_cells = mesh.topology().index_map(tdim)->size_local();
 
-  // Loop thorough all cells
+  // Loop through all cells
   for (int cell_index = 0; cell_index < num_cells; cell_index++)
   {
     auto cell_dofs = dofmap.cell_dofs(cell_index);
