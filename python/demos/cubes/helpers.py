@@ -105,6 +105,9 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     slave_coordinates = np.concatenate(comm.allgather(local_coordinates))
     slave_normals = np.concatenate(comm.allgather(local_normals))
 
+    # Local range of cells
+    [cmin, cmax] = V.mesh.topology.index_map(tdim).local_range
+    print(comm.rank, cmin, cmax)
     # Local dictionaries which will hold data for each slave
     master_dict = {}
     master_owner_dict = {}
@@ -124,18 +127,19 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                 coeffs_dict[i].append(-slave_normals[i]
                                       [j]/slave_normals[i][tdim-1])
 
-        # Find cells for masters on the other interface
+        # Find cells for masters on the other interface (no ghosts)
         possible_cells = np.array(dolfinx.geometry.
                                   compute_collisions_point(tree,
                                                            slave_coordinates[i]
                                                            ))
-        top_cells = possible_cells[np.isin(possible_cells, ct_top_cells)]
+        is_owned = cmin + possible_cells < cmax
+        is_top = np.isin(possible_cells, ct_top_cells)
+        top_cells = possible_cells[np.logical_and(is_owned, is_top)]
 
         # Find cell a top cell within 1e-14 distance
         close_cell = dolfinx.cpp.geometry.select_colliding_cells(
             mesh, list(top_cells), slave_coordinates[i], 1)
-        from IPython import embed
-        embed()
+
         print(i, comm.rank, close_cell, possible_cells)
 
     print("Slaves", comm.rank, slaves)
