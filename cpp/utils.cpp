@@ -21,25 +21,31 @@
 #include <dolfinx/mesh/Mesh.h>
 using namespace dolfinx_mpc;
 
-std::vector<
-    std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-              std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>>
+std::vector<std::pair<
+    Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+    std::pair<std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>,
+              std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>>>
 dolfinx_mpc::locate_cells_with_dofs(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dofs)
 {
   dolfinx::common::Timer timer(
       "MPC-INIT: Locate slave and master cells given their dofs");
-  // Flatten data from dofs
+
+  // Flatten data from dofs (To vector of function space, 1 if marked, else 0)
   std::vector<std::vector<std::int64_t>> flatten_dofs(dofs.size());
+  std::vector<std::vector<std::int64_t>> local_dof_indices(dofs.size());
   for (std::size_t c = 0; c < dofs.size(); ++c)
   {
     std::vector<std::int64_t> dofs_c(V->dim(), 0);
+    std::vector<std::int64_t> local_dof_indices_c(V->dim(), -1);
     for (std::size_t i = 0; i < dofs[c].size(); ++i)
     {
       dofs_c[dofs[c][i]] = 1;
+      local_dof_indices_c[dofs[c][i]] = i;
     }
     flatten_dofs[c] = dofs_c;
+    local_dof_indices[c] = local_dof_indices_c;
   }
 
   const dolfinx::mesh::Mesh& mesh = *(V->mesh());
@@ -49,6 +55,7 @@ dolfinx_mpc::locate_cells_with_dofs(
 
   /// Data structures
   std::vector<std::vector<std::int64_t>> cell_to_dofs_vec(dofs.size());
+  std::vector<std::vector<std::int64_t>> cell_to_index_vec(dofs.size());
   std::vector<std::vector<std::int32_t>> cell_to_dofs_offsets_vec(dofs.size());
   std::vector<std::vector<std::int64_t>> cells_with_dofs_vec(dofs.size());
 
@@ -76,6 +83,9 @@ dolfinx_mpc::locate_cells_with_dofs(
         {
           in_cell[c] = true;
           cell_to_dofs_vec[c].push_back(global_indices[cell_dofs[i]]);
+          // Map from cell to index in slave list
+          cell_to_index_vec[c].push_back(
+              local_dof_indices[c][global_indices[cell_dofs[i]]]);
           offset_index[c]++;
         }
       }
@@ -96,9 +106,10 @@ dolfinx_mpc::locate_cells_with_dofs(
       cell_to_dofs_offsets_list(dofs.size());
   std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
       cells_with_dofs_list(dofs.size());
-  std::vector<
-      std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-                std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>>
+  std::vector<std::pair<
+      Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+      std::pair<std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>,
+                std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>>>>
       out_data(dofs.size());
 
   // Create Eigen arrays for the vectors to wrap nicely to adjacency lists.
@@ -112,10 +123,17 @@ dolfinx_mpc::locate_cells_with_dofs(
     Eigen::Map<const Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
         cells_with_dofs(cells_with_dofs_vec[c].data(),
                         cells_with_dofs_vec[c].size());
+    Eigen::Map<const Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
+        cell_to_index(cell_to_index_vec[c].data(), cell_to_index_vec[c].size());
+
     std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> cell_adj
         = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
             cell_to_dofs, cell_to_dofs_offsets);
-    out_data[c] = std::make_pair(cells_with_dofs, cell_adj);
+    std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> cell_adj_idx
+        = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
+            cell_to_index, cell_to_dofs_offsets);
+    out_data[c] = std::make_pair(cells_with_dofs,
+                                 std::make_pair(cell_adj, cell_adj_idx));
   }
 
   return out_data;

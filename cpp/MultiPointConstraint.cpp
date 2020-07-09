@@ -81,35 +81,16 @@ MultiPointConstraint::MultiPointConstraint(
   /// cell_to_slave/master map
   auto cell_info = dolfinx_mpc::locate_cells_with_dofs(V, dof_lists);
   auto [q, cell_to_slave] = cell_info[0];
-
-  _cells_to_dofs(0) = cell_to_slave;
+  auto [c_to_s, c_to_i] = cell_to_slave;
+  _cells_to_dofs(0) = c_to_s;
   _slave_cells = q;
 
   auto [t, cell_to_master] = cell_info[1];
-  _cells_to_dofs(1) = cell_to_master;
+  auto [c_to_m, i_to_m] = cell_to_master;
+  _cells_to_dofs(1) = c_to_m;
   _master_cells = t;
 
-  dolfinx::common::Timer timer3("MPC-INIT: Create slave_cell -> slave_dof map");
-  /// Create reuseable map from slave_cells to the corresponding slave_index
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cell_indices(
-      _cells_to_dofs[0]->array().size());
-  for (Eigen::Index i = 0; i < _cells_to_dofs[0]->array().size(); i++)
-  {
-    for (std::uint64_t counter = 0; counter < _slaves.size(); counter++)
-    {
-      if (_slaves[counter] == _cells_to_dofs[0]->array()[i])
-      {
-        slave_cell_indices(i) = counter;
-        break;
-      }
-    }
-  }
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cell_offsets
-      = _cells_to_dofs[0]->offsets();
-  _cell_to_slave_index
-      = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
-          slave_cell_indices, slave_cell_offsets);
-  timer3.stop();
+  _cell_to_slave_index = c_to_i;
 
   /// Generate MPC specific index map
   _index_map = generate_index_map();
@@ -251,18 +232,7 @@ MultiPointConstraint::generate_index_map()
 
     for (std::int64_t j = 0; j < _masters->links(i).size(); j++)
     {
-      // Only insert if master is in local range
-      // if (_master_owner_ranks->links(i)[j] == mpi_rank)
-      // {
-      // FIXME: This is time consuming
-      // Check if master occurs multiple times
-
-      dolfinx::common::Timer timerstd("MPC-INIT: INDEXMAP MASTERCOUNT NEW");
       int occur = _master_num_occ->links(i)[j];
-
-      // std::count(masters_std.begin(), masters_std.end(),
-      //            _masters->links(i)[j]);
-      timerstd.stop();
 
       if (occur > 1)
       {
