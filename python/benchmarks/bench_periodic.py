@@ -34,20 +34,24 @@ from mpi4py import MPI
 def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                     xdmf=False, boomeramg=False, kspview=False, degree=1):
     # Create mesh and function space
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Create/Refine mesh".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     if tetra:
-        # Tet setup
-        N = 3
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
-        for i in range(r_lvl):
-            mesh = refine(mesh, redistribute=True)
-            N *= 2
+        ct = dolfinx.cpp.mesh.CellType.tetrahedron
     else:
-        # Hex setup
-        N = 3
-        for i in range(r_lvl):
-            N *= 2
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                    dolfinx.cpp.mesh.CellType.hexahedron)
+        ct = dolfinx.cpp.mesh.CellType.hexahedron
+    # Tet setup
+    N = 3
+    for i in range(r_lvl):
+        # mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+        # mesh = refine(mesh, redistribute=True)
+        N *= 2
+    with dolfinx.common.Timer("Create mesh"):
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
+
     V = dolfinx.FunctionSpace(mesh, ("CG", degree))
     M = N*degree
 
@@ -141,6 +145,11 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         timer.stop()
         return slaves, masters, master_rank
 
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Create master-slave map".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     snew, mnew, mrankloc = create_master_slave_map(master_dofs, slave_dofs)
     masters = sum(MPI.COMM_WORLD.allgather(mnew))
     slaves = sum(MPI.COMM_WORLD.allgather(snew))
@@ -170,51 +179,70 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run {0:1d}: Assembling".format(r_lvl))
+                        "Run {0:1d}: Assemble matrix".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
     with dolfinx.common.Timer("MPC: Assemble matrix (Total time)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Assembling vector".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+
     with dolfinx.common.Timer("MPC: Assemble vector (Total time)"):
         b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     # Apply boundary conditions
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Apply lifting".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    with dolfinx.common.Timer("MPC: Apply lifting"):
+        dolfinx.fem.apply_lifting(b, [a], [bcs])
+        b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                      mode=PETSc.ScatterMode.REVERSE)
+        dolfinx.fem.set_bc(b, bcs)
 
-    # Create nullspace
-    nullspace = PETSc.NullSpace().create(constant=True)
-    PETSc.Mat.setNearNullSpace(A, nullspace)
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Prepare solver".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    with dolfinx.common.Timer("MPC: Prepare solver"):
+        # Create nullspace
+        nullspace = PETSc.NullSpace().create(constant=True)
+        PETSc.Mat.setNearNullSpace(A, nullspace)
 
-    # Set PETSc solver options
-    opts = PETSc.Options()
-    if boomeramg:
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-5
-        opts["pc_type"] = "hypre"
-        opts['pc_hypre_type'] = 'boomeramg'
-        opts["pc_hypre_boomeramg_max_iter"] = 1
-        opts["pc_hypre_boomeramg_cycle_type"] = "v"
-        # opts["pc_hypre_boomeramg_print_statistics"] = 1
-    else:
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-12
-        opts["pc_type"] = "gamg"
-        opts["pc_gamg_type"] = "agg"
-        opts["pc_gamg_sym_graph"] = True
+        # Set PETSc solver options
+        opts = PETSc.Options()
+        if boomeramg:
+            opts["ksp_type"] = "cg"
+            opts["ksp_rtol"] = 1.0e-5
+            opts["pc_type"] = "hypre"
+            opts['pc_hypre_type'] = 'boomeramg'
+            opts["pc_hypre_boomeramg_max_iter"] = 1
+            opts["pc_hypre_boomeramg_cycle_type"] = "v"
+            # opts["pc_hypre_boomeramg_print_statistics"] = 1
+        else:
+            opts["ksp_type"] = "cg"
+            opts["ksp_rtol"] = 1.0e-12
+            opts["pc_type"] = "gamg"
+            opts["pc_gamg_type"] = "agg"
+            opts["pc_gamg_sym_graph"] = True
 
-        # Use Chebyshev smoothing for multigrid
-        opts["mg_levels_ksp_type"] = "richardson"
-        opts["mg_levels_pc_type"] = "sor"
-    # opts["help"] = None # List all available options
-    # opts["ksp_view"] = None # List progress of solver
+            # Use Chebyshev smoothing for multigrid
+            opts["mg_levels_ksp_type"] = "richardson"
+            opts["mg_levels_pc_type"] = "sor"
+        # opts["help"] = None # List all available options
+        # opts["ksp_view"] = None # List progress of solver
 
-    # Create solver, set operator and options
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setFromOptions()
-    solver.setOperators(A)
+        # Create solver, set operator and options
+        solver = PETSc.KSP().create(MPI.COMM_WORLD)
+        solver.setFromOptions()
+        solver.setOperators(A)
 
     # Solve linear problem
     uh = b.copy()
@@ -225,16 +253,23 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Solving".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    with dolfinx.common.Timer("MPC: Solve") as t:
+
+    with dolfinx.common.Timer("MPC: Solve"):
         solver.solve(b, uh)
     end = time.time()
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Backsubstitute".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+
     # Back substitute to slave dofs
-    with dolfinx.common.Timer("MPC: Backsubstitute") as t:
+    with dolfinx.common.Timer("MPC: Backsubstitute"):
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
-        t.elapsed()
+
     if kspview:
         solver.view()
 

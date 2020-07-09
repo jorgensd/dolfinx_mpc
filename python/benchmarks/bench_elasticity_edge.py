@@ -216,23 +216,39 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run {0:1d}: Assembling".format(r_lvl))
+                        "Run {0:1d}: Assembling matrix".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Assembling vector".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     # Create nullspace for elasticity problem and assign to matrix
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.mpc_dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = build_elastic_nullspace(Vmpc)
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run {0:1d}: Build MPC nullspace".format(r_lvl))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+
+    with dolfinx.common.Timer("MPC: Create mpc nullspace"):
+        Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                    mpc.mpc_dofmap())
+        Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+        null_space = build_elastic_nullspace(Vmpc)
+
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    with dolfinx.common.Timer("MPC: Apply lifting"):
+        dolfinx.fem.apply_lifting(b, [a], [bcs])
+        b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+        dolfinx.fem.set_bc(b, bcs)
 
     opts = PETSc.Options()
     if boomeramg:
@@ -272,7 +288,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Solving".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    with dolfinx.common.Timer("Ref solve"):
+    with dolfinx.common.Timer("MPC: Solve"):
         solver.solve(b, uh)
     end = time.time()
 

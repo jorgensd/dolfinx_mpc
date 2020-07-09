@@ -22,11 +22,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     NOTE: Dirichlet conditions cant be on master dofs.
     """
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC matrix")
-    bc_array = numpy.array([])
-    if len(bcs) > 0:
-        for bc in bcs:
-            # Extract local index of possible sub space
-            bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
+
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() ==
            form.arguments()[1].ufl_function_space())
@@ -36,6 +32,36 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     indexmap = dofmap.index_map
     ghost_info = (indexmap.local_range, indexmap.block_size,
                   indexmap.global_indices(False), indexmap.ghosts)
+
+    # Unravel data from MPC
+    slave_cells = multipointconstraint.slave_cells()
+    coefficients = multipointconstraint.coefficients()
+    masters = multipointconstraint.masters_local()
+    slave_cell_to_dofs = multipointconstraint.slave_cell_to_dofs()
+    cell_to_slave = slave_cell_to_dofs.array()
+    c_to_s_off = slave_cell_to_dofs.offsets()
+    slaves = multipointconstraint.slaves()
+    slaves_local = multipointconstraint.slaves_local()
+    masters_local = masters.array()
+    offsets = masters.offsets()
+    mpc_data = (slaves, masters_local, coefficients, offsets,
+                slave_cells, cell_to_slave, c_to_s_off, slaves_local)
+
+    # Gather BC data
+    bc_array = numpy.array([])
+    lmin = indexmap.local_range[0] * indexmap.block_size
+    lmax = indexmap.local_range[1] * indexmap.block_size
+    local_slave_dofs_trimmed = slaves_local[numpy.logical_and(
+        lmin <= slaves,
+        slaves < lmax)]
+    bc_mpc = [dolfinx.DirichletBC(
+        dolfinx.Function(V), local_slave_dofs_trimmed)]
+
+    if len(bcs) > 0:
+        bc_mpc.extend(bcs)
+        for bc in bcs:
+            # Extract local index of possible sub space
+            bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
 
     # Get data from mesh
     pos = V.mesh.geometry.dofmap.offsets()
@@ -70,25 +96,14 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     #     print("Num extra Nonzeros: {0:d} (Total {2:d}, #dofs {1:d})"
     #             .format(extra_nonz_glob, V.dim, glob_nonz))
 
+    tt = dolfinx.common.Timer("MPC: Assemble matrix (Create matrix)")
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
+    tt.stop()
 
     # Assemble the matrix with all entries
     with dolfinx.common.Timer("MPC: Assemble (classicial components)"):
         dolfinx.cpp.fem.assemble_matrix(A, cpp_form, bcs)
-    # Unravel data from MPC
-    slave_cells = multipointconstraint.slave_cells()
-    coefficients = multipointconstraint.coefficients()
-    masters = multipointconstraint.masters_local()
-    slave_cell_to_dofs = multipointconstraint.slave_cell_to_dofs()
-    cell_to_slave = slave_cell_to_dofs.array()
-    c_to_s_off = slave_cell_to_dofs.offsets()
-    slaves = multipointconstraint.slaves()
-    slaves_local = multipointconstraint.slaves_local()
-    masters_local = masters.array()
-    offsets = masters.offsets()
-    mpc_data = (slaves, masters_local, coefficients, offsets,
-                slave_cells, cell_to_slave, c_to_s_off, slaves_local)
 
     # General assembly data
     num_dofs_per_element = dofmap.dof_layout.num_dofs
@@ -155,15 +170,6 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     with dolfinx.common.Timer("MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs
         # NOTE: In the future one could use a constant in the DirichletBC
-        lmin = indexmap.local_range[0] * indexmap.block_size
-        lmax = indexmap.local_range[1] * indexmap.block_size
-        local_slave_dofs_trimmed = slaves_local[numpy.logical_and(
-                                                lmin <= slaves,
-                                                slaves < lmax)]
-        bc_mpc = [dolfinx.DirichletBC(
-            dolfinx.Function(V), local_slave_dofs_trimmed)]
-        if bcs is not None:
-            bc_mpc.extend(bcs)
         if cpp_form.function_space(0).id == cpp_form.function_space(1).id:
             dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_space(0),
                                          bc_mpc, 1.0)
