@@ -208,7 +208,7 @@ MultiPointConstraint::generate_index_map()
     for (std::int64_t j = 0; j < _masters->links(i).size(); j++)
     {
       // Only insert if master is in local range
-      if (_master_owner_ranks->links(i)[j] != mpi_rank)
+      if (_master_owner_ranks->links(i)[j] == mpi_rank)
       {
         for (std::int64_t k = 0; k < _masters->links(i).size(); k++)
         {
