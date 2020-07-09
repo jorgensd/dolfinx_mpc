@@ -149,7 +149,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                             masters.append(global_indices[dof])
                             coeffs.append(l_coeff)
                 offsets.append(len(masters))
-
+            assert(len(masters) == len(owner_ranks))
             if len(slaves) != len(offsets)-1:
                 raise RuntimeError(
                     "Something went wrong in master slave construction")

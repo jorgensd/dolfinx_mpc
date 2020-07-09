@@ -143,10 +143,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         m_side = np.array([dofy], dtype=np.int64)
         o_side = len(masters) + 1
         c_side = np.array([-t_vec[dofy]/t_vec[dofx]])
+        o_r_side = np.array([MPI.COMM_WORLD.rank], dtype=np.int64)
         masters = np.append(masters, m_side)
         slaves = np.append(slaves, s_side)
         coeffs = np.append(coeffs, c_side)
         offsets = np.append(offsets, o_side)
+        owner_ranks = np.append(owner_ranks, o_r_side)
+        assert(len(masters) == len(owner_ranks))
         assert(len(slaves) == len(offsets)-1)
         assert(not np.all(np.isin(slaves, masters)))
 

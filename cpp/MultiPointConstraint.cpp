@@ -34,6 +34,10 @@ MultiPointConstraint::MultiPointConstraint(
       _coefficients(coefficients), _cells_to_dofs(2, 1), _cell_to_slave_index(),
       _slave_cells(), _master_cells(), _master_owner_ranks(), _master_num_occ()
 {
+  assert(masters.size() == master_owner_ranks.size());
+  assert(slaves.size() == offsets_master.size() - 1);
+  assert(offsets_master.tail(1)[0] == masters.size());
+
   LOG(INFO) << "Initializing MPC class";
   dolfinx::common::Timer timer("MPC-INIT: Total time");
   _masters = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(

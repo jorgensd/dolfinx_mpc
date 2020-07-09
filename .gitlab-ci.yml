@@ -40,8 +40,8 @@ test-real:
     - mpirun -n 4 python3 -m pytest .
     - cd ../benchmarks
     - mkdir results
-    - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg
-    - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg
+    - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg --timings
+    - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
     - cd ../demos
     - mkdir meshes
     - mkdir results
@@ -101,8 +101,8 @@ test-complex:
     - mpirun -n 4 python3 -m pytest .
     - cd ../benchmarks
     - mkdir results
-    - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg
-    - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg
+    - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg --timings
+    - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
     - cd ../demos
     - mkdir meshes
     - mkdir results
