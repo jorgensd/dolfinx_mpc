@@ -27,7 +27,7 @@ import dolfinx.log
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
-from dolfinx.mesh import refine
+# from dolfinx.mesh import refine
 from mpi4py import MPI
 
 

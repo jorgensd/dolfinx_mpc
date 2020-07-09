@@ -237,7 +237,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     with dolfinx.common.Timer("MPC: Create mpc nullspace"):
         Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                    mpc.mpc_dofmap())
+                                                      mpc.mpc_dofmap())
         Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
         null_space = build_elastic_nullspace(Vmpc)
 
@@ -247,7 +247,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     with dolfinx.common.Timer("MPC: Apply lifting"):
         dolfinx.fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                    mode=PETSc.ScatterMode.REVERSE)
+                      mode=PETSc.ScatterMode.REVERSE)
         dolfinx.fem.set_bc(b, bcs)
 
     opts = PETSc.Options()
