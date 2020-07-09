@@ -56,7 +56,8 @@ def visualize_elasticity():
     ax.xaxis.set_minor_locator(locmin)
     ax.xaxis.set_minor_formatter(NullFormatter())
     plt.grid(True,  which="both", axis="both")
-    plt.savefig("elasticity_iterations.png", bbox_inches='tight')
+    plt.savefig("elasticity_iterations_CG{0:s}_{1:s}.png".format(
+        degree, ct), bbox_inches='tight')
 
 
 def visualize_periodic():
@@ -112,7 +113,8 @@ def visualize_periodic():
     ax.xaxis.set_minor_locator(locmin)
     ax.xaxis.set_minor_formatter(NullFormatter())
     plt.grid(True,  which="both", axis="both")
-    plt.savefig("periodic_iterations.png", bbox_inches='tight')
+    plt.savefig("periodic_iterations_CG{0:s}_{1:s}.png".format(
+        degree, ct), bbox_inches='tight')
 
 
 if __name__ == "__main__":

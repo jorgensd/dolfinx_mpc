@@ -32,7 +32,7 @@ from mpi4py import MPI
 
 
 def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
-                    xdmf=False, boomeramg=False, kspview=False):
+                    xdmf=False, boomeramg=False, kspview=False, degree=1):
     # Create mesh and function space
     if tetra:
         # Tet setup
@@ -41,8 +41,6 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         for i in range(r_lvl):
             mesh = refine(mesh, redistribute=True)
             N *= 2
-        V = dolfinx.FunctionSpace(mesh, ("CG", 2))
-        M = 2*N
     else:
         # Hex setup
         N = 3
@@ -50,8 +48,8 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
             N *= 2
         mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
                                     dolfinx.cpp.mesh.CellType.hexahedron)
-        V = dolfinx.FunctionSpace(mesh, ("CG", 1))
-        M = N
+    V = dolfinx.FunctionSpace(mesh, ("CG", degree))
+    M = N*degree
 
     # Create Dirichlet boundary condition
     u_bc = dolfinx.function.Function(V)
@@ -109,11 +107,9 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                      * V.dofmap.index_map.block_size)
         x_slaves = x[slave_dofs, :]
         x_masters = x[master_dofs, :]
-        Dy = int(M/2)
+        Dy = int(M)
         Dz = int(M)
-        # masters = np.zeros((M-1)*(M-1), dtype=np.int64)
-        # slaves = np.zeros((M-1)*(M-1), dtype=np.int64)
-        # master_rank = np.zeros((M-1)*(M-1), dtype=np.int64)
+
         masters = np.zeros((Dy-1)*(Dz-1), dtype=np.int64)
         slaves = np.zeros((Dy-1)*(Dz-1), dtype=np.int64)
         master_rank = np.zeros((Dy-1)*(Dz-1), dtype=np.int64)
@@ -290,6 +286,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
                         help="Number of spatial refinements")
+    parser.add_argument("--degree", default=1, type=np.int8, dest="degree",
+                        help="CG Function space degree")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf",
                         help="XDMF-output of function (Default false)")
     parser.add_argument('--timings', action='store_true', dest="timings",
@@ -328,7 +326,10 @@ if __name__ == "__main__":
     sd = h5f.create_dataset(
         "solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if boomeramg else "GAMG"
+    ct = "Tet" if tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)
+    sd.attrs["degree"] = np.string_(str(int(degree)))
+    sd.attrs["ct"] = np.string_(ct)
 
     # Loop over refinements
     for i in range(N):
@@ -339,7 +340,8 @@ if __name__ == "__main__":
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
         demo_periodic3D(tetra, r_lvl=i, out_hdf5=h5f,
-                        xdmf=xdmf, boomeramg=boomeramg, kspview=kspview)
+                        xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
+                        degree=int(degree))
 
         # List_timings
         if timings and i == N-1:

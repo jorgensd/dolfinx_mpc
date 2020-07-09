@@ -370,9 +370,11 @@ if __name__ == "__main__":
                             "Run {0:1d} in progress".format(i))
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         bench_elasticity_edge(tetra=tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
+
                               boomeramg=boomeramg, kspview=kspview,
                               degree=degree)
-        if timings:
+
+        if timings and i == N-1:
             dolfinx.common.list_timings(MPI.COMM_WORLD,
                                         [dolfinx.common.TimingType.wall])
     h5f.close()
