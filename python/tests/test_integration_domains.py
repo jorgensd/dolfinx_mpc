@@ -79,9 +79,11 @@ def test_cell_domains():
         s_m_c[slave_locater(i, N)] = {master_locater(i, N): 1}
 
     (slaves, masters,
-     coeffs, offsets, master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets, master_owners)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
 
     # Setup MPC system
     start = time.time()

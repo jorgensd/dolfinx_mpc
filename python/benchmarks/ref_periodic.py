@@ -54,7 +54,7 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                                     dolfinx.cpp.mesh.CellType.hexahedron)
 
     V = dolfinx.FunctionSpace(mesh, ("CG", degree))
-    M = degree*N
+
     # Create Dirichlet boundary condition
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
