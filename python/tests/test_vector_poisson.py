@@ -55,12 +55,14 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 0.1,
                                            lambda x: dof_at(x, [0.5, 1]): 0.3}}
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                           slave_space,
-                                                           master_space)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c,
+                                                         slave_space,
+                                                         master_space)
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
     # Setup MPC system
     start = time.time()
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)

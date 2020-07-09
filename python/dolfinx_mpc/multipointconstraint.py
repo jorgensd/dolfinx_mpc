@@ -107,12 +107,14 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
     masters = []
     coeffs = []
     offsets = []
+    owner_ranks = []
     local_to_global = V.dofmap.index_map.global_indices(False)
     if subspace_slave is not None:
         Vsub_slave = V.sub(subspace_slave).collapse()
     if subspace_master is not None:
         Vsub_master = V.sub(subspace_master).collapse()
-
+    range_min, range_max = V.dofmap.index_map.local_range
+    bs = V.dofmap.index_map.block_size
     for slave in slave_master_dict.keys():
         offsets.append(len(masters))
         if subspace_slave is None:
@@ -121,17 +123,16 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
             dof = fem.locate_dofs_geometrical((V.sub(subspace_slave),
                                                Vsub_slave),
                                               slave)[:, 0]
-
         dof_global = []
         if len(dof) > 0:
             for d in dof:
                 dof_global.append(local_to_global[d])
+
         else:
             dof_global = []
         dofs_global = numpy.hstack(MPI.COMM_WORLD.allgather(dof_global))
         assert(len(set(dofs_global)) == 1)
         slaves.append(dofs_global[0])
-
         for master in slave_master_dict[slave].keys():
             if subspace_master is None:
                 dof = fem.locate_dofs_geometrical(V, master)[:, 0]
@@ -139,14 +140,23 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
                 dof = fem.locate_dofs_geometrical((V.sub(subspace_master),
                                                    Vsub_master),
                                                   master)[:, 0]
+            owner_m_global = []
             dof_m_global = []
             if len(dof) > 0:
                 for d in dof:
-                    dof_m_global.append(local_to_global[d])
+                    if bs*range_min <= local_to_global[d] < bs*range_max:
+                        dof_m_global.append(local_to_global[d])
+                        owner_m_global.append(MPI.COMM_WORLD.rank)
             else:
                 dof_global = []
             dofs_m_global = numpy.hstack(
                 MPI.COMM_WORLD.allgather(dof_m_global))
+            owners_m_global = numpy.hstack(
+                MPI.COMM_WORLD.allgather(owner_m_global))
+
+            owner_ranks.append(owners_m_global[0])
+
+            assert(len(set(owners_m_global)) == 1)
             assert(len(set(dofs_m_global)) == 1)
 
             masters.append(dofs_m_global[0])
@@ -155,8 +165,10 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
     slaves = numpy.array(slaves, dtype=numpy.int64)
     masters = numpy.array(masters, dtype=numpy.int64)
     assert(not numpy.all(numpy.isin(masters, slaves)))
+    print(len(masters))
     return (slaves, masters, numpy.array(coeffs, dtype=numpy.float64),
-            numpy.array(offsets))
+            numpy.array(offsets), numpy.array(owner_ranks,
+                                              dtype=numpy.int32))
 
 
 def dof_close_to(x, point):

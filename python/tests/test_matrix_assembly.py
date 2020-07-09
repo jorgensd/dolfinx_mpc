@@ -4,18 +4,21 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import numpy as np
-import pytest
+import time
 
-import dolfinx
 import dolfinx_mpc
 import dolfinx_mpc.utils
-import time
+import numpy as np
+import pytest
 import ufl
-
 from mpi4py import MPI
 
+import dolfinx
+import dolfinx.log
+
+dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
 dolfinx_mpc.utils.cache_numba(matrix=True)
+dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
@@ -41,10 +44,12 @@ def test_mpc_assembly(master_point, degree, celltype):
              lambda x: dof_at(x, [0, 0]):
              {lambda x: dof_at(x, master_point): 0.69}}
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
 
     # Assemble custom MPC assembler
     start = time.time()
@@ -84,7 +89,8 @@ def test_slave_on_same_cell(master_point, degree, celltype):
              lambda x: dof_at(x, [0, 0]):
              {lambda x: dof_at(x, master_point): 0.69}}
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
 
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
@@ -92,7 +98,8 @@ def test_slave_on_same_cell(master_point, degree, celltype):
     a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
 
     # Assemble custom MPC assembler
     import time

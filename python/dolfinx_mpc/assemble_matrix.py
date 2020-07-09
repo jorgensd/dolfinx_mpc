@@ -22,11 +22,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     NOTE: Dirichlet conditions cant be on master dofs.
     """
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC matrix")
-    bc_array = numpy.array([])
-    if len(bcs) > 0:
-        for bc in bcs:
-            # Extract local index of possible sub space
-            bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
+
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() ==
            form.arguments()[1].ufl_function_space())
@@ -36,6 +32,36 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     indexmap = dofmap.index_map
     ghost_info = (indexmap.local_range, indexmap.block_size,
                   indexmap.global_indices(False), indexmap.ghosts)
+
+    # Unravel data from MPC
+    slave_cells = multipointconstraint.slave_cells()
+    coefficients = multipointconstraint.coefficients()
+    masters = multipointconstraint.masters_local()
+    slave_cell_to_dofs = multipointconstraint.slave_cell_to_dofs()
+    cell_to_slave = slave_cell_to_dofs.array()
+    c_to_s_off = slave_cell_to_dofs.offsets()
+    slaves = multipointconstraint.slaves()
+    slaves_local = multipointconstraint.slaves_local()
+    masters_local = masters.array()
+    offsets = masters.offsets()
+    mpc_data = (slaves, masters_local, coefficients, offsets,
+                slave_cells, cell_to_slave, c_to_s_off, slaves_local)
+
+    # Gather BC data
+    bc_array = numpy.array([])
+    lmin = indexmap.local_range[0] * indexmap.block_size
+    lmax = indexmap.local_range[1] * indexmap.block_size
+    local_slave_dofs_trimmed = slaves_local[numpy.logical_and(
+        lmin <= slaves,
+        slaves < lmax)]
+    bc_mpc = [dolfinx.DirichletBC(
+        dolfinx.Function(V), local_slave_dofs_trimmed)]
+
+    if len(bcs) > 0:
+        bc_mpc.extend(bcs)
+        for bc in bcs:
+            # Extract local index of possible sub space
+            bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
 
     # Get data from mesh
     pos = V.mesh.geometry.dofmap.offsets()
@@ -53,30 +79,31 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     # Create sparsity pattern
+    # trad_pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
+    # trad_pattern.assemble()
     tt = dolfinx.common.Timer("MPC: Assemble matrix (sparsitypattern total)")
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
     tt.stop()
 
+    # # extra_nonz_loc = pattern.num_nonzeros()-trad_pattern.num_nonzeros()
+    # # if extra_nonz_loc < 0:
+    # #     raise ValueError("Should not be less nonzeros locally")
+    # # comm = V.mesh.mpi_comm()
+    # # extra_nonz_glob = sum(comm.allgather(extra_nonz_loc))
+    # # glob_nonz = sum(comm.allgather(trad_pattern.num_nonzeros()))
+    # if comm.rank == 0:
+    #     print("Num extra Nonzeros: {0:d} (Total {2:d}, #dofs {1:d})"
+    #             .format(extra_nonz_glob, V.dim, glob_nonz))
+
+    tt = dolfinx.common.Timer("MPC: Assemble matrix (Create matrix)")
     A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
+    tt.stop()
 
     # Assemble the matrix with all entries
-    with dolfinx.common.Timer("MPC: Assemble (classicial components)") as t:
+    with dolfinx.common.Timer("MPC: Assemble (classicial components)"):
         dolfinx.cpp.fem.assemble_matrix(A, cpp_form, bcs)
-    # Unravel data from MPC
-    slave_cells = multipointconstraint.slave_cells()
-    coefficients = multipointconstraint.coefficients()
-    masters = multipointconstraint.masters_local()
-    slave_cell_to_dofs = multipointconstraint.slave_cell_to_dofs()
-    cell_to_slave = slave_cell_to_dofs.array()
-    c_to_s_off = slave_cell_to_dofs.offsets()
-    slaves = multipointconstraint.slaves()
-    slaves_local = multipointconstraint.slaves_local()
-    masters_local = masters.array()
-    offsets = masters.offsets()
-    mpc_data = (slaves, masters_local, coefficients, offsets,
-                slave_cells, cell_to_slave, c_to_s_off, slaves_local)
 
     # General assembly data
     num_dofs_per_element = dofmap.dof_layout.num_dofs
@@ -97,14 +124,14 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
 
     for i in range(num_cell_integrals):
         subdomain_id = subdomain_ids[i]
-        with dolfinx.common.Timer("MPC: Assemble matrix (cell kernel)") as t:
+        with dolfinx.common.Timer("MPC: Assemble matrix (cell kernel)"):
             cell_kernel = ufc_form.create_cell_integral(
                 subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
             dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
-        with dolfinx.common.Timer("MPC: Assemble matrix (numba cells)") as t:
+        with dolfinx.common.Timer("MPC: Assemble matrix (numba cells)"):
             assemble_cells(A.handle, cell_kernel,
                            active_cells[slave_cell_indices],
                            (pos, x_dofs, x),
@@ -129,12 +156,10 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         facet_info = pack_facet_info(V.mesh, formintegral, j)
 
         subdomain_id = subdomain_ids[j]
-        with dolfinx.common.Timer("MPC: Assemble matrix (ext. facet kernel)"
-                                  ) as t:
+        with dolfinx.common.Timer("MPC: Assemble matrix (ext. facet kernel)"):
             facet_kernel = ufc_form.create_exterior_facet_integral(
                 subdomain_id).tabulate_tensor
-        with dolfinx.common.Timer("MPC: Assemble matrix (numba ext. facet)"
-                                  ) as t:
+        with dolfinx.common.Timer("MPC: Assemble matrix (numba ext. facet)"):
             assemble_exterior_facets(A.handle, facet_kernel,
                                      (pos, x_dofs, x), gdim,
                                      form_coeffs, form_consts,
@@ -142,18 +167,14 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
                                      facet_info, mpc_data, ghost_info,
                                      bc_array)
 
-    with dolfinx.common.Timer("MPC: Assemble matrix (diagonal handling)") as t:
-        A.assemble()
-
+    with dolfinx.common.Timer("MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs
-        add_diagonal(A.handle, slaves)
+        # NOTE: In the future one could use a constant in the DirichletBC
+        if cpp_form.function_space(0).id == cpp_form.function_space(1).id:
+            dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_space(0),
+                                         bc_mpc, 1.0)
+    with dolfinx.common.Timer("MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()
-        if bcs is not None:
-            if cpp_form.function_space(0).id == cpp_form.function_space(1).id:
-                dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_space(0),
-                                             bcs, 1.0)
-        A.assemble()
-        t.elapsed()
     return A
 
 

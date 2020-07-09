@@ -138,7 +138,7 @@ def set_master_slave_slip_relationship(W, V, mt, value, bcs):
     slaves = []
     masters = []
     coeffs = []
-
+    owner_ranks = []
     nh = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
     nhx, nhy = nh.sub(0).collapse(), nh.sub(1).collapse()
     nh.name = "n"
@@ -166,25 +166,29 @@ def set_master_slave_slip_relationship(W, V, mt, value, bcs):
                 masters.append(master_dof)
                 local_coeff = - ny[d_y[1]]/nx[d_x[1]]
                 coeffs.append(local_coeff)
+                owner_ranks.append(MPI.COMM_WORLD.rank)
     # As all dofs is in the same block, we do not need to communicate
     # all master and slave nodes have been found
     global_slaves = np.hstack(MPI.COMM_WORLD.allgather(slaves))
     global_masters = np.hstack(MPI.COMM_WORLD.allgather(masters))
     global_coeffs = np.hstack(MPI.COMM_WORLD.allgather(coeffs))
+    owner_ranks = np.hstack(MPI.COMM_WORLD.allgather(owner_ranks))
     offsets = np.arange(len(global_slaves)+1)
 
     return (np.array(global_masters), np.array(global_slaves),
-            np.array(global_coeffs), offsets)
+            np.array(global_coeffs), offsets, owner_ranks)
 
 
 start = time.time()
 (masters, slaves,
- coeffs, offsets) = set_master_slave_slip_relationship(W, V, mt, 1, bcs)
+ coeffs, offsets,
+ owner_ranks) = set_master_slave_slip_relationship(W, V, mt, 1, bcs)
 end = time.time()
 print("Setup master slave relationship: {0:.2e}".format(end-start))
 
 mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(W._cpp_object, slaves,
-                                               masters, coeffs, offsets)
+                                               masters, coeffs, offsets,
+                                               owner_ranks)
 # Define variational problem
 (u, p) = ufl.TrialFunctions(W)
 (v, q) = ufl.TestFunctions(W)

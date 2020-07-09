@@ -20,8 +20,6 @@ import dolfinx.io
 import dolfinx.la
 import dolfinx.log
 import dolfinx.mesh
-import dolfinx_mpc
-import dolfinx_mpc.utils
 import ufl
 from mpi4py import MPI
 
@@ -72,9 +70,8 @@ def build_elastic_nullspace(V):
     return nsp
 
 
-def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
-                          xdmf=False, boomeramg=False, kspview=False,
-                          degree=1):
+def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
+                   xdmf=False, boomeramg=False, kspview=False, degree=1):
     if tetra:
         if degree == 1:
             N = 3
@@ -111,73 +108,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
     bcs = [bc]
 
-    def slaves_locater(x):
-        return np.logical_and(np.isclose(x[0], 1), np.isclose(x[2], 0))
-
-    def master_locater(x):
-        return np.logical_and(np.isclose(x[0], 1), np.isclose(x[2], 1))
-
-    def create_master_slave_map(master_dofs, slave_dofs):
-        timer = dolfinx.common.Timer("MPC: Create slave-master relationship")
-        x = V.tabulate_dof_coordinates()
-        local_min = (V.dofmap.index_map.local_range[0]
-                     * V.dofmap.index_map.block_size)
-        local_max = (V.dofmap.index_map.local_range[1]
-                     * V.dofmap.index_map.block_size)
-        x_slaves = x[slave_dofs, :]
-        x_masters = x[master_dofs, :]
-        masters = np.zeros(N+1, dtype=np.int64)
-        owner_ranks = np.zeros(N+1, dtype=np.int64)
-        slaves = np.zeros(N+1, dtype=np.int64)
-        for i in range(N+1):
-            if len(slave_dofs) > 0:
-                slave_coord = [1, i/N, 0]
-                slave_diff = np.abs(x_slaves-slave_coord).sum(axis=1)
-                if np.isclose(slave_diff[slave_diff.argmin()], 0):
-                    # Only add if owned by processor
-                    if (slave_dofs[slave_diff.argmin()]
-                            < local_max - local_min):
-                        slaves[i] = (slave_dofs[slave_diff.argmin()]
-                                     + local_min)
-                if len(master_dofs) > 0:
-                    master_coord = [1, i/N, 1]
-                    master_diff = np.abs(x_masters-master_coord).sum(axis=1)
-                    if np.isclose(master_diff[master_diff.argmin()], 0):
-                        # Only add if owned by processor
-                        if (master_dofs[master_diff.argmin()] <
-                                local_max-local_min):
-                            masters[i] = (master_dofs[master_diff.argmin()]
-                                          + local_min)
-                            owner_ranks[i] = MPI.COMM_WORLD.rank
-        timer.stop()
-        return slaves, masters, owner_ranks
-
-    # Find all masters and slaves
-    masters = []
-    slaves = []
-    master_ranks = []
-    for j in [mesh.topology.dim-1]:  # range(mesh.topology.dim):
-        Vj = V.sub(j).collapse()
-        slave_dofs = dolfinx.fem.locate_dofs_geometrical(
-            (V.sub(j), Vj), slaves_locater).T[0]
-        master_dofs = dolfinx.fem.locate_dofs_geometrical(
-            (V.sub(j), Vj), master_locater).T[0]
-
-        snew, mnew, mranks = create_master_slave_map(master_dofs, slave_dofs)
-        mastersj = sum(MPI.COMM_WORLD.allgather(mnew))
-        slavesj = sum(MPI.COMM_WORLD.allgather(snew))
-        ownersj = sum(MPI.COMM_WORLD.allgather(mranks))
-        masters.append(mastersj)
-        slaves.append(slavesj)
-        master_ranks.append(ownersj)
-    masters = np.hstack(masters)
-    slaves = np.hstack(slaves)
-    master_ranks = np.hstack(master_ranks)
-    offsets = np.array(range(len(slaves)+1), dtype=np.int64)
-    coeffs = 0.5*np.ones(len(masters), dtype=np.float64)
-
     # Create traction meshtag
-
     def traction_boundary(x):
         return np.isclose(x[0], 1)
     t_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
@@ -204,52 +135,23 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(g, v)*ufl.ds(domain=mesh, subdomain_data=mt,
-                                 subdomain_id=1)\
+    lhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
+                                 subdomain_data=mt, subdomain_id=1)\
         + ufl.inner(f, v)*ufl.dx
-
-    # Create MPC
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   master_ranks)
-    # Setup MPC system
     if MPI.COMM_WORLD.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run {0:1d}: Assembling matrix".format(r_lvl))
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        print("Problem size {0:d} ".format(V.dim))
 
-    if MPI.COMM_WORLD.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run {0:1d}: Assembling vector".format(r_lvl))
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    # Generate reference matrices and unconstrained solution
+    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org.assemble()
+    null_space_org = build_elastic_nullspace(V)
+    A_org.setNearNullSpace(null_space_org)
 
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
-
-    # Create nullspace for elasticity problem and assign to matrix
-    if MPI.COMM_WORLD.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run {0:1d}: Build MPC nullspace".format(r_lvl))
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-
-    with dolfinx.common.Timer("MPC: Create mpc nullspace"):
-        Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                      mpc.mpc_dofmap())
-        Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-        null_space = build_elastic_nullspace(Vmpc)
-
-    A.setNearNullSpace(null_space)
-
-    # Apply boundary conditions
-    with dolfinx.common.Timer("MPC: Apply lifting"):
-        dolfinx.fem.apply_lifting(b, [a], [bcs])
-        b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+    L_org = dolfinx.fem.assemble_vector(lhs)
+    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
-        dolfinx.fem.set_bc(b, bcs)
-
+    dolfinx.fem.set_bc(L_org, bcs)
     opts = PETSc.Options()
     if boomeramg:
         opts["ksp_type"] = "cg"
@@ -259,6 +161,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         opts["pc_hypre_boomeramg_max_iter"] = 1
         opts["pc_hypre_boomeramg_cycle_type"] = "v"
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
+        assert(False)
     else:
         opts["ksp_rtol"] = 1.0e-8
         opts["pc_type"] = "gamg"
@@ -274,63 +177,54 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
 
-    # Setup PETSc solver
+    # Create solver, set operator and options
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setFromOptions()
-    solver.setOperators(A)
+    solver.setOperators(A_org)
 
-    # Solve Linear problem
-    uh = b.copy()
-    uh.set(0)
+    # Solve linear problem
+    u_ = dolfinx.Function(V)
     start = time.time()
-    if MPI.COMM_WORLD.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run {0:1d}: Solving".format(r_lvl))
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    with dolfinx.common.Timer("MPC: Solve"):
-        solver.solve(b, uh)
+    with dolfinx.common.Timer("Ref solve"):
+        solver.solve(L_org, u_.vector)
     end = time.time()
-
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
-
-    # Back substitute to slave dofs
-    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
-
+    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                          mode=PETSc.ScatterMode.FORWARD)
     if kspview:
         solver.view()
 
-    mem = sum(MPI.COMM_WORLD.allgather(
-        resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     it = solver.getIterationNumber()
-
     if out_hdf5 is not None:
         d_set = out_hdf5.get("its")
         d_set[r_lvl] = it
         d_set = out_hdf5.get("num_dofs")
         d_set[r_lvl] = V.dim
-        d_set = out_hdf5.get("num_slaves")
-        d_set[r_lvl] = len(slaves)
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = end-start
 
     if MPI.COMM_WORLD.rank == 0:
-        print("Rlvl {0:d}, Iterations {1:d}".format(r_lvl, it))
-        print("Rlvl {0:d}, Max usage {1:d} (kb), #dofs {2:d}".format(
-            r_lvl, mem, V.dim))
+        print("Refinement level {0:d}, Iterations {1:d}".format(r_lvl, it))
+
+    # List memory usage
+    mem = sum(MPI.COMM_WORLD.allgather(
+        resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
+    if MPI.COMM_WORLD.rank == 0:
+        print("{1:d}: Max usage after trad. solve {0:d} (kb)"
+              .format(mem, r_lvl))
 
     if xdmf:
-        # Write solution to file
-        u_h = dolfinx.Function(Vmpc)
-        u_h.vector.setArray(uh.array)
-        u_h.name = "u_mpc"
-        fname = "results/bench_elasticity_edge_{0:d}.xdmf".format(r_lvl)
-        outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                      fname, "w")
-        outfile.write_mesh(mesh)
-        outfile.write_function(u_h)
-        outfile.close()
+
+        # Name formatting of functions
+        u_.name = "u_unconstrained"
+
+        fname = "results/ref_elasticity_{0:d}.xdmf".format(r_lvl)
+        out_xdmf = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
+        out_xdmf.write_mesh(mesh)
+        out_xdmf.write_function(u_, 0.0,
+                                "Xdmf/Domain/"
+                                + "Grid[@Name='{0:s}'][1]"
+                                .format(mesh.name))
+        out_xdmf.close()
 
 
 if __name__ == "__main__":
@@ -345,7 +239,7 @@ if __name__ == "__main__":
                         help="List timings (Default false)")
     parser.add_argument('--kspview', action='store_true', dest="kspview",
                         help="View PETSc progress")
-    parser.add_argument("-o", default='elasticity_one.hdf5', dest="hdf5",
+    parser.add_argument("-o", default='elasticity_ref.hdf5', dest="hdf5",
                         help="Name of HDF5 output file")
     ct_parser = parser.add_mutually_exclusive_group(required=False)
     ct_parser.add_argument('--tet', dest='tetra', action='store_true',
@@ -360,37 +254,36 @@ if __name__ == "__main__":
                                action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
-    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
     thismodule = sys.modules[__name__]
+    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
+
     N = n_ref + 1
 
-    h5f = h5py.File('bench_edge_output.hdf5', 'w',
-                    driver='mpio', comm=MPI.COMM_WORLD)
+    # Setup hd5f output file
+    h5f = h5py.File(hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
-    h5f.create_dataset("num_slaves", (N,), dtype=np.int32)
-    sd = h5f.create_dataset("solve_time",
-                            (N, MPI.COMM_WORLD.size), dtype=np.float64)
+    sd = h5f.create_dataset(
+        "solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if boomeramg else "GAMG"
     ct = "Tet" if tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)
     sd.attrs["degree"] = np.string_(str(int(degree)))
     sd.attrs["ct"] = np.string_(ct)
 
+    # Loop over refinement levels
     for i in range(N):
         if MPI.COMM_WORLD.rank == 0:
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
             dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                             "Run {0:1d} in progress".format(i))
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-        bench_elasticity_edge(tetra=tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
-
-                              boomeramg=boomeramg, kspview=kspview,
-                              degree=degree)
-
+        ref_elasticity(tetra=tetra, r_lvl=i, out_hdf5=h5f,
+                       xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
+                       degree=degree)
         if timings and i == N-1:
-            dolfinx.common.list_timings(MPI.COMM_WORLD,
-                                        [dolfinx.common.TimingType.wall])
+            dolfinx.common.list_timings(
+                MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()

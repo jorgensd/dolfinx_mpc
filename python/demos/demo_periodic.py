@@ -66,7 +66,7 @@ for i in range(1, N):
     s_m_c[slave_locater(i, N)] = {master_locater(i, N): 1}
 
 (slaves, masters,
- coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+ coeffs, offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c)
 
 # Define variational problem
 u = ufl.TrialFunction(V)
@@ -85,7 +85,8 @@ lhs = ufl.inner(f, v)*ufl.dx
 u = dolfinx.Function(V)
 u.name = "uh"
 mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                               masters, coeffs, offsets)
+                                               masters, coeffs, offsets,
+                                               owner_ranks)
 # Setup MPC system
 
 A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)

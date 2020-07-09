@@ -77,10 +77,12 @@ def test_surface_integrals():
         s_m_c[slave_locater(i, N)] = {lambda x: dof_at(x, [1, 1]): 0.8}
 
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                           1, 1)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c,
+                                                         1, 1)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
 
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
@@ -205,10 +207,12 @@ def test_surface_integral_dependency():
         s_m_c[slave_locater(i, N)] = {lambda x: dof_at(x, [1, 1]): 0.3}
 
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c, 1, 1)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c, 1, 1)
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
 
     # Setup MPC system
     for j in range(3):

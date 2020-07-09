@@ -131,11 +131,13 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         + ufl.inner(g, v)*ds
 
     # Find slave master relationship and initialize MPC class
-    slaves, masters, coeffs, offsets = find_master_slave_relationship(
+    (slaves, masters, coeffs, offsets,
+     owner_ranks) = find_master_slave_relationship(
         V, (mt, 4, 9), (ct, top_cube_marker))
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   owner_ranks)
 
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)

@@ -41,9 +41,11 @@ def test_mpc_assembly(master_point, degree, celltype):
              lambda x: dof_at(x, [0, 0]):
              {lambda x: dof_at(x, master_point): 0.69}}
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+     coeffs, offsets,
+     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   master_owners)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,

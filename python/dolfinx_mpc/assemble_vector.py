@@ -70,17 +70,22 @@ def assemble_vector(form, multipointconstraint,
 
     for i in range(num_cell_integrals):
         subdomain_id = subdomain_ids[i]
-        cell_kernel = ufc_form.create_cell_integral(
-            subdomain_id).tabulate_tensor
+        with dolfinx.common.Timer("MPC: Assemble vector (cell kernel)"):
+            cell_kernel = ufc_form.create_cell_integral(
+                subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
             dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
-        with vector.localForm() as b:
-            assemble_cells(numpy.asarray(b), cell_kernel, active_cells,
-                           (pos, x_dofs, x), gdim,
-                           form_coeffs, form_consts,
-                           permutation_info,
-                           dofs, num_dofs_per_element, mpc_data,
-                           ghost_info, (bc_dofs, bc_values))
+        slave_cell_indices = numpy.flatnonzero(
+            numpy.isin(active_cells, slave_cells))
+        with dolfinx.common.Timer("MPC: Assemble vector (cell numba)"):
+            with vector.localForm() as b:
+                assemble_cells(numpy.asarray(b), cell_kernel,
+                               active_cells[slave_cell_indices],
+                               (pos, x_dofs, x), gdim,
+                               form_coeffs, form_consts,
+                               permutation_info,
+                               dofs, num_dofs_per_element, mpc_data,
+                               ghost_info, (bc_dofs, bc_values))
 
     # Assemble exterior facet integrals
     subdomain_ids = formintegral.integral_ids(
@@ -97,17 +102,18 @@ def assemble_vector(form, multipointconstraint,
         subdomain_id = subdomain_ids[i]
         facet_kernel = ufc_form.create_exterior_facet_integral(
             subdomain_id).tabulate_tensor
-        with vector.localForm() as b:
-            assemble_exterior_facets(numpy.asarray(b), facet_kernel,
-                                     facet_info,
-                                     (pos, x_dofs, x),
-                                     gdim, form_coeffs, form_consts,
-                                     (permutation_info,
-                                         facet_permutation_info),
-                                     dofs,
-                                     num_dofs_per_element,
-                                     mpc_data, ghost_info,
-                                     (bc_dofs, bc_values))
+        with dolfinx.common.Timer("MPC: Assemble vector (facet numba)"):
+            with vector.localForm() as b:
+                assemble_exterior_facets(numpy.asarray(b), facet_kernel,
+                                         facet_info,
+                                         (pos, x_dofs, x),
+                                         gdim, form_coeffs, form_consts,
+                                         (permutation_info,
+                                          facet_permutation_info),
+                                         dofs,
+                                         num_dofs_per_element,
+                                         mpc_data, ghost_info,
+                                         (bc_dofs, bc_values))
 
     return vector
 
@@ -130,12 +136,8 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim,
 
     geometry = numpy.zeros((pos[1]-pos[0], gdim))
     b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
-    slave_cell_index = 0
-    slave_cells = mpc[4]
-    for cell_index in active_cells:
-        if not in_numpy_array(slave_cells, cell_index):
-            continue
 
+    for slave_cell_index, cell_index in enumerate(active_cells):
         num_vertices = pos[cell_index + 1] - pos[cell_index]
         # FIXME: This assumes a particular geometry dof layout
         cell = pos[cell_index]
@@ -154,7 +156,6 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim,
         modify_mpc_contributions(b, cell_index, slave_cell_index, b_local,
                                  b_local_copy, mpc, dofmap,
                                  num_dofs_per_element, ghost_info)
-        slave_cell_index += 1
 
         for j in range(num_dofs_per_element):
             position = dofmap[cell_index * num_dofs_per_element + j]

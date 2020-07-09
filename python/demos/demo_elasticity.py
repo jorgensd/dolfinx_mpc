@@ -59,11 +59,13 @@ def demo_elasticity():
     dof_at = dolfinx_mpc.dof_close_to
     s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 0.9}}
     (slaves, masters,
-     coeffs, offsets) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                           1, 1)
+     coeffs, offsets,
+     owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
+                                                       1, 1)
 
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets)
+                                                   masters, coeffs, offsets,
+                                                   owner_ranks)
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
