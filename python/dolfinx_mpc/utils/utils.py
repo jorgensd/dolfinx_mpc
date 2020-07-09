@@ -4,13 +4,15 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import numpy as np
-import dolfinx
-import dolfinx_mpc
-import ufl
 import time
 
+import dolfinx_mpc
+import numpy as np
+import ufl
 from mpi4py import MPI
+
+import dolfinx
+import dolfinx.log
 
 
 def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
@@ -134,7 +136,8 @@ def cache_numba(matrix=False, vector=False, backsubstitution=False):
     """
     Build a minimal numba cache for all operations
     """
-    print("Building Numba cache...")
+    dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                    "Building Numba cache...")
     mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD,
                                   MPI.COMM_WORLD.size,
                                   MPI.COMM_WORLD.size)
@@ -149,7 +152,7 @@ def cache_numba(matrix=False, vector=False, backsubstitution=False):
                                                             dtype=np.int64),
                                                    np.array([],
                                                             dtype=np.float64),
-                                                   np.array([],
+                                                   np.array([0],
                                                             dtype=np.int64),
                                                    np.array([],
                                                             dtype=np.int32))
@@ -157,17 +160,23 @@ def cache_numba(matrix=False, vector=False, backsubstitution=False):
         start = time.time()
         A = dolfinx_mpc.assemble_matrix(a, mpc, [])
         end = time.time()
-        print("CACHE Matrix assembly time: {0:.2e} ".format(end-start))
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "CACHE Matrix assembly time: {0:.2e} "
+                        .format(end-start))
         A.assemble()
     if vector:
         start = time.time()
         b = dolfinx_mpc.assemble_vector(L, mpc)
         end = time.time()
-        print("CACHE Vector assembly time: {0:.2e} ".format(end-start))
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "CACHE Vector assembly time: {0:.2e} "
+                        .format(end-start))
 
         if backsubstitution:
             c = b.copy()
             start = time.time()
             dolfinx_mpc.backsubstitution(mpc, c, V.dofmap)
             end = time.time()
-            print("CACHE backsubstitution: {0:.2e} ".format(end-start))
+            dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                            "CACHE backsubstitution: {0:.2e} "
+                            .format(end-start))

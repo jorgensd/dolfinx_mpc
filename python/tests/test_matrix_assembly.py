@@ -4,18 +4,21 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import numpy as np
-import pytest
+import time
 
-import dolfinx
 import dolfinx_mpc
 import dolfinx_mpc.utils
-import time
+import numpy as np
+import pytest
 import ufl
-
 from mpi4py import MPI
 
+import dolfinx
+import dolfinx.log
+
+dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
 dolfinx_mpc.utils.cache_numba(matrix=True)
+dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
