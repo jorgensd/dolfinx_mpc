@@ -168,7 +168,8 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Setup multi-point constraint
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets, mrank)
+                                                   masters, coeffs, offsets,
+                                                   mrank)
     # Assemble LHS and RHS with multi-point constraint
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -306,11 +307,14 @@ if __name__ == "__main__":
     solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
                                action='store_true',
                                help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
+    solver_parser.add_argument('--gamg', dest='boomeramg',
+                               action='store_false',
                                help="Use PETSc GAMG preconditioner")
 
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
+    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
+
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
 

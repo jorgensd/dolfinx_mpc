@@ -129,7 +129,7 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Solve linear problem
     u_ = dolfinx.Function(V)
     start = time.time()
-    with dolfinx.common.Timer("Solve") as t:
+    with dolfinx.common.Timer("Solve"):
         solver.solve(L_org, u_.vector)
     end = time.time()
     u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
@@ -191,11 +191,14 @@ if __name__ == "__main__":
     solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
                                action='store_true',
                                help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
+    solver_parser.add_argument('--gamg', dest='boomeramg',
+                               action='store_false',
                                help="Use PETSc GAMG preconditioner")
 
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
+    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
+
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
 

@@ -73,7 +73,8 @@ def build_elastic_nullspace(V):
 
 
 def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
-                          xdmf=False, boomeramg=False, kspview=False, degree=1):
+                          xdmf=False, boomeramg=False, kspview=False,
+                          degree=1):
     if tetra:
         if degree == 1:
             N = 3
@@ -203,12 +204,14 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
-                                 subdomain_data=mt, subdomain_id=1) + ufl.inner(f, v)*ufl.dx
+    lhs = ufl.inner(g, v)*ufl.ds(domain=mesh, subdomain_data=mt,
+                                 subdomain_id=1)\
+        + ufl.inner(f, v)*ufl.dx
 
     # Create MPC
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets, master_ranks)
+                                                   masters, coeffs, offsets,
+                                                   master_ranks)
     # Setup MPC system
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -269,7 +272,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Solving".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    with dolfinx.common.Timer("Ref solve") as t:
+    with dolfinx.common.Timer("Ref solve"):
         solver.solve(b, uh)
     end = time.time()
 
@@ -337,9 +340,11 @@ if __name__ == "__main__":
     solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
                                action='store_true',
                                help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
+    solver_parser.add_argument('--gamg', dest='boomeramg',
+                               action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
+    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
     thismodule = sys.modules[__name__]
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
@@ -365,7 +370,8 @@ if __name__ == "__main__":
                             "Run {0:1d} in progress".format(i))
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         bench_elasticity_edge(tetra=tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
-                              boomeramg=boomeramg, kspview=kspview, degree=degree)
+                              boomeramg=boomeramg, kspview=kspview,
+                              degree=degree)
         if timings:
             dolfinx.common.list_timings(MPI.COMM_WORLD,
                                         [dolfinx.common.TimingType.wall])

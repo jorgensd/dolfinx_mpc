@@ -136,7 +136,8 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     lhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
-                                 subdomain_data=mt, subdomain_id=1) + ufl.inner(f, v)*ufl.dx
+                                 subdomain_data=mt, subdomain_id=1)\
+        + ufl.inner(f, v)*ufl.dx
     if MPI.COMM_WORLD.rank == 0:
         print("Problem size {0:d} ".format(V.dim))
 
@@ -184,7 +185,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Solve linear problem
     u_ = dolfinx.Function(V)
     start = time.time()
-    with dolfinx.common.Timer("Ref solve") as t:
+    with dolfinx.common.Timer("Ref solve"):
         solver.solve(L_org, u_.vector)
     end = time.time()
     u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
@@ -208,7 +209,8 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     mem = sum(MPI.COMM_WORLD.allgather(
         resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     if MPI.COMM_WORLD.rank == 0:
-        print("{1:d}: Max usage after trad. solve {0:d} (kb)".format(mem, r_lvl))
+        print("{1:d}: Max usage after trad. solve {0:d} (kb)"
+              .format(mem, r_lvl))
 
     if xdmf:
 
@@ -248,10 +250,12 @@ if __name__ == "__main__":
     solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
                                action='store_true',
                                help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
+    solver_parser.add_argument('--gamg', dest='boomeramg',
+                               action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
+    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
 
@@ -277,7 +281,8 @@ if __name__ == "__main__":
                             "Run {0:1d} in progress".format(i))
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         ref_elasticity(tetra=tetra, r_lvl=i, out_hdf5=h5f,
-                       xdmf=xdmf, boomeramg=boomeramg, kspview=kspview, degree=degree)
+                       xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
+                       degree=degree)
         if timings:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

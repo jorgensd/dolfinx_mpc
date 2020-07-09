@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator, LogLocator, NullFormatter
 import matplotlib.transforms as mtransforms
-import numpy as np
 import h5py
 import mpi4py
 import argparse
@@ -52,7 +51,8 @@ def visualize_elasticity():
         numticks=8)
     ax.xaxis.set_major_locator(locmax)
     locmin = LogLocator(
-        base=10.0, subs=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9), numticks=9)
+        base=10.0, subs=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+        numticks=9)
     ax.xaxis.set_minor_locator(locmin)
     ax.xaxis.set_minor_formatter(NullFormatter())
     plt.grid(True,  which="both", axis="both")
@@ -107,7 +107,8 @@ def visualize_periodic():
         numticks=8)
     ax.xaxis.set_major_locator(locmax)
     locmin = LogLocator(
-        base=10.0, subs=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9), numticks=9)
+        base=10.0, subs=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9),
+        numticks=9)
     ax.xaxis.set_minor_locator(locmin)
     ax.xaxis.set_minor_formatter(NullFormatter())
     plt.grid(True,  which="both", axis="both")
@@ -116,12 +117,15 @@ def visualize_periodic():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--elasticity", action="store_true", dest="elasticity", default=False,
+    parser.add_argument("--elasticity", action="store_true",
+                        dest="elasticity", default=False,
                         help="Visualize iterations for elasticity")
-    parser.add_argument("--periodic", action="store_true", dest="periodic", default=False,
+    parser.add_argument("--periodic", action="store_true",
+                        dest="periodic", default=False,
                         help="Visualize iterations for periodic")
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
+    periodic = elasticity = None
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
     if elasticity:

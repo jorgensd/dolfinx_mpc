@@ -131,13 +131,16 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Create MPC
     dof_at = dolfinx_mpc.dof_close_to
     s_m_c = {lambda x: dof_at(x, [1, 0, 0]): {
-        lambda x: dof_at(x, [1, 0, 1]): 0.5}}  # , lambda x: dof_at(x, [1, 1, 0]): {
+        lambda x: dof_at(x, [1, 0, 1]): 0.5}}
+    # , lambda x: dof_at(x, [1, 1, 0]): {
     # lambda x: dof_at(x, [1, 1, 1]): 0.5}}
     (slaves, masters,
-     coeffs, offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                                        2, 2)
+     coeffs, offsets,
+     owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
+                                                       2, 2)
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets, owner_ranks)
+                                                   masters, coeffs, offsets,
+                                                   owner_ranks)
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
@@ -185,7 +188,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     uh = b.copy()
     uh.set(0)
     start = time.time()
-    with dolfinx.common.Timer("Ref solve") as t:
+    with dolfinx.common.Timer("Ref solve"):
         solver.solve(b, uh)
     end = time.time()
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
@@ -242,10 +245,13 @@ if __name__ == "__main__":
     solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
                                action='store_true',
                                help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
+    solver_parser.add_argument('--gamg', dest='boomeramg',
+                               action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
+    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
+
     for key in vars(args):
         setattr(thismodule, key, getattr(args, key))
 
