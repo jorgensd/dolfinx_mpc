@@ -35,6 +35,8 @@ dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 comp_col_pts = geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
+comm = MPI.COMM_WORLD
+
 
 def build_elastic_nullspace(V):
     """Function to build nullspace for 2D/3D elasticity"""
@@ -83,9 +85,14 @@ def build_elastic_nullspace(V):
 
 
 def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}".format(theta, triangle, gmsh))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     if gmsh:
         mesh_name = "Grid"
-        if MPI.COMM_WORLD.rank == 0:
+        if MPI.COMM_WORLD.size == 1:
             mesh_2D_rot(theta)
         filename = "meshes/mesh_rot.xdmf"
         facet_file = "meshes/facet_rot.xdmf"
@@ -105,12 +112,12 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     else:
         mesh_name = "mesh"
         if triangle:
-            if MPI.COMM_WORLD.rank == 0:
+            if MPI.COMM_WORLD.size == 1:
                 mesh_2D_dolfin("tri", theta)
             filename = "meshes/mesh_tri.xdmf"
             ext = "tri" + "{0:.2f}".format(theta)
         else:
-            if MPI.COMM_WORLD.rank == 0:
+            if MPI.COMM_WORLD.size == 1:
                 mesh_2D_dolfin("quad", theta)
             filename = "meshes/mesh_quad.xdmf"
             ext = "quad" + "{0:.2f}".format(theta)
@@ -124,7 +131,9 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mesh.topology.create_connectivity(fdim, tdim)
             ct = xdmf.read_meshtags(mesh, name="mesh_tags")
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
-    dolfinx.io.VTKFile("results/mesh.pvd").write(mesh)
+
+    # dolfinx.io.VTKFile("results/mesh.pvd").write(mesh)
+
     # Helper until MeshTags can be read in from xdmf
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     V0 = V.sub(0).collapse()
@@ -187,18 +196,38 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         tangent = dolfinx_mpc.facet_normal_approximation(V, mt, 6)
         t_vec = tangent.vector.getArray()
 
-        dofx = fem.locate_dofs_geometrical((V.sub(0), V0), left_corner)[0, 0]
-        dofy = fem.locate_dofs_geometrical((V.sub(1), V1), left_corner)[0, 0]
-        s_side = np.array([dofx], dtype=np.int64)
-        m_side = np.array([dofy], dtype=np.int64)
-        o_side = len(masters) + 1
-        c_side = np.array([-t_vec[dofy]/t_vec[dofx]])
-        o_r_side = np.array([MPI.COMM_WORLD.rank], dtype=np.int64)
-        masters = np.append(masters, m_side)
-        slaves = np.append(slaves, s_side)
-        coeffs = np.append(coeffs, c_side)
-        offsets = np.append(offsets, o_side)
-        owner_ranks = np.append(owner_ranks, o_r_side)
+        dofx = fem.locate_dofs_geometrical((V.sub(0), V0), left_corner)
+        dofy = fem.locate_dofs_geometrical((V.sub(1), V1), left_corner)
+
+        indexmap = V.dofmap.index_map
+        bs = indexmap.block_size
+        global_indices = indexmap.global_indices(False)
+        lmin = bs*indexmap.local_range[0]
+        lmax = bs*indexmap.local_range[1]
+        if (len(dofx) > 0) and (lmin <= global_indices[dofx[0, 0]] < lmax):
+            s_side = np.array([global_indices[dofx[0, 0]]], dtype=np.int64)
+            m_side = np.array([global_indices[dofy[0, 0]]], dtype=np.int64)
+            o_side = np.array([len(masters) + 1], dtype=np.int32)
+            c_side = np.array(
+                [-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]], dtype=np.float64)
+            o_r_side = np.array([comm.rank], dtype=np.int32)
+        else:
+            s_side = np.array([], dtype=np.int64)
+            m_side = np.array([], dtype=np.int64)
+            o_side = np.array([], dtype=np.int32)
+            c_side = np.array([], dtype=np.float64)
+            o_r_side = np.array([], dtype=np.int32)
+
+        s_side_g = np.hstack(comm.allgather(s_side))
+        m_side_g = np.hstack(comm.allgather(m_side))
+        o_side_g = np.hstack(comm.allgather(o_side))
+        c_side_g = np.hstack(comm.allgather(c_side))
+        o_r_side_g = np.hstack(comm.allgather(o_r_side))
+        masters = np.append(masters, m_side_g)
+        slaves = np.append(slaves, s_side_g)
+        coeffs = np.append(coeffs, c_side_g)
+        offsets = np.append(offsets, o_side_g)
+        owner_ranks = np.append(owner_ranks, o_r_side_g)
         assert(len(masters) == len(owner_ranks))
         assert(len(slaves) == len(offsets)-1)
         assert(not np.all(np.isin(slaves, masters)))
@@ -253,7 +282,9 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         print("Number of iterations: {0:d}".format(it))
     # Back substitute to slave dofs
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
-    print(uh.norm())
+    unorm = uh.norm()
+    if MPI.COMM_WORLD.rank == 0:
+        print(unorm)
 
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
@@ -288,7 +319,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                                                        offsets)
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
     # Created reduced L
     vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
@@ -300,6 +330,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+    print("DIFF", max(abs(uh.array - uh_numpy[uh.owner_range[0]:
+                                              uh.owner_range[1]])))
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
                                           uh.owner_range[1]], atol=1e-7)
 
@@ -307,13 +339,12 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube.xdmf", "w")
-    # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
-    # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
-    # demo_stacked_cubes(outfile, theta=0, gmsh=True)
-    # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
-    # demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
     demo_stacked_cubes(outfile, theta=0, gmsh=True)
-    # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
-    # demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
+    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
 
     outfile.close()

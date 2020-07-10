@@ -158,7 +158,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                             master_owner_dict[i].append(comm.rank)
                         else:
                             master_owner_dict[i].append(ghost_owners[
-                                dof-bs*indexmap.size_local])
+                                dof//bs-indexmap.size_local])
                         master_dict[i].append(dof)
                         coeffs_dict[i].append(l_coeff)
 

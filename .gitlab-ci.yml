@@ -57,12 +57,13 @@ test-real:
     - mkdir meshes
     - mkdir results
     - python3 rotated_cube.py
+    - mpirun -n 4 python3 rotated_cube.py
     - python3 rotated_cube3D.py
 
 test-complex:
   stage: test
   tags:
-    - docker
+    - dockershell
   image:
     name: dolfinx/dev-env
     entrypoint: [""]
@@ -118,4 +119,5 @@ test-complex:
     - mkdir meshes
     - mkdir results
     - python3 rotated_cube.py
+    - mpirun -n 4 python3 rotated_cube.py
     - python3 rotated_cube3D.py
