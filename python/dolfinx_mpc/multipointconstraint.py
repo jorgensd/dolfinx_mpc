@@ -10,7 +10,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 import types
 from dolfinx import function, fem, log
-from .assemble_matrix import in_numpy_array, add_diagonal
+from .assemble_matrix import in_numpy_array
 import numpy
 
 
