@@ -32,21 +32,28 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     mesh = V.mesh
     tdim = V.mesh.topology.dim
     fdim = tdim - 1
+
     # Collapse sub spaces
     Vs = [V.sub(i).collapse() for i in range(tdim)]
+
+    # Get dofmap info
+    comm = V.mesh.mpi_comm()
+    dofs = V.dofmap.list.array()
+    dof_coords = V.tabulate_dof_coordinates()
+    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
+    indexmap = V.dofmap.index_map
+    bs = indexmap.block_size
+    global_indices = np.array(indexmap.global_indices(False),
+                              dtype=np.int64)
+    lmin = bs*indexmap.local_range[0]
+    lmax = bs*indexmap.local_range[1]
+    ghost_owners = indexmap.ghost_owner_rank()
 
     # Extract interface_info
     (mt, slave_i_value, master_i_value) = interface_info
     (ct, master_value) = cell_info
 
-    # Locate dofs on both interfaces
-    indexmap = V.dofmap.index_map
-    bs = indexmap.block_size
-    global_indices = np.array(
-        indexmap.global_indices(False), dtype=np.int64)
-    lmin = bs*indexmap.local_range[0]
-    lmax = bs*indexmap.local_range[1]
-    ghost_owners = indexmap.ghost_owner_rank()
+    # Find all dofs on slave interface
     slave_facets = mt.indices[np.flatnonzero(mt.values == slave_i_value)]
     interface_dofs = []
     for i in range(tdim):
@@ -55,11 +62,6 @@ def find_master_slave_relationship(V, interface_info, cell_info):
         global_dofs = global_indices[i_dofs]
         owned = np.logical_and(lmin <= global_dofs, global_dofs < lmax)
         interface_dofs.append(i_dofs[owned])
-
-    # Get dof info
-    dofs = V.dofmap.list.array()
-    dof_coords = V.tabulate_dof_coordinates()
-    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Extract all top cell values from MeshTags
     tree = geometry.BoundingBoxTree(mesh, tdim)
@@ -70,9 +72,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     nh = dolfinx_mpc.facet_normal_approximation(V, mt, slave_i_value)
     n_vec = nh.vector.getArray()
 
-    # New computation below
-
-    comm = V.mesh.mpi_comm()
+    # Create local dictionaries for the master, slaves and coeffs
     master_dict = {}
     master_owner_dict = {}
     coeffs_dict = {}
@@ -82,8 +82,8 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     local_normals = np.zeros((len(interface_dofs[tdim-1]), tdim),
                              dtype=np.float64)
 
-    # Gather all slaves form each processor, with its corresponding normal vector
-    # and coordinate
+    # Gather all slaves fromm each processor,
+    # with its corresponding normal vector and coordinate
     for i in range(len(interface_dofs[tdim-1])):
         local_slave = interface_dofs[tdim-1][i]
         global_slave = global_indices[local_slave]
@@ -124,9 +124,9 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                     coeffs_dict[i].append(coeff)
 
         # Find bb cells for masters on the other interface (no ghosts)
-        possible_cells = np.array(dolfinx.geometry.
-                                  compute_collisions_point(tree,
-                                                           slave_coordinates[i]))
+        possible_cells = np.array(
+            dolfinx.geometry.compute_collisions_point(tree,
+                                                      slave_coordinates[i]))
         is_top = np.isin(possible_cells, ct_top_cells)
         is_owned = np.zeros(len(possible_cells), dtype=bool)
         if len(possible_cells) > 0:
@@ -178,12 +178,5 @@ def find_master_slave_relationship(V, interface_info, cell_info):
         coeffs = np.hstack([coeffs, coeff_glob])
         owner_ranks = np.hstack([owner_ranks, owner_glob])
         offsets[key+1] = len(masters)
-
-    # if comm.rank == 0:
-    #     print("m", masters)
-    #     print("c", coeffs)
-    #     print("o", offsets)
-    #     print("r", owner_ranks)
-    #     print("---"*25)
 
     return (slaves, masters, coeffs, offsets, owner_ranks)

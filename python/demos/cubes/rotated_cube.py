@@ -11,25 +11,75 @@
 # A slip condition is implemented at the interface of the cube.
 # Additional constraints to avoid tangential movement is
 # added to the to left corner of the top cube.
-import dolfinx.geometry as geometry
-import dolfinx.fem as fem
-import dolfinx
-import dolfinx.io
-import dolfinx.log
+from contextlib import ExitStack
+
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pygmsh
 import ufl
-from petsc4py import PETSc
 from mpi4py import MPI
-from create_and_export_mesh import mesh_2D_rot, mesh_2D_dolfin
+from petsc4py import PETSc
+
+import dolfinx
+import dolfinx.fem as fem
+import dolfinx.geometry as geometry
+import dolfinx.io
+import dolfinx.la
+import dolfinx.log
+from create_and_export_mesh import mesh_2D_dolfin, mesh_2D_rot
 from helpers import find_master_slave_relationship
 
 dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
 comp_col_pts = geometry.compute_collisions_point
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
+
+
+def build_elastic_nullspace(V):
+    """Function to build nullspace for 2D/3D elasticity"""
+
+    # Get geometric dim
+    gdim = V.mesh.geometry.dim
+    assert gdim == 2 or gdim == 3
+
+    # Set dimension of nullspace
+    dim = 3 if gdim == 2 else 6
+
+    # Create list of vectors for null space
+    nullspace_basis = [dolfinx.cpp.la.create_vector(
+        V.dofmap.index_map) for i in range(dim)]
+
+    with ExitStack() as stack:
+        vec_local = [stack.enter_context(x.localForm())
+                     for x in nullspace_basis]
+        basis = [np.asarray(x) for x in vec_local]
+
+        # Build translational null space basis
+        for i in range(gdim):
+            dofs = V.sub(i).dofmap.list
+            basis[i][dofs.array()] = 1.0
+
+        # Build rotational null space basis
+        if gdim == 2:
+            V.sub(0).set_x(basis[2], -1.0, 1)
+            V.sub(1).set_x(basis[2], 1.0, 0)
+        elif gdim == 3:
+            V.sub(0).set_x(basis[3], -1.0, 1)
+            V.sub(1).set_x(basis[3], 1.0, 0)
+
+            V.sub(0).set_x(basis[4], 1.0, 2)
+            V.sub(2).set_x(basis[4], -1.0, 0)
+
+            V.sub(2).set_x(basis[5], 1.0, 1)
+            V.sub(1).set_x(basis[5], -1.0, 2)
+
+    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
+    basis.orthonormalize()
+
+    _x = [basis[i] for i in range(dim)]
+    nsp = PETSc.NullSpace().create(vectors=_x)
+    return nsp
 
 
 def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
@@ -74,7 +124,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mesh.topology.create_connectivity(fdim, tdim)
             ct = xdmf.read_meshtags(mesh, name="mesh_tags")
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
-
+    dolfinx.io.VTKFile("results/mesh.pvd").write(mesh)
     # Helper until MeshTags can be read in from xdmf
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     V0 = V.sub(0).collapse()
@@ -183,6 +233,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
 
+    # Create functionspace and build near nullspace
+    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                  mpc.mpc_dofmap())
+    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+    null_space = build_elastic_nullspace(Vmpc)
+    A.setNearNullSpace(null_space)
+
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setFromOptions()
     solver.setOperators(A)
@@ -197,11 +254,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     # Back substitute to slave dofs
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
     print(uh.norm())
-
-    # Create functionspace and function for mpc vector
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.mpc_dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
@@ -249,7 +301,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                          uh.owner_range[1]])
+                                          uh.owner_range[1]], atol=1e-7)
 
 
 if __name__ == "__main__":
