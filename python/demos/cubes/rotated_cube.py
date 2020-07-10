@@ -12,6 +12,7 @@
 # Additional constraints to avoid tangential movement is
 # added to the to left corner of the top cube.
 from contextlib import ExitStack
+import argparse
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
@@ -338,14 +339,27 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--case", default=1, type=np.int8, dest="case",
+                        help="Which testcase:")
+    args = parser.parse_args()
+    case = args.case
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube.xdmf", "w")
-    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
-    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
-    demo_stacked_cubes(outfile, theta=0, gmsh=True)
-    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
-    demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
-
+    if case == 1:
+        demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
+    elif case == 2:
+        demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    elif case == 3:
+        demo_stacked_cubes(outfile, theta=0, gmsh=True)
+    elif case == 4:
+        demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
+    elif case == 5:
+        demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
+    elif case == 6:
+        demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
+    elif case == 7:
+        demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
+    else:
+        raise ValueError("Cases are 1 to 7")
     outfile.close()
