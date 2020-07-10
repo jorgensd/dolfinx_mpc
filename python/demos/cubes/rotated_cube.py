@@ -88,7 +88,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}".format(theta, triangle, gmsh))
+                        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}"
+                        .format(theta, triangle, gmsh))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     if gmsh:
         mesh_name = "Grid"
