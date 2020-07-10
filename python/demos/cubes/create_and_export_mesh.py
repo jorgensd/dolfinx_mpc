@@ -171,7 +171,7 @@ def mesh_2D_rot(theta=np.pi/5):
     msh0 = generate_rectangle(
         0, 1, 0, 1, theta, res=res, markers=[5, 8, 4, 10])
     msh1 = generate_rectangle(
-        0, 1, 1, 2, theta, res=2*res, markers=[9, 6, 3, 7], volume_marker=2)
+        0, 1, 1, 2, theta, res=2*res, markers=[9, 7, 3, 6], volume_marker=2)
     mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "triangle", "line")
     meshio.write("meshes/mesh_rot.xdmf", mesh)
     meshio.write("meshes/facet_rot.xdmf", facet_mesh)
