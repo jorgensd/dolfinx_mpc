@@ -195,6 +195,7 @@ def dof_close_to(x, point):
 def facet_normal_approximation(V, mt, mt_id):
     import dolfinx
     import ufl
+    timer = dolfinx.common.Timer("MPC: Create approximate facet normal")
     n = ufl.FacetNormal(V.mesh)
     nh = dolfinx.Function(V)
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
@@ -203,31 +204,30 @@ def facet_normal_approximation(V, mt, mt_id):
     ds = ufl.ds(domain=V.mesh, subdomain_data=mt, subdomain_id=mt_id)
     L = ufl.inner(n, v)*ds
 
-    A = dolfinx.fem.assemble_matrix(a)
-    ident_zeros(A)
-    A.assemble()
+    imap = V.dofmap.index_map
+    all_dofs = numpy.array(
+        range(imap.size_local*imap.block_size), dtype=numpy.int32)
+    top_facets = mt.indices[numpy.flatnonzero(mt.values == mt_id)]
+    top_dofs = dolfinx.fem.locate_dofs_topological(
+        V, V.mesh.topology.dim-1, top_facets)[:, 0]
+    deac_dofs = all_dofs[numpy.isin(all_dofs, top_dofs, invert=True)]
+    u_0 = dolfinx.Function(V)
+    u_0.vector.set(0)
+    bc_deac = fem.DirichletBC(u_0, deac_dofs)
+    A = dolfinx.fem.assemble_matrix(a, bcs=[bc_deac])
     b = dolfinx.fem.assemble_vector(L)
+
+    dolfinx.fem.apply_lifting(b, [a], [[bc_deac]])
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                  mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(b, [bc_deac])
+
+    A.assemble()
     ksp = PETSc.KSP().create(V.mesh.mpi_comm())
     ksp.setOperators(A)
     ksp.setType("preonly")
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
     ksp.solve(b, nh.vector)
-
+    timer.stop()
     return nh
-
-
-def ident_zeros(A):
-    """
-    Find all rows in a matrix that is zero, and add a 1 on the diagonal
-    """
-    assert A.size[0] == A.size[1]
-    A.assemble()
-    o_range = A.getOwnershipRange()
-    rows = []
-    for i in range(o_range[1]-o_range[0]):
-        indices, values = A.getRow(o_range[0]+i)
-        absrow = sum(abs(values))
-        if absrow < 1e-6:
-            rows.append(o_range[0] + i)
-    add_diagonal(A.handle, numpy.array(rows))
