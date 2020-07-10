@@ -63,7 +63,7 @@ test-real:
 test-complex:
   stage: test
   tags:
-    - dockershell
+    - docker
   image:
     name: dolfinx/dev-env
     entrypoint: [""]
