@@ -119,7 +119,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     (slaves, masters, coeffs,
      offsets, owner_ranks) = find_master_slave_relationship(
         V, (mt, 4, 9), (ct, 2))
-    return
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
@@ -260,7 +259,8 @@ if __name__ == "__main__":
     # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
     # demo_stacked_cubes(outfile, theta=0, gmsh=True)
     # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
+    # demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=True)
     # demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
     # demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
 
