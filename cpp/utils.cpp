@@ -139,8 +139,9 @@ dolfinx_mpc::locate_cells_with_dofs(
   return out_data;
 }
 // //-----------------------------------------------------------------------------
-void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
-                                         const dolfinx::fem::Form& a)
+void dolfinx_mpc::build_standard_pattern(
+    dolfinx::la::SparsityPattern& pattern,
+    const dolfinx::fem::Form<PetscScalar>& a)
 {
   dolfinx::common::Timer timer("MPC: Build classic sparsity pattern");
   // Get dof maps
@@ -152,14 +153,13 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
   assert(a.mesh());
   const dolfinx::mesh::Mesh& mesh = *(a.mesh());
 
-  if (a.integrals().num_integrals(dolfinx::fem::FormIntegrals::Type::cell) > 0)
+  if (a.integrals().num_integrals(dolfinx::fem::IntegralType::cell) > 0)
   {
     dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh.topology(),
                                                 {{dofmaps[0], dofmaps[1]}});
   }
 
-  if (a.integrals().num_integrals(
-          dolfinx::fem::FormIntegrals::Type::interior_facet)
+  if (a.integrals().num_integrals(dolfinx::fem::IntegralType::interior_facet)
       > 0)
   {
     mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
@@ -169,8 +169,7 @@ void dolfinx_mpc::build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
 
-  if (a.integrals().num_integrals(
-          dolfinx::fem::FormIntegrals::Type::exterior_facet)
+  if (a.integrals().num_integrals(dolfinx::fem::IntegralType::exterior_facet)
       > 0)
   {
     mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
