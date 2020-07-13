@@ -6,23 +6,71 @@
 #
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
-import dolfinx
-import dolfinx.fem as fem
-import dolfinx.io
+from contextlib import ExitStack
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-
 import numpy as np
 import pygmsh
 import ufl
-
 from mpi4py import MPI
 from petsc4py import PETSc
 
-from create_and_export_mesh import mesh_3D_rot, mesh_3D_dolfin
-
+import dolfinx
+import dolfinx.fem as fem
+import dolfinx.io
+import dolfinx.la
+from create_and_export_mesh import mesh_3D_dolfin, mesh_3D_rot
 from helpers import find_master_slave_relationship
+
+
+comm = MPI.COMM_WORLD
+
+
+def build_elastic_nullspace(V):
+    """Function to build nullspace for 2D/3D elasticity"""
+
+    # Get geometric dim
+    gdim = V.mesh.geometry.dim
+    assert gdim == 2 or gdim == 3
+
+    # Set dimension of nullspace
+    dim = 3 if gdim == 2 else 6
+
+    # Create list of vectors for null space
+    nullspace_basis = [dolfinx.cpp.la.create_vector(
+        V.dofmap.index_map) for i in range(dim)]
+
+    with ExitStack() as stack:
+        vec_local = [stack.enter_context(x.localForm())
+                     for x in nullspace_basis]
+        basis = [np.asarray(x) for x in vec_local]
+
+        # Build translational null space basis
+        for i in range(gdim):
+            dofs = V.sub(i).dofmap.list
+            basis[i][dofs.array()] = 1.0
+
+        # Build rotational null space basis
+        if gdim == 2:
+            V.sub(0).set_x(basis[2], -1.0, 1)
+            V.sub(1).set_x(basis[2], 1.0, 0)
+        elif gdim == 3:
+            V.sub(0).set_x(basis[3], -1.0, 1)
+            V.sub(1).set_x(basis[3], 1.0, 0)
+
+            V.sub(0).set_x(basis[4], 1.0, 2)
+            V.sub(2).set_x(basis[4], -1.0, 0)
+
+            V.sub(2).set_x(basis[5], 1.0, 1)
+            V.sub(1).set_x(basis[5], -1.0, 2)
+
+    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
+    basis.orthonormalize()
+
+    _x = [basis[i] for i in range(dim)]
+    nsp = PETSc.NullSpace().create(vectors=_x)
+    return nsp
 
 
 def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
@@ -31,8 +79,14 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         ext = "hexahedron"
     else:
         ext = "tetrahedron"
+    if comm.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Run theta:{0:.2f}, Cell: {1:s}, Gmsh {2:b}"
+                        .format(theta, ext, dolfin_mesh))
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     # Create rotated mesh
-    if MPI.COMM_WORLD.rank == 0:
+    if MPI.COMM_WORLD.size == 1:
         if dolfin_mesh:
             mesh_3D_dolfin(theta, ct, ext)
         else:
@@ -68,7 +122,6 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  "meshes/facet3D_rot.xdmf", "r") as xdmf:
             mt = xdmf.read_meshtags(mesh, "Grid")
-
     top_cube_marker = 2
 
     # Create functionspaces
@@ -130,6 +183,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
+    print(V.dim)
     # Find slave master relationship and initialize MPC class
     (slaves, masters, coeffs, offsets,
      owner_ranks) = find_master_slave_relationship(
@@ -138,10 +192,10 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets,
                                                    owner_ranks)
-
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    return
 
     # Apply boundary conditions
     fem.apply_lifting(b, [a], [bcs])
@@ -178,43 +232,45 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
     # Transfer data from the MPC problem to numpy arrays for comparison
-    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    # A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    # mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
-    # Solve the MPC problem using a global transformation matrix
-    # and numpy solvers to get reference values
-    print("Solving reference problem with global matrix (using numpy)")
-    # Generate reference matrices and unconstrained solution
-    A_org = fem.assemble_matrix(a, bcs)
+    # # Solve the MPC problem using a global transformation matrix
+    # # and numpy solvers to get reference values
+    # print("Solving reference problem with global matrix (using numpy)")
+    # # Generate reference matrices and unconstrained solution
+    # A_org = fem.assemble_matrix(a, bcs)
 
-    A_org.assemble()
-    L_org = fem.assemble_vector(lhs)
-    fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(L_org, bcs)
+    # A_org.assemble()
+    # L_org = fem.assemble_vector(lhs)
+    # fem.apply_lifting(L_org, [a], [bcs])
+    # L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+    #                   mode=PETSc.ScatterMode.REVERSE)
+    # fem.set_bc(L_org, bcs)
 
-    # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
-    # Create reduced A
-    A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+    # # Create global transformation matrix
+    # K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
+    #                                                    masters, coeffs,
+    #                                                    offsets)
+    # # Create reduced A
+    # A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
 
-    reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-    # Created reduced L
-    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    reduced_L = np.dot(K.T, vec)
-    # Solve linear system
-    d = np.linalg.solve(reduced_A, reduced_L)
-    # Back substitution to full solution vector
-    uh_numpy = np.dot(K, d)
-    # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                          uh.owner_range[1]])
-    print(uh.norm())
+    # reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+    # # Created reduced L
+    # vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
+    # reduced_L = np.dot(K.T, vec)
+    # # Solve linear system
+    # d = np.linalg.solve(reduced_A, reduced_L)
+    # # Back substitution to full solution vector
+    # uh_numpy = np.dot(K, d)
+    # # Compare LHS, RHS and solution with reference values
+    # dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
+    # dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+    # assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
+    #                                       uh.owner_range[1]])
+    unorm = uh.norm()
+    if comm.rank == 0:
+        print(unorm)
 
 
 if __name__ == "__main__":
@@ -227,6 +283,13 @@ if __name__ == "__main__":
         demo_stacked_cubes(outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct)
     # NOTE: Unstructured hex meshes not working nicely as interfaces
     # do not match.
-    demo_stacked_cubes(
-        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron)
+    # demo_stacked_cubes(
+    #     outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron)
+    if comm.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        "Finished")
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    dolfinx.common.list_timings(
+        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     outfile.close()
