@@ -56,7 +56,7 @@ public:
   /// @param[in] a bi-linear form for the current variational problem
   /// (The one used to generate input sparsity-pattern).
   dolfinx::la::SparsityPattern
-  create_sparsity_pattern(const dolfinx::fem::Form& a);
+  create_sparsity_pattern(const dolfinx::fem::Form<PetscScalar>& a);
 
   /// Generate indexmap including MPC ghosts
   std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();

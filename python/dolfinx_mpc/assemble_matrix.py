@@ -110,12 +110,12 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
 
-    # Get integrals as FormInegral
-    formintegral = cpp_form.integrals()
+    # Get integrals as FormIntegral
+    formintegral = cpp_form.integrals
 
     # Assemble over cells
     subdomain_ids = formintegral.integral_ids(
-        dolfinx.cpp.fem.FormIntegrals.Type.cell)
+        dolfinx.fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
 
     if num_cell_integrals > 0:
@@ -128,7 +128,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
             cell_kernel = ufc_form.create_cell_integral(
                 subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
-            dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
+            dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
         with dolfinx.common.Timer("MPC: Assemble matrix (numba cells)"):
@@ -142,7 +142,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
 
     # Assemble over exterior facets
     subdomain_ids = formintegral.integral_ids(
-        dolfinx.cpp.fem.FormIntegrals.Type.exterior_facet)
+        dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
 
     # Get cell orientation data
@@ -223,7 +223,7 @@ def pack_facet_info(mesh, integrals, i):
     c_to_f = mesh.topology.connectivity(tdim, fdim)
     f_to_c = mesh.topology.connectivity(fdim, tdim)
     active_facets = integrals.integral_domains(
-        dolfinx.fem.FormIntegrals.Type.exterior_facet, i)
+        dolfinx.fem.IntegralType.exterior_facet, i)
     facet_info = pack_facet_info_numba(active_facets,
                                        (c_to_f.array(), c_to_f.offsets()),
                                        (f_to_c.array(), f_to_c.offsets()))

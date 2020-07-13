@@ -32,7 +32,7 @@ locate_cells_with_dofs(
 /// @param[in] pattern The sparsity pattern
 /// @param[in] a       The variational formulation
 void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
-                            const dolfinx::fem::Form& a);
+                            const dolfinx::fem::Form<PetscScalar>& a);
 
 /// Get basis values for all degrees at point x in a given cell
 /// @param[in] V       The function space
