@@ -297,6 +297,7 @@ MultiPointConstraint::generate_index_map()
                   if ((is_old_ghost == old_ghosts.end())
                       && (is_new_ghost == additional_ghosts.end()))
                   {
+                    assert(false);
                     additional_ghosts.push_back(other_index);
                     additional_ghost_ranks.push_back(
                         _master_owner_ranks->links(k)[l]);
@@ -347,8 +348,8 @@ MultiPointConstraint::generate_index_map()
 }
 
 /// Create MPC specific sparsity pattern
-dolfinx::la::SparsityPattern
-MultiPointConstraint::create_sparsity_pattern(const dolfinx::fem::Form& a)
+dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
+    const dolfinx::fem::Form<PetscScalar>& a)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";
   dolfinx::common::Timer timer("MPC-INIT: Sparsitypattern Total");

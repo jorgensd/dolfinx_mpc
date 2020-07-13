@@ -52,7 +52,7 @@ def assemble_vector(form, multipointconstraint,
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
-    formintegral = cpp_form.integrals()
+    formintegral = cpp_form.integrals
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
@@ -62,7 +62,7 @@ def assemble_vector(form, multipointconstraint,
 
     # Assemble over cells
     subdomain_ids = formintegral.integral_ids(
-        dolfinx.cpp.fem.FormIntegrals.Type.cell)
+        dolfinx.fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
@@ -74,7 +74,7 @@ def assemble_vector(form, multipointconstraint,
             cell_kernel = ufc_form.create_cell_integral(
                 subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
-            dolfinx.cpp.fem.FormIntegrals.Type.cell, i), dtype=numpy.int64)
+            dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
         with dolfinx.common.Timer("MPC: Assemble vector (cell numba)"):
@@ -89,7 +89,7 @@ def assemble_vector(form, multipointconstraint,
 
     # Assemble exterior facet integrals
     subdomain_ids = formintegral.integral_ids(
-        dolfinx.cpp.fem.FormIntegrals.Type.exterior_facet)
+        dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
     exterior_integrals = form.integrals_by_type("exterior_facet")
     if num_exterior_integrals > 0:
