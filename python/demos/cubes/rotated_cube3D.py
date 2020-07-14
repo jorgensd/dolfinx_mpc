@@ -293,9 +293,11 @@ if __name__ == "__main__":
     # NOTE: Unstructured hex meshes not working nicely as interfaces
     # do not match.
     demo_stacked_cubes(
-        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True)
+        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
+        compare=True)
     demo_stacked_cubes(
-        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.hexahedron, compare=True)
+        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.hexahedron,
+        compare=True)
     if comm.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
