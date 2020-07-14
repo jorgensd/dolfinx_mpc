@@ -6,7 +6,6 @@
 #
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
-from contextlib import ExitStack
 
 import dolfinx_mpc
 import dolfinx_mpc.utils

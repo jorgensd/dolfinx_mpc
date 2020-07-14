@@ -57,7 +57,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             celltype, theta)
         facet_file = "meshes/facet_{0:s}_{1:.2f}_rot.xdmf".format(
             celltype, theta)
-        ext = "gmsh" + "{0:.2f}".format(theta)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
@@ -76,11 +75,9 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         if triangle:
             if MPI.COMM_WORLD.size == 1:
                 mesh_2D_dolfin("triangle", theta)
-            ext = "tri" + "{0:.2f}".format(theta)
         else:
             if MPI.COMM_WORLD.size == 1:
                 mesh_2D_dolfin("quad", theta)
-            ext = "quad" + "{0:.2f}".format(theta)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
@@ -249,8 +246,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    mext = "gmsh" if gmsh else ""
-    u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, mext)
+    ext = "gmsh" if gmsh else ""
+    u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
     print(u_h.name)
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0,

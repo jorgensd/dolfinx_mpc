@@ -8,7 +8,6 @@ import argparse
 import resource
 import sys
 import time
-from contextlib import ExitStack
 
 import h5py
 import numpy as np
