@@ -98,7 +98,6 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     geom = pygmsh.built_in.Geometry()
 
     rect = geom.add_rectangle(x0, x1, y0, y1, 0.0, res)
-    geom.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
 
     geom.add_raw_code("Mesh.RecombinationAlgorithm = 2;")
     geom.add_raw_code("Recombine Surface {:};")
@@ -118,6 +117,9 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     msh = pygmsh.generate_mesh(geom, verbose=False)
 
     msh.points[:, -1] += z0
+    r_matrix = pygmsh.helpers.rotation_matrix(
+        [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
+    msh.points[:, :] = np.dot(r_matrix, msh.points.T).T
     return msh
 
 
@@ -137,7 +139,7 @@ def generate_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     for i in range(len(bbox.surface_loop.surfaces)):
         geom.add_physical([bbox.surface_loop.surfaces[i]], facet_markers[i])
 
-    geom.rotate(bbox, [0, 0, 0], -theta, [0, 1, 1])
+    geom.rotate(bbox, [0, 0, 0], -theta, [1, 1, 0])
     if volume_marker is None:
         geom.add_physical([bbox.volume], 0)
     else:
@@ -177,9 +179,9 @@ def mesh_2D_rot(theta=np.pi/5):
     meshio.write("meshes/facet_rot.xdmf", facet_mesh)
 
 
-def mesh_3D_rot(theta=np.pi/2, ct="tetra"):
+def mesh_3D_rot(theta=np.pi/2, ct="tetrahedron"):
     res = 0.125
-    if ct == "tetra":
+    if ct == "tetrahedron":
         msh0 = generate_box(0, 0, 0, 1, 1, 1, theta, res,
                             [11, 12, 4, 5, 13, 14])
         msh1 = generate_box(0, 0, 1, 1, 1, 2, theta, 2*res,
@@ -193,8 +195,10 @@ def mesh_3D_rot(theta=np.pi/2, ct="tetra"):
         mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "hexahedron", "quad")
     else:
         raise ValueError("Celltype has to be tetra or hex.")
-    meshio.xdmf.write("meshes/mesh3D_rot.xdmf", mesh)
-    meshio.xdmf.write("meshes/facet3D_rot.xdmf", facet_mesh)
+    meshio.xdmf.write(
+        "meshes/mesh_{0:s}_{1:.2f}_gmsh.xdmf".format(ct, theta), mesh)
+    meshio.xdmf.write(
+        "meshes/facet_{0:s}_{1:.2f}_gmsh.xdmf".format(ct, theta), facet_mesh)
 
 
 def mesh_2D_dolfin(celltype, theta=0):
@@ -504,7 +508,8 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
                                indices, values)
     mt.name = "facet_tags"
     o_f = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                              "meshes/mesh_{0:s}.xdmf".format(ext), "w")
+                              "meshes/mesh_{0:s}_{1:.2f}.xdmf"
+                              .format(ext, theta), "w")
     o_f.write_mesh(mesh)
     o_f.write_meshtags(ct)
     o_f.write_meshtags(mt)

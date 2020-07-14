@@ -75,7 +75,7 @@ def build_elastic_nullspace(V):
 
 
 def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
-                       ct=dolfinx.cpp.mesh.CellType.tetrahedron):
+                       ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True):
     if ct == dolfinx.cpp.mesh.CellType.hexahedron:
         ext = "hexahedron"
     else:
@@ -83,7 +83,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     if comm.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run theta:{0:.2f}, Cell: {1:s}, Gmsh {2:b}"
+                        "Run theta:{0:.2f}, Cell: {1:s}, Dolfin-mesh {2:b}"
                         .format(theta, ext, dolfin_mesh))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     # Create rotated mesh
@@ -91,14 +91,12 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         if dolfin_mesh:
             mesh_3D_dolfin(theta, ct, ext)
         else:
-            if ext == "tetrahedron":
-                mesh_3D_rot(theta, "tetra")
-            else:
-                mesh_3D_rot(theta, ext)
+            mesh_3D_rot(theta, ext)
     # Read in mesh
     if dolfin_mesh:
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                 "meshes/mesh_{0:s}.xdmf".format(ext),
+                                 "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(
+                                     ext, theta),
                                  "r") as xdmf:
             mesh = xdmf.read_mesh(name="mesh")
             mesh.name = "mesh_{0:s}_{1:.2f}".format(ext, theta)
@@ -110,7 +108,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
             mt = xdmf.read_meshtags(mesh, "facet_tags")
     else:
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                 "meshes/mesh3D_rot.xdmf", "r") as xdmf:
+                                 "meshes/mesh_{0:s}_{1:.2f}_gmsh.xdmf"
+                                 .format(ext, theta), "r") as xdmf:
             mesh = xdmf.read_mesh(name="Grid")
             mesh.name = "mesh_{0:s}_{1:.2f}".format(ext, theta)
             tdim = mesh.topology.dim
@@ -121,7 +120,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
             ct = xdmf.read_meshtags(mesh, "Grid")
 
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                 "meshes/facet3D_rot.xdmf", "r") as xdmf:
+                                 "meshes/facet_{0:s}_{1:.2f}_gmsh.xdmf"
+                                 .format(ext, theta), "r") as xdmf:
             mt = xdmf.read_meshtags(mesh, "Grid")
     top_cube_marker = 2
 
@@ -196,7 +196,6 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
-    return
 
     # Apply boundary conditions
     fem.apply_lifting(b, [a], [bcs])
@@ -211,7 +210,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
-    solver.solve(b, uh)
+    with dolfinx.common.Timer("MPC: Solve"):
+        solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
@@ -233,42 +233,47 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
     # Transfer data from the MPC problem to numpy arrays for comparison
-    # A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    # mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
-    # # Solve the MPC problem using a global transformation matrix
-    # # and numpy solvers to get reference values
-    # print("Solving reference problem with global matrix (using numpy)")
-    # # Generate reference matrices and unconstrained solution
-    # A_org = fem.assemble_matrix(a, bcs)
+    # Solve the MPC problem using a global transformation matrix
+    # and numpy solvers to get reference values
+    if compare:
+        print("Solving reference problem with global matrix (using numpy)")
 
-    # A_org.assemble()
-    # L_org = fem.assemble_vector(lhs)
-    # fem.apply_lifting(L_org, [a], [bcs])
-    # L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-    #                   mode=PETSc.ScatterMode.REVERSE)
-    # fem.set_bc(L_org, bcs)
+        with dolfinx.common.Timer("MPC: Reference problem"):
 
-    # # Create global transformation matrix
-    # K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-    #                                                    masters, coeffs,
-    #                                                    offsets)
-    # # Create reduced A
-    # A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+            # Generate reference matrices and unconstrained solution
+            A_org = fem.assemble_matrix(a, bcs)
 
-    # reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-    # # Created reduced L
-    # vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    # reduced_L = np.dot(K.T, vec)
-    # # Solve linear system
-    # d = np.linalg.solve(reduced_A, reduced_L)
-    # # Back substitution to full solution vector
-    # uh_numpy = np.dot(K, d)
-    # # Compare LHS, RHS and solution with reference values
-    # dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    # dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    # assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-    #                                       uh.owner_range[1]])
+            A_org.assemble()
+            L_org = fem.assemble_vector(lhs)
+            fem.apply_lifting(L_org, [a], [bcs])
+            L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                              mode=PETSc.ScatterMode.REVERSE)
+            fem.set_bc(L_org, bcs)
+
+            # Create global transformation matrix
+            K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
+                                                               masters, coeffs,
+                                                               offsets)
+            # Create reduced A
+            A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+
+            reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+            # Created reduced L
+            vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
+            reduced_L = np.dot(K.T, vec)
+            # Solve linear system
+            d = np.linalg.solve(reduced_A, reduced_L)
+            # Back substitution to full solution vector
+            uh_numpy = np.dot(K, d)
+        with dolfinx.common.Timer("MPC: Compare"):
+            # Compare LHS, RHS and solution with reference values
+            dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
+            dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+            assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
+                                                  uh.owner_range[1]])
     unorm = uh.norm()
     if comm.rank == 0:
         print(unorm)
@@ -279,13 +284,18 @@ if __name__ == "__main__":
                                   "results/rotated_cube3D.xdmf", "w")
     cts = [dolfinx.cpp.mesh.CellType.hexahedron,
            dolfinx.cpp.mesh.CellType.tetrahedron]
+    compare = True
     for ct in cts:
-        demo_stacked_cubes(outfile, theta=0, dolfin_mesh=True, ct=ct)
-        demo_stacked_cubes(outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct)
+        demo_stacked_cubes(
+            outfile, theta=0, dolfin_mesh=True, ct=ct, compare=True)
+        demo_stacked_cubes(outfile, theta=np.pi/3,
+                           dolfin_mesh=True, ct=ct, compare=True)
     # NOTE: Unstructured hex meshes not working nicely as interfaces
     # do not match.
-    # demo_stacked_cubes(
-    #     outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron)
+    demo_stacked_cubes(
+        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True)
+    demo_stacked_cubes(
+        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.hexahedron, compare=True)
     if comm.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
