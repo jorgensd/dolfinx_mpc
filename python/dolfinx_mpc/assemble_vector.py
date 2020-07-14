@@ -58,7 +58,7 @@ def assemble_vector(form, multipointconstraint,
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Assemble vector with all entries
-    dolfinx.cpp.fem.assemble_vector(vector, cpp_form)
+    dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form)
 
     # Assemble over cells
     subdomain_ids = formintegral.integral_ids(

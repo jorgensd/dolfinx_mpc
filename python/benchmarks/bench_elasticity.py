@@ -54,8 +54,8 @@ def build_elastic_nullspace(V):
 
         # Build rotational null space basis
         if gdim == 2:
-            basis[2][dofs[0]] = -x[dofs[0]]
-            basis[2][dofs[1]] = x[dofs[1]]
+            basis[2][dofs[0]] = -x[dofs[0], 1]
+            basis[2][dofs[1]] = x[dofs[1], 0]
         elif gdim == 3:
             basis[3][dofs[0]] = -x[dofs[0], 1]
             basis[3][dofs[1]] = x[dofs[1], 0]

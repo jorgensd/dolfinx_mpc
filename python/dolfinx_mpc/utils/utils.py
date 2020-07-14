@@ -9,6 +9,7 @@ import time
 import dolfinx_mpc
 import numpy as np
 import ufl
+from petsc4py import PETSc
 from mpi4py import MPI
 
 import dolfinx
@@ -36,7 +37,8 @@ def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
     Output:
       K = [[1,0], [alpha beta], [0,1]]
     """
-    K = np.zeros((dim, dim - len(slaves)))
+
+    K = np.zeros((dim, dim - len(slaves)), dtype=PETSc.ScalarType)
     for i in range(K.shape[0]):
         if i in slaves:
             index = np.argwhere(slaves == i)[0, 0]

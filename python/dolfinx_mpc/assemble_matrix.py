@@ -102,8 +102,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     tt.stop()
 
     # Assemble the matrix with all entries
-    with dolfinx.common.Timer("MPC: Assemble (classicial components)"):
-        dolfinx.cpp.fem.assemble_matrix(A, cpp_form, bcs)
+    with dolfinx.common.Timer("MPC: Assemble (classical components)"):
+        dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
 
     # General assembly data
     num_dofs_per_element = dofmap.dof_layout.num_dofs

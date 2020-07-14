@@ -14,6 +14,7 @@
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
+#include <petscsys.h>
 
 namespace dolfinx_mpc
 {
@@ -47,7 +48,7 @@ public:
       std::shared_ptr<const dolfinx::function::FunctionSpace> V,
       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
       Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-      Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
+      Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients,
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets,
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_owner_ranks);
 
@@ -86,7 +87,7 @@ public:
   std::shared_ptr<dolfinx::common::IndexMap> index_map() { return _index_map; };
 
   /// Return the array of master dofs and corresponding coefficients
-  Eigen::Array<double, Eigen::Dynamic, 1> coefficients()
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients()
   {
     return _coefficients;
   };
@@ -120,7 +121,7 @@ private:
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _masters_local;
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves_local;
 
-  Eigen::Array<double, Eigen::Dynamic, 1> _coefficients;
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> _coefficients;
 
   // AdjacencyLists for slave cells and master cells
   Eigen::Array<std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>,
