@@ -26,6 +26,11 @@ import time
 from mpi4py import MPI
 from petsc4py import PETSc
 
+# Get PETSc int and scalar types
+if np.dtype(PETSc.ScalarType).kind == 'c':
+    complex = True
+else:
+    complex = False
 
 # Create mesh and finite element
 N = 12
@@ -99,18 +104,22 @@ b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
 dolfinx.fem.set_bc(b, bcs)
 
 # Solve Linear problem
-opts = PETSc.Options()
-
 solver = PETSc.KSP().create(MPI.COMM_WORLD)
-opts["ksp_type"] = "cg"
-opts["ksp_rtol"] = 1.0e-5
-opts["pc_type"] = "hypre"
-opts['pc_hypre_type'] = 'boomeramg'
-opts["pc_hypre_boomeramg_max_iter"] = 1
-opts["pc_hypre_boomeramg_cycle_type"] = "v"
-# opts["pc_hypre_boomeramg_print_statistics"] = 1
 
-solver.setFromOptions()
+if complex:
+    solver.setType(PETSc.KSP.Type.PREONLY)
+    solver.getPC().setType(PETSc.PC.Type.LU)
+else:
+    opts = PETSc.Options()
+    opts["ksp_type"] = "cg"
+    opts["ksp_rtol"] = 1.0e-6
+    opts["pc_type"] = "hypre"
+    opts['pc_hypre_type'] = 'boomeramg'
+    opts["pc_hypre_boomeramg_max_iter"] = 1
+    opts["pc_hypre_boomeramg_cycle_type"] = "v"
+    # opts["pc_hypre_boomeramg_print_statistics"] = 1
+    solver.setFromOptions()
+
 solver.setOperators(A)
 
 uh = b.copy()
