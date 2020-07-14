@@ -26,7 +26,7 @@ MultiPointConstraint::MultiPointConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-    Eigen::Array<double, Eigen::Dynamic, 1> coefficients,
+    Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets_master,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_owner_ranks)
     : _function_space(V), _index_map(), _mpc_dofmap(), _slaves(slaves),
