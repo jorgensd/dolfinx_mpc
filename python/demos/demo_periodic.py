@@ -100,34 +100,29 @@ dolfinx.fem.set_bc(b, bcs)
 
 # Solve Linear problem
 opts = PETSc.Options()
-opts["ksp_type"] = "cg"
-opts["ksp_rtol"] = 1.0e-12
-opts["pc_type"] = "gamg"
-opts["pc_gamg_type"] = "agg"
-
-# Use Chebyshev smoothing for multigrid
-opts["mg_levels_ksp_type"] = "richardson"
-opts["mg_levels_pc_type"] = "sor"
-# Improve estimate of eigenvalues for Chebyshev smoothing
-# opts["mg_levels_esteig_ksp_type"] = "cg"
-# opts["mg_levels_ksp_chebyshev_esteig_steps"] = 20
 
 solver = PETSc.KSP().create(MPI.COMM_WORLD)
-pc = solver.getPC()
+opts["ksp_type"] = "cg"
+opts["ksp_rtol"] = 1.0e-5
+opts["pc_type"] = "hypre"
+opts['pc_hypre_type'] = 'boomeramg'
+opts["pc_hypre_boomeramg_max_iter"] = 1
+opts["pc_hypre_boomeramg_cycle_type"] = "v"
+# opts["pc_hypre_boomeramg_print_statistics"] = 1
 
 solver.setFromOptions()
 solver.setOperators(A)
 
-solver.setMonitor(lambda ksp, its, rnorm:
-                  print("Iteration: {}, rel. residual: {}".format(its, rnorm)))
 uh = b.copy()
 uh.set(0)
 start = time.time()
 solver.solve(b, uh)
 # solver.view()
-
 end = time.time()
-print("Solver time: {0:.2e}".format(end-start))
+it = solver.getIterationNumber()
+
+print("Solver time: {0:.2e}, Iterations {1:d}".format(end-start, it))
+
 uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                mode=PETSc.ScatterMode.FORWARD)
 
@@ -161,7 +156,12 @@ L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
 dolfinx.fem.set_bc(L_org, bcs)
 solver.setOperators(A_org)
 u_ = dolfinx.Function(V)
+start = time.time()
 solver.solve(L_org, u_.vector)
+end = time.time()
+
+it = solver.getIterationNumber()
+print("Org solver time: {0:.2e}, Iterations {1:d}".format(end-start, it))
 u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
 u_.name = "u_unconstrained"
