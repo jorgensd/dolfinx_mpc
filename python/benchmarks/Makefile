@@ -5,5 +5,5 @@ periodic:
 
 elasticity:
 	mpirun -n 32 python3 ref_elasticity.py --nref 6 --gamg --xdmf
-	mpirun -n 32 python3 bench_elasticity_edge.py --nref 6 --gamg --xdmf
+	mpirun -n 32 python3 bench_elasticity_edge.py --nref 6 --gamg --xdmf --info
 	python3 visualize_iterations.py --elasticity 

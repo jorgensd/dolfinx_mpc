@@ -148,35 +148,29 @@ def generate_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     return msh
 
 
-def mesh_2D_rot_quad(theta=np.pi/5):
-    """
-    Create two stacked cubes rotated by degree theta with quadrilateral
-    elements
-    """
-    res = 0.2
-    msh0 = generate_rectangle(0, 1, 0, 1, theta, res=res, markers=[
-        5, 8, 4, 10], quad=True)
-    msh1 = generate_rectangle(0, 1, 1, 2, theta, res=2*res,
-                              markers=[9, 6, 3, 7], volume_marker=True,
-                              quad=True)
-    mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "quad", "line")
-    meshio.write("meshes/quad_mesh.xdmf", mesh)
-    meshio.write("meshes/quad_mesh_facets.xdmf", facet_mesh)
-
-
-def mesh_2D_rot(theta=np.pi/5):
+def mesh_2D_gmsh(theta, ct="triangle"):
     """
     Create two stacked cubes rotated by degree theta with triangular
     elements
     """
+    if ct == "triangle":
+        quad = False
+    elif ct == "quad":
+        quad = True
+    else:
+        raise ValueError("Invalid cell type: {0:s}", ct)
     res = 0.1
     msh0 = generate_rectangle(
-        0, 1, 0, 1, theta, res=res, markers=[5, 8, 4, 10])
+        0, 1, 0, 1, theta, res=res, markers=[5, 8, 4, 10], quad=quad)
     msh1 = generate_rectangle(
-        0, 1, 1, 2, theta, res=2*res, markers=[9, 7, 3, 6], volume_marker=2)
-    mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "triangle", "line")
-    meshio.write("meshes/mesh_rot.xdmf", mesh)
-    meshio.write("meshes/facet_rot.xdmf", facet_mesh)
+        0, 1, 1, 2, theta, res=2*res, markers=[9, 7, 3, 6], volume_marker=2,
+        quad=quad)
+
+    mesh, facet_mesh = merge_msh_meshes(msh0, msh1, ct, "line")
+    meshio.write("meshes/mesh_{0:s}_{1:.2f}_gmsh.xdmf"
+                 .format(ct, theta), mesh)
+    meshio.write("meshes/facet_{0:s}_{1:.2f}_rot.xdmf"
+                 .format(ct, theta), facet_mesh)
 
 
 def mesh_3D_rot(theta=np.pi/2, ct="tetrahedron"):
@@ -226,11 +220,10 @@ def mesh_2D_dolfin(celltype, theta=0):
         return lambda x: x[1] > p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0])
 
     # Using built in meshes, stacking cubes on top of each other
+    N = 2
     if celltype == "quad":
-        N = 2
         ct = dolfinx.cpp.mesh.CellType.quadrilateral
-    elif celltype == "tri":
-        N = 2
+    elif celltype == "triangle":
         ct = dolfinx.cpp.mesh.CellType.triangle
     else:
         raise ValueError("celltype has to be tri or quad")
@@ -350,7 +343,8 @@ def mesh_2D_dolfin(celltype, theta=0):
                                indices, values)
     mt.name = "facet_tags"
     o_f = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                              "meshes/mesh_{0:s}.xdmf".format(celltype), "w")
+                              "meshes/mesh_{0:s}_{1:.2f}.xdmf"
+                              .format(celltype, theta), "w")
     o_f.write_mesh(mesh)
     o_f.write_meshtags(ct)
     o_f.write_meshtags(mt)

@@ -26,53 +26,6 @@ import ufl
 from mpi4py import MPI
 
 
-def build_elastic_nullspace(V):
-    """Function to build nullspace for 2D/3D elasticity"""
-
-    # Get geometric dim
-    gdim = V.mesh.geometry.dim
-    assert gdim == 2 or gdim == 3
-
-    # Set dimension of nullspace
-    dim = 3 if gdim == 2 else 6
-
-    # Create list of vectors for null space
-    nullspace_basis = [dolfinx.cpp.la.create_vector(
-        V.dofmap.index_map) for i in range(dim)]
-
-    with ExitStack() as stack:
-        vec_local = [stack.enter_context(x.localForm())
-                     for x in nullspace_basis]
-        basis = [np.asarray(x) for x in vec_local]
-
-        x = V.tabulate_dof_coordinates()
-        dofs = [V.sub(i).dofmap.list.array() for i in range(gdim)]
-
-        # Build translational null space basis
-        for i in range(gdim):
-            basis[i][V.sub(i).dofmap.list.array()] = 1.0
-
-        # Build rotational null space basis
-        if gdim == 2:
-            basis[2][dofs[0]] = -x[dofs[0], 1]
-            basis[2][dofs[1]] = x[dofs[1], 0]
-        elif gdim == 3:
-            basis[3][dofs[0]] = -x[dofs[0], 1]
-            basis[3][dofs[1]] = x[dofs[1], 0]
-
-            basis[4][dofs[0]] = x[dofs[0], 2]
-            basis[4][dofs[2]] = -x[dofs[2], 0]
-            basis[5][dofs[2]] = x[dofs[2], 1]
-            basis[5][dofs[1]] = -x[dofs[1], 2]
-
-    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
-    basis.orthonormalize()
-
-    _x = [basis[i] for i in range(dim)]
-    nsp = PETSc.NullSpace().create(vectors=_x)
-    return nsp
-
-
 def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
                          xdmf=False, boomeramg=False, kspview=False):
     N = 3
@@ -150,7 +103,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = build_elastic_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions

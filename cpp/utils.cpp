@@ -30,7 +30,7 @@ dolfinx_mpc::locate_cells_with_dofs(
     std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dofs)
 {
   dolfinx::common::Timer timer(
-      "MPC-INIT: Locate slave and master cells given their dofs");
+      "*MPC: Init: Locate slave and master cells given their dofs");
 
   // Flatten data from dofs (To vector of function space, 1 if marked, else 0)
   std::vector<std::vector<std::int64_t>> flatten_dofs(dofs.size());
