@@ -56,6 +56,7 @@ nightly-real:
   stage: test
   only:
     - schedules
+    - master
   tags:
     - docker
   image:
@@ -123,6 +124,7 @@ nightly-complex:
   stage: test
   only:
     - schedules
+    - master
   tags:
     - docker
   image:
