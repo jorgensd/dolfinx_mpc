@@ -209,7 +209,8 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     geom.add_raw_code("Mesh.RecombinationAlgorithm = 2;")
     geom.add_raw_code("Recombine Surface {:};")
     bottom, volume, sides = geom.extrude(rect, translation_axis=[0, 0, 1],
-                                         num_layers=int(0.5/res), recombine=True)
+                                         num_layers=int(0.5/res),
+                                         recombine=True)
 
     geom.add_physical(bottom, facet_markers[4])
     if volume_marker is None:
