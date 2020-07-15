@@ -74,7 +74,7 @@ nightly-complex:
     entrypoint: [""]
   variables:
     PETSC_DIR: "/usr/local/petsc"
-    PETSC_ARCH: "linux-gnu-real-32"
+    PETSC_ARCH: "linux-gnu-complex-32"
   before_script:
     - flake8 .
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
