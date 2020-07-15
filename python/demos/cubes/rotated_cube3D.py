@@ -258,7 +258,7 @@ if __name__ == "__main__":
                                   "results/rotated_cube3D.xdmf", "w")
     cts = [dolfinx.cpp.mesh.CellType.hexahedron,
            dolfinx.cpp.mesh.CellType.tetrahedron]
-    compare = True
+
     for ct in cts:
         demo_stacked_cubes(
             outfile, theta=0, dolfin_mesh=True, ct=ct, compare=True)
@@ -268,10 +268,10 @@ if __name__ == "__main__":
     # do not match.
     demo_stacked_cubes(
         outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
-        compare=True)
+        compare=False)
     demo_stacked_cubes(
         outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.hexahedron,
-        compare=True)
+        compare=False)
     if comm.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
