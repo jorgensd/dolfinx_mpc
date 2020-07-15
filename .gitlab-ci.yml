@@ -1,3 +1,32 @@
+fast-complex:
+  stage: test
+  tags:
+    - docker
+  image:
+    name: dolfinx/dolfinx
+    entrypoint: [""]
+  variables:
+    - PETSC_ARCH: linux-gnu-complex-32
+	- PYTHONPATH: /usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib
+  before_script:
+    - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf
+    - flake8 .
+    - mkdir -p build
+    - cd build
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+    - ninja -j3 install
+    - cd ../python
+    - pip3 install -e . --upgrade
+
+  script:
+    - cd tests
+    - python3 -m pytest .
+    - mpirun -n 2 python3 -m pytest .
+    - mpirun -n 3 python3 -m pytest .
+    - mpirun -n 4 python3 -m pytest .
+	- python3 -c "from petsc4py import PETSc; print(PETSc.ScalarType)"
+
+
 fast-real:
   stage: test
   tags:
@@ -20,36 +49,6 @@ fast-real:
     - mpirun -n 2 python3 -m pytest .
     - mpirun -n 3 python3 -m pytest .
     - mpirun -n 4 python3 -m pytest .
-
-fast-complex:
-  stage: test
-  tags:
-    - docker
-  image:
-    name: dolfinx/dolfinx
-    entrypoint: [""]
-  before_script:
-    - export PETSC_ARCH=linux-gnu-complex-32
-    - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf 
-    - export PYTHONPATH=/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib
-    - flake8 .
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
-
-  script:
-    - export PETSC_ARCH=linux-gnu-complex-32
-    - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf 
-    - export PYTHONPATH=/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
-
 
 
 nightly-real:
