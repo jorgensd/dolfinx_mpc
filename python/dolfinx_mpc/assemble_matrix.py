@@ -155,8 +155,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     with dolfinx.common.Timer("*MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs
         # NOTE: In the future one could use a constant in the DirichletBC
-        if cpp_form.function_space(0).id == cpp_form.function_space(1).id:
-            dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_space(0),
+        if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+            dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
                                          bc_mpc, 1.0)
     with dolfinx.common.Timer("*MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()
