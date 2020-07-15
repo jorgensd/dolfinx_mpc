@@ -6,6 +6,9 @@ fast-complex:
     name: dolfinx/dolfinx
     entrypoint: [""]
   variables:
+    LD_LIBRARY_PATH: "/usr/local/dolfinx-complex/lib:$LD_LIBRARY_PATH"
+    PATH: "/usr/local/dolfinx-complex/bin:$PATH"
+    PKG_CONFIG_PATH: "/usr/local/dolfinx-complex/lib/pkgconfig:$PKG_CONFIG_PATH"
     PETSC_ARCH: "linux-gnu-complex-32"
     PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib"
   before_script:
@@ -19,168 +22,169 @@ fast-complex:
     - pip3 install -e . --upgrade
 
   script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
+    # - cd tests
+    # - python3 -m pytest .
+    # - mpirun -n 2 python3 -m pytest .
+    # - mpirun -n 3 python3 -m pytest .
+    # - mpirun -n 4 python3 -m pytest .
+    - echo $PYTHONPATH
     - python3 -c "from petsc4py import PETSc; print(PETSc.ScalarType)"
 
 
-fast-real:
-  stage: test
-  tags:
-    - docker
-  image:
-    name: dolfinx/dolfinx
-    entrypoint: [""]
-  before_script:
-    - flake8 .
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
+# fast-real:
+#   stage: test
+#   tags:
+#     - docker
+#   image:
+#     name: dolfinx/dolfinx
+#     entrypoint: [""]
+#   before_script:
+#     - flake8 .
+#     - mkdir -p build
+#     - cd build
+#     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+#     - ninja -j3 install
+#     - cd ../python
+#     - pip3 install -e . --upgrade
 
-  script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
-
-
-nightly-real:
-  stage: test
-  only:
-    - schedules
-    - master
-  tags:
-    - docker
-  image:
-    name: dolfinx/dev-env
-    entrypoint: [""]
-  before_script:
-    - export PETSC_DIR=/usr/local/petsc
-    - export PETSC_ARCH=linux-gnu-real-32
-    - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
-    - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
-    - git clone https://github.com/fenics/dolfinx.git
-    - cd dolfinx
-    - mkdir build
-    - cd build
-    - cmake -G Ninja ../cpp
-    - ninja ${MAKEFLAGS} install
-    - cd ../python
-    - source /usr/local/share/dolfinx/dolfinx.conf
-    - pip3 install .
-    - cd ../../
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
-
-  script:
-    - export PETSC_DIR=/usr/local/petsc
-    - export PETSC_ARCH=linux-gnu-real-32
-    - flake8 .
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
-    - cd ../benchmarks
-    - mkdir results
-    - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg --timings
-    - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
-    - cd ../demos
-    - mkdir meshes
-    - mkdir results
-    - python3 demo_elasticity.py
-    - mpirun -n 4 python3 demo_elasticity.py
-    - python3 demo_periodic.py
-    - mpirun -n 4 python3 demo_periodic.py
-    - python3 demo_stokes.py
-    - mpirun -n 4 python3 demo_stokes.py
-    - python3 demo_periodic3d.py
-    - mpirun -n 4 python3 demo_periodic3d.py
-    - cd cubes
-    - mkdir meshes
-    - mkdir results
-    - python3 rotated_cube.py
-    - mpirun -n 4 python3 rotated_cube.py
-    - python3 rotated_cube3D.py
-    - mpirun -n 4 python3 rotated_cube3D.py
+#   script:
+#     - cd tests
+#     - python3 -m pytest .
+#     - mpirun -n 2 python3 -m pytest .
+#     - mpirun -n 3 python3 -m pytest .
+#     - mpirun -n 4 python3 -m pytest .
 
 
+# nightly-real:
+#   stage: test
+#   only:
+#     - schedules
+#     - master
+#   tags:
+#     - docker
+#   image:
+#     name: dolfinx/dev-env
+#     entrypoint: [""]
+#   before_script:
+#     - export PETSC_DIR=/usr/local/petsc
+#     - export PETSC_ARCH=linux-gnu-real-32
+#     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
+#     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
+#     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
+#     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
+#     - git clone https://github.com/fenics/dolfinx.git
+#     - cd dolfinx
+#     - mkdir build
+#     - cd build
+#     - cmake -G Ninja ../cpp
+#     - ninja ${MAKEFLAGS} install
+#     - cd ../python
+#     - source /usr/local/share/dolfinx/dolfinx.conf
+#     - pip3 install .
+#     - cd ../../
+#     - mkdir -p build
+#     - cd build
+#     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+#     - ninja -j3 install
+#     - cd ../python
+#     - pip3 install -e . --upgrade
 
-nightly-complex:
-  stage: test
-  only:
-    - schedules
-    - master
-  tags:
-    - docker
-  image:
-    name: dolfinx/dev-env
-    entrypoint: [""]
-  before_script:
-    - export PETSC_DIR=/usr/local/petsc
-    - export PETSC_ARCH=linux-gnu-complex-32
-    - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
-    - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
-    - git clone https://github.com/fenics/dolfinx.git
-    - cd dolfinx
-    - mkdir build
-    - cd build
-    - cmake -G Ninja ../cpp
-    - ninja ${MAKEFLAGS} install
-    - cd ../python
-    - source /usr/local/share/dolfinx/dolfinx.conf
-    - pip3 install .
-    - cd ../../
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
+#   script:
+#     - export PETSC_DIR=/usr/local/petsc
+#     - export PETSC_ARCH=linux-gnu-real-32
+#     - flake8 .
+#     - cd tests
+#     - python3 -m pytest .
+#     - mpirun -n 2 python3 -m pytest .
+#     - mpirun -n 3 python3 -m pytest .
+#     - mpirun -n 4 python3 -m pytest .
+#     - cd ../benchmarks
+#     - mkdir results
+#     - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg --timings
+#     - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
+#     - cd ../demos
+#     - mkdir meshes
+#     - mkdir results
+#     - python3 demo_elasticity.py
+#     - mpirun -n 4 python3 demo_elasticity.py
+#     - python3 demo_periodic.py
+#     - mpirun -n 4 python3 demo_periodic.py
+#     - python3 demo_stokes.py
+#     - mpirun -n 4 python3 demo_stokes.py
+#     - python3 demo_periodic3d.py
+#     - mpirun -n 4 python3 demo_periodic3d.py
+#     - cd cubes
+#     - mkdir meshes
+#     - mkdir results
+#     - python3 rotated_cube.py
+#     - mpirun -n 4 python3 rotated_cube.py
+#     - python3 rotated_cube3D.py
+#     - mpirun -n 4 python3 rotated_cube3D.py
 
-  script:
-    - export PETSC_DIR=/usr/local/petsc
-    - export PETSC_ARCH=linux-gnu-complex-32
-    - flake8 .
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
-    - cd ../benchmarks
-    - mkdir results
-    - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --gamg --timings
-    - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
-    - cd ../demos
-    - mkdir meshes
-    - mkdir results
-    - python3 demo_elasticity.py
-    - mpirun -n 4 python3 demo_elasticity.py
-    - python3 demo_periodic.py
-    - mpirun -n 4 python3 demo_periodic.py
-    - python3 demo_stokes.py
-    - mpirun -n 4 python3 demo_stokes.py
-    - python3 demo_periodic3d.py
-    - mpirun -n 4 python3 demo_periodic3d.py
-    - cd cubes
-    - mkdir meshes
-    - mkdir results
-    - python3 rotated_cube.py
-    - mpirun -n 4 python3 rotated_cube.py
-    - python3 rotated_cube3D.py
-    - mpirun -n 4 python3 rotated_cube3D.py
+
+
+# nightly-complex:
+#   stage: test
+#   only:
+#     - schedules
+#     - master
+#   tags:
+#     - docker
+#   image:
+#     name: dolfinx/dev-env
+#     entrypoint: [""]
+#   before_script:
+#     - export PETSC_DIR=/usr/local/petsc
+#     - export PETSC_ARCH=linux-gnu-complex-32
+#     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
+#     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
+#     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
+#     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
+#     - git clone https://github.com/fenics/dolfinx.git
+#     - cd dolfinx
+#     - mkdir build
+#     - cd build
+#     - cmake -G Ninja ../cpp
+#     - ninja ${MAKEFLAGS} install
+#     - cd ../python
+#     - source /usr/local/share/dolfinx/dolfinx.conf
+#     - pip3 install .
+#     - cd ../../
+#     - mkdir -p build
+#     - cd build
+#     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+#     - ninja -j3 install
+#     - cd ../python
+#     - pip3 install -e . --upgrade
+
+#   script:
+#     - export PETSC_DIR=/usr/local/petsc
+#     - export PETSC_ARCH=linux-gnu-complex-32
+#     - flake8 .
+#     - cd tests
+#     - python3 -m pytest .
+#     - mpirun -n 2 python3 -m pytest .
+#     - mpirun -n 3 python3 -m pytest .
+#     - mpirun -n 4 python3 -m pytest .
+#     - cd ../benchmarks
+#     - mkdir results
+#     - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --gamg --timings
+#     - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
+#     - cd ../demos
+#     - mkdir meshes
+#     - mkdir results
+#     - python3 demo_elasticity.py
+#     - mpirun -n 4 python3 demo_elasticity.py
+#     - python3 demo_periodic.py
+#     - mpirun -n 4 python3 demo_periodic.py
+#     - python3 demo_stokes.py
+#     - mpirun -n 4 python3 demo_stokes.py
+#     - python3 demo_periodic3d.py
+#     - mpirun -n 4 python3 demo_periodic3d.py
+#     - cd cubes
+#     - mkdir meshes
+#     - mkdir results
+#     - python3 rotated_cube.py
+#     - mpirun -n 4 python3 rotated_cube.py
+#     - python3 rotated_cube3D.py
+#     - mpirun -n 4 python3 rotated_cube3D.py
