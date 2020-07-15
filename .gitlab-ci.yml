@@ -2,8 +2,9 @@ fast-complex:
   stage: test
   tags:
     - docker
-  only:
+  except:
     - master
+    - schedules
   image:
     name: dolfinx/dolfinx
     entrypoint: [""]
@@ -34,8 +35,9 @@ fast-real:
   stage: test
   tags:
     - docker
-  only:
+  except:
     - master
+    - schedules
   image:
     name: dolfinx/dolfinx
     entrypoint: [""]
@@ -64,9 +66,9 @@ fast-real:
 
 nightly-complex:
   stage: test
-  # only:
-    # - schedules
-    # - master
+  only:
+    - schedules
+    - master
   tags:
     - docker
   image:
