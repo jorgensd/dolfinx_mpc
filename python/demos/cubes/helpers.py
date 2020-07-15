@@ -173,7 +173,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
         master_glob = np.array(np.concatenate(comm.allgather(
             master_dict[key])), dtype=np.int64)
         coeff_glob = np.array(np.concatenate(comm.allgather(
-            coeffs_dict[key])), dtype=np.float64)
+            coeffs_dict[key])), dtype=PETSc.ScalarType)
         owner_glob = np.array(np.concatenate(comm.allgather(
             master_owner_dict[key])), dtype=np.int64)
         masters = np.hstack([masters, master_glob])

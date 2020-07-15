@@ -166,13 +166,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             m_side = np.array([global_indices[dofy[0, 0]]], dtype=np.int64)
             o_side = np.array([len(masters) + 1], dtype=np.int32)
             c_side = np.array(
-                [-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]], dtype=np.float64)
+                [-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]], dtype=PETSc.ScalarType)
             o_r_side = np.array([comm.rank], dtype=np.int32)
         else:
             s_side = np.array([], dtype=np.int64)
             m_side = np.array([], dtype=np.int64)
             o_side = np.array([], dtype=np.int32)
-            c_side = np.array([], dtype=np.float64)
+            c_side = np.array([], dtype=PETSc.ScalarType)
             o_r_side = np.array([], dtype=np.int32)
 
         s_side_g = np.hstack(comm.allgather(s_side))
