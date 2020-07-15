@@ -5,6 +5,8 @@ fast-real:
   image:
     name: dolfinx/dolfinx
     entrypoint: [""]
+  except:
+    - master
   before_script:
     - flake8 .
     - mkdir -p build
@@ -28,9 +30,11 @@ fast-complex:
   image:
     name: dolfinx/dolfinx
     entrypoint: [""]
+  except:
+    - master
   before_script:
     - export PETSC_ARCH=linux-gnu-complex-32
-    - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf 
+    - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf
     - export PYTHONPATH=/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib
     - flake8 .
     - mkdir -p build
@@ -42,7 +46,7 @@ fast-complex:
 
   script:
     - export PETSC_ARCH=linux-gnu-complex-32
-    - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf 
+    - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf
     - export PYTHONPATH=/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib
     - cd tests
     - python3 -m pytest .
