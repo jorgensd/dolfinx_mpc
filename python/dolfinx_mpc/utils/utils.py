@@ -15,6 +15,7 @@ from petsc4py import PETSc
 import dolfinx
 import dolfinx.common
 import dolfinx.log
+import dolfinx.la
 
 
 def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):

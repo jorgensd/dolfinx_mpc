@@ -17,9 +17,6 @@ import dolfinx_mpc.utils
 import ufl
 
 
-dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
-
-
 @pytest.mark.parametrize("Nx", [4])
 @pytest.mark.parametrize("Ny", [2, 3])
 @pytest.mark.parametrize("slave_space", [0, 1])

@@ -16,8 +16,6 @@ from mpi4py import MPI
 import dolfinx
 import dolfinx.log
 
-dolfinx_mpc.utils.cache_numba(matrix=True)
-
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))

@@ -14,9 +14,6 @@ import dolfinx_mpc.utils
 import ufl
 
 
-dolfinx_mpc.utils.cache_numba(vector=True)
-
-
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
 @pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
