@@ -6,8 +6,8 @@ fast-complex:
     name: dolfinx/dolfinx
     entrypoint: [""]
   variables:
-    - PETSC_ARCH: "linux-gnu-complex-32"
-    - PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib"
+    PETSC_ARCH: "linux-gnu-complex-32"
+    PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib"
   before_script:
     - source /usr/local/dolfinx-complex/share/dolfinx/dolfinx.conf
     - flake8 .
