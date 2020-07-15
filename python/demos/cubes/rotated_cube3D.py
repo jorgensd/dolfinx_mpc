@@ -39,14 +39,14 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
                         .format(theta, ext, dolfin_mesh))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     # Create rotated mesh
-    if MPI.COMM_WORLD.size == 1:
+    if comm.size == 1:
         if dolfin_mesh:
             mesh_3D_dolfin(theta, ct, ext)
         else:
             mesh_3D_rot(theta, ext)
     # Read in mesh
     if dolfin_mesh:
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+        with dolfinx.io.XDMFFile(comm,
                                  "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(
                                      ext, theta),
                                  "r") as xdmf:
@@ -59,7 +59,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
             ct = xdmf.read_meshtags(mesh, "mesh_tags")
             mt = xdmf.read_meshtags(mesh, "facet_tags")
     else:
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+        with dolfinx.io.XDMFFile(comm,
                                  "meshes/mesh_{0:s}_{1:.2f}_gmsh.xdmf"
                                  .format(ext, theta), "r") as xdmf:
             mesh = xdmf.read_mesh(name="Grid")
@@ -71,7 +71,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
             ct = xdmf.read_meshtags(mesh, "Grid")
 
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+        with dolfinx.io.XDMFFile(comm,
                                  "meshes/facet_{0:s}_{1:.2f}_gmsh.xdmf"
                                  .format(ext, theta), "r") as xdmf:
             mt = xdmf.read_meshtags(mesh, "Grid")
@@ -82,7 +82,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
     # Helper for orienting traction
     r_matrix = pygmsh.helpers.rotation_matrix(
-        [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
+        [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
+
     g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
     g = dolfinx.Constant(mesh, g_vec)
 
@@ -177,7 +178,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(comm)
     solver.setFromOptions()
     solver.setOperators(A)
     uh = b.copy()
@@ -192,7 +193,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
     it = solver.getIterationNumber()
-    if MPI.COMM_WORLD.rank == 0:
+    if comm.rank == 0:
         print("Number of iterations: {0:d}".format(it))
 
     # Write solution to file
@@ -253,7 +254,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
 
 if __name__ == "__main__":
-    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
+    outfile = dolfinx.io.XDMFFile(comm,
                                   "results/rotated_cube3D.xdmf", "w")
     cts = [dolfinx.cpp.mesh.CellType.hexahedron,
            dolfinx.cpp.mesh.CellType.tetrahedron]
@@ -261,8 +262,8 @@ if __name__ == "__main__":
     for ct in cts:
         demo_stacked_cubes(
             outfile, theta=0, dolfin_mesh=True, ct=ct, compare=True)
-        demo_stacked_cubes(outfile, theta=np.pi/3,
-                           dolfin_mesh=True, ct=ct, compare=True)
+        demo_stacked_cubes(
+            outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct, compare=True)
     # NOTE: Unstructured hex meshes not working nicely as interfaces
     # do not match.
     demo_stacked_cubes(
@@ -277,5 +278,5 @@ if __name__ == "__main__":
                         "Finished")
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     dolfinx.common.list_timings(
-        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+        comm, [dolfinx.common.TimingType.wall])
     outfile.close()

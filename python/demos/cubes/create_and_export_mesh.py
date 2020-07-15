@@ -387,7 +387,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
 
     # Stack the two meshes in one mesh
     r_matrix = pygmsh.helpers.rotation_matrix(
-        [0, 1/np.sqrt(2), 1/np.sqrt(2)], -theta)
+        [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
     points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
     points = np.dot(r_matrix, points.T).T
 
