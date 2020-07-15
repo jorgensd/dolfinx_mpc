@@ -16,6 +16,7 @@ from .assemble_matrix import in_numpy_array, pack_facet_info
 def assemble_vector(form, multipointconstraint,
                     bcs=[numpy.array([]), numpy.array([])]):
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
+    timer_vector = dolfinx.common.Timer("MPC: Assemble vector")
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
 
@@ -70,14 +71,14 @@ def assemble_vector(form, multipointconstraint,
 
     for i in range(num_cell_integrals):
         subdomain_id = subdomain_ids[i]
-        with dolfinx.common.Timer("MPC: Assemble vector (cell kernel)"):
+        with dolfinx.common.Timer("*MPC: Assemble vector (cell kernel)"):
             cell_kernel = ufc_form.create_cell_integral(
                 subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
             dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
-        with dolfinx.common.Timer("MPC: Assemble vector (cell numba)"):
+        with dolfinx.common.Timer("*MPC: Assemble vector (cell numba)"):
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel,
                                active_cells[slave_cell_indices],
@@ -102,7 +103,7 @@ def assemble_vector(form, multipointconstraint,
         subdomain_id = subdomain_ids[i]
         facet_kernel = ufc_form.create_exterior_facet_integral(
             subdomain_id).tabulate_tensor
-        with dolfinx.common.Timer("MPC: Assemble vector (facet numba)"):
+        with dolfinx.common.Timer("*MPC: Assemble vector (facet numba)"):
             with vector.localForm() as b:
                 assemble_exterior_facets(numpy.asarray(b), facet_kernel,
                                          facet_info,
@@ -114,7 +115,7 @@ def assemble_vector(form, multipointconstraint,
                                          num_dofs_per_element,
                                          mpc_data, ghost_info,
                                          (bc_dofs, bc_values))
-
+    timer_vector.stop()
     return vector
 
 
@@ -241,18 +242,16 @@ def modify_mpc_contributions(b, cell_index,
         if in_numpy_array(cell_slaves, slaves[gi]):
             global_slaves.append(gi)
     # Loop over the slaves
-    for s_0 in range(len(global_slaves)):
-        slave_index = global_slaves[s_0]
+    for slave_index in global_slaves:
         cell_masters = masters_local[offsets[slave_index]:
                                      offsets[slave_index+1]]
         cell_coeffs = coefficients[offsets[slave_index]:
                                    offsets[slave_index+1]]
 
         # Loop through each master dof to take individual contributions
-        for m_0 in range(len(cell_masters)):
+        for m0, c0 in zip(cell_masters, cell_coeffs):
             # Find local dof and add contribution to another place
-            for k in range(len(glob)):
-                if global_indices[glob[k]] == slaves[slave_index]:
-                    c0 = cell_coeffs[m_0]
-                    b[cell_masters[m_0]] += c0*b_copy[k]
+            for k, dof in enumerate(glob):
+                if global_indices[dof] == slaves[slave_index]:
+                    b[m0] += c0*b_copy[k]
                     b_local[k] = 0

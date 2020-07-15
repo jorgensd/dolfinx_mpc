@@ -11,8 +11,7 @@
 # A slip condition is implemented at the interface of the cube.
 # Additional constraints to avoid tangential movement is
 # added to the to left corner of the top cube.
-from contextlib import ExitStack
-import argparse
+
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
@@ -28,7 +27,7 @@ import dolfinx.geometry as geometry
 import dolfinx.io
 import dolfinx.la
 import dolfinx.log
-from create_and_export_mesh import mesh_2D_dolfin, mesh_2D_rot
+from create_and_export_mesh import mesh_2D_dolfin, mesh_2D_gmsh
 from helpers import find_master_slave_relationship
 
 dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
@@ -39,53 +38,6 @@ get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 comm = MPI.COMM_WORLD
 
 
-def build_elastic_nullspace(V):
-    """Function to build nullspace for 2D/3D elasticity"""
-
-    # Get geometric dim
-    gdim = V.mesh.geometry.dim
-    assert gdim == 2 or gdim == 3
-
-    # Set dimension of nullspace
-    dim = 3 if gdim == 2 else 6
-
-    # Create list of vectors for null space
-    nullspace_basis = [dolfinx.cpp.la.create_vector(
-        V.dofmap.index_map) for i in range(dim)]
-
-    with ExitStack() as stack:
-        vec_local = [stack.enter_context(x.localForm())
-                     for x in nullspace_basis]
-        basis = [np.asarray(x) for x in vec_local]
-
-        x = V.tabulate_dof_coordinates()
-        dofs = [V.sub(i).dofmap.list.array() for i in range(gdim)]
-
-        # Build translational null space basis
-        for i in range(gdim):
-            basis[i][V.sub(i).dofmap.list.array()] = 1.0
-
-        # Build rotational null space basis
-        if gdim == 2:
-            basis[2][dofs[0]] = -x[dofs[0], 1]
-            basis[2][dofs[1]] = x[dofs[1], 0]
-        elif gdim == 3:
-            basis[3][dofs[0]] = -x[dofs[0], 1]
-            basis[3][dofs[1]] = x[dofs[1], 0]
-
-            basis[4][dofs[0]] = x[dofs[0], 2]
-            basis[4][dofs[2]] = -x[dofs[2], 0]
-            basis[5][dofs[2]] = x[dofs[2], 1]
-            basis[5][dofs[1]] = -x[dofs[1], 2]
-
-    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
-    basis.orthonormalize()
-
-    _x = [basis[i] for i in range(dim)]
-    nsp = PETSc.NullSpace().create(vectors=_x)
-    return nsp
-
-
 def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -93,17 +45,22 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                         "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}"
                         .format(theta, triangle, gmsh))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    if triangle:
+        celltype = "triangle"
+    else:
+        celltype = "quad"
     if gmsh:
         mesh_name = "Grid"
         if MPI.COMM_WORLD.size == 1:
-            mesh_2D_rot(theta)
-        filename = "meshes/mesh_rot.xdmf"
-        facet_file = "meshes/facet_rot.xdmf"
-        ext = "gmsh" + "{0:.2f}".format(theta)
+            mesh_2D_gmsh(theta, celltype)
+        filename = "meshes/mesh_{0:s}_{1:.2f}_gmsh.xdmf".format(
+            celltype, theta)
+        facet_file = "meshes/facet_{0:s}_{1:.2f}_rot.xdmf".format(
+            celltype, theta)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
-            mesh.name = "mesh_" + ext
+            mesh.name = "mesh_{0:s}_{1:.2f}_gmsh".format(celltype, theta)
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
@@ -114,20 +71,17 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mt = xdmf.read_meshtags(mesh, name="Grid")
     else:
         mesh_name = "mesh"
+        filename = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta)
         if triangle:
             if MPI.COMM_WORLD.size == 1:
-                mesh_2D_dolfin("tri", theta)
-            filename = "meshes/mesh_tri.xdmf"
-            ext = "tri" + "{0:.2f}".format(theta)
+                mesh_2D_dolfin("triangle", theta)
         else:
             if MPI.COMM_WORLD.size == 1:
                 mesh_2D_dolfin("quad", theta)
-            filename = "meshes/mesh_quad.xdmf"
-            ext = "quad" + "{0:.2f}".format(theta)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
-            mesh.name = "mesh_" + ext
+            mesh.name = "mesh_{0:s}_{1:.2f}".format(celltype, theta)
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
@@ -212,13 +166,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             m_side = np.array([global_indices[dofy[0, 0]]], dtype=np.int64)
             o_side = np.array([len(masters) + 1], dtype=np.int32)
             c_side = np.array(
-                [-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]], dtype=np.float64)
+                [-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]], dtype=PETSc.ScalarType)
             o_r_side = np.array([comm.rank], dtype=np.int32)
         else:
             s_side = np.array([], dtype=np.int64)
             m_side = np.array([], dtype=np.int64)
             o_side = np.array([], dtype=np.int32)
-            c_side = np.array([], dtype=np.float64)
+            c_side = np.array([], dtype=PETSc.ScalarType)
             o_r_side = np.array([], dtype=np.int32)
 
         s_side_g = np.hstack(comm.allgather(s_side))
@@ -269,7 +223,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = build_elastic_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -292,7 +246,9 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc_" + ext
+    ext = "gmsh" if gmsh else ""
+    u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
+    print(u_h.name)
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0,
                            "Xdmf/Domain/"
@@ -305,62 +261,61 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
+    dolfinx_mpc.utils.log_info(
+        "Solving reference problem with global matrix (using numpy)")
 
-    # Generate reference matrices and unconstrained solution
-    A_org = fem.assemble_matrix(a, bcs)
+    with dolfinx.common.Timer("MPC: Reference problem"):
+        # Generate reference matrices and unconstrained solution
+        A_org = fem.assemble_matrix(a, bcs)
 
-    A_org.assemble()
-    L_org = fem.assemble_vector(lhs)
-    fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(L_org, bcs)
+        A_org.assemble()
+        L_org = fem.assemble_vector(lhs)
+        fem.apply_lifting(L_org, [a], [bcs])
+        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                          mode=PETSc.ScatterMode.REVERSE)
+        fem.set_bc(L_org, bcs)
 
-    # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
-    # Create reduced A
-    A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-    reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-    # Created reduced L
-    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    reduced_L = np.dot(K.T, vec)
-    # Solve linear system
-    d = np.linalg.solve(reduced_A, reduced_L)
-    # Back substitution to full solution vector
-    uh_numpy = np.dot(K, d)
-    # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    print("DIFF", max(abs(uh.array - uh_numpy[uh.owner_range[0]:
-                                              uh.owner_range[1]])))
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                          uh.owner_range[1]], atol=1e-7)
+        # Create global transformation matrix
+        K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
+                                                           masters, coeffs,
+                                                           offsets)
+        # Create reduced A
+        A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+        reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+        # Created reduced L
+        vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
+        reduced_L = np.dot(K.T, vec)
+        # Solve linear system
+        d = np.linalg.solve(reduced_A, reduced_L)
+        # Back substitution to full solution vector
+        uh_numpy = np.dot(K, d)
+
+    with dolfinx.common.Timer("MPC: Compare"):
+        # Compare LHS, RHS and solution with reference values
+        dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
+        dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+        print("DIFF", max(abs(uh.array - uh_numpy[uh.owner_range[0]:
+                                                  uh.owner_range[1]])))
+        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
+                                              uh.owner_range[1]], atol=1e-7)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--case", default=1, type=np.int8, dest="case",
-                        help="Which testcase:")
-    args = parser.parse_args()
-    case = args.case
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/rotated_cube.xdmf", "w")
-    if case == 1:
-        demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
-    elif case == 2:
-        demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
-    elif case == 3:
-        demo_stacked_cubes(outfile, theta=0, gmsh=True)
-    elif case == 4:
-        demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=True)
-    elif case == 5:
-        demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True)
-    elif case == 6:
-        demo_stacked_cubes(outfile, theta=np.pi/7, gmsh=False, triangle=False)
-    elif case == 7:
-        demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=False, triangle=False)
-    else:
-        raise ValueError("Cases are 1 to 7")
+    # Built in meshes aligned with coordinate system
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    # Built in meshes non-aligned
+    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=True)
+    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=False)
+    # Gmsh aligned
+    demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=False)
+    demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=True)
+    # Gmsh non-aligned
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=True)
+
     outfile.close()
+    dolfinx.common.list_timings(
+        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

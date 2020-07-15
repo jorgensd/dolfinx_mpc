@@ -4,16 +4,18 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import time
+from contextlib import ExitStack
 
 import dolfinx_mpc
 import numpy as np
 import ufl
-from petsc4py import PETSc
 from mpi4py import MPI
+from petsc4py import PETSc
 
 import dolfinx
+import dolfinx.common
 import dolfinx.log
+import dolfinx.la
 
 
 def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
@@ -159,26 +161,74 @@ def cache_numba(matrix=False, vector=False, backsubstitution=False):
                                                    np.array([],
                                                             dtype=np.int32))
     if matrix:
-        start = time.time()
-        A = dolfinx_mpc.assemble_matrix(a, mpc, [])
-        end = time.time()
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "CACHE Matrix assembly time: {0:.2e} "
-                        .format(end-start))
-        A.assemble()
+        with dolfinx.common.Timer("MPC: Cache Matrix"):
+            A = dolfinx_mpc.assemble_matrix(a, mpc, [])
+            A.assemble()
     if vector:
-        start = time.time()
-        b = dolfinx_mpc.assemble_vector(L, mpc)
-        end = time.time()
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "CACHE Vector assembly time: {0:.2e} "
-                        .format(end-start))
+        with dolfinx.common.Timer("MPC: Cache Vector"):
+            b = dolfinx_mpc.assemble_vector(L, mpc)
 
         if backsubstitution:
             c = b.copy()
-            start = time.time()
-            dolfinx_mpc.backsubstitution(mpc, c, V.dofmap)
-            end = time.time()
-            dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                            "CACHE backsubstitution: {0:.2e} "
-                            .format(end-start))
+            with dolfinx.common.Timer("MPC: Cache Backsubstitution"):
+                dolfinx_mpc.backsubstitution(mpc, c, V.dofmap)
+
+
+def log_info(message):
+    """
+    Wrapper for logging a simple string on the zeroth communicator
+    Reverting the log level
+    """
+    old_level = dolfinx.log.get_log_level()
+    if MPI.COMM_WORLD.rank == 0:
+        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
+                        message)
+        dolfinx.log.set_log_level(old_level)
+
+
+def build_elastic_nullspace(V):
+    """Function to build nullspace for 2D/3D elasticity"""
+
+    # Get geometric dim
+    gdim = V.mesh.geometry.dim
+    assert gdim == 2 or gdim == 3
+
+    # Set dimension of nullspace
+    dim = 3 if gdim == 2 else 6
+
+    # Create list of vectors for null space
+    nullspace_basis = [dolfinx.cpp.la.create_vector(
+        V.dofmap.index_map) for i in range(dim)]
+
+    with ExitStack() as stack:
+        vec_local = [stack.enter_context(x.localForm())
+                     for x in nullspace_basis]
+        basis = [np.asarray(x) for x in vec_local]
+
+        x = V.tabulate_dof_coordinates()
+        dofs = [V.sub(i).dofmap.list.array() for i in range(gdim)]
+
+        # Build translational null space basis
+        for i in range(gdim):
+            basis[i][V.sub(i).dofmap.list.array()] = 1.0
+
+        # Build rotational null space basis
+        if gdim == 2:
+            basis[2][dofs[0]] = -x[dofs[0], 1]
+            basis[2][dofs[1]] = x[dofs[1], 0]
+        elif gdim == 3:
+            basis[3][dofs[0]] = -x[dofs[0], 1]
+            basis[3][dofs[1]] = x[dofs[1], 0]
+
+            basis[4][dofs[0]] = x[dofs[0], 2]
+            basis[4][dofs[2]] = -x[dofs[2], 0]
+            basis[5][dofs[2]] = x[dofs[2], 1]
+            basis[5][dofs[1]] = -x[dofs[1], 2]
+
+    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
+    basis.orthonormalize()
+
+    _x = [basis[i] for i in range(dim)]
+    nsp = PETSc.NullSpace().create(vectors=_x)
+    return nsp

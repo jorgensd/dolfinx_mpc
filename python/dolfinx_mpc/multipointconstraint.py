@@ -165,7 +165,6 @@ def slave_master_structure(V: function.FunctionSpace, slave_master_dict:
     slaves = numpy.array(slaves, dtype=numpy.int64)
     masters = numpy.array(masters, dtype=numpy.int64)
     assert(not numpy.all(numpy.isin(masters, slaves)))
-    print(len(masters))
     return (slaves, masters, numpy.array(coeffs, dtype=numpy.float64),
             numpy.array(offsets), numpy.array(owner_ranks,
                                               dtype=numpy.int32))

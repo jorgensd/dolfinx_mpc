@@ -18,9 +18,6 @@ import dolfinx_mpc.utils
 import ufl
 
 
-dolfinx_mpc.utils.cache_numba(matrix=True, vector=True, backsubstitution=True)
-
-
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 def test_pipeline(master_point):
 

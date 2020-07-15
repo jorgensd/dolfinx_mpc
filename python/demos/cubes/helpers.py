@@ -10,6 +10,7 @@ import dolfinx.geometry as geometry
 import dolfinx.fem as fem
 import dolfinx_mpc
 import numpy as np
+from petsc4py import PETSc
 
 
 get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
@@ -80,7 +81,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     local_coordinates = np.zeros((len(interface_dofs[tdim-1]), 3),
                                  dtype=np.float64)
     local_normals = np.zeros((len(interface_dofs[tdim-1]), tdim),
-                             dtype=np.float64)
+                             dtype=PETSc.ScalarType)
 
     # Gather all slaves fromm each processor,
     # with its corresponding normal vector and coordinate
@@ -158,7 +159,8 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                             master_owner_dict[i].append(comm.rank)
                         else:
                             master_owner_dict[i].append(ghost_owners[
-                                dof//bs-indexmap.size_local])
+                                master_dofs[local_idx] //
+                                bs-indexmap.size_local])
                         master_dict[i].append(dof)
                         coeffs_dict[i].append(l_coeff)
 
@@ -171,7 +173,7 @@ def find_master_slave_relationship(V, interface_info, cell_info):
         master_glob = np.array(np.concatenate(comm.allgather(
             master_dict[key])), dtype=np.int64)
         coeff_glob = np.array(np.concatenate(comm.allgather(
-            coeffs_dict[key])), dtype=np.float64)
+            coeffs_dict[key])), dtype=PETSc.ScalarType)
         owner_glob = np.array(np.concatenate(comm.allgather(
             master_owner_dict[key])), dtype=np.int64)
         masters = np.hstack([masters, master_glob])

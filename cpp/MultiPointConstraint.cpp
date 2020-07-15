@@ -39,7 +39,7 @@ MultiPointConstraint::MultiPointConstraint(
   assert(offsets_master.tail(1)[0] == masters.size());
 
   LOG(INFO) << "Initializing MPC class";
-  dolfinx::common::Timer timer("MPC-INIT: Total time");
+  dolfinx::common::Timer timer("MPC: Init: Total time");
   _masters = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
       masters, offsets_master);
   _master_owner_ranks
@@ -67,7 +67,8 @@ MultiPointConstraint::MultiPointConstraint(
   /// Generate MPC specific index map
   _index_map = generate_index_map();
 
-  dolfinx::common::Timer timer4("MPC-INIT: Setup local indices per processor");
+  dolfinx::common::Timer timer_local(
+      "*MPC: Init: Setup local indices per processor");
   /// Find all local indices for master
   std::vector<std::int64_t> master_vec(masters.data(),
                                        masters.data() + masters.size());
@@ -87,15 +88,15 @@ MultiPointConstraint::MultiPointConstraint(
   Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
       __slaves_local(slaves_local.data(), slaves_local.size(), 1);
   _slaves_local = __slaves_local;
-  timer4.stop();
+  timer_local.stop();
 }
 
-// /// Generate MPC specific index map with the correct ghosting
+/// Generate MPC specific index map with the correct ghosting
 std::shared_ptr<dolfinx::common::IndexMap>
 MultiPointConstraint::generate_index_map()
 {
   LOG(INFO) << "Generating MPC index map with additional ghosts";
-  dolfinx::common::Timer timer("MPC-INIT: Indexmap Total");
+  dolfinx::common::Timer timer("*MPC: Init: Indexmap Total");
   const dolfinx::mesh::Mesh& mesh = *(_function_space->mesh());
   const dolfinx::fem::DofMap& dofmap = *(_function_space->dofmap());
 
@@ -125,7 +126,6 @@ MultiPointConstraint::generate_index_map()
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_cell_offsets
       = _cells_to_dofs[1]->offsets();
   const int mpi_rank = dolfinx::MPI::rank(mesh.mpi_comm());
-  dolfinx::common::Timer timer2("MPC-INIT: Indexmap New slave->master ghosts");
   for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
   {
     // Loop over slaves in cell
@@ -156,8 +156,6 @@ MultiPointConstraint::generate_index_map()
       }
     }
   }
-  timer2.stop();
-  dolfinx::common::Timer timer3("MPC-INIT: Indexmap Master-Master ghosting");
 
   // Add ghosts for all other master for same slave
   for (std::int64_t i = 0; i < _masters->num_nodes(); i++)
@@ -194,10 +192,7 @@ MultiPointConstraint::generate_index_map()
       }
     }
   }
-  timer3.stop();
 
-  dolfinx::common::Timer timerg(
-      "MPC-INIT: Indexmap Update ghosts and owner ranks");
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> new_ranks
       = index_map->ghost_owner_rank();
 
@@ -214,9 +209,9 @@ MultiPointConstraint::generate_index_map()
   {
     ghost_ranks[num_ghosts + i] = additional_ghost_ranks[i];
   }
-  timerg.stop();
 
-  dolfinx::common::Timer timer4("MPC-INIT: Indexmap Make new indexmap");
+  dolfinx::common::Timer timer_im_init(
+      "*MPC: Init: Indexmap Make new indexmap");
   std::shared_ptr<dolfinx::common::IndexMap> new_index_map
       = std::make_shared<dolfinx::common::IndexMap>(
           mesh.mpi_comm(), index_map->size_local(),
@@ -224,7 +219,7 @@ MultiPointConstraint::generate_index_map()
               MPI_COMM_WORLD,
               std::set<int>(ghost_ranks.begin(), ghost_ranks.end())),
           new_ghosts, ghost_ranks, index_map->block_size());
-  timer4.stop();
+  timer_im_init.stop();
 
   return new_index_map;
 }
@@ -234,7 +229,7 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";
-  dolfinx::common::Timer timer("MPC-INIT: Sparsitypattern Total");
+  dolfinx::common::Timer timer("MPC: Sparsitypattern Total");
   if (a.rank() != 2)
   {
     throw std::runtime_error(
