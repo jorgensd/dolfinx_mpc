@@ -64,8 +64,8 @@ fast-real:
 
 nightly-complex:
   stage: test
-  only:
-    - schedules
+  # only:
+    # - schedules
     # - master
   tags:
     - docker
@@ -132,7 +132,7 @@ nightly-real:
   stage: test
   only:
     - schedules
-    # - master
+    - master
   tags:
     - docker
   image:
