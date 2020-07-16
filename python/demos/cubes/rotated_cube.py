@@ -28,7 +28,6 @@ import dolfinx.io
 import dolfinx.la
 import dolfinx.log
 from create_and_export_mesh import mesh_2D_dolfin, mesh_2D_gmsh
-from helpers import find_master_slave_relationship
 
 dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
@@ -132,8 +131,9 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         + ufl.inner(g, v)*ds
 
     # Create standard master slave relationsship
-    (slaves, masters, coeffs,
-     offsets, owner_ranks) = find_master_slave_relationship(
+    # Find slave master relationship and initialize MPC class
+    (slaves, masters, coeffs, offsets,
+     owner_ranks) = dolfinx_mpc.create_collision_constraint(
         V, (mt, 4, 9), (ct, 2))
 
     def left_corner(x):
