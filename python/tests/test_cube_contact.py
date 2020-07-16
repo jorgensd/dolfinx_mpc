@@ -79,7 +79,10 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     # (Does not have unit length)
     nh = dolfinx_mpc.facet_normal_approximation(V, mt, slave_i_value)
     n_vec = nh.vector.getArray()
-
+    ff = io.XDMFFile(comm, "nvec.xdmf", "w")
+    ff.write_mesh(nh.function_space.mesh)
+    ff.write_function(nh)
+    ff.close()
     # Create local dictionaries for the master, slaves and coeffs
     master_dict = {}
     master_owner_dict = {}
@@ -111,15 +114,24 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     [cmin, cmax] = cellmap.local_range
     ltog_cells = np.array(cellmap.global_indices(False), dtype=np.int64)
 
-    # Local dictionaries which will hold data for each slave
+    # Local dictionaries which will hold data for dofs at same block as the slave
     master_dict = {}
     master_owner_dict = {}
     coeffs_dict = {}
+    # Local dictionaries for the interface comming into contact with the slaves
+    other_master_dict = {}
+    other_master_owner_dict = {}
+    other_coeffs_dict = {}
+    other_side_dict = {}
+
     for i, slave in enumerate(slaves):
         master_dict[i] = []
         master_owner_dict[i] = []
         coeffs_dict[i] = []
-
+        other_master_dict[i] = []
+        other_coeffs_dict[i] = []
+        other_master_owner_dict[i] = []
+        other_side_dict[i] = 0
         # Find all masters from same coordinate as the slave (same proc)
         if lmin <= slave < lmax:
             local_index = np.flatnonzero(slave == local_slaves)[0]
@@ -165,13 +177,14 @@ def find_master_slave_relationship(V, interface_info, cell_info):
                     if not np.isclose(l_coeff, 0):
                         # If master i ghost, find its owner
                         if lmin <= dof < lmax:
-                            master_owner_dict[i].append(comm.rank)
+                            other_master_owner_dict[i].append(comm.rank)
                         else:
-                            master_owner_dict[i].append(ghost_owners[
+                            other_master_owner_dict[i].append(ghost_owners[
                                 master_dofs[local_idx] //
                                 bs-indexmap.size_local])
-                        master_dict[i].append(dof)
-                        coeffs_dict[i].append(l_coeff)
+                        other_master_dict[i].append(dof)
+                        other_coeffs_dict[i].append(l_coeff)
+            other_side_dict[i] += 1
 
     # Gather entries on all processors
     masters = np.array([], dtype=np.int64)
@@ -179,15 +192,34 @@ def find_master_slave_relationship(V, interface_info, cell_info):
     owner_ranks = np.array([], dtype=np.int64)
     offsets = np.zeros(len(slaves)+1, dtype=np.int64)
     for key in master_dict.keys():
+        # Gather masters from same block as the slave
+        # NOTE: Should check if concatenate is costly
         master_glob = np.array(np.concatenate(comm.allgather(
             master_dict[key])), dtype=np.int64)
         coeff_glob = np.array(np.concatenate(comm.allgather(
             coeffs_dict[key])), dtype=PETSc.ScalarType)
         owner_glob = np.array(np.concatenate(comm.allgather(
             master_owner_dict[key])), dtype=np.int64)
-        masters = np.hstack([masters, master_glob])
-        coeffs = np.hstack([coeffs, coeff_glob])
-        owner_ranks = np.hstack([owner_ranks, owner_glob])
+
+        # Check if masters on the other interface is appearing
+        # on multiple processors and select one other processor at random
+        occurances = np.array(comm.allgather(
+            other_side_dict[key]), dtype=np.int32)
+        locations = np.where(occurances > 0)[0]
+        index = np.random.choice(locations.shape[0],
+                                 1, replace=False)[0]
+
+        # Get masters from selected processor
+        other_masters = comm.allgather(other_master_dict[key])[
+            locations[index]]
+        other_coeffs = comm.allgather(other_coeffs_dict[key])[locations[index]]
+        other_master_owner = comm.allgather(other_master_owner_dict[key])[
+            locations[index]]
+
+        # Gather info globally
+        masters = np.hstack([masters, master_glob, other_masters])
+        coeffs = np.hstack([coeffs, coeff_glob, other_coeffs])
+        owner_ranks = np.hstack([owner_ranks, owner_glob, other_master_owner])
         offsets[key+1] = len(masters)
 
     return (slaves, masters, coeffs, offsets, owner_ranks)
@@ -320,11 +352,11 @@ def test_cube_contact():
 
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
-
+    io.VTKFile("outmesh.pvd").write(mesh)
     # Helper for orienting traction
     r_matrix = pygmsh.helpers.rotation_matrix(
         [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
-    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
+    g_vec = np.dot(r_matrix, [0, 0, -4e-1])
 
     g = dolfinx.Constant(mesh, g_vec)
 
@@ -339,9 +371,6 @@ def test_cube_contact():
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
     # Top boundary has a given deformation normal to the interface
-    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
-    g = dolfinx.Constant(mesh, g_vec)
-
     def top_v(x):
         values = np.empty((3, x.shape[1]))
         values[0] = g_vec[0]
@@ -386,6 +415,7 @@ def test_cube_contact():
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets,
                                                    owner_ranks)
+
     # Setup MPC system
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
@@ -480,4 +510,4 @@ def test_cube_contact():
     #     comm, [dolfinx.common.TimingType.wall])
 
 
-# test_cube_contact()
+test_cube_contact()
