@@ -205,13 +205,14 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
                            "Xdmf/Domain/"
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
-    # Transfer data from the MPC problem to numpy arrays for comparison
-    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     if compare:
+        # Transfer data from the MPC problem to numpy arrays for comparison
+        A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+        mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+
         dolfinx_mpc.utils.log_info(
             "Solving reference problem with global matrix (using numpy)")
 
