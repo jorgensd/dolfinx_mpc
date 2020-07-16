@@ -16,7 +16,6 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx
-import dolfinx.geometry as geometry
 import dolfinx.io as io
 import dolfinx.fem as fem
 import meshio
