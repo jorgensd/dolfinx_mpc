@@ -20,7 +20,6 @@ import dolfinx.fem as fem
 import dolfinx.io
 import dolfinx.la
 from create_and_export_mesh import mesh_3D_dolfin, mesh_3D_rot
-from helpers import find_master_slave_relationship
 
 
 comm = MPI.COMM_WORLD
@@ -139,9 +138,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
     # Find slave master relationship and initialize MPC class
     (slaves, masters, coeffs, offsets,
-     owner_ranks) = find_master_slave_relationship(
+     owner_ranks) = dolfinx_mpc.create_collision_constraint(
         V, (mt, 4, 9), (ct, top_cube_marker))
-
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets,
                                                    owner_ranks)

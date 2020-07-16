@@ -9,7 +9,9 @@ import numba
 from mpi4py import MPI
 from petsc4py import PETSc
 import types
-from dolfinx import function, fem, log
+import dolfinx.cpp
+from dolfinx_mpc import cpp
+from dolfinx import function, fem, log, geometry
 from .assemble_matrix import in_numpy_array
 import numpy
 
@@ -230,3 +232,205 @@ def facet_normal_approximation(V, mt, mt_id):
     ksp.solve(b, nh.vector)
     timer.stop()
     return nh
+
+
+def create_collision_constraint(V, interface_info, cell_info):
+    """
+    Function return the master, slaves, coefficients and offsets
+    for coupling two interfaces.
+    Input:
+        V - The function space that should be constrained.
+        interface_info - Tuple containing a mesh function
+                         (for facets) and two ints, one specifying the
+                          slave interface, the other the master interface.
+        cell_info - Tuple containing a mesh function (for cells)
+                    and an int indicating which cells should be
+                    master cells.
+    """
+
+    # Extract mesh info
+    mesh = V.mesh
+    tdim = V.mesh.topology.dim
+    fdim = tdim - 1
+
+    # Collapse sub spaces
+    Vs = [V.sub(i).collapse() for i in range(tdim)]
+
+    # Get dofmap info
+    comm = V.mesh.mpi_comm()
+    dofs = V.dofmap.list.array()
+    dof_coords = V.tabulate_dof_coordinates()
+    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
+    indexmap = V.dofmap.index_map
+    bs = indexmap.block_size
+    global_indices = numpy.array(indexmap.global_indices(False),
+                                 dtype=numpy.int64)
+    lmin = bs*indexmap.local_range[0]
+    lmax = bs*indexmap.local_range[1]
+    ghost_owners = indexmap.ghost_owner_rank()
+
+    # Extract interface_info
+    (mt, slave_i_value, master_i_value) = interface_info
+    (ct, master_value) = cell_info
+
+    # Find all dofs on slave interface
+    slave_facets = mt.indices[numpy.flatnonzero(mt.values == slave_i_value)]
+    interface_dofs = []
+    for i in range(tdim):
+        i_dofs = fem.locate_dofs_topological((V.sub(i), Vs[i]),
+                                             fdim, slave_facets)[:, 0]
+        global_dofs = global_indices[i_dofs]
+        owned = numpy.logical_and(lmin <= global_dofs, global_dofs < lmax)
+        interface_dofs.append(i_dofs[owned])
+
+    # Extract all top cell values from MeshTags
+    tree = geometry.BoundingBoxTree(mesh, tdim)
+    ct_top_cells = ct.indices[ct.values == master_value]
+
+    # Compute approximate facet normals for the interface
+    # (Does not have unit length)
+    nh = facet_normal_approximation(V, mt, slave_i_value)
+    n_vec = nh.vector.getArray()
+
+    # Create local dictionaries for the master, slaves and coeffs
+    master_dict = {}
+    master_owner_dict = {}
+    coeffs_dict = {}
+    local_slaves = []
+    local_coordinates = numpy.zeros((len(interface_dofs[tdim-1]), 3),
+                                    dtype=numpy.float64)
+    local_normals = numpy.zeros((len(interface_dofs[tdim-1]), tdim),
+                                dtype=PETSc.ScalarType)
+
+    # Gather all slaves fromm each processor,
+    # with its corresponding normal vector and coordinate
+    for i in range(len(interface_dofs[tdim-1])):
+        local_slave = interface_dofs[tdim-1][i]
+        global_slave = global_indices[local_slave]
+        if lmin <= global_slave < lmax:
+            local_slaves.append(global_slave)
+            local_coordinates[i] = dof_coords[local_slave]
+            for j in range(tdim):
+                local_normals[i, j] = n_vec[interface_dofs[j][i]]
+
+    # Gather info on all processors
+    slaves = numpy.hstack(comm.allgather(local_slaves))
+    slave_coordinates = numpy.concatenate(comm.allgather(local_coordinates))
+    slave_normals = numpy.concatenate(comm.allgather(local_normals))
+
+    # Local range of cells
+    cellmap = V.mesh.topology.index_map(tdim)
+    [cmin, cmax] = cellmap.local_range
+    ltog_cells = numpy.array(cellmap.global_indices(False), dtype=numpy.int64)
+
+    # Local dictionaries which will hold data for dofs
+    #  at same block as the slave
+    master_dict = {}
+    master_owner_dict = {}
+    coeffs_dict = {}
+    # Local dictionaries for the interface comming into contact with the slaves
+    other_master_dict = {}
+    other_master_owner_dict = {}
+    other_coeffs_dict = {}
+    other_side_dict = {}
+
+    for i, slave in enumerate(slaves):
+        master_dict[i] = []
+        master_owner_dict[i] = []
+        coeffs_dict[i] = []
+        other_master_dict[i] = []
+        other_coeffs_dict[i] = []
+        other_master_owner_dict[i] = []
+        other_side_dict[i] = 0
+        # Find all masters from same coordinate as the slave (same proc)
+        if lmin <= slave < lmax:
+            local_index = numpy.flatnonzero(slave == local_slaves)[0]
+            for j in range(tdim-1):
+                coeff = -slave_normals[i][j]/slave_normals[i][tdim-1]
+                if not numpy.isclose(coeff, 0):
+                    master_dict[i].append(
+                        global_indices[interface_dofs[j][local_index]])
+                    master_owner_dict[i].append(comm.rank)
+                    coeffs_dict[i].append(coeff)
+
+        # Find bb cells for masters on the other interface (no ghosts)
+        possible_cells = numpy.array(
+            geometry.compute_collisions_point(tree,
+                                              slave_coordinates[i]))
+        is_top = numpy.isin(possible_cells, ct_top_cells)
+        is_owned = numpy.zeros(len(possible_cells), dtype=bool)
+        if len(possible_cells) > 0:
+            is_owned = numpy.logical_and(cmin <= ltog_cells[possible_cells],
+                                         ltog_cells[possible_cells] < cmax)
+        top_cells = possible_cells[numpy.logical_and(is_owned, is_top)]
+        # Check if actual cell in mesh is within a distance of 1e-14
+        close_cell = dolfinx.cpp.geometry.select_colliding_cells(
+            mesh, list(top_cells), slave_coordinates[i], 1)
+        if len(close_cell) > 0:
+            master_cell = close_cell[0]
+            master_dofs = dofs[num_dofs_per_element * master_cell:
+                               num_dofs_per_element * master_cell
+                               + num_dofs_per_element]
+            global_masters = global_indices[master_dofs]
+
+            # Get basis values, and add coeffs of sub space
+            # to masters with corresponding coeff
+            basis_values = cpp.mpc.\
+                get_basis_functions(V._cpp_object,
+                                    slave_coordinates[i],
+                                    master_cell)
+            for k in range(tdim):
+                for local_idx, dof in enumerate(global_masters):
+                    l_coeff = basis_values[local_idx, k]
+                    l_coeff *= (slave_normals[i][k] /
+                                slave_normals[i][tdim-1])
+                    if not numpy.isclose(l_coeff, 0):
+                        # If master i ghost, find its owner
+                        if lmin <= dof < lmax:
+                            other_master_owner_dict[i].append(comm.rank)
+                        else:
+                            other_master_owner_dict[i].append(ghost_owners[
+                                master_dofs[local_idx] //
+                                bs-indexmap.size_local])
+                        other_master_dict[i].append(dof)
+                        other_coeffs_dict[i].append(l_coeff)
+            other_side_dict[i] += 1
+
+    # Gather entries on all processors
+    masters = numpy.array([], dtype=numpy.int64)
+    coeffs = numpy.array([], dtype=numpy.int64)
+    owner_ranks = numpy.array([], dtype=numpy.int64)
+    offsets = numpy.zeros(len(slaves)+1, dtype=numpy.int64)
+    for key in master_dict.keys():
+        # Gather masters from same block as the slave
+        # NOTE: Should check if concatenate is costly
+        master_glob = numpy.array(numpy.concatenate(comm.allgather(
+            master_dict[key])), dtype=numpy.int64)
+        coeff_glob = numpy.array(numpy.concatenate(comm.allgather(
+            coeffs_dict[key])), dtype=PETSc.ScalarType)
+        owner_glob = numpy.array(numpy.concatenate(comm.allgather(
+            master_owner_dict[key])), dtype=numpy.int64)
+
+        # Check if masters on the other interface is appearing
+        # on multiple processors and select one other processor at random
+        occurances = numpy.array(comm.allgather(
+            other_side_dict[key]), dtype=numpy.int32)
+        locations = numpy.where(occurances > 0)[0]
+        index = numpy.random.choice(locations.shape[0],
+                                    1, replace=False)[0]
+
+        # Get masters from selected processor
+        other_masters = comm.allgather(other_master_dict[key])[
+            locations[index]]
+        other_coeffs = comm.allgather(other_coeffs_dict[key])[locations[index]]
+        other_master_owner = comm.allgather(other_master_owner_dict[key])[
+            locations[index]]
+
+        # Gather info globally
+        masters = numpy.hstack([masters, master_glob, other_masters])
+        coeffs = numpy.hstack([coeffs, coeff_glob, other_coeffs])
+        owner_ranks = numpy.hstack(
+            [owner_ranks, owner_glob, other_master_owner])
+        offsets[key+1] = len(masters)
+
+    return (slaves, masters, coeffs, offsets, owner_ranks)
