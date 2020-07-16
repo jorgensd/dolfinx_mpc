@@ -42,7 +42,6 @@ x = V.tabulate_dof_coordinates()
 loc_dofs = dolfinx.fem.locate_dofs_topological(V, fdim, f0)
 points = x[loc_dofs]
 facettree = geometry.BoundingBoxTree(mesh, dim=fdim)
-embed()
 slaves_loc = []
 slaves_to_send = {}
 slave_coords_to_send = {}
@@ -81,12 +80,14 @@ for i in range(MPI.COMM_WORLD.size):
         if len(data) > 0:
             slaves_glob.extend(data["slaves"])
             owners = np.concatenate(
-                (owners, np.ones(len(data["slaves"]), dtype=np.int32)), axis=0)
+                (owners, np.full(len(data["slaves"]), i,
+                                 dtype=np.int32)), axis=0)
             if coords_glob is None:
                 coords_glob = data["coords"]
             else:
                 coords_glob = np.vstack([coords_glob, data["coords"]])
 
+# Write cell partitioning to file
 cell_map = mesh.topology.index_map(mesh.topology.dim)
 num_cells_local = cell_map.size_local
 indices = np.arange(num_cells_local)
@@ -97,8 +98,6 @@ with io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_meshtags(ct)
 
-print(MPI.COMM_WORLD.rank, "Local slaves:", len(slaves_loc))
-print(MPI.COMM_WORLD.rank, "Global slaves:",
-      len(slaves_glob))
-if len(slaves_glob) > 0:
-    print(MPI.COMM_WORLD.rank, slaves_glob[0], coords_glob[0], owners[0])
+
+print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(slaves_loc), "Num Global slaves:",
+      len(slaves_glob), " Num other procs:", len(set(owners)))
