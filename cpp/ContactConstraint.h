@@ -5,8 +5,8 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include <Eigen/Dense>
+#include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
-
 namespace dolfinx_mpc
 {
 
@@ -16,10 +16,13 @@ class ContactConstraint
 public:
   /// Create contact constraint
   ///
+  /// @param[in] V The function space
+  /// @param[in] slaves List of local slave dofs
   /// @param[in] slaves_cells List of local slave cells
   /// @param[in] offsets Offsets for local slave cells
 
-  ContactConstraint(Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
+  ContactConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
                     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves_cells,
                     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets);
 
@@ -30,9 +33,19 @@ public:
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> slave_cells()
   {
     return _slave_cells;
-  };
+  }
+
+  /// Create map from cell to slaves and its inverse
+  /// @param[in] The local degrees of freedom that will be used to compute
+  /// the cell to dof map
+  std::pair<
+      std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>,
+      std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+                std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
+  create_cell_maps(Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs);
 
 private:
+  std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves;
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _slave_cells;
 };

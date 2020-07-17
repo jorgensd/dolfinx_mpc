@@ -53,17 +53,35 @@ cell_map = mesh.topology.index_map(mesh.topology.dim)
 num_cells_local = cell_map.size_local
 cells_local_slave = []
 offsets = [0]
-for (i, slave) in enumerate(slaves_loc):
+cell_to_loc_slaves = {}
+for slave in slaves_loc:
     cells_local = []
     for cell in range(num_cells_local):
         dofs = V.dofmap.cell_dofs(cell)
         if slave in dofs:
             cells_local.append(cell)
+            if cell in cell_to_loc_slaves.keys():
+                cell_to_loc_slaves[cell].append(slave[0])
+            else:
+                cell_to_loc_slaves[cell] = [slave[0]]
     cells_local_slave.extend(cells_local)
     offsets.append(len(cells_local_slave))
-cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
-    slaves_loc, cells_local_slave, offsets)
-print(cc.slave_cells().links(0))
+
+# Flatten cell to slave dofs map
+cell_to_slaves = []
+offsets_dofs = [0]
+unique_slave_cells = np.array(list(cell_to_loc_slaves.keys()), dtype=np.int32)
+for key in unique_slave_cells:
+    cell_to_slaves.extend(cell_to_loc_slaves[key])
+    offsets_dofs.append(len(cell_to_slaves))
+
+# Temporary storage of slave and cell info
+cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object,
+                                           slaves_loc, cells_local_slave, offsets)
+print(slaves_loc.T)
+# cc2 = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object,
+#                                             unique_slave_cells, cell_to_slaves, offsets_dofs)
+
 facettree = geometry.BoundingBoxTree(mesh, dim=fdim)
 
 slaves_to_send = {}
