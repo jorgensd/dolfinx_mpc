@@ -22,17 +22,27 @@ public:
   /// @param[in] offsets Offsets for local slave cells
 
   ContactConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
-                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves_cells,
-                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets);
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves);
 
   /// Return the array of master dofs and corresponding coefficients
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves() { return _slaves; };
 
-  /// Return map from slave to cells containing that slave
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> slave_cells()
+  /// Return point to array of all unique local cells containing a slave
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cells()
   {
     return _slave_cells;
+  };
+
+  /// Return map from slave to cells containing that slave
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> slave_to_cells()
+  {
+    return _slave_to_cells_map;
+  }
+
+  /// Return map from cell to slaves contained in that cell
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> cell_to_slaves()
+  {
+    return _cell_to_slaves_map;
   }
 
   /// Create map from cell to slaves and its inverse
@@ -47,6 +57,10 @@ public:
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves;
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _slave_cells;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slave_cells;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _cell_to_slaves_map;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _slave_to_cells_map;
 };
 } // namespace dolfinx_mpc

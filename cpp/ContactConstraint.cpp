@@ -7,24 +7,25 @@
 #include "ContactConstraint.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
+#include <dolfinx/common/Timer.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <iostream>
-
 using namespace dolfinx_mpc;
 
 ContactConstraint::ContactConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cells,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets)
-    : _V(V), _slaves(slaves), _slave_cells()
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves)
+    : _V(V), _slaves(slaves), _slave_cells(), _cell_to_slaves_map(),
+      _slave_to_cells_map()
 {
-  _slave_cells = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-      slave_cells, offsets);
-  auto [slave_to_cells, cell_to_slaves] = create_cell_maps(slaves);
+  auto [slave_to_cells, cell_to_slaves_map] = create_cell_maps(slaves);
+  auto [unique_cells, cell_to_slaves] = cell_to_slaves_map;
+  _slave_cells = unique_cells;
+  _cell_to_slaves_map = cell_to_slaves;
+  _slave_to_cells_map = slave_to_cells;
 }
 
 std::pair<
@@ -34,6 +35,7 @@ std::pair<
 ContactConstraint::create_cell_maps(
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs)
 {
+  dolfinx::common::Timer timer("MPC: Create slave->cell  and cell->slave map");
   const dolfinx::mesh::Mesh& mesh = *(_V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(_V->dofmap());
   const int tdim = mesh.topology().dim();
@@ -46,13 +48,14 @@ ContactConstraint::create_cell_maps(
   // Loop over all dofs
   for (std::int32_t i = 0; i < dofs.rows(); ++i)
   {
+    bool was_added = false;
     // Loop over all cells
     for (std::int32_t j = 0; j < num_cells; ++j)
     {
-      // Check if dof is in cell
       auto cell_dofs = dofmap.cell_dofs(j);
       if ((cell_dofs.array() == dofs[i]).any())
       {
+        was_added = true;
         dofs_to_cell.push_back(j);
         // Check if cell allready added to unstructured map
         auto vec = cell_to_dof.find(j);
@@ -64,7 +67,10 @@ ContactConstraint::create_cell_maps(
         else
           vec->second.push_back(dofs[i]);
       }
-      // Add offsets for AdjacencyList
+    }
+    // Add offsets for AdjacencyList
+    if (was_added)
+    {
       offsets.push_back(dofs_to_cell.size());
     }
   }
@@ -72,7 +78,6 @@ ContactConstraint::create_cell_maps(
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> adj_ptr
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
           dofs_to_cell, offsets);
-
   std::vector<std::int32_t> cells_to_dof;
   std::vector<std::int32_t> offsets_2{0};
   std::vector<std::int32_t> unique_cells;
