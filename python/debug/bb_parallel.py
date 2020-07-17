@@ -49,6 +49,10 @@ x = V.tabulate_dof_coordinates()
 slaves_loc = dolfinx.fem.locate_dofs_topological(V, fdim, slave_facets)
 points = x[slaves_loc]
 
+# Temporary storage of slave and cell info
+cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
+
+
 # Find which cells the local slaves are in (locally)
 cell_map = mesh.topology.index_map(mesh.topology.dim)
 num_cells_local = cell_map.size_local
@@ -56,42 +60,13 @@ cells_local_slave = []
 offsets = [0]
 cell_to_loc_slaves = {}
 
-with common.Timer("MPC: Create slave->cell  and cell->slave map (Python)"):
-    for slave in slaves_loc:
-        cells_local = []
-        for cell in range(num_cells_local):
-            dofs = V.dofmap.cell_dofs(cell)
-            if slave in dofs:
-                cells_local.append(cell)
-                if cell in cell_to_loc_slaves.keys():
-                    cell_to_loc_slaves[cell].append(slave[0])
-                else:
-                    cell_to_loc_slaves[cell] = [slave[0]]
-        cells_local_slave.extend(cells_local)
-        offsets.append(len(cells_local_slave))
-
-    # Flatten cell to slave dofs map
-    cell_to_slaves = []
-    offsets_dofs = [0]
-    unique_slave_cells = np.array(
-        list(cell_to_loc_slaves.keys()), dtype=np.int32)
-    for key in unique_slave_cells:
-        cell_to_slaves.extend(cell_to_loc_slaves[key])
-        offsets_dofs.append(len(cell_to_slaves))
-
-# Temporary storage of slave and cell info
-cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
-
-c = 0
-slave_to_cells = cc.slave_to_cells()
-for i in range(slave_to_cells.num_nodes):
-    for j in range(slave_to_cells.links(i).size):
-        assert(slave_to_cells.links(i)[j] == cells_local_slave[c])
-        c += 1
-common.list_timings(MPI.COMM_WORLD,
-                    [dolfinx.common.TimingType.wall])
+# common.list_timings(MPI.COMM_WORLD,
+#                     [dolfinx.common.TimingType.wall])
 facettree = geometry.BoundingBoxTree(mesh, dim=fdim)
 
+
+# Find all processors where a slave can be located
+# according to the bounding box tree.
 slaves_to_send = {}
 slave_coords_to_send = {}
 for dof, point in zip(slaves_loc, points):
@@ -109,7 +84,7 @@ for dof, point in zip(slaves_loc, points):
             else:
                 slave_coords_to_send[proc].append(point[0])
 
-
+# Send information about possible collisions with slave to the other processors
 for proc in range(MPI.COMM_WORLD.size):
     if proc in slaves_to_send.keys():
         MPI.COMM_WORLD.send({"slaves": slaves_to_send[proc],
@@ -118,6 +93,7 @@ for proc in range(MPI.COMM_WORLD.size):
     elif proc != MPI.COMM_WORLD.rank:
         MPI.COMM_WORLD.send({}, dest=proc, tag=0)
 
+# Receive possible collisions (potential master dofs) from other processors
 slaves_glob = []
 coords_glob = None
 slave_owner = []
