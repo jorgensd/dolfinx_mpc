@@ -97,7 +97,7 @@ def merge_msh_meshes(msh0, msh1, celltype, facettype):
 
 
 def mesh_3D_rot(theta):
-    res = 0.05
+    res = 0.2
 
     msh0 = generate_hex_box(0, 0, 0, 1, 1, 1, theta, res,
                             [11, 5, 12, 13, 4, 14])

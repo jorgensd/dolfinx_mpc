@@ -8,6 +8,9 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/geometry/BoundingBoxTree.h>
+#include <dolfinx/geometry/utils.h>
+#include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>
@@ -44,5 +47,23 @@ void mpc(py::module& m)
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
       .def("mpc_dofmap", &dolfinx_mpc::MultiPointConstraint::mpc_dofmap);
   m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
+
+  // dolfinx_mpc::ContactConstraint
+  py::class_<dolfinx_mpc::ContactConstraint,
+             std::shared_ptr<dolfinx_mpc::ContactConstraint>>
+      contactconstraint(
+          m, "ContactConstraint",
+          "Object for representing contact (non-penetrating) conditions");
+  contactconstraint
+      .def(py::init<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>())
+      .def("slaves", &dolfinx_mpc::ContactConstraint::slaves)
+      .def("slave_cells", &dolfinx_mpc::ContactConstraint::slave_cells);
+
+  m.def("compute_process_collisions",
+        py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,
+                          const Eigen::Vector3d&>(
+            &dolfinx::geometry::compute_process_collisions));
 }
 } // namespace dolfinx_mpc_wrappers

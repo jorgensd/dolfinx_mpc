@@ -1,14 +1,16 @@
-import numpy as np
 from IPython import embed
+import numpy as np
+# from IPython import embed
 from mpi4py import MPI
 
 import dolfinx
 import dolfinx.geometry as geometry
 import dolfinx.io as io
-import dolfinx.log as log
+import dolfinx.cpp as cpp
+import dolfinx_mpc.cpp
+# import dolfinx.log as log
 from chris_mesh import mesh_3D_rot
 
-import struct
 
 comm = MPI.COMM_WORLD
 theta = 0
@@ -29,25 +31,46 @@ with io.XDMFFile(comm, "mesh_hex_cube{0:.2f}.xdmf".format(theta),
 with io.XDMFFile(comm, "facet_hex_cube{0:.2f}.xdmf".format(theta),
                  "r") as xdmf:
     mt = xdmf.read_meshtags(mesh, "Grid")
+
 top_cube_marker = 2
 # Bottom mesh top facets
-f0 = mt.indices[mt.values == 4]
+slave_facets = mt.indices[mt.values == 4]
 # Top mesh bottom facets
-f1 = mt.indices[mt.values == 9]
+master_facets = mt.indices[mt.values == 9]
 # log.set_log_level(log.LogLevel.INFO)
-# Create functionspace and locate dofs
+
+# Create functionspace
 V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 loc_to_glob = V.dofmap.index_map.global_indices(False)
 x = V.tabulate_dof_coordinates()
-loc_dofs = dolfinx.fem.locate_dofs_topological(V, fdim, f0)
-points = x[loc_dofs]
+
+# Local slaves and their corresponding coordinates
+slaves_loc = dolfinx.fem.locate_dofs_topological(V, fdim, slave_facets)
+points = x[slaves_loc]
+
+# Find which cells the local slaves are in (locally)
+cell_map = mesh.topology.index_map(mesh.topology.dim)
+num_cells_local = cell_map.size_local
+cells_local_slave = []
+offsets = [0]
+for (i, slave) in enumerate(slaves_loc):
+    cells_local = []
+    for cell in range(num_cells_local):
+        dofs = V.dofmap.cell_dofs(cell)
+        if slave in dofs:
+            cells_local.append(cell)
+    cells_local_slave.extend(cells_local)
+    offsets.append(len(cells_local_slave))
+cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+    slaves_loc, cells_local_slave, offsets)
+print(cc.slave_cells().links(0))
 facettree = geometry.BoundingBoxTree(mesh, dim=fdim)
-slaves_loc = []
+
 slaves_to_send = {}
 slave_coords_to_send = {}
-for dof, point in zip(loc_dofs, points):
+for dof, point in zip(slaves_loc, points):
     # Get processor number for a point
-    procs = dolfinx.cpp.geometry.compute_process_collisions(
+    procs = dolfinx_mpc.cpp.mpc.compute_process_collisions(
         facettree._cpp_object, point.T)
     for proc in procs:
         if proc != MPI.COMM_WORLD.rank:
@@ -59,7 +82,6 @@ for dof, point in zip(loc_dofs, points):
                 slave_coords_to_send[proc] = [point[0]]
             else:
                 slave_coords_to_send[proc].append(point[0])
-    slaves_loc.append(loc_to_glob[dof[0]])
 
 
 for proc in range(MPI.COMM_WORLD.size):
@@ -88,8 +110,6 @@ for i in range(MPI.COMM_WORLD.size):
                 coords_glob = np.vstack([coords_glob, data["coords"]])
 
 # Write cell partitioning to file
-cell_map = mesh.topology.index_map(mesh.topology.dim)
-num_cells_local = cell_map.size_local
 indices = np.arange(num_cells_local)
 values = MPI.COMM_WORLD.rank*np.ones(num_cells_local, np.int32)
 ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
@@ -98,6 +118,9 @@ with io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_meshtags(ct)
 
+tree = dolfinx.geometry.BoundingBoxTree(mesh, mesh.topology.dim)
 
-print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(slaves_loc), "Num Global slaves:",
-      len(slaves_glob), " Num other procs:", len(set(owners)))
+
+print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(slaves_loc),
+      "Num Global slaves:", len(slaves_glob),
+      " Num other procs:", len(set(owners)))
