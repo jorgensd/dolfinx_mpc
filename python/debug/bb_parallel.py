@@ -9,7 +9,8 @@ import dolfinx
 import dolfinx.fem as fem
 import dolfinx.geometry as geometry
 import dolfinx.io as io
-from helpers_contact import (compute_local_master_coeffs,
+from helpers_contact import (compute_masters_local,
+                             compute_masters_local_block,
                              compute_masters_from_global,
                              locate_dofs_colliding_with_cells,
                              recv_bb_collisions, recv_masters,
@@ -81,9 +82,9 @@ glob_slaves = loc_to_glob[loc_slaves_flat]
 loc_coords = x[loc_slaves]
 
 # Compute local master coefficients for the local slaves
-masters_local, coeffs_local = compute_local_master_coeffs(V, loc_slaves_flat,
-                                                          loc_masters_at_slave,
-                                                          n_vec)
+masters_block = compute_masters_local_block(V, loc_slaves_flat,
+                                            loc_masters_at_slave,
+                                            n_vec)
 
 
 # Find the master cells from facet tag of master interfaces
@@ -97,9 +98,12 @@ unique_master_cells = np.unique(local_master_cells)
 
 # Find local masters for slaves that are local on this process
 tree = geometry.BoundingBoxTree(mesh, tdim)
-masters_for_local_slave = locate_dofs_colliding_with_cells(
+local_slave_to_cell = locate_dofs_colliding_with_cells(
     mesh, loc_slaves, loc_coords, unique_master_cells, tree)
 
+# Find coefficients for masters located on this processors
+local_masters_interface = compute_masters_local(V, loc_slaves_flat, loc_coords,
+                                                n_vec, local_slave_to_cell)
 
 # Compute collisions of slaves with bounding boxes on other processors
 # and send these processors the slaves, coordinates and normals
@@ -124,16 +128,38 @@ global_masters, narrow_slave_recv = recv_masters(
 masters_from_global = select_masters(global_masters)
 
 # Gather masters for each slave owned by the processor
-# masters_from_global,masters_for_local_slave
-# masters_local, coeffs_local
+# These can be:
+# 1. Masters from slave block
+# 2. Masters from same proc
+# 3. Masters from other proc
+masters_for_all_local = []
+coeffs_for_all_local = []
+owners_for_all_local = []
+offsets_for_all_local = [0]
 for dof in loc_slaves_flat:
-    print("rank", MPI.COMM_WORLD.rank, "Dof", dof)
-    if dof in masters_from_global.keys():
-        print("from global", masters_from_global[dof]["masters"])
-    if dof in masters_for_local_slave.keys():
-        print("from local", masters_for_local_slave[dof]["masters"])
-    if dof in masters_local.keys():
-        print("local", masters_local[dof])
+    # Added blocked dofs
+    if dof in masters_block.keys():
+        # Map to global
+        masters_for_all_local.extend(
+            loc_to_glob[masters_block[dof]["masters"]])
+        coeffs_for_all_local.extend(masters_block[dof]["coeffs"])
+        owners_for_all_local.extend(masters_block[dof]["owners"])
+
+    if (dof in masters_from_global.keys()
+            or dof in local_masters_interface.keys()):
+        if dof in local_masters_interface.keys():
+            # Always chose local masters over other processor
+            masters_for_all_local.extend(
+                loc_to_glob[local_masters_interface[dof]["masters"]])
+            coeffs_for_all_local.extend(local_masters_interface[dof]["coeffs"])
+            owners_for_all_local.extend(local_masters_interface[dof]["owners"])
+        elif dof in masters_from_global.keys():
+            masters_for_all_local.extend(masters_from_global[dof]["masters"])
+            coeffs_for_all_local.extend(masters_from_global[dof]["coeffs"])
+            owners_for_all_local.extend(masters_from_global[dof]["owners"])
+    offsets_for_all_local.append(len(masters_for_all_local))
+
+
 # Initialize Contact constraint (computes which cells contains slaves)
 cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
 # Get shared indices for every ghost on the processor

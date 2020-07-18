@@ -5,24 +5,78 @@ import dolfinx.cpp
 import dolfinx_mpc.cpp
 
 
-def compute_local_master_coeffs(V, local_slaves, local_masters, n_vec):
+def compute_masters_local_block(V, local_slaves, local_masters, n_vec):
     """
     Compute master contributions from the other sub-spaces (0,tdim-1).
     All of these masters will be local for to the proc
     """
-    masters_local = {}
-    coeffs_local = {}
+    masters_block = {}
     for i, slave in enumerate(local_slaves):
         for j in range(len(local_masters)):
             coeff = -n_vec[local_masters[j][i]]/n_vec[slave]
             if not np.isclose(coeff, 0):
-                if slave in masters_local.keys():
-                    masters_local[slave].append(local_masters[j][i])
-                    coeffs_local[slave].append(coeff)
+                if slave in masters_block.keys():
+                    masters_block[slave]["masters"].append(local_masters[j][i])
+                    masters_block[slave]["coeffs"].append(coeff)
+                    masters_block[slave]["owners"].append(MPI.COMM_WORLD.rank)
                 else:
-                    masters_local[slave] = [local_masters[j][i]]
-                    coeffs_local[slave] = [coeff]
-    return masters_local, coeffs_local
+                    masters_block[slave] = {"masters": [local_masters[j][i]],
+                                            "coeffs": [coeff],
+                                            "owners": [MPI.COMM_WORLD.rank]}
+    if MPI.COMM_WORLD.rank == 0:
+        print("MB", masters_block)
+    return masters_block
+
+
+def compute_masters_local(V, loc_slaves, loc_coords,
+                          n_vec, local_slave_to_cell):
+    """
+    Compute coefficient for each local slave with local masters
+    (other side of the interface)
+    """
+    tdim = V.mesh.topology.dim
+    bs = V.dofmap.index_map.block_size
+    local_size = V.dofmap.index_map.size_local*bs
+    ghost_owners = V.dofmap.index_map.ghost_owner_rank()
+    masters_local = {}
+    for i, slave in enumerate(loc_slaves):
+        # Compute normal vector for local slave
+        b_off = slave % bs
+        block_dofs = np.array([slave-b_off+i for i in range(bs)])
+        n = list(n_vec[block_dofs])
+
+        # Extract cell and compute basis values
+        if i in local_slave_to_cell.keys():
+            cell = local_slave_to_cell[i]
+        else:
+            continue
+        coord = loc_coords[i]
+        basis_values = dolfinx_mpc.cpp.mpc.\
+            get_basis_functions(V._cpp_object,
+                                coord, cell)
+        cell_dofs = V.dofmap.cell_dofs(cell)
+        masters_ = []
+        owners_ = []
+        coeffs_ = []
+        for k in range(tdim):
+            for local_idx, dof in enumerate(cell_dofs):
+                coeff = basis_values[local_idx, k]
+                coeff *= (n[k] / n[tdim-1])
+                if not np.isclose(coeff, 0):
+                    if dof < local_size:
+                        owners_.append(MPI.COMM_WORLD.rank)
+                    else:
+                        # If master i ghost, find its owner
+                        owners_.append(
+                            ghost_owners[dof//bs -
+                                         local_size//bs])
+                    masters_.append(dof)
+                    coeffs_.append(coeff)
+        if len(masters_) > 0:
+            masters_local[slave] = {"masters": masters_,
+                                    "coeffs": coeffs_,
+                                    "owners": owners_}
+    return masters_local
 
 
 def locate_dofs_colliding_with_cells(mesh, dofs, coords, cells, tree):
