@@ -160,12 +160,15 @@ for dof, point in zip(loc_slaves, loc_coords):
                 normals_to_send[proc].append(n)
 
 # Send information about possible collisions with slave to the other processors
+possible_recv = []
 for proc in range(MPI.COMM_WORLD.size):
     if proc in slaves_to_send.keys():
         MPI.COMM_WORLD.send({"slaves": slaves_to_send[proc],
                              "coords": slave_coords_to_send[proc],
                              "normals": normals_to_send[proc]},
                             dest=proc, tag=0)
+        # Cache proc for later receive
+        possible_recv.append(proc)
     elif proc != MPI.COMM_WORLD.rank:
         MPI.COMM_WORLD.send({}, dest=proc, tag=0)
 
@@ -197,17 +200,19 @@ masters_for_glob_slave = {}
 for proc in range(MPI.COMM_WORLD.size):
     masters_for_glob_slave[proc] = {}
 
-if len(slaves_glob) > 0 and coords_glob is not None:
+# If received slaves, find possible masters
+if len(slaves_glob) > 0:
     ghost_owners = V.dofmap.index_map.ghost_owner_rank()
 
-    # Find local masters for slaves that are local on this process
+    # Find local cells that can possibly contain masters
     slaves_array = np.array(slaves_glob).reshape((len(slaves_glob), 1))
-    masters_for_global_slave = locate_dofs_colliding_with_cells(
+    cells_with_masters_for_global_slave = locate_dofs_colliding_with_cells(
         slaves_array, coords_glob, unique_master_cells, tree)
 
+    masters_for_slaves = {}
     # Loop through slave dofs and compute local master contributions
-    for index in masters_for_global_slave.keys():
-        cell = masters_for_global_slave[index]
+    for index in cells_with_masters_for_global_slave.keys():
+        cell = cells_with_masters_for_global_slave[index]
         coord = coords_glob[index]
         basis_values = dolfinx_mpc.cpp.mpc.\
             get_basis_functions(V._cpp_object,
@@ -222,19 +227,46 @@ if len(slaves_glob) > 0 and coords_glob is not None:
                 coeff *= (normals_glob[index][k] /
                           normals_glob[index][tdim-1])
                 if not np.isclose(coeff, 0):
-                    # If master i ghost, find its owner
                     if dof < local_size:
                         owners_.append(comm.rank)
                     else:
+                        # If master i ghost, find its owner
                         owners_.append(
                             ghost_owners[dof//bs -
                                          local_size//bs])
 
                     masters_.append(dof)
                     coeffs_.append(coeff)
+        if owners[index] in masters_for_slaves.keys():
+            masters_for_slaves[owners[index]
+                               ][slaves_glob[index]] = {"masters": masters_,
+                                                        "coeffs": coeffs_,
+                                                        "owners": owners_}
 
-        print(MPI.COMM_WORLD.rank,
-              slaves_glob[index], masters_, owners_, coeffs_)
+        else:
+            masters_for_slaves[owners[index]] = {slaves_glob[index]:
+                                                 {"masters": masters_,
+                                                  "coeffs": coeffs_,
+                                                  "owners": owners_}}
+
+    # Communicators that might later have to receive from master
+    narrow_slave_recv = []
+    # Send master info to slave processor
+    for proc in set(owners):
+        if proc in masters_for_slaves.keys():
+            MPI.COMM_WORLD.send(masters_for_slaves[proc],
+                                dest=proc, tag=1)
+            narrow_slave_recv.append(proc)
+        else:
+            MPI.COMM_WORLD.send({}, dest=proc, tag=1)
+
+narrow_master_recv = []
+for proc in possible_recv:
+    data = MPI.COMM_WORLD.recv(source=proc, tag=1)
+    if len(data.keys()) == 0:
+        narrow_master_recv.append(proc)
+    print("{0:d} received from {1:d}, len data {2:d}".format(
+        MPI.COMM_WORLD.rank, proc, len(data.keys())))
 
 # Write cell partitioning to file
 indices = np.arange(num_cells_local)
