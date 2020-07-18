@@ -42,8 +42,64 @@ def locate_dofs_colliding_with_cells(dofs, coords, cells, tree):
     return dof_to_cell
 
 
+def compute_masters_from_global(V, slaves_glob, coords_glob,
+                                unique_master_cells, tree):
+    """
+    Given the set of cells that can have a master dof, locate the actual
+    masters that are close to slave dofs from another processor, and
+    compute the corresponding coefficients and owners
+    """
+    ghost_owners = V.dofmap.index_map.ghost_owner_rank()
+
+    # Find local cells that can possibly contain masters
+    slaves_array = np.array(slaves_glob).reshape((len(slaves_glob), 1))
+    cells_with_masters_for_global_slave = locate_dofs_colliding_with_cells(
+        slaves_array, coords_glob, unique_master_cells, tree)
+
+    masters_for_slaves = {}
+    # Loop through slave dofs and compute local master contributions
+    for index in cells_with_masters_for_global_slave.keys():
+        cell = cells_with_masters_for_global_slave[index]
+        coord = coords_glob[index]
+        basis_values = dolfinx_mpc.cpp.mpc.\
+            get_basis_functions(V._cpp_object,
+                                coord, cell)
+        cell_dofs = V.dofmap.cell_dofs(cell)
+        masters_ = []
+        owners_ = []
+        coeffs_ = []
+        for k in range(tdim):
+            for local_idx, dof in enumerate(cell_dofs):
+                coeff = basis_values[local_idx, k]
+                coeff *= (normals_glob[index][k] /
+                          normals_glob[index][tdim-1])
+                if not np.isclose(coeff, 0):
+                    if dof < local_size:
+                        owners_.append(comm.rank)
+                    else:
+                        # If master i ghost, find its owner
+                        owners_.append(
+                            ghost_owners[dof//bs -
+                                         local_size//bs])
+
+                    masters_.append(dof)
+                    coeffs_.append(coeff)
+        if owners[index] in masters_for_slaves.keys():
+            masters_for_slaves[owners[index]
+                               ][slaves_glob[index]] = {"masters": masters_,
+                                                        "coeffs": coeffs_,
+                                                        "owners": owners_}
+
+        else:
+            masters_for_slaves[owners[index]] = {slaves_glob[index]:
+                                                 {"masters": masters_,
+                                                  "coeffs": coeffs_,
+                                                  "owners": owners_}}
+    return masters_for_slaves
+
+
 comm = MPI.COMM_WORLD
-theta = 0
+theta = np.pi/5
 if comm.size == 1:
     mesh_3D_rot(theta)
 # Read in mesh
@@ -89,14 +145,42 @@ for i in range(tdim-1):
     loc_master = loc_master_i_dofs[loc_master_i_dofs < local_size]
     loc_masters_at_slave.append(loc_master)
 
+
 # Local slaves and their corresponding coordinates
-Vi = V.sub(tdim-2).collapse()
+Vi = V.sub(tdim-1).collapse()
 slaves_loc = fem.locate_dofs_topological(
-    (V.sub(i), Vi), fdim, slave_facets)[:, 0]
+    (V.sub(tdim-1), Vi), fdim, slave_facets)[:, 0]
 # Remove ghosts
 loc_slaves = slaves_loc[slaves_loc < local_size]
 loc_slaves = loc_slaves.reshape((len(loc_slaves), 1))
 loc_coords = x[loc_slaves]
+
+
+def compute_local_master_coeffs(V, local_slaves, local_masters, n_vec):
+    """
+    Compute master contributions from the other sub-spaces (0,tdim-1).
+    All of these masters will be local for to the proc
+    """
+    masters_local = {}
+    coeffs_local = {}
+    for i, slave in enumerate(local_slaves.T[0]):
+        for j in range(len(local_masters)):
+            coeff = -n_vec[local_masters[j][i]]/n_vec[slave]
+            if not np.isclose(coeff, 0):
+                print(i, j)
+                if i in masters_local.keys():
+                    masters_local[i].append(local_masters[j][i])
+                    coeffs_local[i].append(coeff)
+                else:
+                    masters_local[i] = [local_masters[j][i]]
+                    coeffs_local[i] = [coeff]
+    return masters_local, coeffs_local
+
+
+masters_local, coeffs_local = compute_local_master_coeffs(V, loc_slaves,
+                                                          loc_masters_at_slave,
+                                                          n_vec)
+
 
 # Top mesh bottom facets
 master_facets = mt.indices[mt.values == 9]
@@ -111,7 +195,6 @@ unique_master_cells = np.unique(local_master_cells)
 # Loop over local slaves to see if we can find a corresponding master cell
 # that its coordinate is close to
 tree = geometry.BoundingBoxTree(mesh, tdim)
-
 
 # Find local masters for slaves that are local on this process
 masters_for_local_slave = locate_dofs_colliding_with_cells(
@@ -195,60 +278,13 @@ for i in range(MPI.COMM_WORLD.size):
             else:
                 normals_glob = np.vstack([normals_glob, data["normals"]])
 
-# Check if proc received anything
-masters_for_glob_slave = {}
-for proc in range(MPI.COMM_WORLD.size):
-    masters_for_glob_slave[proc] = {}
 
 # If received slaves, find possible masters
 if len(slaves_glob) > 0:
-    ghost_owners = V.dofmap.index_map.ghost_owner_rank()
-
-    # Find local cells that can possibly contain masters
-    slaves_array = np.array(slaves_glob).reshape((len(slaves_glob), 1))
-    cells_with_masters_for_global_slave = locate_dofs_colliding_with_cells(
-        slaves_array, coords_glob, unique_master_cells, tree)
-
-    masters_for_slaves = {}
-    # Loop through slave dofs and compute local master contributions
-    for index in cells_with_masters_for_global_slave.keys():
-        cell = cells_with_masters_for_global_slave[index]
-        coord = coords_glob[index]
-        basis_values = dolfinx_mpc.cpp.mpc.\
-            get_basis_functions(V._cpp_object,
-                                coord, cell)
-        cell_dofs = V.dofmap.cell_dofs(cell)
-        masters_ = []
-        owners_ = []
-        coeffs_ = []
-        for k in range(tdim):
-            for local_idx, dof in enumerate(cell_dofs):
-                coeff = basis_values[local_idx, k]
-                coeff *= (normals_glob[index][k] /
-                          normals_glob[index][tdim-1])
-                if not np.isclose(coeff, 0):
-                    if dof < local_size:
-                        owners_.append(comm.rank)
-                    else:
-                        # If master i ghost, find its owner
-                        owners_.append(
-                            ghost_owners[dof//bs -
-                                         local_size//bs])
-
-                    masters_.append(dof)
-                    coeffs_.append(coeff)
-        if owners[index] in masters_for_slaves.keys():
-            masters_for_slaves[owners[index]
-                               ][slaves_glob[index]] = {"masters": masters_,
-                                                        "coeffs": coeffs_,
-                                                        "owners": owners_}
-
-        else:
-            masters_for_slaves[owners[index]] = {slaves_glob[index]:
-                                                 {"masters": masters_,
-                                                  "coeffs": coeffs_,
-                                                  "owners": owners_}}
-
+    masters_for_slaves = compute_masters_from_global(V, slaves_glob,
+                                                     coords_glob,
+                                                     unique_master_cells,
+                                                     tree)
     # Communicators that might later have to receive from master
     narrow_slave_recv = []
     # Send master info to slave processor
@@ -265,8 +301,10 @@ for proc in possible_recv:
     data = MPI.COMM_WORLD.recv(source=proc, tag=1)
     if len(data.keys()) == 0:
         narrow_master_recv.append(proc)
-    print("{0:d} received from {1:d}, len data {2:d}".format(
+    print("{0:d} received masters for {2:d} slaves from {1:d}".format(
         MPI.COMM_WORLD.rank, proc, len(data.keys())))
+
+# Check for uniqueness/ random assign
 
 # Write cell partitioning to file
 indices = np.arange(num_cells_local)
@@ -282,11 +320,6 @@ with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
     xdmf.write_function(nh)
 
 
-tree = dolfinx.geometry.BoundingBoxTree(mesh, mesh.topology.dim)
-
-
-print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(slaves_loc),
-      "Num Global slaves:", len(slaves_glob),
-      " Num other procs:", len(set(owners)))
+print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
 # common.list_timings(MPI.COMM_WORLD,
 #                     [dolfinx.common.TimingType.wall])
