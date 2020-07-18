@@ -14,7 +14,8 @@ from helpers_contact import (compute_masters_local,
                              compute_masters_from_global,
                              locate_dofs_colliding_with_cells,
                              recv_bb_collisions, recv_masters,
-                             select_masters, send_bb_collisions, send_masters)
+                             select_masters, send_bb_collisions, send_masters,
+                             gather_masters_for_local_slaves)
 # import dolfinx.log as log
 # import dolfinx.common as common
 
@@ -127,37 +128,10 @@ global_masters, narrow_slave_recv = recv_masters(
 # Select masters if getting them from multiple procs
 masters_from_global = select_masters(global_masters)
 
-# Gather masters for each slave owned by the processor
-# These can be:
-# 1. Masters from slave block
-# 2. Masters from same proc
-# 3. Masters from other proc
-masters_for_all_local = []
-coeffs_for_all_local = []
-owners_for_all_local = []
-offsets_for_all_local = [0]
-for dof in loc_slaves_flat:
-    # Added blocked dofs
-    if dof in masters_block.keys():
-        # Map to global
-        masters_for_all_local.extend(
-            loc_to_glob[masters_block[dof]["masters"]])
-        coeffs_for_all_local.extend(masters_block[dof]["coeffs"])
-        owners_for_all_local.extend(masters_block[dof]["owners"])
-
-    if (dof in masters_from_global.keys()
-            or dof in local_masters_interface.keys()):
-        if dof in local_masters_interface.keys():
-            # Always chose local masters over other processor
-            masters_for_all_local.extend(
-                loc_to_glob[local_masters_interface[dof]["masters"]])
-            coeffs_for_all_local.extend(local_masters_interface[dof]["coeffs"])
-            owners_for_all_local.extend(local_masters_interface[dof]["owners"])
-        elif dof in masters_from_global.keys():
-            masters_for_all_local.extend(masters_from_global[dof]["masters"])
-            coeffs_for_all_local.extend(masters_from_global[dof]["coeffs"])
-            owners_for_all_local.extend(masters_from_global[dof]["owners"])
-    offsets_for_all_local.append(len(masters_for_all_local))
+# Gather all masters for local slave in a 1D lists
+m_loc, c_loc, o_loc, offsets = gather_masters_for_local_slaves(
+    loc_slaves_flat, loc_to_glob,
+    masters_block, local_masters_interface, masters_from_global)
 
 
 # Initialize Contact constraint (computes which cells contains slaves)

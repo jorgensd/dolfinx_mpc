@@ -23,8 +23,7 @@ def compute_masters_local_block(V, local_slaves, local_masters, n_vec):
                     masters_block[slave] = {"masters": [local_masters[j][i]],
                                             "coeffs": [coeff],
                                             "owners": [MPI.COMM_WORLD.rank]}
-    if MPI.COMM_WORLD.rank == 0:
-        print("MB", masters_block)
+
     return masters_block
 
 
@@ -319,3 +318,40 @@ def send_bb_collisions(V, loc_slaves, loc_coords, n_vec, tag):
         elif proc != MPI.COMM_WORLD.rank:
             MPI.COMM_WORLD.send({}, dest=proc, tag=tag)
     return possible_recv
+
+
+def gather_masters_for_local_slaves(local_slaves, loc_to_glob,
+                                    block_masters, loc_masters, glob_master):
+    # Gather masters for each slave owned by the processor
+    # These can be:
+    # 1. Masters from slave block
+    # 2. Masters from same proc or Masters from other proc
+    # Always chose same proc over other proc
+    masters_for_all_local = []
+    coeffs_for_all_local = []
+    owners_for_all_local = []
+    offsets_for_all_local = [0]
+    for dof in local_slaves:
+        # Added blocked dofs
+        if dof in block_masters.keys():
+            # Map to global
+            masters_for_all_local.extend(
+                loc_to_glob[block_masters[dof]["masters"]])
+            coeffs_for_all_local.extend(block_masters[dof]["coeffs"])
+            owners_for_all_local.extend(block_masters[dof]["owners"])
+
+        if (dof in glob_master.keys()
+                or dof in loc_masters.keys()):
+            if dof in loc_masters.keys():
+                # Always chose local masters over other processor
+                masters_for_all_local.extend(
+                    loc_to_glob[loc_masters[dof]["masters"]])
+                coeffs_for_all_local.extend(loc_masters[dof]["coeffs"])
+                owners_for_all_local.extend(loc_masters[dof]["owners"])
+            elif dof in glob_master.keys():
+                masters_for_all_local.extend(glob_master[dof]["masters"])
+                coeffs_for_all_local.extend(glob_master[dof]["coeffs"])
+                owners_for_all_local.extend(glob_master[dof]["owners"])
+        offsets_for_all_local.append(len(masters_for_all_local))
+    return (masters_for_all_local, coeffs_for_all_local,
+            owners_for_all_local, offsets_for_all_local)
