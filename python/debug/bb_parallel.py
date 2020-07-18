@@ -72,6 +72,7 @@ Vi = V.sub(tdim-1).collapse()
 slaves_loc = fem.locate_dofs_topological(
     (V.sub(tdim-1), Vi), fdim, slave_facets)[:, 0]
 loc_slaves_flat = slaves_loc[slaves_loc < local_size]
+ghost_slaves = [local_size <= slaves_loc]
 loc_slaves = loc_slaves_flat.reshape((len(loc_slaves_flat), 1))
 # get the global slave indices and the dof coordinates
 glob_slaves = loc_to_glob[loc_slaves_flat]
