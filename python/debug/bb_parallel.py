@@ -1,4 +1,5 @@
 
+from IPython import embed
 import dolfinx_mpc.cpp
 import numpy as np
 # from IPython import embed
@@ -72,7 +73,8 @@ Vi = V.sub(tdim-1).collapse()
 slaves_loc = fem.locate_dofs_topological(
     (V.sub(tdim-1), Vi), fdim, slave_facets)[:, 0]
 loc_slaves_flat = slaves_loc[slaves_loc < local_size]
-ghost_slaves = [local_size <= slaves_loc]
+ghost_slaves = slaves_loc[local_size <= slaves_loc]
+ghost_coords = x[ghost_slaves]
 loc_slaves = loc_slaves_flat.reshape((len(loc_slaves_flat), 1))
 # get the global slave indices and the dof coordinates
 glob_slaves = loc_to_glob[loc_slaves_flat]
@@ -101,11 +103,10 @@ masters_for_local_slave = locate_dofs_colliding_with_cells(
 
 # Compute collisions of slaves with bounding boxes on other processors
 # and send these processors the slaves, coordinates and normals
-possible_recv = send_bb_collisions(V, loc_slaves, loc_coords, n_vec)
+possible_recv = send_bb_collisions(V, loc_slaves, loc_coords, n_vec, tag=0)
 
 # Recieve info from other processors about possible collisions
-slaves_glob, owners, coords_glob, normals_glob = recv_bb_collisions()
-
+slaves_glob, owners, coords_glob, normals_glob = recv_bb_collisions(tag=0)
 
 # If received slaves, find possible masters
 if len(slaves_glob) > 0:
@@ -114,16 +115,48 @@ if len(slaves_glob) > 0:
                                                      owners,
                                                      unique_master_cells,
                                                      tree)
-    narrow_slave_send = send_masters(masters_for_slaves, owners)
+    narrow_slave_send = send_masters(masters_for_slaves, owners, tag=1)
 
 # Receive masters from other procs
 global_masters, narrow_slave_recv = recv_masters(
-    loc_slaves_flat, glob_slaves, possible_recv)
+    loc_slaves_flat, glob_slaves, possible_recv, tag=1)
 # Select masters if getting them from multiple procs
 masters_from_global = select_masters(global_masters)
 
-# Temporary storage of slave and cell info
-# cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
+# Gather masters for each slave owned by the processor
+# masters_from_global,masters_for_local_slave
+# masters_local, coeffs_local
+for dof in loc_slaves_flat:
+    print("rank", MPI.COMM_WORLD.rank, "Dof", dof)
+    if dof in masters_from_global.keys():
+        print("from global", masters_from_global[dof]["masters"])
+    if dof in masters_for_local_slave.keys():
+        print("from local", masters_for_local_slave[dof]["masters"])
+    if dof in masters_local.keys():
+        print("local", masters_local[dof])
+# Initialize Contact constraint (computes which cells contains slaves)
+cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
+# Get shared indices for every ghost on the processor
+shared_indices = cc.compute_shared_indices()
+# Rewrite data such that shared indices are sorted by dofs
+shared_slaves = {}
+# for dof in shared_indices.keys():
+#     if dof in loc_slaves_flat:
+
+# for proc in shared_indices[dof]:
+#     if proc in shared_slaves.keys():
+#         shared_slaves[proc]
+#     else:
+#         shared_slaves[proc] =
+
+# Send shared slaves
+# for proc in shared_slavs.keys():
+#     MPI.COMM_WORLD.send(shared_slave, dest=proc, tag=3)
+
+# # Receive ghost slaves
+
+# print(MPI.COMM_WORLD.rank, shared_slaves)
+
 
 # Write cell partitioning to file
 tdim = mesh.topology.dim

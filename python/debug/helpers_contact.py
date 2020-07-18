@@ -16,12 +16,12 @@ def compute_local_master_coeffs(V, local_slaves, local_masters, n_vec):
         for j in range(len(local_masters)):
             coeff = -n_vec[local_masters[j][i]]/n_vec[slave]
             if not np.isclose(coeff, 0):
-                if i in masters_local.keys():
-                    masters_local[i].append(local_masters[j][i])
-                    coeffs_local[i].append(coeff)
+                if slave in masters_local.keys():
+                    masters_local[slave].append(local_masters[j][i])
+                    coeffs_local[slave].append(coeff)
                 else:
-                    masters_local[i] = [local_masters[j][i]]
-                    coeffs_local[i] = [coeff]
+                    masters_local[slave] = [local_masters[j][i]]
+                    coeffs_local[slave] = [coeff]
     return masters_local, coeffs_local
 
 
@@ -112,7 +112,7 @@ def compute_masters_from_global(V, slaves_glob, coords_glob, normals_glob,
     return masters_for_slaves
 
 
-def recv_masters(loc_slaves_flat, glob_slaves, possible_recv):
+def recv_masters(loc_slaves_flat, glob_slaves, possible_recv, tag):
     """
     Receive masters from other processors (those listed in possible_recv),
      and sort them by slave.
@@ -124,7 +124,7 @@ def recv_masters(loc_slaves_flat, glob_slaves, possible_recv):
     for proc in possible_recv:
         # Receive info from other proc and only do something if
         # there is data
-        data = MPI.COMM_WORLD.recv(source=proc, tag=1)
+        data = MPI.COMM_WORLD.recv(source=proc, tag=tag)
         if len(data.keys()) > 0:
             narrow_master_recv.append(proc)
             print("{0:d} received masters for {2:d} slaves from {1:d}".format(
@@ -141,7 +141,7 @@ def recv_masters(loc_slaves_flat, glob_slaves, possible_recv):
     return global_masters, narrow_master_recv
 
 
-def send_masters(masters_for_slaves, owners):
+def send_masters(masters_for_slaves, owners, tag):
     """
     Sends masters from local processor to the processor
     owning the slave (Those in owners).
@@ -153,10 +153,10 @@ def send_masters(masters_for_slaves, owners):
     for proc in set(owners):
         if proc in masters_for_slaves.keys():
             MPI.COMM_WORLD.send(masters_for_slaves[proc],
-                                dest=proc, tag=1)
+                                dest=proc, tag=tag)
             narrow_slave_send.append(proc)
         else:
-            MPI.COMM_WORLD.send({}, dest=proc, tag=1)
+            MPI.COMM_WORLD.send({}, dest=proc, tag=tag)
     return narrow_slave_send
 
 
@@ -181,7 +181,7 @@ def select_masters(global_masters):
     return masters
 
 
-def recv_bb_collisions():
+def recv_bb_collisions(tag):
     """
     Receive bb collisions form other proc. These processors are potential
     candidates to contain masters
@@ -192,7 +192,7 @@ def recv_bb_collisions():
     owners = np.ones(0, dtype=np.int32)
     for i in range(MPI.COMM_WORLD.size):
         if i != MPI.COMM_WORLD.rank:
-            data = MPI.COMM_WORLD.recv(source=i, tag=0)
+            data = MPI.COMM_WORLD.recv(source=i, tag=tag)
             if len(data) > 0:
                 slaves_glob.extend(data["slaves"])
                 owners = np.concatenate(
@@ -209,7 +209,7 @@ def recv_bb_collisions():
     return slaves_glob, owners, coords_glob, normals_glob
 
 
-def send_bb_collisions(V, loc_slaves, loc_coords, n_vec):
+def send_bb_collisions(V, loc_slaves, loc_coords, n_vec, tag):
     """
     Find all processors where a slave can be located
     according to the bounding box tree. Send information
@@ -259,9 +259,9 @@ def send_bb_collisions(V, loc_slaves, loc_coords, n_vec):
             MPI.COMM_WORLD.send({"slaves": slaves_to_send[proc],
                                  "coords": slave_coords_to_send[proc],
                                  "normals": normals_to_send[proc]},
-                                dest=proc, tag=0)
+                                dest=proc, tag=tag)
             # Cache proc for later receive
             possible_recv.append(proc)
         elif proc != MPI.COMM_WORLD.rank:
-            MPI.COMM_WORLD.send({}, dest=proc, tag=0)
+            MPI.COMM_WORLD.send({}, dest=proc, tag=tag)
     return possible_recv

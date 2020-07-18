@@ -5,6 +5,8 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include <Eigen/Dense>
+#include <dolfinx/common/IndexMap.h>
+#include <dolfinx/fem/DofMap.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 namespace dolfinx_mpc
@@ -43,6 +45,13 @@ public:
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> cell_to_slaves()
   {
     return _cell_to_slaves_map;
+  }
+
+  /// Return shared indices for the function space of the Contact constraint
+
+  std::map<std::int32_t, std::set<int>> compute_shared_indices()
+  {
+    return _V->dofmap()->index_map->compute_shared_indices();
   }
 
   /// Create map from cell to slaves and its inverse

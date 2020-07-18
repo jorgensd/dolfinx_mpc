@@ -60,7 +60,9 @@ void mpc(py::module& m)
       .def("slaves", &dolfinx_mpc::ContactConstraint::slaves)
       .def("slave_cells", &dolfinx_mpc::ContactConstraint::slave_cells)
       .def("slave_to_cells", &dolfinx_mpc::ContactConstraint::slave_to_cells)
-      .def("cell_to_slaves", &dolfinx_mpc::ContactConstraint::cell_to_slaves);
+      .def("cell_to_slaves", &dolfinx_mpc::ContactConstraint::cell_to_slaves)
+      .def("compute_shared_indices",
+           &dolfinx_mpc::ContactConstraint::compute_shared_indices);
 
   m.def("compute_process_collisions",
         py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,
