@@ -138,16 +138,39 @@ m_loc, c_loc, o_loc, offsets = gather_masters_for_local_slaves(
 cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
 # Get shared indices for every ghost on the processor
 shared_indices = cc.compute_shared_indices()
-# Rewrite data such that shared indices are sorted by dofs
-shared_slaves = {}
-# for dof in shared_indices.keys():
-#     if dof in loc_slaves_flat:
+# Write master data for ghosted slaves per processor
+share_masters = {}
+for (i, dof) in enumerate(loc_slaves_flat):
+    if dof in shared_indices.keys():
+        for proc in shared_indices[dof]:
+            if proc in share_masters.keys():
+                share_masters[proc][loc_to_glob[dof]]\
+                    = m_loc[offsets[i]:offsets[i+1]]
+            else:
+                share_masters[proc] = {loc_to_glob[dof]:
+                                       m_loc[offsets[i]:offsets[i+1]]}
+# Send masters to ghost processors
+for proc in share_masters.keys():
+    MPI.COMM_WORLD.send(share_masters[proc], dest=proc, tag=5)
 
-# for proc in shared_indices[dof]:
-#     if proc in shared_slaves.keys():
-#         shared_slaves[proc]
-#     else:
-#         shared_slaves[proc] =
+# Receive masters from ghost processors
+ghost_ranks = V.dofmap.index_map.ghost_owner_rank()
+bs = V.dofmap.index_map.block_size
+l_size = V.dofmap.index_map.size_local
+
+# Loop through ghosted slaves to find the unique set of procs
+ghost_recv = []
+for slave in ghost_slaves:
+    block = slave//bs - l_size
+    owner = ghost_ranks[block]
+    ghost_recv.append(owner)
+ghost_recv = set(ghost_recv)
+
+# Receive masters for ghosted slaves
+ghost_masters = {}
+for owner in ghost_recv:
+    data = MPI.COMM_WORLD.recv(source=owner, tag=5)
+    ghost_masters.update(data)
 
 # Send shared slaves
 # for proc in shared_slavs.keys():

@@ -349,7 +349,8 @@ def gather_masters_for_local_slaves(local_slaves, loc_to_glob,
                 coeffs_for_all_local.extend(loc_masters[dof]["coeffs"])
                 owners_for_all_local.extend(loc_masters[dof]["owners"])
             elif dof in glob_master.keys():
-                masters_for_all_local.extend(glob_master[dof]["masters"])
+                masters_for_all_local.extend(
+                    glob_master[dof]["masters"])
                 coeffs_for_all_local.extend(glob_master[dof]["coeffs"])
                 owners_for_all_local.extend(glob_master[dof]["owners"])
         offsets_for_all_local.append(len(masters_for_all_local))
