@@ -12,7 +12,7 @@ def compute_local_master_coeffs(V, local_slaves, local_masters, n_vec):
     """
     masters_local = {}
     coeffs_local = {}
-    for i, slave in enumerate(local_slaves.T[0]):
+    for i, slave in enumerate(local_slaves):
         for j in range(len(local_masters)):
             coeff = -n_vec[local_masters[j][i]]/n_vec[slave]
             if not np.isclose(coeff, 0):
@@ -112,21 +112,21 @@ def compute_masters_from_global(V, slaves_glob, coords_glob, normals_glob,
     return masters_for_slaves
 
 
-def recv_masters_from_other_proc(loc_slaves_flat, glob_slaves, possible_recv):
+def recv_masters(loc_slaves_flat, glob_slaves, possible_recv):
     """
     Receive masters from other processors (those listed in possible_recv),
      and sort them by slave.
     If duplicates, add both of them.
     Also returns the processors where data is actually received.
     """
-    narrow_receives = []
+    narrow_master_recv = []
     global_masters = {}
     for proc in possible_recv:
         # Receive info from other proc and only do something if
         # there is data
         data = MPI.COMM_WORLD.recv(source=proc, tag=1)
         if len(data.keys()) > 0:
-            narrow_receives.append(proc)
+            narrow_master_recv.append(proc)
             print("{0:d} received masters for {2:d} slaves from {1:d}".format(
                 MPI.COMM_WORLD.rank, proc, len(data.keys())))
             # Loop through the slaves which sending proc has masters for
@@ -138,7 +138,26 @@ def recv_masters_from_other_proc(loc_slaves_flat, glob_slaves, possible_recv):
                 else:
                     global_masters[loc_slaves_flat[idx]] = {
                         proc: data[global_slave]}
-    return global_masters, narrow_receives
+    return global_masters, narrow_master_recv
+
+
+def send_masters(masters_for_slaves, owners):
+    """
+    Sends masters from local processor to the processor
+    owning the slave (Those in owners).
+    Returns which processors actually received data.
+    """
+    # Communicators that might later have to receive from master
+    narrow_slave_send = []
+    # Send master info to slave processor
+    for proc in set(owners):
+        if proc in masters_for_slaves.keys():
+            MPI.COMM_WORLD.send(masters_for_slaves[proc],
+                                dest=proc, tag=1)
+            narrow_slave_send.append(proc)
+        else:
+            MPI.COMM_WORLD.send({}, dest=proc, tag=1)
+    return narrow_slave_send
 
 
 def select_masters(global_masters):
