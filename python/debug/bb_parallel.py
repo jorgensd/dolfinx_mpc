@@ -1,26 +1,25 @@
 
-import dolfinx.common as common
-from IPython import embed
 import dolfinx_mpc.cpp
-import ufl
-import pygmsh
 import numpy as np
-# from IPython import embed
+import pygmsh
+import ufl
+from IPython import embed
 from mpi4py import MPI
+from petsc4py import PETSc
 
 import dolfinx
+import dolfinx.common as common
 import dolfinx.fem as fem
 import dolfinx.geometry as geometry
 import dolfinx.io as io
-from helpers_contact import (compute_masters_local,
-                             compute_masters_local_block,
-                             compute_masters_from_global,
+import dolfinx.log as log
+from helpers_contact import (compute_masters_from_global,
+                             compute_masters_local,
+                             compute_masters_local_block, flatten_ghosts,
+                             gather_masters_for_local_slaves,
                              locate_dofs_colliding_with_cells,
-                             recv_bb_collisions, recv_masters,
-                             select_masters, send_bb_collisions, send_masters,
-                             gather_masters_for_local_slaves, flatten_ghosts)
-# import dolfinx.log as log
-
+                             recv_bb_collisions, recv_masters, select_masters,
+                             send_bb_collisions, send_masters)
 from stacked_cube import mesh_3D_rot
 
 # Generate mesh in serial and load it
@@ -177,7 +176,7 @@ local_masters_interface = compute_masters_local(V, loc_slaves_flat, loc_coords,
 # Compute collisions of slaves with bounding boxes on other processors
 # and send these processors the slaves, coordinates and normals
 possible_recv = send_bb_collisions(V, loc_slaves, loc_coords, n_vec, tag=0)
-
+print(possible_recv)
 # Recieve info from other processors about possible collisions
 slaves_glob, owners, coords_glob, normals_glob = recv_bb_collisions(tag=0)
 
@@ -193,6 +192,8 @@ if len(slaves_glob) > 0:
 # Receive masters from other procs
 global_masters, narrow_slave_recv = recv_masters(
     loc_slaves_flat, glob_slaves, possible_recv, tag=1)
+
+print(narrow_slave_recv)
 # Select masters if getting them from multiple procs
 masters_from_global = select_masters(global_masters)
 
@@ -214,7 +215,7 @@ bs = V.dofmap.index_map.block_size
 # Write master data for ghosted slaves per processor
 share_masters = {}
 for (i, dof) in enumerate(loc_slaves_flat):
-    # Map slave to block to lookup if shaerd_index
+    # Map slave to block to lookup if shared_index
     block = dof // bs
     if block in shared_indices.keys():
         for proc in shared_indices[block]:
@@ -232,7 +233,7 @@ for (i, dof) in enumerate(loc_slaves_flat):
 # Send masters to ghost processors
 for proc in share_masters.keys():
     MPI.COMM_WORLD.send(share_masters[proc], dest=proc, tag=5)
-
+print(share_masters.keys())
 # Receive masters from ghost processors
 ghost_ranks = V.dofmap.index_map.ghost_owner_rank()
 l_size = V.dofmap.index_map.size_local
@@ -266,26 +267,36 @@ cc.add_masters(all_masters, all_coeffs, all_owners, all_offsets)
 
 
 # Assemble matrix
-dolfinx_mpc.assemble_matrix_local(a, cc)
+dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+#b = dolfinx_mpc.assemble_vector_local(lhs, cc)
 
+with common.Timer("TEST"):
+    import time
+    time.sleep(0.2)
+
+# Apply boundary conditions
+# fem.apply_lifting(b, [a], [bcs])
+# b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+#               mode=PETSc.ScatterMode.REVERSE)
+# fem.set_bc(b, bcs)
 
 # Write cell partitioning to file
-tdim = mesh.topology.dim
-cell_map = mesh.topology.index_map(tdim)
-num_cells_local = cell_map.size_local
-indices = np.arange(num_cells_local)
-values = MPI.COMM_WORLD.rank*np.ones(num_cells_local, np.int32)
-ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
-ct.name = "cells"
-with io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
-    xdmf.write_mesh(mesh)
-    xdmf.write_meshtags(ct)
+# tdim = mesh.topology.dim
+# cell_map = mesh.topology.index_map(tdim)
+# num_cells_local = cell_map.size_local
+# indices = np.arange(num_cells_local)
+# values = MPI.COMM_WORLD.rank*np.ones(num_cells_local, np.int32)
+# ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
+# ct.name = "cells"
+# with io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
+#     xdmf.write_mesh(mesh)
+#     xdmf.write_meshtags(ct)
 
-with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
-    xdmf.write_mesh(mesh)
-    xdmf.write_function(nh)
+# with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
+#     xdmf.write_mesh(mesh)
+#     xdmf.write_function(nh)
 
 
 # print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
-common.list_timings(MPI.COMM_WORLD,
-                    [dolfinx.common.TimingType.wall])
+# common.list_timings(MPI.COMM_WORLD,
+#                     [dolfinx.common.TimingType.wall])

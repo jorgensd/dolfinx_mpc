@@ -72,8 +72,10 @@ public:
   /// Return number of local slaves
   std::int32_t num_local_slaves() { return _num_local_slaves; }
 
-  /// Return shared indices for the function space of the Contact constraint
+  /// Return constraint IndexMap
+  std::shared_ptr<dolfinx::common::IndexMap> index_map() { return _index_map; }
 
+  /// Return shared indices for the function space of the Contact constraint
   std::map<std::int32_t, std::set<int>> compute_shared_indices()
   {
     return _V->dofmap()->index_map->compute_shared_indices();
