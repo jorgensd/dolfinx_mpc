@@ -267,13 +267,15 @@ cc.add_masters(all_masters, all_coeffs, all_owners, all_offsets)
 
 
 # Assemble matrix
+log.set_log_level(log.LogLevel.INFO)
+
+print(MPI.COMM_WORLD.rank, "Matrix pre")
 dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
-#b = dolfinx_mpc.assemble_vector_local(lhs, cc)
+print(MPI.COMM_WORLD.rank, "Matrix post")
 
-with common.Timer("TEST"):
-    import time
-    time.sleep(0.2)
-
+print(MPI.COMM_WORLD.rank, "vector pre")
+b = dolfinx_mpc.assemble_vector_local(lhs, cc)
+print(MPI.COMM_WORLD.rank, "vector post")
 # Apply boundary conditions
 # fem.apply_lifting(b, [a], [bcs])
 # b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,

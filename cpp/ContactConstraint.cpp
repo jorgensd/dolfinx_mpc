@@ -22,14 +22,18 @@ ContactConstraint::ContactConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves,
     std::int32_t num_local_slaves)
-    : _V(V), _slaves(slaves), _slave_cells(), _cell_to_slaves_map(),
+    : _V(V), _slaves(), _slave_cells(), _cell_to_slaves_map(),
       _slave_to_cells_map(), _num_local_slaves(num_local_slaves), _master_map(),
       _coeff_map(), _owner_map(), _master_local_map(), _master_block_map(),
       _dofmap()
 {
+  _slaves
+      = std::make_shared<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>(slaves);
   auto [slave_to_cells, cell_to_slaves_map] = create_cell_maps(slaves);
   auto [unique_cells, cell_to_slaves] = cell_to_slaves_map;
-  _slave_cells = unique_cells;
+  _slave_cells
+      = std::make_shared<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>(
+          unique_cells);
   _cell_to_slaves_map = cell_to_slaves;
   _slave_to_cells_map = slave_to_cells;
 }
@@ -300,7 +304,7 @@ dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
   {
     // Find index for slave in test and trial space
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> cell_dofs
-        = _dofmap->cell_dofs(_slave_cells[i]);
+        = _dofmap->cell_dofs(_slave_cells->array()[i]);
 
     // Loop over slaves in cell
     for (Eigen::Index j = 0; j < _cell_to_slaves_map->links(i).size(); j++)

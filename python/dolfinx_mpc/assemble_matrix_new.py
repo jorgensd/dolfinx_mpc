@@ -270,8 +270,8 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
 
         A_local_copy = A_local.copy()
         # If this slave contains a slave dof, modify local contribution
-        modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
-                              local_pos, mpc, ghost_info, num_dofs_per_element)
+        # modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
+        #                       local_pos, mpc, ghost_info, num_dofs_per_element)
         # Remove already assembled contribution to matrix
         A_contribution = A_local - A_local_copy
         slave_cell_index += 1

@@ -4,6 +4,8 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
+#pragma once
+
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
@@ -32,12 +34,15 @@ public:
                     std::int32_t num_local_slaves);
 
   /// Return the array of master dofs and corresponding coefficients
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves() { return _slaves; };
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves()
+  {
+    return _slaves->array();
+  };
 
   /// Return point to array of all unique local cells containing a slave
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cells()
   {
-    return _slave_cells;
+    return _slave_cells->array();
   };
 
   /// Return map from slave to cells containing that slave
@@ -117,9 +122,9 @@ private:
   // Original function space
   std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
   // Array including all slaves (local + ghosts)
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves;
+  std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slaves;
   // Array for all cells containing slaves (local + ghosts)
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slave_cells;
+  std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slave_cells;
   // Map from slave cell to index in _slaves for a given slave cell
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _cell_to_slaves_map;

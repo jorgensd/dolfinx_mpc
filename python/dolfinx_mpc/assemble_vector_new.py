@@ -19,7 +19,6 @@ def assemble_vector_local(form, constraint,
     timer_vector = dolfinx.common.Timer("MPC: Assemble vector")
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
-
     # Unpack mesh and dofmap data
     pos = V.mesh.geometry.dofmap.offsets()
     x_dofs = V.mesh.geometry.dofmap.array()
