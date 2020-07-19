@@ -15,7 +15,7 @@ from helpers_contact import (compute_masters_local,
                              locate_dofs_colliding_with_cells,
                              recv_bb_collisions, recv_masters,
                              select_masters, send_bb_collisions, send_masters,
-                             gather_masters_for_local_slaves)
+                             gather_masters_for_local_slaves, flatten_ghosts)
 # import dolfinx.log as log
 # import dolfinx.common as common
 
@@ -135,7 +135,9 @@ m_loc, c_loc, o_loc, offsets = gather_masters_for_local_slaves(
 
 
 # Initialize Contact constraint (computes which cells contains slaves)
-cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
+num_loc_slaves = len(loc_slaves_flat)
+cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+    V._cpp_object, slaves_loc, num_loc_slaves)
 
 # Get shared indices for every ghost on the processor
 shared_indices = cc.compute_shared_indices()
@@ -182,25 +184,20 @@ for owner in ghost_recv:
     ghost_masters.update(data)
 
 
-def flatten_ghosts(slaves, masters):
-    g_m, g_c, g_o, offsets = [], [], [], [0]
-    for slave in slaves:
-        g_m.extend(masters[slave]["masters"])
-        g_c.extend(masters[slave]["coeffs"])
-        g_o.extend(masters[slave]["owners"])
-        offsets.append(len(g_m))
-    return g_m, g_c, g_o, offsets
-
-
+# Flatten received ghosts for masters as array
 ghost_masters, ghost_coeffs, ghost_owners, offsets_ghosts = flatten_ghosts(
     loc_to_glob[ghost_slaves], ghost_masters)
+offsets_ghosts += len(m_loc)
 
+# Gather all masters and add them to contact constraint
+all_masters = np.hstack([m_loc, ghost_masters])
+all_coeffs = np.hstack([c_loc, ghost_coeffs])
+all_owners = np.hstack([o_loc, ghost_owners])
+all_offsets = np.hstack([offsets[:-1], offsets_ghosts])
+cc.add_masters(all_masters, all_coeffs, all_owners, all_offsets)
 
-# # Receive ghost slaves
-
-# print(MPI.COMM_WORLD.rank, shared_slaves)
-
-
+local_masters = cc.masters_local()
+print(MPI.COMM_WORLD.rank, local_masters)
 # Write cell partitioning to file
 tdim = mesh.topology.dim
 cell_map = mesh.topology.index_map(tdim)

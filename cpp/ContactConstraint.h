@@ -9,6 +9,8 @@
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
+#include <petscsys.h>
+
 namespace dolfinx_mpc
 {
 
@@ -24,7 +26,8 @@ public:
   /// @param[in] offsets Offsets for local slave cells
 
   ContactConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves);
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
+                    std::int32_t num_local_slaves);
 
   /// Return the array of master dofs and corresponding coefficients
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves() { return _slaves; };
@@ -46,6 +49,26 @@ public:
   {
     return _cell_to_slaves_map;
   }
+  /// Return map from slave to masters (global index)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters_local()
+  {
+    return _master_local_map;
+  }
+
+  /// Return map from slave to masters (global index)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> coefficients()
+  {
+    return _coeff_map;
+  }
+
+  /// Return map from slave to masters (global index)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> owners()
+  {
+    return _owner_map;
+  }
+
+  /// Return number of local slaves
+  std::int32_t num_local_slaves() { return _num_local_slaves; }
 
   /// Return shared indices for the function space of the Contact constraint
 
@@ -63,6 +86,11 @@ public:
                 std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
   create_cell_maps(Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs);
 
+  void add_masters(Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+                   Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
+                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>);
+
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves;
@@ -71,5 +99,11 @@ private:
       _cell_to_slaves_map;
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _slave_to_cells_map;
+  std::int32_t _num_local_slaves;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _master_map;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> _coeff_map;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _master_local_map;
 };
 } // namespace dolfinx_mpc

@@ -17,9 +17,11 @@ using namespace dolfinx_mpc;
 
 ContactConstraint::ContactConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves)
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves,
+    std::int32_t num_local_slaves)
     : _V(V), _slaves(slaves), _slave_cells(), _cell_to_slaves_map(),
-      _slave_to_cells_map()
+      _slave_to_cells_map(), _num_local_slaves(num_local_slaves), _master_map(),
+      _coeff_map(), _owner_map(), _master_local_map()
 {
   auto [slave_to_cells, cell_to_slaves_map] = create_cell_maps(slaves);
   auto [unique_cells, cell_to_slaves] = cell_to_slaves_map;
@@ -99,4 +101,26 @@ ContactConstraint::create_cell_maps(
       cells_to_dof, offsets_2);
 
   return std::make_pair(adj_ptr, std::make_pair(dof_cells, adj2_ptr));
+}
+
+void ContactConstraint::add_masters(
+    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
+    Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coeffs,
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> owners,
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets)
+{
+  _master_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
+      masters, offsets);
+  _coeff_map = std::make_shared<dolfinx::graph::AdjacencyList<PetscScalar>>(
+      coeffs, offsets);
+  _owner_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
+      owners, offsets);
+  // Compute local master index before creating new index-map
+  std::vector<std::int32_t> master_as_local
+      = _V->dofmap()->index_map->global_to_local(masters);
+  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+      masters_local_eigen(master_as_local.data(), master_as_local.size(), 1);
+  _master_local_map
+      = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
+          masters_local_eigen, offsets);
 };

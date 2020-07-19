@@ -356,3 +356,14 @@ def gather_masters_for_local_slaves(local_slaves, loc_to_glob,
         offsets_for_all_local.append(len(masters_for_all_local))
     return (masters_for_all_local, coeffs_for_all_local,
             owners_for_all_local, offsets_for_all_local)
+
+
+def flatten_ghosts(slaves, masters):
+    g_m, g_c, g_o, offsets = [], [], [], [0]
+    for slave in slaves:
+        g_m.extend(masters[slave]["masters"])
+        g_c.extend(masters[slave]["coeffs"])
+        g_o.extend(masters[slave]["owners"])
+        offsets.append(len(g_m))
+    return (np.array(g_m, dtype=np.int32), np.array(g_c, dtype=np.float64),
+            np.array(g_o, dtype=np.int32), np.array(offsets, dtype=np.int32))
