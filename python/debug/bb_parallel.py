@@ -176,7 +176,7 @@ local_masters_interface = compute_masters_local(V, loc_slaves_flat, loc_coords,
 # Compute collisions of slaves with bounding boxes on other processors
 # and send these processors the slaves, coordinates and normals
 possible_recv = send_bb_collisions(V, loc_slaves, loc_coords, n_vec, tag=0)
-print(possible_recv)
+
 # Recieve info from other processors about possible collisions
 slaves_glob, owners, coords_glob, normals_glob = recv_bb_collisions(tag=0)
 
@@ -193,7 +193,6 @@ if len(slaves_glob) > 0:
 global_masters, narrow_slave_recv = recv_masters(
     loc_slaves_flat, glob_slaves, possible_recv, tag=1)
 
-print(narrow_slave_recv)
 # Select masters if getting them from multiple procs
 masters_from_global = select_masters(global_masters)
 
@@ -233,7 +232,7 @@ for (i, dof) in enumerate(loc_slaves_flat):
 # Send masters to ghost processors
 for proc in share_masters.keys():
     MPI.COMM_WORLD.send(share_masters[proc], dest=proc, tag=5)
-print(share_masters.keys())
+
 # Receive masters from ghost processors
 ghost_ranks = V.dofmap.index_map.ghost_owner_rank()
 l_size = V.dofmap.index_map.size_local
@@ -267,20 +266,16 @@ cc.add_masters(all_masters, all_coeffs, all_owners, all_offsets)
 
 
 # Assemble matrix
-log.set_log_level(log.LogLevel.INFO)
+# log.set_log_level(log.LogLevel.INFO)
 
-print(MPI.COMM_WORLD.rank, "Matrix pre")
-dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
-print(MPI.COMM_WORLD.rank, "Matrix post")
+A = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
 
-print(MPI.COMM_WORLD.rank, "vector pre")
 b = dolfinx_mpc.assemble_vector_local(lhs, cc)
-print(MPI.COMM_WORLD.rank, "vector post")
 # Apply boundary conditions
-# fem.apply_lifting(b, [a], [bcs])
-# b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-#               mode=PETSc.ScatterMode.REVERSE)
-# fem.set_bc(b, bcs)
+fem.apply_lifting(b, [a], [bcs])
+b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+              mode=PETSc.ScatterMode.REVERSE)
+fem.set_bc(b, bcs)
 
 # Write cell partitioning to file
 # tdim = mesh.topology.dim

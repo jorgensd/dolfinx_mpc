@@ -151,8 +151,8 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim,
                permutation_info[cell_index])
 
         b_local_copy = b_local.copy()
-        modify_mpc_contributions_local(b, cell_index, slave_cell_index, b_local,
-                                       b_local_copy, mpc, dofmap,
+        modify_mpc_contributions_local(b, cell_index, slave_cell_index,
+                                       b_local, b_local_copy, mpc, dofmap,
                                        num_dofs_per_element, ghost_info)
 
         for j in range(num_dofs_per_element):
