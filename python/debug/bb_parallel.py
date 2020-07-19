@@ -136,26 +136,35 @@ m_loc, c_loc, o_loc, offsets = gather_masters_for_local_slaves(
 
 # Initialize Contact constraint (computes which cells contains slaves)
 cc = dolfinx_mpc.cpp.mpc.ContactConstraint(V._cpp_object, slaves_loc)
+
 # Get shared indices for every ghost on the processor
 shared_indices = cc.compute_shared_indices()
+bs = V.dofmap.index_map.block_size
+
 # Write master data for ghosted slaves per processor
 share_masters = {}
 for (i, dof) in enumerate(loc_slaves_flat):
-    if dof in shared_indices.keys():
-        for proc in shared_indices[dof]:
+    # Map slave to block to lookup if shaerd_index
+    block = dof // bs
+    if block in shared_indices.keys():
+        for proc in shared_indices[block]:
             if proc in share_masters.keys():
-                share_masters[proc][loc_to_glob[dof]]\
-                    = m_loc[offsets[i]:offsets[i+1]]
+                share_masters[proc][loc_to_glob[dof]] = {
+                    "masters": m_loc[offsets[i]:offsets[i+1]],
+                    "coeffs": c_loc[offsets[i]:offsets[i+1]],
+                    "owners": o_loc[offsets[i]:offsets[i+1]]}
             else:
-                share_masters[proc] = {loc_to_glob[dof]:
-                                       m_loc[offsets[i]:offsets[i+1]]}
+                share_masters[proc] = {
+                    loc_to_glob[dof]:
+                    {"masters": m_loc[offsets[i]:offsets[i+1]],
+                     "coeffs": c_loc[offsets[i]:offsets[i+1]],
+                     "owners": o_loc[offsets[i]:offsets[i+1]]}}
 # Send masters to ghost processors
 for proc in share_masters.keys():
     MPI.COMM_WORLD.send(share_masters[proc], dest=proc, tag=5)
 
 # Receive masters from ghost processors
 ghost_ranks = V.dofmap.index_map.ghost_owner_rank()
-bs = V.dofmap.index_map.block_size
 l_size = V.dofmap.index_map.size_local
 
 # Loop through ghosted slaves to find the unique set of procs
@@ -172,9 +181,20 @@ for owner in ghost_recv:
     data = MPI.COMM_WORLD.recv(source=owner, tag=5)
     ghost_masters.update(data)
 
-# Send shared slaves
-# for proc in shared_slavs.keys():
-#     MPI.COMM_WORLD.send(shared_slave, dest=proc, tag=3)
+
+def flatten_ghosts(slaves, masters):
+    g_m, g_c, g_o, offsets = [], [], [], [0]
+    for slave in slaves:
+        g_m.extend(masters[slave]["masters"])
+        g_c.extend(masters[slave]["coeffs"])
+        g_o.extend(masters[slave]["owners"])
+        offsets.append(len(g_m))
+    return g_m, g_c, g_o, offsets
+
+
+ghost_masters, ghost_coeffs, ghost_owners, offsets_ghosts = flatten_ghosts(
+    loc_to_glob[ghost_slaves], ghost_masters)
+
 
 # # Receive ghost slaves
 
@@ -198,6 +218,6 @@ with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
     xdmf.write_function(nh)
 
 
-print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
+# print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
 # common.list_timings(MPI.COMM_WORLD,
 #                     [dolfinx.common.TimingType.wall])
