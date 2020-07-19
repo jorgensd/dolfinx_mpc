@@ -116,6 +116,8 @@ void ContactConstraint::add_masters(
   _owner_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
       owners, offsets);
   // Compute local master index before creating new index-map
+  std::int32_t block_size = _V->dofmap()->index_map->block_size();
+  masters /= block_size;
   std::vector<std::int32_t> master_as_local
       = _V->dofmap()->index_map->global_to_local(masters);
   Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
@@ -123,4 +125,83 @@ void ContactConstraint::add_masters(
   _master_local_map
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
           masters_local_eigen, offsets);
+  // Create new index map with all masters
+  create_new_index_map();
+}
+
+void ContactConstraint::create_new_index_map()
+{
+  dolfinx::common::Timer timer("MPC: Create new index map");
+  const dolfinx::fem::DofMap& dofmap = *(_V->dofmap());
+
+  std::shared_ptr<const dolfinx::common::IndexMap> index_map = dofmap.index_map;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> old_ghosts
+      = index_map->ghosts();
+
+  std::vector<std::int64_t> new_ghosts;
+  std::vector<std::int32_t> new_ranks;
+
+  int block_size = index_map->block_size();
+  for (Eigen::Index i = 0; i < _master_local_map->num_nodes(); ++i)
+  {
+    for (Eigen::Index j = 0; j < _master_local_map->links(i).size(); ++j)
+    {
+      // Check if master is already ghosted
+      if (_master_local_map->links(i)[j] == -1)
+      {
+        const int master_as_int = _master_map->links(i)[j];
+        const std::div_t div = std::div(master_as_int, block_size);
+        const int block = div.quot;
+        auto already_ghosted
+            = std::find(new_ghosts.begin(), new_ghosts.end(), block);
+
+        if (already_ghosted == new_ghosts.end())
+        {
+          new_ghosts.push_back(block);
+          new_ranks.push_back(_owner_map->links(i)[j]);
+        }
+      }
+    }
+  }
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> old_ranks
+      = index_map->ghost_owner_rank();
+  std::int32_t num_ghosts = old_ghosts.size();
+  old_ghosts.conservativeResize(num_ghosts + new_ghosts.size());
+  for (std::int64_t i = 0; i < new_ghosts.size(); i++)
+    old_ghosts(num_ghosts + i) = new_ghosts[i];
+
+  // Append rank of new ghost owners
+  std::vector<int> ghost_ranks(old_ghosts.size());
+  for (std::int64_t i = 0; i < old_ranks.size(); i++)
+    ghost_ranks[i] = old_ranks[i];
+
+  for (int i = 0; i < new_ghosts.size(); ++i)
+  {
+    ghost_ranks[num_ghosts + i] = new_ranks[i];
+  }
+
+  dolfinx::common::Timer timer_indexmap("MPC: Init indexmap");
+  MPI_Comm comm = _V->mesh()->mpi_comm();
+
+  _index_map = std::make_shared<dolfinx::common::IndexMap>(
+      comm, index_map->size_local(),
+      dolfinx::MPI::compute_graph_edges(
+          MPI_COMM_WORLD,
+          std::set<int>(ghost_ranks.begin(), ghost_ranks.end())),
+      old_ghosts, ghost_ranks, block_size);
+  timer_indexmap.stop();
+
+  dolfinx::common::Timer timer_glob_to_loc("MPC: Update local masters");
+  // Compute local master index before creating new index-map
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_blocks
+      = _master_map->array();
+  master_blocks /= block_size;
+  std::vector<std::int32_t> master_as_local
+      = _index_map->global_to_local(master_blocks);
+  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+      masters_local_eigen(master_as_local.data(), master_as_local.size(), 1);
+  _master_local_map
+      = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
+          masters_local_eigen, _master_map->offsets());
+  timer_glob_to_loc.stop();
 };

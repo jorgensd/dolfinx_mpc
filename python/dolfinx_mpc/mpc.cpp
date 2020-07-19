@@ -56,13 +56,17 @@ void mpc(py::module& m)
           "Object for representing contact (non-penetrating) conditions");
   contactconstraint
       .def(py::init<std::shared_ptr<const dolfinx::function::FunctionSpace>,
-                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>())
+                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+                    std::int32_t>())
       .def("slaves", &dolfinx_mpc::ContactConstraint::slaves)
       .def("slave_cells", &dolfinx_mpc::ContactConstraint::slave_cells)
       .def("slave_to_cells", &dolfinx_mpc::ContactConstraint::slave_to_cells)
+      .def("add_masters", &dolfinx_mpc::ContactConstraint::add_masters)
       .def("cell_to_slaves", &dolfinx_mpc::ContactConstraint::cell_to_slaves)
       .def("compute_shared_indices",
-           &dolfinx_mpc::ContactConstraint::compute_shared_indices);
+           &dolfinx_mpc::ContactConstraint::compute_shared_indices)
+      .def("masters_local", &dolfinx_mpc::ContactConstraint::masters_local)
+      .def("coefficients", &dolfinx_mpc::ContactConstraint::coefficients);
 
   m.def("compute_process_collisions",
         py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,

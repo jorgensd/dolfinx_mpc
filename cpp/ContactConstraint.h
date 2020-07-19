@@ -91,6 +91,8 @@ public:
                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>);
 
+  void create_new_index_map();
+
 private:
   std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves;
@@ -105,5 +107,6 @@ private:
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _master_local_map;
+  std::shared_ptr<dolfinx::common::IndexMap> _index_map;
 };
 } // namespace dolfinx_mpc
