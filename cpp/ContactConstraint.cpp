@@ -49,7 +49,7 @@ ContactConstraint::create_cell_maps(
 
   std::vector<std::int32_t> dofs_to_cell;
   std::vector<std::int32_t> offsets{0};
-  std::map<std::int32_t, std::vector<std::int32_t>> cell_to_dof;
+  std::map<std::int32_t, std::vector<std::int32_t>> cell_to_idx;
 
   // Loop over all dofs
   for (std::int32_t i = 0; i < dofs.rows(); ++i)
@@ -64,14 +64,14 @@ ContactConstraint::create_cell_maps(
         was_added = true;
         dofs_to_cell.push_back(j);
         // Check if cell allready added to unstructured map
-        auto vec = cell_to_dof.find(j);
-        if (vec == cell_to_dof.end())
+        auto vec = cell_to_idx.find(j);
+        if (vec == cell_to_idx.end())
         {
-          std::vector<std::int32_t> dof_vec{dofs[i]};
-          cell_to_dof.insert({j, dof_vec});
+          std::vector<std::int32_t> index_vec{i};
+          cell_to_idx.insert({j, index_vec});
         }
         else
-          vec->second.push_back(dofs[i]);
+          vec->second.push_back(i);
       }
     }
     // Add offsets for AdjacencyList
@@ -84,17 +84,17 @@ ContactConstraint::create_cell_maps(
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> adj_ptr
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
           dofs_to_cell, offsets);
-  std::vector<std::int32_t> cells_to_dof;
+  std::vector<std::int32_t> cells_to_idx;
   std::vector<std::int32_t> offsets_2{0};
   std::vector<std::int32_t> unique_cells;
 
   // Flatten unstructured map to array
-  for (auto it = cell_to_dof.begin(); it != cell_to_dof.end(); ++it)
+  for (auto it = cell_to_idx.begin(); it != cell_to_idx.end(); ++it)
   {
     unique_cells.push_back(it->first);
-    auto vec = it->second;
-    cells_to_dof.insert(cells_to_dof.end(), vec.begin(), vec.end());
-    offsets_2.push_back(cells_to_dof.size());
+    auto idx = it->second;
+    cells_to_idx.insert(cells_to_idx.end(), idx.begin(), idx.end());
+    offsets_2.push_back(cells_to_idx.size());
   }
 
   // Create cell to dofs adjacency list
@@ -102,7 +102,7 @@ ContactConstraint::create_cell_maps(
       unique_cells.data(), unique_cells.size());
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> adj2_ptr;
   adj2_ptr = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-      cells_to_dof, offsets_2);
+      cells_to_idx, offsets_2);
 
   return std::make_pair(adj_ptr, std::make_pair(dof_cells, adj2_ptr));
 }
@@ -275,8 +275,6 @@ dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
 
   std::array<std::int64_t, 2> local_range = _dofmap->index_map->local_range();
   std::int64_t local_size = local_range[1] - local_range[0];
-  std::array<const dolfinx::fem::DofMap*, 2> dofmaps
-      = {{_dofmap.get(), _dofmap.get()}};
 
   dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
 
@@ -285,30 +283,20 @@ dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
   dolfinx_mpc::build_standard_pattern(pattern, a);
 
   /// Arrays replacing slave dof with master dof in sparsity pattern
-  std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> master_for_slave(2);
-  master_for_slave[0].resize(block_size);
-  master_for_slave[1].resize(block_size);
+  Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_slave(block_size);
 
-  std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> master_for_other_slave(
-      2);
-  master_for_other_slave[0].resize(block_size);
-  master_for_other_slave[1].resize(block_size);
+  Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_other_slave(block_size);
 
-  std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> other_master_on_cell(
-      2);
-  other_master_on_cell[0].resize(block_size);
-  other_master_on_cell[1].resize(block_size);
+  Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_on_cell(block_size);
 
   // Add non-zeros for each slave cell to sparsity pattern.
   // For the i-th cell with a slave, all local entries has to be from the
   // j-th slave to the k-th master degree of freedom
-  for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
+  for (Eigen::Index i = 0; i < _cell_to_slaves_map->num_nodes(); i++)
   {
     // Find index for slave in test and trial space
-    std::vector<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> cell_dof_lists(
-        2);
-    for (std::size_t l = 0; l < 2; l++)
-      cell_dof_lists[l] = dofmaps[l]->cell_dofs(_slave_cells[i]);
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> cell_dofs
+        = _dofmap->cell_dofs(_slave_cells[i]);
 
     // Loop over slaves in cell
     for (Eigen::Index j = 0; j < _cell_to_slaves_map->links(i).size(); j++)
@@ -319,18 +307,14 @@ dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
            < _master_local_map->links(_cell_to_slaves_map->links(i)[j]).size();
            k++)
       {
-        // Loop over test and trial space
-        for (std::size_t l = 0; l < 2; l++)
-        {
-          // Find dofs for full master block
-          std::int32_t block
-              = _master_block_map->links(_cell_to_slaves_map->links(i)[j])[k];
-          for (std::size_t comp = 0; comp < block_size; comp++)
-            master_for_slave[l](comp) = block_size * block + comp;
-        }
+        // Find dofs for full master block
+        std::int32_t block
+            = _master_block_map->links(_cell_to_slaves_map->links(i)[j])[k];
+        for (std::size_t comp = 0; comp < block_size; comp++)
+          master_for_slave(comp) = block_size * block + comp;
         // Add all values on cell (including slave), to get complete blocks
-        pattern.insert(master_for_slave[0], cell_dof_lists[1]);
-        pattern.insert(cell_dof_lists[0], master_for_slave[1]);
+        pattern.insert(master_for_slave, cell_dofs);
+        pattern.insert(cell_dofs, master_for_slave);
 
         // Add pattern for master owned by other slave on same cell
         for (Eigen::Index k = j + 1; k < _cell_to_slaves_map->links(i).size();
@@ -343,15 +327,11 @@ dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
           {
             const int other_block
                 = _master_block_map->links(_cell_to_slaves_map->links(i)[k])[l];
-            for (std::size_t m = 0; m < 2; m++)
-            {
+            for (std::size_t comp = 0; comp < block_size; comp++)
+              master_for_other_slave(comp) = block_size * other_block + comp;
 
-              for (std::size_t comp = 0; comp < block_size; comp++)
-                master_for_other_slave[m](comp)
-                    = block_size * other_block + comp;
-            }
-            pattern.insert(master_for_slave[0], master_for_other_slave[1]);
-            pattern.insert(master_for_other_slave[0], master_for_slave[1]);
+            pattern.insert(master_for_slave, master_for_other_slave);
+            pattern.insert(master_for_other_slave, master_for_slave);
           }
         }
       }

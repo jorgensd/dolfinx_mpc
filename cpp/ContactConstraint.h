@@ -58,9 +58,9 @@ public:
   }
 
   /// Return map from slave to masters (global index)
-  std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> coefficients()
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients()
   {
-    return _coeff_map;
+    return _coeff_map->array();
   }
 
   /// Return map from slave to masters (global index)
@@ -118,7 +118,7 @@ private:
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves;
   // Array for all cells containing slaves (local + ghosts)
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slave_cells;
-  // Map from slave cell to slaves (local+ghosts) on that cell
+  // Map from slave cell to index in _slaves for a given slave cell
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _cell_to_slaves_map;
   // Map from slave (local+ghosts) to cells it is in

@@ -2,6 +2,8 @@
 import dolfinx.common as common
 from IPython import embed
 import dolfinx_mpc.cpp
+import ufl
+import pygmsh
 import numpy as np
 # from IPython import embed
 from mpi4py import MPI
@@ -18,7 +20,6 @@ from helpers_contact import (compute_masters_local,
                              select_masters, send_bb_collisions, send_masters,
                              gather_masters_for_local_slaves, flatten_ghosts)
 # import dolfinx.log as log
-# import dolfinx.common as common
 
 from stacked_cube import mesh_3D_rot
 
@@ -48,6 +49,72 @@ top_cube_marker = 2
 
 # Create functionspace
 V = dolfinx.VectorFunctionSpace(mesh, ("CG", 1))
+
+
+# Helper for orienting traction
+r_matrix = pygmsh.helpers.rotation_matrix(
+    [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
+
+g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
+g = dolfinx.Constant(mesh, g_vec)
+
+# Define boundary conditions
+# Bottom boundary is fixed in all directions
+u_bc = dolfinx.function.Function(V)
+with u_bc.vector.localForm() as u_local:
+    u_local.set(0.0)
+
+bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
+bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
+bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
+
+# Top boundary has a given deformation normal to the interface
+g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
+g = dolfinx.Constant(mesh, g_vec)
+
+
+def top_v(x):
+    values = np.empty((3, x.shape[1]))
+    values[0] = g_vec[0]
+    values[1] = g_vec[1]
+    values[2] = g_vec[2]
+    return values
+
+
+u_top = dolfinx.function.Function(V)
+u_top.interpolate(top_v)
+
+top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
+top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
+bc_top = fem.DirichletBC(u_top, top_dofs)
+
+bcs = [bc_bottom, bc_top]
+
+# Elasticity parameters
+E = 1.0e3
+nu = 0
+mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
+lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+
+
+def sigma(v):
+    # Stress computation
+    return (2.0 * mu * ufl.sym(ufl.grad(v)) +
+            lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+
+
+# Define variational problem
+u = ufl.TrialFunction(V)
+v = ufl.TestFunction(V)
+a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
+# NOTE: Traction deactivated until we have a way of fixing nullspace
+ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
+                 subdomain_id=3)
+lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
+    + ufl.inner(g, v)*ds
+
+
+# Extract structures needed for contact detection
 loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
                        dtype=np.int64)
 bs = V.dofmap.index_map.block_size
@@ -197,10 +264,11 @@ all_owners = np.hstack([o_loc, ghost_owners])
 all_offsets = np.hstack([offsets[:-1], offsets_ghosts])
 cc.add_masters(all_masters, all_coeffs, all_owners, all_offsets)
 
-# Create sparsity pattern
+
+# Assemble matrix
+dolfinx_mpc.assemble_matrix_local(a, cc)
 
 
-local_masters = cc.masters_local()
 # Write cell partitioning to file
 tdim = mesh.topology.dim
 cell_map = mesh.topology.index_map(tdim)
@@ -219,5 +287,5 @@ with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
 
 
 # print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
-# common.list_timings(MPI.COMM_WORLD,
-#                     [dolfinx.common.TimingType.wall])
+common.list_timings(MPI.COMM_WORLD,
+                    [dolfinx.common.TimingType.wall])

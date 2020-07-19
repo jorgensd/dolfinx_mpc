@@ -68,7 +68,9 @@ void mpc(py::module& m)
       .def("masters_local", &dolfinx_mpc::ContactConstraint::masters_local)
       .def("coefficients", &dolfinx_mpc::ContactConstraint::coefficients)
       .def("create_sparsity_pattern",
-           &dolfinx_mpc::ContactConstraint::create_sparsity_pattern);
+           &dolfinx_mpc::ContactConstraint::create_sparsity_pattern)
+      .def("num_local_slaves",
+           &dolfinx_mpc::ContactConstraint::num_local_slaves);
 
   m.def("compute_process_collisions",
         py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,
