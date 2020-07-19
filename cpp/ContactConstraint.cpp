@@ -21,7 +21,7 @@ ContactConstraint::ContactConstraint(
     std::int32_t num_local_slaves)
     : _V(V), _slaves(slaves), _slave_cells(), _cell_to_slaves_map(),
       _slave_to_cells_map(), _num_local_slaves(num_local_slaves), _master_map(),
-      _coeff_map(), _owner_map(), _master_local_map()
+      _coeff_map(), _owner_map(), _master_local_map(), _master_block_map()
 {
   auto [slave_to_cells, cell_to_slaves_map] = create_cell_maps(slaves);
   auto [unique_cells, cell_to_slaves] = cell_to_slaves_map;
@@ -120,11 +120,11 @@ void ContactConstraint::add_masters(
   masters /= block_size;
   std::vector<std::int32_t> master_as_local
       = _V->dofmap()->index_map->global_to_local(masters);
-  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
-      masters_local_eigen(master_as_local.data(), master_as_local.size(), 1);
-  _master_local_map
+  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> masters_block(
+      master_as_local.data(), master_as_local.size(), 1);
+  _master_block_map
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-          masters_local_eigen, offsets);
+          masters_block, offsets);
   // Create new index map with all masters
   create_new_index_map();
 }
@@ -142,12 +142,12 @@ void ContactConstraint::create_new_index_map()
   std::vector<std::int32_t> new_ranks;
 
   int block_size = index_map->block_size();
-  for (Eigen::Index i = 0; i < _master_local_map->num_nodes(); ++i)
+  for (Eigen::Index i = 0; i < _master_block_map->num_nodes(); ++i)
   {
-    for (Eigen::Index j = 0; j < _master_local_map->links(i).size(); ++j)
+    for (Eigen::Index j = 0; j < _master_block_map->links(i).size(); ++j)
     {
       // Check if master is already ghosted
-      if (_master_local_map->links(i)[j] == -1)
+      if (_master_block_map->links(i)[j] == -1)
       {
         const int master_as_int = _master_map->links(i)[j];
         const std::div_t div = std::div(master_as_int, block_size);
@@ -196,12 +196,32 @@ void ContactConstraint::create_new_index_map()
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_blocks
       = _master_map->array();
   master_blocks /= block_size;
-  std::vector<std::int32_t> master_as_local
+  std::vector<std::int32_t> master_block_local
       = _index_map->global_to_local(master_blocks);
   Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
-      masters_local_eigen(master_as_local.data(), master_as_local.size(), 1);
+      masters_block_eigen(master_block_local.data(), master_block_local.size(),
+                          1);
+  _master_block_map = _master_block_map
+      = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
+          masters_block_eigen, _master_map->offsets());
+
+  // Go from blocks to actual local index
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> masters_local(
+      master_block_local.size());
+  std::int32_t c = 0;
+  for (Eigen::Index i = 0; i < _master_block_map->num_nodes(); ++i)
+  {
+    for (Eigen::Index j = 0; j < _master_block_map->links(i).size(); ++j)
+    {
+      const int master_as_int = _master_map->links(i)[j];
+      const std::div_t div = std::div(master_as_int, block_size);
+      const int rem = div.rem;
+      masters_local(c) = masters_block_eigen(c) * block_size + rem;
+      c++;
+    }
+  }
   _master_local_map
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-          masters_local_eigen, _master_map->offsets());
+          masters_local, _master_map->offsets());
   timer_glob_to_loc.stop();
 };

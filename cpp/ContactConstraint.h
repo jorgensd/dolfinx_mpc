@@ -107,6 +107,8 @@ private:
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _master_local_map;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _master_block_map;
   std::shared_ptr<dolfinx::common::IndexMap> _index_map;
 };
 } // namespace dolfinx_mpc
