@@ -5,10 +5,13 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "ContactConstraint.h"
+#include "utils.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
+#include <dolfinx/common/log.h>
 #include <dolfinx/fem/DofMap.h>
+#include <dolfinx/fem/DofMapBuilder.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Mesh.h>
@@ -21,7 +24,8 @@ ContactConstraint::ContactConstraint(
     std::int32_t num_local_slaves)
     : _V(V), _slaves(slaves), _slave_cells(), _cell_to_slaves_map(),
       _slave_to_cells_map(), _num_local_slaves(num_local_slaves), _master_map(),
-      _coeff_map(), _owner_map(), _master_local_map(), _master_block_map()
+      _coeff_map(), _owner_map(), _master_local_map(), _master_block_map(),
+      _dofmap()
 {
   auto [slave_to_cells, cell_to_slaves_map] = create_cell_maps(slaves);
   auto [unique_cells, cell_to_slaves] = cell_to_slaves_map;
@@ -224,4 +228,157 @@ void ContactConstraint::create_new_index_map()
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
           masters_local, _master_map->offsets());
   timer_glob_to_loc.stop();
+}
+
+/// Create MPC specific sparsity pattern
+dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
+    const dolfinx::fem::Form<PetscScalar>& a)
+{
+  LOG(INFO) << "Generating MPC sparsity pattern";
+  dolfinx::common::Timer timer("MPC: Sparsitypattern Total");
+  if (a.rank() != 2)
+  {
+    throw std::runtime_error(
+        "Cannot create sparsity pattern. Form is not a bilinear form");
+  }
+  /// Check that we are using the correct function-space in the bilinear
+  /// form otherwise the index map will be wrong
+  assert(a.function_space(0) == _V);
+  assert(a.function_space(1) == _V);
+
+  const dolfinx::mesh::Mesh& mesh = *(a.mesh());
+
+  int block_size = _index_map->block_size();
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> ghosts = _index_map->ghosts();
+  const std::vector<std::int64_t> global_indices
+      = _index_map->global_indices(false);
+
+  /// Create new dofmap using the MPC index-maps
+  std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
+  new_maps[0] = _index_map;
+  new_maps[1] = _index_map;
+  const dolfinx::fem::DofMap* old_dofmap = a.function_space(0)->dofmap().get();
+
+  /// Get AdjacencyList for old dofmap
+  const int bs = old_dofmap->element_dof_layout->block_size();
+
+  dolfinx::mesh::Topology topology = mesh.topology();
+  dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
+  if (bs != 1)
+  {
+    layout = *old_dofmap->element_dof_layout->sub_dofmap({0});
+  }
+  auto [unused_indexmap, o_dofmap] = dolfinx::fem::DofMapBuilder::build(
+      mesh.mpi_comm(), topology, layout, bs);
+  _dofmap = std::make_shared<dolfinx::fem::DofMap>(
+      old_dofmap->element_dof_layout, _index_map, o_dofmap);
+
+  std::array<std::int64_t, 2> local_range = _dofmap->index_map->local_range();
+  std::int64_t local_size = local_range[1] - local_range[0];
+  std::array<const dolfinx::fem::DofMap*, 2> dofmaps
+      = {{_dofmap.get(), _dofmap.get()}};
+
+  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
+
+  ///  Create and build sparsity pattern for original form. Should be
+  ///  equivalent to calling create_sparsity_pattern(Form a)
+  dolfinx_mpc::build_standard_pattern(pattern, a);
+
+  /// Arrays replacing slave dof with master dof in sparsity pattern
+  std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> master_for_slave(2);
+  master_for_slave[0].resize(block_size);
+  master_for_slave[1].resize(block_size);
+
+  std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> master_for_other_slave(
+      2);
+  master_for_other_slave[0].resize(block_size);
+  master_for_other_slave[1].resize(block_size);
+
+  std::vector<Eigen::Array<PetscInt, Eigen::Dynamic, 1>> other_master_on_cell(
+      2);
+  other_master_on_cell[0].resize(block_size);
+  other_master_on_cell[1].resize(block_size);
+
+  // Add non-zeros for each slave cell to sparsity pattern.
+  // For the i-th cell with a slave, all local entries has to be from the
+  // j-th slave to the k-th master degree of freedom
+  for (std::int64_t i = 0; i < unsigned(_slave_cells.size()); i++)
+  {
+    // Find index for slave in test and trial space
+    std::vector<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> cell_dof_lists(
+        2);
+    for (std::size_t l = 0; l < 2; l++)
+      cell_dof_lists[l] = dofmaps[l]->cell_dofs(_slave_cells[i]);
+
+    // Loop over slaves in cell
+    for (Eigen::Index j = 0; j < _cell_to_slaves_map->links(i).size(); j++)
+    {
+      // Insert pattern for each master
+      for (Eigen::Index k = 0;
+           k
+           < _master_local_map->links(_cell_to_slaves_map->links(i)[j]).size();
+           k++)
+      {
+        // Loop over test and trial space
+        for (std::size_t l = 0; l < 2; l++)
+        {
+          // Find dofs for full master block
+          std::int32_t block
+              = _master_block_map->links(_cell_to_slaves_map->links(i)[j])[k];
+          for (std::size_t comp = 0; comp < block_size; comp++)
+            master_for_slave[l](comp) = block_size * block + comp;
+        }
+        // Add all values on cell (including slave), to get complete blocks
+        pattern.insert(master_for_slave[0], cell_dof_lists[1]);
+        pattern.insert(cell_dof_lists[0], master_for_slave[1]);
+
+        // Add pattern for master owned by other slave on same cell
+        for (Eigen::Index k = j + 1; k < _cell_to_slaves_map->links(i).size();
+             k++)
+        {
+          for (Eigen::Index l = 0;
+               l < _master_local_map->links(_cell_to_slaves_map->links(i)[k])
+                       .size();
+               l++)
+          {
+            const int other_block
+                = _master_block_map->links(_cell_to_slaves_map->links(i)[k])[l];
+            for (std::size_t m = 0; m < 2; m++)
+            {
+
+              for (std::size_t comp = 0; comp < block_size; comp++)
+                master_for_other_slave[m](comp)
+                    = block_size * other_block + comp;
+            }
+            pattern.insert(master_for_slave[0], master_for_other_slave[1]);
+            pattern.insert(master_for_other_slave[0], master_for_slave[1]);
+          }
+        }
+      }
+    }
+  }
+  // Add pattern for all local masters for the same slave
+  for (std::int64_t i = 0; i < _master_local_map->num_nodes(); i++)
+  {
+    for (std::int64_t j = 0; j < _master_local_map->links(i).size(); j++)
+    {
+      const int block = _master_block_map->links(i)[j];
+      Eigen::Array<PetscInt, Eigen::Dynamic, 1> local_master_dof(block_size);
+      for (std::int64_t comp = 0; comp < block_size; comp++)
+        local_master_dof[comp] = block_size * block + comp;
+      for (std::int64_t k = j + 1; k < _master_local_map->links(i).size(); k++)
+      {
+        // Map other master to local dof and add remainder of block
+        const int other_block = _master_block_map->links(i)[k];
+        Eigen::Array<PetscInt, Eigen::Dynamic, 1> other_master_dof(block_size);
+
+        for (std::int64_t comp = 0; comp < block_size; comp++)
+          other_master_dof[comp] = block_size * other_block + comp;
+
+        pattern.insert(local_master_dof, other_master_dof);
+        pattern.insert(other_master_dof, local_master_dof);
+      }
+    }
+  }
+  return pattern;
 };

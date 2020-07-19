@@ -7,8 +7,10 @@
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
+#include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
+#include <dolfinx/la/SparsityPattern.h>
 #include <petscsys.h>
 
 namespace dolfinx_mpc
@@ -102,6 +104,13 @@ public:
   /// _master_block_map and _master_local_map
   void create_new_index_map();
 
+  /// Add sparsity pattern for multi-point constraints to existing
+  /// sparsity pattern
+  /// @param[in] a bi-linear form for the current variational problem
+  /// (The one used to generate input sparsity-pattern).
+  dolfinx::la::SparsityPattern
+  create_sparsity_pattern(const dolfinx::fem::Form<PetscScalar>& a);
+
 private:
   // Original function space
   std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
@@ -131,5 +140,7 @@ private:
       _master_block_map;
   // Index map including masters
   std::shared_ptr<dolfinx::common::IndexMap> _index_map;
+  // Dofmap including masters
+  std::shared_ptr<dolfinx::fem::DofMap> _dofmap;
 };
 } // namespace dolfinx_mpc

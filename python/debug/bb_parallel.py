@@ -197,8 +197,10 @@ all_owners = np.hstack([o_loc, ghost_owners])
 all_offsets = np.hstack([offsets[:-1], offsets_ghosts])
 cc.add_masters(all_masters, all_coeffs, all_owners, all_offsets)
 
+# Create sparsity pattern
+
+
 local_masters = cc.masters_local()
-print(MPI.COMM_WORLD.rank, local_masters)
 # Write cell partitioning to file
 tdim = mesh.topology.dim
 cell_map = mesh.topology.index_map(tdim)
@@ -217,5 +219,5 @@ with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
 
 
 # print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
-common.list_timings(MPI.COMM_WORLD,
-                    [dolfinx.common.TimingType.wall])
+# common.list_timings(MPI.COMM_WORLD,
+#                     [dolfinx.common.TimingType.wall])
