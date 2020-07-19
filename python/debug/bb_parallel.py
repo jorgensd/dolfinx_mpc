@@ -1,4 +1,5 @@
 
+import dolfinx.common as common
 from IPython import embed
 import dolfinx_mpc.cpp
 import numpy as np
@@ -216,5 +217,5 @@ with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
 
 
 # print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
-# common.list_timings(MPI.COMM_WORLD,
-#                     [dolfinx.common.TimingType.wall])
+common.list_timings(MPI.COMM_WORLD,
+                    [dolfinx.common.TimingType.wall])

@@ -86,29 +86,50 @@ public:
                 std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
   create_cell_maps(Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs);
 
+  /// Add masters for the slaves in the contact constraint.
+  /// Identifies which masters are non-local, and creates a new index-map where
+  /// These entries are added
+  /// @param[in] masters Array of all masters
+  /// @param[in] coeffs Coefficients corresponding to each master
+  /// @param[in] owners Owners for each master
+  /// @param[in] offsets Offsets for masters
   void add_masters(Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
                    Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>);
-
+  /// Helper function for creating new index map
+  /// including all masters as ghosts and replacing
+  /// _master_block_map and _master_local_map
   void create_new_index_map();
 
 private:
+  // Original function space
   std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
+  // Array including all slaves (local + ghosts)
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves;
+  // Array for all cells containing slaves (local + ghosts)
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slave_cells;
+  // Map from slave cell to slaves (local+ghosts) on that cell
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _cell_to_slaves_map;
+  // Map from slave (local+ghosts) to cells it is in
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _slave_to_cells_map;
+  // Number of local slaves
   std::int32_t _num_local_slaves;
+  // Map from local slave to masters (global index)
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _master_map;
+  // Map from local slave to coefficients
   std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> _coeff_map;
+  // Map from local slave to rank of process owning master
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
+  // Map from local slave to master (local index)
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _master_local_map;
+  // Map from local slave to master block (local)
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _master_block_map;
+  // Index map including masters
   std::shared_ptr<dolfinx::common::IndexMap> _index_map;
 };
 } // namespace dolfinx_mpc
