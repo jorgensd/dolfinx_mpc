@@ -71,7 +71,8 @@ void mpc(py::module& m)
            &dolfinx_mpc::ContactConstraint::create_sparsity_pattern)
       .def("num_local_slaves",
            &dolfinx_mpc::ContactConstraint::num_local_slaves)
-      .def("index_map", &dolfinx_mpc::ContactConstraint::index_map);
+      .def("index_map", &dolfinx_mpc::ContactConstraint::index_map)
+      .def("dofmap", &dolfinx_mpc::ContactConstraint::dofmap);
 
   m.def("compute_process_collisions",
         py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,

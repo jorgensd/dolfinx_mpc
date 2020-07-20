@@ -118,6 +118,8 @@ public:
   dolfinx::la::SparsityPattern
   create_sparsity_pattern(const dolfinx::fem::Form<PetscScalar>& a);
 
+  std::shared_ptr<dolfinx::fem::DofMap> dofmap() { return _dofmap; }
+
 private:
   // Original function space
   std::shared_ptr<const dolfinx::function::FunctionSpace> _V;

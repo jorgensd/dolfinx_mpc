@@ -2,7 +2,7 @@ import numba
 from petsc4py import PETSc
 
 
-def backsubstitution_local(constraint, vector, dofmap):
+def backsubstitution_local(constraint, vector):
 
     # Unravel data from constraint
     coefficients = constraint.coefficients()

@@ -1,5 +1,6 @@
 
 import dolfinx_mpc.cpp
+import dolfinx_mpc.utils
 import numpy as np
 import pygmsh
 import ufl
@@ -277,23 +278,75 @@ b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
               mode=PETSc.ScatterMode.REVERSE)
 fem.set_bc(b, bcs)
 
+# Solve Linear problem
+opts = PETSc.Options()
+opts["ksp_rtol"] = 1.0e-8
+opts["pc_type"] = "gamg"
+opts["pc_gamg_type"] = "agg"
+opts["pc_gamg_coarse_eq_limit"] = 1000
+opts["pc_gamg_sym_graph"] = True
+opts["mg_levels_ksp_type"] = "chebyshev"
+opts["mg_levels_pc_type"] = "jacobi"
+opts["mg_levels_esteig_ksp_type"] = "cg"
+opts["matptap_via"] = "scalable"
+opts["pc_gamg_square_graph"] = 2
+opts["pc_gamg_threshold"] = 0.02
+# opts["help"] = None # List all available options
+# opts["ksp_view"] = None # List progress of solver
+
+# Create functionspace and build near nullspace
+Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                              cc.dofmap())
+Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+A.setNearNullSpace(null_space)
+
+solver = PETSc.KSP().create(comm)
+solver.setFromOptions()
+solver.setOperators(A)
+uh = b.copy()
+uh.set(0)
+with dolfinx.common.Timer("MPC: Solve"):
+    solver.solve(b, uh)
+uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+               mode=PETSc.ScatterMode.FORWARD)
+
+# Back substitute to slave dofs
+with dolfinx.common.Timer("MPC: Backsubstitute"):
+    dolfinx_mpc.backsubstitution_local(cc, uh)
+
+it = solver.getIterationNumber()
+if comm.rank == 0:
+    print("Number of iterations: {0:d}".format(it))
+
+# Write solution to file
+u_h = dolfinx.Function(Vmpc)
+u_h.vector.setArray(uh.array)
+u_h.name = "u_{0:s}_{1:.2f}".format("hex", theta)
+outfile = io.XDMFFile(MPI.COMM_WORLD, "output.xdmf", "w")
+outfile.write_mesh(mesh)
+outfile.write_function(u_h, 0.0,
+                       "Xdmf/Domain/"
+                       + "Grid[@Name='{0:s}'][1]"
+                       .format(mesh.name))
+
 # Write cell partitioning to file
 # tdim = mesh.topology.dim
-# cell_map = mesh.topology.index_map(tdim)
-# num_cells_local = cell_map.size_local
-# indices = np.arange(num_cells_local)
-# values = MPI.COMM_WORLD.rank*np.ones(num_cells_local, np.int32)
-# ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
-# ct.name = "cells"
-# with io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
-#     xdmf.write_mesh(mesh)
-#     xdmf.write_meshtags(ct)
+cell_map = mesh.topology.index_map(tdim)
+num_cells_local = cell_map.size_local
+indices = np.arange(num_cells_local)
+values = MPI.COMM_WORLD.rank*np.ones(num_cells_local, np.int32)
+ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
+ct.name = "cells"
+with io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
+    xdmf.write_mesh(mesh)
+    xdmf.write_meshtags(ct)
 
-# with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
-#     xdmf.write_mesh(mesh)
-#     xdmf.write_function(nh)
+with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
+    xdmf.write_mesh(mesh)
+    xdmf.write_function(nh)
 
 
-# print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
-# common.list_timings(MPI.COMM_WORLD,
-#                     [dolfinx.common.TimingType.wall])
+print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
+common.list_timings(MPI.COMM_WORLD,
+                    [dolfinx.common.TimingType.wall])

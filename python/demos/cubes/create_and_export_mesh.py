@@ -92,7 +92,7 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     Generate the box [x0,y0,z0]x[y0,y1,z0], rotated theta degrees around
     the origin over axis [0,1,1] with resolution res,
     where markers are is an array containing markers
-    array of markers for [left, back, top, bottom, front, right]
+    array of markers for [back, bottom, right, left, top, front]
     and an optional volume_marker.
     """
     geom = pygmsh.built_in.Geometry()
