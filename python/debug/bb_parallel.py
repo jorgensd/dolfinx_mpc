@@ -43,8 +43,6 @@ with io.XDMFFile(comm, "facet_hex_cube{0:.2f}.xdmf".format(theta),
                  "r") as xdmf:
     mt = xdmf.read_meshtags(mesh, "Grid")
 
-top_cube_marker = 2
-
 # log.set_log_level(log.LogLevel.INFO)
 
 # Create functionspace
@@ -113,7 +111,8 @@ ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
 lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
     + ufl.inner(g, v)*ds
 
-
+dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+exit(1)
 # Extract structures needed for contact detection
 loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
                        dtype=np.int64)
@@ -173,6 +172,7 @@ local_slave_to_cell = locate_dofs_colliding_with_cells(
 # Find coefficients for masters located on this processors
 local_masters_interface = compute_masters_local(V, loc_slaves_flat, loc_coords,
                                                 n_vec, local_slave_to_cell)
+# FIXME: HERE IN NEW REWRITE of BB parallel
 
 # Compute collisions of slaves with bounding boxes on other processors
 # and send these processors the slaves, coordinates and normals

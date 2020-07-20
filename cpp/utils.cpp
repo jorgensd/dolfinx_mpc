@@ -186,8 +186,7 @@ dolfinx_mpc::get_basis_functions(
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index)
 {
-  dolfinx::common::Timer timer_basis(
-      "MPC2: Evaluate basis functions for cell at point");
+
   // TODO: This could be easily made more efficient by exploiting points
   // being ordered by the cell to which they belong.
   // Get mesh
@@ -276,7 +275,6 @@ dolfinx_mpc::get_basis_functions(
       basis_array(i, j) = basis_values(0, i, j);
     }
   }
-  timer_basis.stop();
   return basis_array;
 }
 //-----------------------------------------------------------------------------
