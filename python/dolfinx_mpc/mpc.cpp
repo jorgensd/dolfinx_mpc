@@ -47,6 +47,7 @@ void mpc(py::module& m)
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
       .def("mpc_dofmap", &dolfinx_mpc::MultiPointConstraint::mpc_dofmap);
   m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
+  m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices);
 
   // dolfinx_mpc::ContactConstraint
   py::class_<dolfinx_mpc::ContactConstraint,
@@ -63,8 +64,6 @@ void mpc(py::module& m)
       .def("slave_to_cells", &dolfinx_mpc::ContactConstraint::slave_to_cells)
       .def("add_masters", &dolfinx_mpc::ContactConstraint::add_masters)
       .def("cell_to_slaves", &dolfinx_mpc::ContactConstraint::cell_to_slaves)
-      .def("compute_shared_indices",
-           &dolfinx_mpc::ContactConstraint::compute_shared_indices)
       .def("masters_local", &dolfinx_mpc::ContactConstraint::masters_local)
       .def("coefficients", &dolfinx_mpc::ContactConstraint::coefficients)
       .def("create_sparsity_pattern",

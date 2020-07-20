@@ -278,3 +278,9 @@ dolfinx_mpc::get_basis_functions(
   return basis_array;
 }
 //-----------------------------------------------------------------------------
+std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
+    std::shared_ptr<dolfinx::function::FunctionSpace> V)
+{
+  return V->dofmap()->index_map->compute_shared_indices();
+};
+//-----------------------------------------------------------------------------

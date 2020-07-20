@@ -99,7 +99,6 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
             del (is_master_cell, glob_cells, is_owned,
                  candidates, verified_candidate)
         del possible_cells
-    del cmin, cmax, loc2glob_cell
 
     # Loop through the slave dofs with masters on other interface and
     # compute corresponding coefficients
@@ -144,7 +143,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     slaves_to_send = {}
     loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
                            dtype=np.int64)
-
+    facettree = geometry.BoundingBoxTree(V.mesh, dim=fdim)
     for (dof, coord) in zip(slaves[:num_owned_slaves],
                             slave_coordinates[:num_owned_slaves]):
         # Find normal vector for local slave (through blocks)
@@ -154,7 +153,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
         # Get processors where boundingbox collides with point
         procs = np.array(cpp.mpc.compute_process_collisions(
-            tree._cpp_object, coord.T), dtype=np.int32)
+            facettree._cpp_object, coord.T), dtype=np.int32)
         procs = procs[procs != comm.rank]
         for proc in procs:
             if proc in slaves_to_send.keys():
@@ -188,4 +187,183 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
             recv_coords.extend(slaves_to_recv["coords"])
             recv_normals.extend(slaves_to_recv["normals"])
         del slaves_to_recv
-    print(comm.rank, bb_collision_recv)
+
+    # If received slaves, find possible masters
+    masters_for_recv_slaves = {}
+    if len(recv_slaves) > 0:
+        # NOTE: Repeat of previously used function
+        # This should probably be captured as a separate function
+        recv_slave_to_master_cell = {}
+        for i, (dof, coord) in enumerate(zip(recv_slaves, recv_coords)):
+            possible_cells = np.array(
+                geometry.compute_collisions_point(tree, coord),
+                dtype=np.int32)
+            if len(possible_cells) > 0:
+                is_master_cell = np.isin(possible_cells, local_master_cells)
+                glob_cells = loc2glob_cell[possible_cells]
+                is_owned = np.logical_and(
+                    cmin <= glob_cells, glob_cells < cmax)
+                candidates = possible_cells[np.logical_and(
+                    is_master_cell, is_owned)]
+                verified_candidate = dcpp.geometry.select_colliding_cells(
+                    V.mesh, list(candidates), coord, 1)
+                if len(verified_candidate) > 0:
+                    recv_slave_to_master_cell[dof] = (verified_candidate[0], i)
+                del (is_master_cell, glob_cells, is_owned,
+                     candidates, verified_candidate)
+            del possible_cells
+
+        # Loop through received slaves and compute possible local contributions
+        for slave in recv_slave_to_master_cell.keys():
+            cell = recv_slave_to_master_cell[slave][0]
+            index = recv_slave_to_master_cell[slave][1]
+            coord = recv_coords[index]
+            basis_values = cpp.mpc.get_basis_functions(
+                V._cpp_object, coord, cell)
+            cell_dofs = V.dofmap.cell_dofs(cell)
+            masters, owners, coeffs = [], [], []
+
+            # Loop through all dofs in cell and append those
+            # that yield a non-zero coefficient
+            for k in range(tdim):
+                for local_idx, dof in enumerate(cell_dofs):
+                    coeff = (basis_values[local_idx, k] *
+                             recv_normals[index][k]
+                             / recv_normals[index][tdim-1])
+                    if not np.isclose(coeff, 0):
+                        if dof < local_size:
+                            owners.append(comm.rank)
+                        else:
+                            owners.append(ghost_owners[dof//bs-local_size//bs])
+                        masters.append(loc_to_glob[dof])
+                        coeffs.append(coeff)
+                    del coeff
+            if len(masters) > 0:
+                # Sort masters by the slave ownership
+                if recv_owners[index] in masters_for_recv_slaves.keys():
+                    masters_for_recv_slaves[recv_owners[index]][slave] = {
+                        "masters": masters, "coeffs": coeffs, "owners": owners}
+                else:
+                    print(index, len(owners))
+                    masters_for_recv_slaves[recv_owners[index]] = {
+                        slave: {"masters": masters, "coeffs": coeffs,
+                                "owners": owners}}
+            del (cell, basis_values, cell_dofs, index,
+                 masters, owners, coeffs)
+    # Send masters back to owning processor
+    # master_send_procs = list(masters_for_recv_slaves.keys())
+    for proc in set(recv_owners):
+        if proc in masters_for_recv_slaves.keys():
+            comm.send(masters_for_recv_slaves[proc], dest=proc, tag=2)
+        else:
+            comm.send(None, dest=proc, tag=2)
+    # Receive masters from other processors and sort them by slave.
+    # If duplicates, add both of them. One will be randomly selected later
+    recv_masters = {}
+    recv_masters_procs = []
+    for proc in bb_collision_recv:
+        recv_master_from_proc = comm.recv(source=proc, tag=2)
+        if recv_master_from_proc is not None:
+            recv_masters_procs.append(proc)
+            for global_slave in recv_master_from_proc.keys():
+                # NOTE: Could be done faster if the global_to_local
+                # function in indexmap was exposed to the python
+                # layer
+                idx = np.where(global_slave ==
+                               loc_to_glob[slaves[:num_owned_slaves]])[0][0]
+                if slaves[idx] in recv_masters.keys():
+                    recv_masters[slaves[idx]][proc] = (
+                        recv_master_from_proc[global_slave])
+                else:
+                    recv_masters[slaves[idx]] = {
+                        proc: recv_master_from_proc[global_slave]}
+        del recv_master_from_proc
+
+    # Remove duplicates by random selection
+    recv_masters_unique = {}
+    if len(recv_masters.keys()) > 0:
+        for slave in recv_masters.keys():
+            if len(recv_masters[slave].keys()) == 1:
+                key = next(iter(recv_masters[slave]))
+                recv_masters_unique[slave] = recv_masters[slave][key]
+            else:
+                selected_proc = np.random.choice(np.fromiter(
+                    recv_masters[slave].keys(), dtype=np.int32))
+                recv_masters_unique[slave] = recv_masters[slave][selected_proc]
+    del recv_masters
+
+    # Gather all masters for local slave in a
+    # 1D list with corresponding offsets
+    masters, coeffs, owners, offsets = [], [], [], [0]
+    for slave in slaves[:num_owned_slaves]:
+        if slave in masters_block.keys():
+            masters.extend(loc_to_glob[masters_block[slave]["masters"]])
+            coeffs.extend(masters_block[slave]["coeffs"])
+            owners.extend(masters_block[slave]["owners"])
+        # Always select local masters over received ones for the same slave
+        if slave in masters_local.keys():
+            masters.extend(loc_to_glob[masters_local[slave]["masters"]])
+            coeffs.extend(masters_local[slave]["coeffs"])
+            owners.extend(masters_local[slave]["owners"])
+        elif slave in recv_masters_unique.keys():
+            masters.extend(recv_masters_unique[slave]["masters"])
+            coeffs.extend(recv_masters_unique[slave]["coeffs"])
+            owners.extend(recv_masters_unique[slave]["owners"])
+        offsets.append(len(masters))
+    del recv_masters_unique, masters_block, masters_local
+
+    # Get the shared indices for every block owned by the processors
+    shared_indices = cpp.mpc.compute_shared_indices(V._cpp_object)
+    send_ghost_masters = {}
+
+    for (i, slave) in enumerate(slaves[:num_owned_slaves]):
+        block = slave // bs
+        if block in shared_indices.keys():
+            for proc in shared_indices[block]:
+                if proc in send_ghost_masters.keys():
+                    send_ghost_masters[proc][loc_to_glob[slave]] = {
+                        "masters": masters[offsets[i]:offsets[i+1]],
+                        "coeffs": coeffs[offsets[i]:offsets[i+1]],
+                        "owners": owners[offsets[i]:offsets[i+1]]
+                    }
+                else:
+                    send_ghost_masters[proc] = {loc_to_glob[slave]: {
+                        "masters": masters[offsets[i]:offsets[i+1]],
+                        "coeffs": coeffs[offsets[i]:offsets[i+1]],
+                        "owners": owners[offsets[i]:offsets[i+1]]}}
+        del block
+
+    # Send masters for ghosted slaves to respective procs
+    for proc in send_ghost_masters.keys():
+        comm.send(send_ghost_masters[proc], dest=proc, tag=3)
+    del send_ghost_masters
+
+    # For ghosted slaves, find their respective owner
+    local_blocks_size = V.dofmap.index_map.size_local
+    ghost_recv = []
+    for slave in slaves[num_owned_slaves:]:
+        block = slave//bs - local_blocks_size
+        owner = ghost_owners[block]
+        ghost_recv.append(owner)
+        del block, owner
+    ghost_recv = set(ghost_recv)
+
+    # Receive masters for ghosted slaves
+    ghost_masters = {}
+    for owner in ghost_recv:
+        proc_masters = comm.recv(source=owner, tag=3)
+        ghost_masters.update(proc_masters)
+
+    # Add ghost masters to array
+    for slave in loc_to_glob[slaves[num_owned_slaves:]]:
+        masters.extend(ghost_masters[slave]["masters"])
+        coeffs.extend(ghost_masters[slave]["coeffs"])
+        owners.extend(ghost_masters[slave]["owners"])
+        offsets.append(len(masters))
+    del ghost_masters
+
+    # Create contact constraint
+    cc = cpp.mpc.ContactConstraint(
+        V._cpp_object, slaves, num_owned_slaves)
+    cc.add_masters(masters, coeffs, owners, offsets)
+    return cc

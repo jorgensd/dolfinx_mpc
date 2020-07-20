@@ -111,8 +111,6 @@ ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
 lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
     + ufl.inner(g, v)*ds
 
-dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
-exit(1)
 # Extract structures needed for contact detection
 loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
                        dtype=np.int64)
@@ -202,14 +200,11 @@ m_loc, c_loc, o_loc, offsets = gather_masters_for_local_slaves(
     loc_slaves_flat, loc_to_glob,
     masters_block, local_masters_interface, masters_from_global)
 
-
 # Initialize Contact constraint (computes which cells contains slaves)
 num_loc_slaves = len(loc_slaves_flat)
-cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
-    V._cpp_object, slaves_loc, num_loc_slaves)
 
 # Get shared indices for every ghost on the processor
-shared_indices = cc.compute_shared_indices()
+shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
 bs = V.dofmap.index_map.block_size
 
 # Write master data for ghosted slaves per processor
@@ -263,6 +258,9 @@ all_masters = np.hstack([m_loc, ghost_masters])
 all_coeffs = np.hstack([c_loc, ghost_coeffs])
 all_owners = np.hstack([o_loc, ghost_owners])
 all_offsets = np.hstack([offsets[:-1], offsets_ghosts])
+
+cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+    V._cpp_object, slaves_loc, num_loc_slaves)
 cc.add_masters(all_masters, all_coeffs, all_owners, all_offsets)
 
 

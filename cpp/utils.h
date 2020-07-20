@@ -46,4 +46,8 @@ get_basis_functions(
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index);
 
+/// Given a function space, compute its shared entities
+std::map<std::int32_t, std::set<int>>
+compute_shared_indices(std::shared_ptr<dolfinx::function::FunctionSpace> V);
+
 } // namespace dolfinx_mpc
