@@ -13,8 +13,6 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     bs = V.dofmap.index_map.block_size
     x = V.tabulate_dof_coordinates()
     local_size = V.dofmap.index_map.size_local*bs
-    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
-                           dtype=np.int64)
     comm = V.mesh.mpi_comm()
 
     # Compute approximate facet normal used in contact condition
@@ -139,3 +137,55 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                                     "coeffs": coeffs, "owners": owners}
         del (b_off, block_dofs, n, cell, coord, basis_values, cell_dofs,
              masters, owners, coeffs)
+
+    # Find all processors which a slave collides with
+    # (according to the bounding boxes). Send the slaves global dof number,
+    # physical coordinate and corresponding normal vector to those procs.
+    slaves_to_send = {}
+    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
+                           dtype=np.int64)
+
+    for (dof, coord) in zip(slaves[:num_owned_slaves],
+                            slave_coordinates[:num_owned_slaves]):
+        # Find normal vector for local slave (through blocks)
+        b_off = slave % bs
+        block_dofs = np.array([slave-b_off+i for i in range(bs)])
+        n = list(n_vec[block_dofs])
+
+        # Get processors where boundingbox collides with point
+        procs = np.array(cpp.mpc.compute_process_collisions(
+            tree._cpp_object, coord.T), dtype=np.int32)
+        procs = procs[procs != comm.rank]
+        for proc in procs:
+            if proc in slaves_to_send.keys():
+                slaves_to_send[proc]["slaves"].append(loc_to_glob[dof])
+                slaves_to_send[proc]["coords"].append(coord.tolist())
+                slaves_to_send[proc]["normals"].append(n)
+            else:
+                slaves_to_send[proc] = {"slaves": [loc_to_glob[dof]],
+                                        "coords": [coord.tolist()],
+                                        "normals": [n]}
+        del b_off, block_dofs, n, procs
+    # Send information about collisions between slave and bounding
+    #  box to the other processors
+    bb_collision_recv = list(slaves_to_send.keys())
+    for proc in range(comm.size):
+        if proc in slaves_to_send.keys():
+            comm.send(slaves_to_send[proc], dest=proc, tag=1)
+        elif proc != comm.rank:
+            comm.send(None, dest=proc, tag=1)
+    del slaves_to_send
+
+    # Receive information about slaves from other processors
+    recv_slaves, recv_owners, recv_coords, recv_normals = [], [], [], []
+    other_procs = np.arange(comm.size)
+    other_procs = other_procs[other_procs != comm.rank]
+    for proc in other_procs:
+        slaves_to_recv = comm.recv(source=proc, tag=1)
+        if slaves_to_recv is not None:
+            recv_slaves.extend(slaves_to_recv["slaves"])
+            recv_owners.extend([proc]*len(slaves_to_recv["slaves"]))
+            recv_coords.extend(slaves_to_recv["coords"])
+            recv_normals.extend(slaves_to_recv["normals"])
+        del slaves_to_recv
+    print(comm.rank, bb_collision_recv)
