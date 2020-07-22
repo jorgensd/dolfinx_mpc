@@ -1,3 +1,4 @@
+import slipcondition
 import dolfinx.cpp
 import dolfinx.io
 import dolfinx_mpc
@@ -79,8 +80,8 @@ P2 = ufl.VectorElement("Lagrange", mesh.ufl_cell(), 2)
 P1 = ufl.FiniteElement("Lagrange", mesh.ufl_cell(), 1)
 TH = P2 * P1
 W = dolfinx.FunctionSpace(mesh, TH)
-V = dolfinx.FunctionSpace(mesh, P2)
-Q = dolfinx.FunctionSpace(mesh, P1)
+V, V_to_W = W.sub(0).collapse(True)
+Q = W.sub(1).collapse()
 
 
 # Inlet velocity Dirichlet BC
@@ -92,18 +93,21 @@ def inlet_velocity_expression(x):
 inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
-dofs = dolfinx.fem.locate_dofs_topological((W.sub(0), V), 1, inlet_facets)
-bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W.sub(0))
+W0 = W.sub(0)
+
+dofs = dolfinx.fem.locate_dofs_topological((W0, V), 1, inlet_facets)
+bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
 
 # Since for this problem the pressure is only determined up to a constant,
 # we pin the pressure at the point (0, 0)
 zero = dolfinx.Function(Q)
 with zero.vector.localForm() as zero_local:
     zero_local.set(0.0)
-dofs = dolfinx.fem.locate_dofs_geometrical((W.sub(1), Q),
+W1 = W.sub(1)
+dofs = dolfinx.fem.locate_dofs_geometrical((W1, Q),
                                            lambda x: np.isclose(x.T, [0, 0, 0])
                                            .all(axis=1))
-bc2 = dolfinx.DirichletBC(zero, dofs, W.sub(1))
+bc2 = dolfinx.DirichletBC(zero, dofs, W1)
 
 # Collect Dirichlet boundary conditions
 bcs = [bc1, bc2]
@@ -189,6 +193,24 @@ print("Setup master slave relationship: {0:.2e}".format(end-start))
 mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(W._cpp_object, slaves,
                                                masters, coeffs, offsets,
                                                owner_ranks)
+
+# n = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
+# mpc = slipcondition.slip_condition(
+#     (W, W.sub(0)), n, V_to_W, (mt, 1), bcs=bcs)
+
+# Write cell partitioning to file
+tdim = mesh.topology.dim
+cell_map = mesh.topology.index_map(tdim)
+num_cells_local = cell_map.size_local
+indices = np.arange(num_cells_local)
+values = MPI.COMM_WORLD.rank*np.ones(num_cells_local, np.int32)
+ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
+ct.name = "cells"
+with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
+    xdmf.write_mesh(mesh)
+    xdmf.write_meshtags(ct)
+
+
 # Define variational problem
 (u, p) = ufl.TrialFunctions(W)
 (v, q) = ufl.TestFunctions(W)
@@ -199,11 +221,13 @@ L = ufl.inner(f, v) * ufl.dx
 
 # Assemble LHS matrix and RHS vector
 start = time.time()
+# A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs)
 A = dolfinx_mpc.assemble_matrix(a, mpc, bcs)
 end = time.time()
 print("Matrix assembly time: {0:.2e} ".format(end-start))
 A.assemble()
 start = time.time()
+# b = dolfinx_mpc.assemble_vector_local(L, mpc)
 b = dolfinx_mpc.assemble_vector(L, mpc)
 end = time.time()
 print("Vector assembly time: {0:.2e} ".format(end-start))
@@ -229,10 +253,15 @@ end = time.time()
 print("Solve time {0:.2e}".format(end-start))
 
 # Back substitute to slave dofs
+#dolfinx_mpc.backsubstitution_local(mpc, uh)
 dolfinx_mpc.backsubstitution(mpc, uh, W.dofmap)
 
 Wmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, W.element,
                                               mpc.mpc_dofmap())
+
+# Wmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, W.element,
+#                                               mpc.dofmap())
+
 Wmpc = dolfinx.FunctionSpace(None, W.ufl_element(), Wmpc_cpp)
 
 # Write solution to file

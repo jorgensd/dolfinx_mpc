@@ -80,12 +80,6 @@ public:
   /// Return constraint IndexMap
   std::shared_ptr<dolfinx::common::IndexMap> index_map() { return _index_map; }
 
-  /// Return shared indices for the function space of the Contact constraint
-  // std::map<std::int32_t, std::set<int>> compute_shared_indices()
-  // {
-  //   return _V->dofmap()->index_map->compute_shared_indices();
-  // }
-
   /// Create map from cell to slaves and its inverse
   /// @param[in] The local degrees of freedom that will be used to compute
   /// the cell to dof map
