@@ -1,4 +1,3 @@
-import slipcondition
 import dolfinx.cpp
 import dolfinx.io
 import dolfinx_mpc
@@ -14,7 +13,7 @@ from mpi4py import MPI
 # Length, width and rotation of channel
 L = 2
 H = 1
-theta = np.pi/8
+theta = np.pi/5
 
 
 def create_mesh_gmsh():
@@ -83,8 +82,9 @@ W = dolfinx.FunctionSpace(mesh, TH)
 V, V_to_W = W.sub(0).collapse(True)
 Q = W.sub(1).collapse()
 
-
 # Inlet velocity Dirichlet BC
+
+
 def inlet_velocity_expression(x):
     return np.stack((np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2)),
                      5*x[1]*np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2))))
@@ -112,91 +112,10 @@ bc2 = dolfinx.DirichletBC(zero, dofs, W1)
 # Collect Dirichlet boundary conditions
 bcs = [bc1, bc2]
 
-
-# Find all dofs that corresponding to places where we require MPC constraints.
-# x and y components are found separately.
-
-def set_master_slave_slip_relationship(W, V, mt, value, bcs):
-    """
-    Set a slip condition for all dofs in W (where V is the collapsed
-    0th subspace of W) that corresponds to the facets in mt marked with value
-    """
-    x = W.tabulate_dof_coordinates()
-    global_indices = W.dofmap.index_map.global_indices(False)
-
-    wall_facets = mt.indices[np.flatnonzero(mt.values == value)]
-    bc_dofs = []
-    for bc in bcs:
-        bc_g = [global_indices[bdof] for bdof in bc.dof_indices[:, 0]]
-        bc_dofs.append(np.hstack(MPI.COMM_WORLD.allgather(bc_g)))
-    bc_dofs = np.hstack(bc_dofs)
-    Vx = V.sub(0).collapse()
-    Vy = V.sub(1).collapse()
-    dofx = dolfinx.fem.locate_dofs_topological((W.sub(0).sub(0),
-                                                Vx),
-                                               1, wall_facets)
-    dofy = dolfinx.fem.locate_dofs_topological((W.sub(0).sub(1),
-                                                Vy),
-                                               1, wall_facets)
-
-    slaves = []
-    masters = []
-    coeffs = []
-    owner_ranks = []
-    nh = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
-    nhx, nhy = nh.sub(0).collapse(), nh.sub(1).collapse()
-    nh.name = "n"
-    outfile.write_function(nh)
-
-    nx = nhx.vector.getArray()
-    ny = nhy.vector.getArray()
-
-    # Find index of each pair of x and y components.
-    for d_x in dofx:
-        # Skip if dof is a ghost
-        if d_x[1] >= Vx.dofmap.index_map.size_local:
-            continue
-        for d_y in dofy:
-            # Skip if dof is a ghost
-            if d_y[1] >= Vy.dofmap.index_map.size_local:
-                continue
-            # Skip if not at same physical coordinate
-            if not np.allclose(x[d_x[0]], x[d_y[0]]):
-                continue
-            slave_dof = global_indices[d_x[0]]
-            master_dof = global_indices[d_y[0]]
-            if master_dof not in bc_dofs:
-                slaves.append(slave_dof)
-                masters.append(master_dof)
-                local_coeff = - ny[d_y[1]]/nx[d_x[1]]
-                coeffs.append(local_coeff)
-                owner_ranks.append(MPI.COMM_WORLD.rank)
-    # As all dofs is in the same block, we do not need to communicate
-    # all master and slave nodes have been found
-    global_slaves = np.hstack(MPI.COMM_WORLD.allgather(slaves))
-    global_masters = np.hstack(MPI.COMM_WORLD.allgather(masters))
-    global_coeffs = np.hstack(MPI.COMM_WORLD.allgather(coeffs))
-    owner_ranks = np.hstack(MPI.COMM_WORLD.allgather(owner_ranks))
-    offsets = np.arange(len(global_slaves)+1)
-
-    return (np.array(global_masters), np.array(global_slaves),
-            np.array(global_coeffs), offsets, owner_ranks)
-
-
-start = time.time()
-(masters, slaves,
- coeffs, offsets,
- owner_ranks) = set_master_slave_slip_relationship(W, V, mt, 1, bcs)
-end = time.time()
-print("Setup master slave relationship: {0:.2e}".format(end-start))
-
-mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(W._cpp_object, slaves,
-                                               masters, coeffs, offsets,
-                                               owner_ranks)
-
-# n = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
-# mpc = slipcondition.slip_condition(
-#     (W, W.sub(0)), n, V_to_W, (mt, 1), bcs=bcs)
+# Create slip condition
+n = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
+mpc = dolfinx_mpc.create_slip_condition(
+    (W, W.sub(0)), n, np.array(V_to_W), (mt, 1), bcs=bcs)
 
 # Write cell partitioning to file
 tdim = mesh.topology.dim
@@ -221,14 +140,12 @@ L = ufl.inner(f, v) * ufl.dx
 
 # Assemble LHS matrix and RHS vector
 start = time.time()
-# A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs)
-A = dolfinx_mpc.assemble_matrix(a, mpc, bcs)
+A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs)
 end = time.time()
 print("Matrix assembly time: {0:.2e} ".format(end-start))
 A.assemble()
 start = time.time()
-# b = dolfinx_mpc.assemble_vector_local(L, mpc)
-b = dolfinx_mpc.assemble_vector(L, mpc)
+b = dolfinx_mpc.assemble_vector_local(L, mpc)
 end = time.time()
 print("Vector assembly time: {0:.2e} ".format(end-start))
 
@@ -253,14 +170,10 @@ end = time.time()
 print("Solve time {0:.2e}".format(end-start))
 
 # Back substitute to slave dofs
-#dolfinx_mpc.backsubstitution_local(mpc, uh)
-dolfinx_mpc.backsubstitution(mpc, uh, W.dofmap)
-
+dolfinx_mpc.backsubstitution_local(mpc, uh)
 Wmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, W.element,
-                                              mpc.mpc_dofmap())
+                                              mpc.dofmap())
 
-# Wmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, W.element,
-#                                               mpc.dofmap())
 
 Wmpc = dolfinx.FunctionSpace(None, W.ufl_element(), Wmpc_cpp)
 
@@ -274,7 +187,7 @@ p = U.sub(1).collapse()
 u.name = "u"
 p.name = "p"
 outfile.write_function(u)
-outfile.write_function(p)
+# outfile.write_function(p)
 outfile.close()
 
 # Transfer data from the MPC problem to numpy arrays for comparison
@@ -283,7 +196,7 @@ mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
 # Solve the MPC problem using a global transformation matrix
 # and numpy solvers to get reference values
-
+exit()
 # Generate reference matrices and unconstrained solution
 print("---Reference timings---")
 start = time.time()
@@ -308,9 +221,7 @@ ksp.getPC().setFactorSolverType("mumps")
 solver.setOperators(A_org)
 
 # Create global transformation matrix
-K = dolfinx_mpc.utils.create_transformation_matrix(W.dim, slaves,
-                                                   masters, coeffs,
-                                                   offsets)
+K = dolfinx_mpc.utils.create_transformation_matrix(W, mpc)
 # Create reduced A
 A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
 start = time.time()
@@ -329,6 +240,7 @@ print("Numpy solve {0:.2e}".format(end-start))
 uh_numpy = np.dot(K, d)
 
 # Compare LHS, RHS and solution with reference values
+slaves = mpc.slaves()
 dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
 dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
 assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])

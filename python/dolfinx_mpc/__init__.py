@@ -19,3 +19,4 @@ from .assemble_matrix_new import assemble_matrix_local
 from .assemble_vector_new import assemble_vector_local
 from .backsubstitution_new import backsubstitution_local
 from .contactcondition import create_contact_condition
+from .slipcondition import create_slip_condition

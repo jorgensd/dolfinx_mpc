@@ -18,7 +18,7 @@ import dolfinx.log
 import dolfinx.la
 
 
-def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
+def create_transformation_matrix(V, constraint):
     """
     Creates the transformation matrix K (dim x dim-len(slaves)) f
     or a given set of slaves, masters and coefficients.
@@ -39,8 +39,14 @@ def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
     Output:
       K = [[1,0], [alpha beta], [0,1]]
     """
+    slaves_local = constraint.slaves()[:constraint.num_local_slaves()]
+    # Should gather slaves here
+    slaves = slaves_local
+    masters = constraint.masters_local().array()
+    coeffs = constraint.coefficients()
+    offsets = constraint.masters_local().offsets()
+    K = np.zeros((V.dim, V.dim - len(slaves)), dtype=PETSc.ScalarType)
 
-    K = np.zeros((dim, dim - len(slaves)), dtype=PETSc.ScalarType)
     for i in range(K.shape[0]):
         if i in slaves:
             index = np.argwhere(slaves == i)[0, 0]
