@@ -80,7 +80,7 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
            form.arguments()[1].ufl_function_space())
     V = form.arguments()[0].ufl_function_space()
     dofmap = V.dofmap
-    dofs = dofmap.list.array()
+    dofs = dofmap.list.array
     indexmap = dofmap.index_map
     ghost_info = (indexmap.local_range, indexmap.block_size,
                   indexmap.global_indices(False), indexmap.ghosts)

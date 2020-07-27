@@ -44,8 +44,8 @@ def pack_facet_info(mesh, integrals, i):
     active_facets = integrals.integral_domains(
         dolfinx.fem.IntegralType.exterior_facet, i)
     facet_info = pack_facet_info_numba(active_facets,
-                                       (c_to_f.array(), c_to_f.offsets()),
-                                       (f_to_c.array(), f_to_c.offsets()))
+                                       (c_to_f.array, c_to_f.offsets),
+                                       (f_to_c.array, f_to_c.offsets))
     return facet_info
 
 
@@ -80,7 +80,7 @@ def assemble_matrix_local(form, constraint, bcs=[]):
            form.arguments()[1].ufl_function_space())
     V = form.arguments()[0].ufl_function_space()
     dofmap = V.dofmap
-    dofs = dofmap.list.array()
+    dofs = dofmap.list.array
     indexmap = dofmap.index_map
     ghost_info = (indexmap.local_range, indexmap.block_size,
                   indexmap.global_indices(False), indexmap.ghosts)
@@ -90,12 +90,12 @@ def assemble_matrix_local(form, constraint, bcs=[]):
     coefficients = constraint.coefficients()
     masters = constraint.masters_local()
     slave_cell_to_dofs = constraint.cell_to_slaves()
-    cell_to_slave = slave_cell_to_dofs.array()
-    c_to_s_off = slave_cell_to_dofs.offsets()
+    cell_to_slave = slave_cell_to_dofs.array
+    c_to_s_off = slave_cell_to_dofs.offsets
     slaves_local = constraint.slaves()
     num_local_slaves = constraint.num_local_slaves()
-    masters_local = masters.array()
-    offsets = masters.offsets()
+    masters_local = masters.array
+    offsets = masters.offsets
     mpc_data = (slaves_local, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)
 
@@ -112,8 +112,8 @@ def assemble_matrix_local(form, constraint, bcs=[]):
             bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
 
     # Get data from mesh
-    pos = V.mesh.geometry.dofmap.offsets()
-    x_dofs = V.mesh.geometry.dofmap.array()
+    pos = V.mesh.geometry.dofmap.offsets
+    x_dofs = V.mesh.geometry.dofmap.array
     x = V.mesh.geometry.x
 
     # Generate ufc_form

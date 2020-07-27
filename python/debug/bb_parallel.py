@@ -345,6 +345,5 @@ with io.XDMFFile(MPI.COMM_WORLD, "n.xdmf", "w") as xdmf:
     xdmf.write_function(nh)
 
 
-print(MPI.COMM_WORLD.rank, "Num Local slaves:", len(loc_slaves))
 common.list_timings(MPI.COMM_WORLD,
                     [dolfinx.common.TimingType.wall])

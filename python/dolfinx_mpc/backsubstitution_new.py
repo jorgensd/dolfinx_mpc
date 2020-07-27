@@ -6,8 +6,8 @@ def backsubstitution_local(constraint, vector):
 
     # Unravel data from constraint
     coefficients = constraint.coefficients()
-    masters_local = constraint.masters_local().array()
-    offsets = constraint.masters_local().offsets()
+    masters_local = constraint.masters_local().array
+    offsets = constraint.masters_local().offsets
     slaves_local = constraint.slaves()
     constraint_wrapper = (slaves_local, masters_local,
                           coefficients, offsets)

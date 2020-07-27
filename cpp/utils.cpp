@@ -178,6 +178,7 @@ void dolfinx_mpc::build_standard_pattern(
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
+  dolfinx::common::Timer timer2("MPC: END");
 }
 //-----------------------------------------------------------------------------
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
@@ -192,34 +193,31 @@ dolfinx_mpc::get_basis_functions(
   // Get mesh
   assert(V);
   assert(V->mesh());
-  const dolfinx::mesh::Mesh& mesh = *V->mesh();
-  const int gdim = mesh.geometry().dim();
-  const int tdim = mesh.topology().dim();
+  const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
+  const int gdim = mesh->geometry().dim();
+  const int tdim = mesh->topology().dim();
 
   // Get geometry data
-  const dolfinx::graph::AdjacencyList<std::int32_t>& connectivity_g
-      = mesh.geometry().dofmap();
-  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& pos_g
-      = connectivity_g.offsets();
-  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& cell_g
-      = connectivity_g.array();
+  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
+      = mesh->geometry().dofmap();
 
   // FIXME: Add proper interface for num coordinate dofs
-  const int num_dofs_g = connectivity_g.num_links(0);
+  const int num_dofs_g = x_dofmap.num_links(0);
   const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>& x_g
-      = mesh.geometry().x();
+      = mesh->geometry().x();
   Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
       coordinate_dofs(num_dofs_g, gdim);
 
   // Get coordinate mapping
-  const dolfinx::fem::CoordinateElement& cmap = mesh.geometry().cmap();
+  const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
 
   // Get element
   assert(V->element());
-  const dolfinx::fem::FiniteElement& element = *V->element();
-  const int reference_value_size = element.reference_value_size();
-  const int value_size = element.value_size();
-  const int space_dimension = element.space_dimension();
+  std::shared_ptr<const dolfinx::fem::FiniteElement> element = V->element();
+  const int block_size = element->block_size();
+  const int reference_value_size = element->reference_value_size() / block_size;
+  const int value_size = element->value_size() / block_size;
+  const int space_dimension = element->space_dimension() / block_size;
 
   // Prepare geometry data structures
   Eigen::Tensor<double, 3, Eigen::RowMajor> J(1, gdim, tdim);
@@ -234,45 +232,49 @@ dolfinx_mpc::get_basis_functions(
   Eigen::Tensor<double, 3, Eigen::RowMajor> basis_values(1, space_dimension,
                                                          value_size);
 
-  // Create work vector for expansion coefficients
-  Eigen::Matrix<PetscScalar, 1, Eigen::Dynamic> coefficients(
-      element.space_dimension());
-
   // Get dofmap
   assert(V->dofmap());
-  const dolfinx::fem::DofMap& dofmap = *V->dofmap();
+  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
 
-  mesh.topology_mutable().create_entity_permutations();
+  mesh->topology_mutable().create_entity_permutations();
 
   const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& permutation_info
-      = mesh.topology().get_cell_permutation_info();
+      = mesh->topology().get_cell_permutation_info();
   // Skip negative cell indices
   Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      basis_array(space_dimension, value_size);
+      basis_array(space_dimension * block_size, value_size * block_size);
+  basis_array.setZero();
   if (index < 0)
     return basis_array;
 
   // Get cell geometry (coordinate dofs)
+  auto x_dofs = x_dofmap.links(index);
   for (int i = 0; i < num_dofs_g; ++i)
-    for (int j = 0; j < gdim; ++j)
-      coordinate_dofs(i, j) = x_g(cell_g[pos_g[index] + i], j);
+    coordinate_dofs.row(i) = x_g.row(x_dofs[i]).head(gdim);
 
   // Compute reference coordinates X, and J, detJ and K
   cmap.compute_reference_geometry(X, J, detJ, K, x.head(gdim), coordinate_dofs);
 
   // Compute basis on reference element
-  element.evaluate_reference_basis(basis_reference_values, X);
+  element->evaluate_reference_basis(basis_reference_values, X);
 
   // Push basis forward to physical element
-  element.transform_reference_basis(basis_values, basis_reference_values, X, J,
-                                    detJ, K, permutation_info[index]);
+  element->transform_reference_basis(basis_values, basis_reference_values, X, J,
+                                     detJ, K, permutation_info[index]);
 
-  for (int i = 0; i < space_dimension; ++i)
+  // Get the degrees of freedom for the current cell
+  auto dofs = dofmap->cell_dofs(index);
+
+  // Expand basis values for each dof
+  for (int block = 0; block < block_size; ++block)
   {
-    for (int j = 0; j < value_size; ++j)
+    for (int i = 0; i < space_dimension; ++i)
     {
-      // TODO: Find an Eigen shortcut for this operation
-      basis_array(i, j) = basis_values(0, i, j);
+      for (int j = 0; j < value_size; ++j)
+      {
+        basis_array(i * block_size + block, j * block_size + block)
+            = basis_values(0, i, j);
+      }
     }
   }
   return basis_array;

@@ -42,9 +42,9 @@ def create_transformation_matrix(V, constraint):
     slaves_local = constraint.slaves()[:constraint.num_local_slaves()]
     # Should gather slaves here
     slaves = slaves_local
-    masters = constraint.masters_local().array()
+    masters = constraint.masters_local().array
     coeffs = constraint.coefficients()
-    offsets = constraint.masters_local().offsets()
+    offsets = constraint.masters_local().offsets
     K = np.zeros((V.dim, V.dim - len(slaves)), dtype=PETSc.ScalarType)
 
     for i in range(K.shape[0]):
@@ -213,11 +213,11 @@ def build_elastic_nullspace(V):
         basis = [np.asarray(x) for x in vec_local]
 
         x = V.tabulate_dof_coordinates()
-        dofs = [V.sub(i).dofmap.list.array() for i in range(gdim)]
+        dofs = [V.sub(i).dofmap.list.array for i in range(gdim)]
 
         # Build translational null space basis
         for i in range(gdim):
-            basis[i][V.sub(i).dofmap.list.array()] = 1.0
+            basis[i][V.sub(i).dofmap.list.array] = 1.0
 
         # Build rotational null space basis
         if gdim == 2:

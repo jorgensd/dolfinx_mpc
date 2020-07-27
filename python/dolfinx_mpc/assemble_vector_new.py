@@ -20,21 +20,21 @@ def assemble_vector_local(form, constraint,
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
     # Unpack mesh and dofmap data
-    pos = V.mesh.geometry.dofmap.offsets()
-    x_dofs = V.mesh.geometry.dofmap.array()
+    pos = V.mesh.geometry.dofmap.offsets
+    x_dofs = V.mesh.geometry.dofmap.array
     x = V.mesh.geometry.x
-    dofs = V.dofmap.list.array()
+    dofs = V.dofmap.list.array
 
     # Data from multipointconstraint
     slave_cells = constraint.slave_cells()
     coefficients = constraint.coefficients()
     masters = constraint.masters_local()
     slave_cell_to_dofs = constraint.cell_to_slaves()
-    cell_to_slave = slave_cell_to_dofs.array()
-    c_to_s_off = slave_cell_to_dofs.offsets()
+    cell_to_slave = slave_cell_to_dofs.array
+    c_to_s_off = slave_cell_to_dofs.offsets
     slaves_local = constraint.slaves()
-    masters_local = masters.array()
-    offsets = masters.offsets()
+    masters_local = masters.array
+    offsets = masters.offsets
 
     mpc_data = (slaves_local, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)

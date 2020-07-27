@@ -272,10 +272,6 @@ dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
 
   dolfinx::mesh::Topology topology = mesh.topology();
   dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
-  if (bs != 1)
-  {
-    layout = *old_dofmap->element_dof_layout->sub_dofmap({0});
-  }
   auto [unused_indexmap, o_dofmap] = dolfinx::fem::DofMapBuilder::build(
       mesh.mpi_comm(), topology, layout, bs);
   _dofmap = std::make_shared<dolfinx::fem::DofMap>(
