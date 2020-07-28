@@ -44,8 +44,8 @@ def pack_facet_info(mesh, integrals, i):
     active_facets = integrals.integral_domains(
         dolfinx.fem.IntegralType.exterior_facet, i)
     facet_info = pack_facet_info_numba(active_facets,
-                                       (c_to_f.array(), c_to_f.offsets()),
-                                       (f_to_c.array(), f_to_c.offsets()))
+                                       (c_to_f.array, c_to_f.offsets),
+                                       (f_to_c.array, f_to_c.offsets))
     return facet_info
 
 
@@ -90,12 +90,12 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     coefficients = multipointconstraint.coefficients()
     masters = multipointconstraint.masters_local()
     slave_cell_to_dofs = multipointconstraint.slave_cell_to_dofs()
-    cell_to_slave = slave_cell_to_dofs.array()
-    c_to_s_off = slave_cell_to_dofs.offsets()
+    cell_to_slave = slave_cell_to_dofs.array
+    c_to_s_off = slave_cell_to_dofs.offsets
     slaves = multipointconstraint.slaves()
     slaves_local = multipointconstraint.slaves_local()
-    masters_local = masters.array()
-    offsets = masters.offsets()
+    masters_local = masters.array
+    offsets = masters.offsets
     mpc_data = (slaves, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off, slaves_local)
 
@@ -116,8 +116,8 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
             bc_array = numpy.append(bc_array, bc.dof_indices[:, 0])
 
     # Get data from mesh
-    pos = V.mesh.geometry.dofmap.offsets()
-    x_dofs = V.mesh.geometry.dofmap.array()
+    pos = V.mesh.geometry.dofmap.offsets
+    x_dofs = V.mesh.geometry.dofmap.array
     x = V.mesh.geometry.x
 
     # Generate ufc_form

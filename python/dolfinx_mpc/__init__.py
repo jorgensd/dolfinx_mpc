@@ -20,3 +20,4 @@ from .assemble_vector_new import assemble_vector_local
 from .backsubstitution_new import backsubstitution_local
 from .contactcondition import create_contact_condition
 from .slipcondition import create_slip_condition
+from .dictcondition import create_dictionary_constraint
