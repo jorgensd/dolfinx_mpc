@@ -81,9 +81,6 @@ def assemble_matrix_local(form, constraint, bcs=[]):
     V = form.arguments()[0].ufl_function_space()
     dofmap = V.dofmap
     dofs = dofmap.list.array
-    indexmap = dofmap.index_map
-    ghost_info = (indexmap.local_range, indexmap.block_size,
-                  indexmap.global_indices(False), indexmap.ghosts)
 
     # Unravel data from MPC
     slave_cells = constraint.slave_cells()
@@ -172,7 +169,7 @@ def assemble_matrix_local(form, constraint, bcs=[]):
                            gdim, form_coeffs, form_consts,
                            permutation_info,
                            dofs, num_dofs_per_element, mpc_data,
-                           ghost_info, bc_array)
+                           bc_array)
 
     # Assemble over exterior facets
     subdomain_ids = formintegral.integral_ids(
@@ -198,7 +195,7 @@ def assemble_matrix_local(form, constraint, bcs=[]):
                                      (pos, x_dofs, x), gdim,
                                      form_coeffs, form_consts,
                                      perm, dofs, num_dofs_per_element,
-                                     facet_info, mpc_data, ghost_info,
+                                     facet_info, mpc_data,
                                      bc_array)
 
     with dolfinx.common.Timer("*MPC: Assemble matrix (diagonal handling)"):
@@ -217,7 +214,7 @@ def assemble_matrix_local(form, constraint, bcs=[]):
 @numba.njit
 def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
                    permutation_info, dofmap,
-                   num_dofs_per_element, mpc, ghost_info, bcs):
+                   num_dofs_per_element, mpc, bcs):
     """
     Assemble MPC contributions for cell integrals
     """
@@ -271,7 +268,7 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
         A_local_copy = A_local.copy()
         # If this slave contains a slave dof, modify local contribution
         modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
-                              local_pos, mpc, ghost_info, num_dofs_per_element)
+                              local_pos, mpc, num_dofs_per_element)
         # Remove already assembled contribution to matrix
         A_contribution = A_local - A_local_copy
         slave_cell_index += 1
@@ -288,7 +285,7 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
 @numba.njit
 def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
                              dofmap, num_dofs_per_element, facet_info,
-                             mpc, ghost_info, bcs):
+                             mpc, bcs):
     """Assemble MPC contributions over exterior facet integrals"""
 
     slave_cells = mpc[4]  # Note: packing order for MPC really important
@@ -351,7 +348,7 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
         A_local_copy = A_local.copy()
         # If this slave contains a slave dof, modify local contribution
         modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
-                              local_pos, mpc, ghost_info, num_dofs_per_element)
+                              local_pos, mpc, num_dofs_per_element)
 
         # Remove already assembled contribution to matrix
         A_contribution = A_local - A_local_copy
@@ -370,7 +367,7 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
 
 @numba.njit
 def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
-                          local_pos, mpc, ghost_info, num_dofs_per_element):
+                          local_pos, mpc, num_dofs_per_element):
     """
     Modifies A_local as it contains slave degrees of freedom.
     Adds contributions to corresponding master degrees of freedom in A.
@@ -380,9 +377,6 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
     # Unpack MPC data
     (slaves, masters_local, coefficients, offsets, slave_cells,
      cell_to_slave, cell_to_slave_offsets) = mpc
-
-    # Unpack ghost data
-    local_range, block_size, global_indices, ghosts = ghost_info
 
     # Rows taken over by master
     A_row = numpy.zeros((num_dofs_per_element, 1), dtype=PETSc.ScalarType)

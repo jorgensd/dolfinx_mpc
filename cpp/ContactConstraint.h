@@ -56,13 +56,13 @@ public:
   {
     return _cell_to_slaves_map;
   }
-  /// Return map from slave to masters (global index)
+  /// Return map from slave to masters (local_index)
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters_local()
   {
     return _master_local_map;
   }
 
-  /// Return map from slave to masters (global index)
+  /// Return map from slave to coefficients
   Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients()
   {
     return _coeff_map->array();

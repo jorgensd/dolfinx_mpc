@@ -40,8 +40,6 @@ def assemble_vector_local(form, constraint,
                 slave_cells, cell_to_slave, c_to_s_off)
     # Get index map and ghost info
     index_map = constraint.index_map()
-    ghost_info = (index_map.local_range, index_map.indices(True),
-                  index_map.block_size, index_map.ghosts)
     vector = dolfinx.cpp.la.create_vector(index_map)
     ufc_form = dolfinx.jit.ffcx_jit(form)
 
@@ -83,7 +81,7 @@ def assemble_vector_local(form, constraint,
                                form_coeffs, form_consts,
                                permutation_info,
                                dofs, num_dofs_per_element, mpc_data,
-                               ghost_info, (bc_dofs, bc_values))
+                               (bc_dofs, bc_values))
 
     # Assemble exterior facet integrals
     subdomain_ids = formintegral.integral_ids(
@@ -120,7 +118,7 @@ def assemble_vector_local(form, constraint,
 def assemble_cells(b, kernel, active_cells, mesh, gdim,
                    coeffs, constants,
                    permutation_info, dofmap, num_dofs_per_element,
-                   mpc, ghost_info, bcs):
+                   mpc, bcs):
     """Assemble additional MPC contributions for cell integrals"""
     ffi_fb = ffi.from_buffer
     (bcs, values) = bcs
@@ -153,7 +151,7 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim,
         b_local_copy = b_local.copy()
         modify_mpc_contributions_local(b, cell_index, slave_cell_index,
                                        b_local, b_local_copy, mpc, dofmap,
-                                       num_dofs_per_element, ghost_info)
+                                       num_dofs_per_element)
 
         for j in range(num_dofs_per_element):
             position = dofmap[cell_index * num_dofs_per_element + j]
@@ -165,7 +163,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim,
                              coeffs, constants,
                              permutation_info, dofmap,
                              num_dofs_per_element,
-                             mpc, ghost_info, bcs):
+                             mpc, bcs):
     """Assemble additional MPC contributions for facets"""
     ffi_fb = ffi.from_buffer
     (bcs, values) = bcs
@@ -205,7 +203,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim,
 
         modify_mpc_contributions_local(b, cell_index, slave_cell_index,
                                        b_local, b_local_copy, mpc, dofmap,
-                                       num_dofs_per_element, ghost_info)
+                                       num_dofs_per_element)
         for j in range(num_dofs_per_element):
             position = dofmap[cell_index * num_dofs_per_element + j]
             b[position] += (b_local[j] - b_local_copy[j])
@@ -214,7 +212,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim,
 @numba.njit(cache=True)
 def modify_mpc_contributions_local(b, cell_index, slave_cell_index,
                                    b_local, b_copy,  mpc, dofmap,
-                                   num_dofs_per_element, ghost_info):
+                                   num_dofs_per_element):
     """
     Modify local entries of b_local with MPC info and add modified
     entries to global vector b.
@@ -223,8 +221,6 @@ def modify_mpc_contributions_local(b, cell_index, slave_cell_index,
     # Unwrap MPC data
     (slaves, masters_local, coefficients, offsets, slave_cells,
      cell_to_slave, cell_to_slave_offset) = mpc
-    # Unwrap ghost data
-    local_range, global_indices, block_size, ghosts = ghost_info
 
     # Determine which slaves are in this cell,
     # and which global index they have in 1D arrays
@@ -245,6 +241,6 @@ def modify_mpc_contributions_local(b, cell_index, slave_cell_index,
         for m0, c0 in zip(cell_masters, cell_coeffs):
             # Find local dof and add contribution to another place
             for k, dof in enumerate(glob):
-                if global_indices[dof] == slaves[slave_index]:
+                if dof == slaves[slave_index]:
                     b[m0] += c0*b_copy[k]
                     b_local[k] = 0
