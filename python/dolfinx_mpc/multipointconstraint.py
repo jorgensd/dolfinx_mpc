@@ -23,17 +23,17 @@ def backsubstitution(mpc, vector, dofmap):
     coefficients = mpc.coefficients()
     masters = mpc.masters_local()
     slave_cell_to_dofs = mpc.slave_cell_to_dofs()
-    cell_to_slave = slave_cell_to_dofs.array()
-    cell_to_slave_offset = slave_cell_to_dofs.offsets()
+    cell_to_slave = slave_cell_to_dofs.array
+    cell_to_slave_offset = slave_cell_to_dofs.offsets
     slaves = mpc.slaves()
-    masters_local = masters.array()
-    offsets = masters.offsets()
+    masters_local = masters.array
+    offsets = masters.offsets
     mpc_wrapper = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
                    masters_local, coefficients, offsets)
     num_dofs_per_element = dofmap.dof_layout.num_dofs
     index_map = mpc.index_map()
     global_indices = index_map.indices(True)
-    backsubstitution_numba(vector, dofmap.list.array(),
+    backsubstitution_numba(vector, dofmap.list.array,
                            num_dofs_per_element, mpc_wrapper, global_indices)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)

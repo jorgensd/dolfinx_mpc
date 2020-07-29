@@ -124,12 +124,12 @@ def PETScMatrix_to_global_numpy(A):
     return A_numpy
 
 
-def compare_vectors(reduced_vec, vec, global_zeros):
+def compare_vectors(reduced_vec, vec, constraint):
     """
     Compare two numpy vectors of different lengths,
-    where global_zeros are the indices of vec that are not in
-    reduced vec.
+    where the constraints slaves are not in the reduced vector
     """
+    global_zeros = gather_slaves_global(constraint)
     count = 0
     for i in range(len(vec)):
         if i in global_zeros:
