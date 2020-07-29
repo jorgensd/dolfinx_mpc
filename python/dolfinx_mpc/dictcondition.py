@@ -19,7 +19,9 @@ def close_to(point):
 
 
 def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
-                                 typing.Dict[bytes, typing.Dict[bytes, float]]
+                                 typing.Dict[bytes, typing.Dict[bytes, float]],
+                                 subspace_slave=None,
+                                 subspace_master=None
                                  ):
     """
     Returns a multi point constraint for a given function space
@@ -27,6 +29,10 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
     Input:
         V - The function space
         slave_master_dict - The dictionary.
+        subspace_slave - If using mixed or vector space, 
+                         and only want to use dofs from 
+                         a sub space as slave add index here
+        subspace_master - Subspace index for mixed or vector spaces
     Example:
         If the dof D located at [d0,d1] should be constrained to the dofs E and
         F at [e0,e1] and [f0,f1] as
@@ -64,10 +70,13 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
                               list(slave_master_dict[slave_point].keys())),
                               -1, dtype=np.int64),
                           "local_master_index": []}
-
-        slave_dofs = np.array(fem.locate_dofs_geometrical(
-            V, close_to(slave_point_nd))[:, 0])
-
+        if subspace_slave is None:
+            slave_dofs = np.array(fem.locate_dofs_geometrical(
+                V, close_to(slave_point_nd))[:, 0])
+        else:
+            Vsub = V.sub(subspace_slave).collapse()
+            slave_dofs = np.array(fem.locate_dofs_geometrical(
+                (V.sub(subspace_slave), Vsub), close_to(slave_point_nd))[:, 0])
         if len(slave_dofs) == 1:
             slaves_dict[i]["slave"] = slave_dofs[0]
             # Decide if slave is ghost or not
@@ -87,8 +96,15 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
             for k, coord in enumerate(np.frombuffer(master_point,
                                                     dtype=dfloat)):
                 master_points_nd[k, j] = coord
-            master_dofs = fem.locate_dofs_geometrical(
-                V, close_to(master_points_nd[:, j:j+1]))[:, 0]
+            if subspace_master is None:
+                master_dofs = fem.locate_dofs_geometrical(
+                    V, close_to(master_points_nd[:, j:j+1]))[:, 0]
+            else:
+                Vsub = V.sub(subspace_master).collapse()
+                master_dofs = np.array(fem.locate_dofs_geometrical(
+                    (V.sub(subspace_master), Vsub),
+                    close_to(master_points_nd[:, j:j+1]))[:, 0])
+
             # Only add masters owned by this processor
             master_dofs = master_dofs[master_dofs < local_size]
             if len(master_dofs) == 1:

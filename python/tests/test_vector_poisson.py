@@ -60,13 +60,13 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
                                                    masters, coeffs, offsets,
                                                    master_owners)
-    # Setup MPC system
-    start = time.time()
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    end = time.time()
-    print("Runtime: {0:.2e}".format(end-start))
 
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    # Setup MPC system
+    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+
+    with dolfinx.common.Timer("~TEST: Assemble vector"):
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -86,10 +86,38 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
 
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
+    # NEW IMPLEMENTATION
+    def l2b(li):
+        return np.array(li, dtype=np.float64).tobytes()
+    s_m_c_new = {l2b([1, 0]): {l2b([1, 1]): 0.1,
+                               l2b([0.5, 1]): 0.3}}
+    cc = dolfinx_mpc.create_dictionary_constraint(
+        V, s_m_c_new, slave_space, master_space)
+    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+    with dolfinx.common.Timer("~TEST: Assemble vector"):
+        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+    dolfinx.fem.apply_lifting(bcc, [a], [bcs])
+    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(bcc, bcs)
+    solver.setOperators(Acc)
+    uhcc = bcc.copy()
+    uhcc.set(0)
+    solver.solve(b, uhcc)
+    uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                     mode=PETSc.ScatterMode.FORWARD)
+    dolfinx_mpc.backsubstitution_local(cc, uhcc)
+    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
+    assert(np.allclose(A_cc_np, A_mpc_np))
+    assert(np.allclose(cc_vec_np, mpc_vec_np))
+    assert(np.allclose(uh.array, uhcc.array))
     # Generate reference matrices for unconstrained problem
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
@@ -100,9 +128,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     dolfinx.fem.set_bc(L_org, bcs)
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -115,6 +141,6 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     uh_numpy = np.dot(K, d)
 
     # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, cc)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, cc)
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])

@@ -105,11 +105,9 @@ def assemble_vector_local(form, constraint,
                                          (pos, x_dofs, x),
                                          gdim, form_coeffs, form_consts,
                                          (permutation_info,
-                                          facet_permutation_info),
-                                         dofs,
+                                          facet_permutation_info), dofs,
                                          num_dofs_per_element,
-                                         mpc_data, ghost_info,
-                                         (bc_dofs, bc_values))
+                                         mpc_data, (bc_dofs, bc_values))
     timer_vector.stop()
     return vector
 
