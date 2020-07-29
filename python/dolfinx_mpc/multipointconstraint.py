@@ -258,7 +258,7 @@ def create_collision_constraint(V, interface_info, cell_info):
 
     # Get dofmap info
     comm = V.mesh.mpi_comm()
-    dofs = V.dofmap.list.array()
+    dofs = V.dofmap.list.array
     dof_coords = V.tabulate_dof_coordinates()
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
     indexmap = V.dofmap.index_map
