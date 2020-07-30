@@ -115,7 +115,7 @@ def demo_elasticity():
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
     with dolfinx.common.Timer("~MPC: New backsub"):
         dolfinx_mpc.backsubstitution_local(cc, uhcc)
-    return
+
     # Create functionspace and function for mpc vector
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
@@ -133,7 +133,10 @@ def demo_elasticity():
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
+    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
+    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+    assert(np.allclose(A_mpc_np, A_cc_np))
+    assert(np.allclose(mpc_vec_np, cc_vec_np))
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
 
@@ -159,9 +162,7 @@ def demo_elasticity():
     outfile.close()
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -174,23 +175,46 @@ def demo_elasticity():
     uh_numpy = np.dot(K, d)
 
     # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    if uh.owner_range[0] < masters[0] and masters[0] < uh.owner_range[1]:
-        print("MASTER DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-              .format(uh.array[masters[0]-uh.owner_range[0]],
-                      u_.vector.array[masters[0]-uh.owner_range[0]]))
-        print("Slave (given as master*coeff) {0:.4e}".
-              format(uh.array[masters[0]-uh.owner_range[0]]*coeffs[0]))
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_cc_np, cc)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)
 
-    if uh.owner_range[0] < slaves[0] and slaves[0] < uh.owner_range[1]:
-        print("SLAVE  DOF, MPC {0:.4e} Unconstrained {1:.4e}"
-              .format(uh.array[slaves[0]-uh.owner_range[0]],
-                      u_.vector.array[slaves[0]-uh.owner_range[0]]))
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+    # Print out master-slave connectivity for the first slave
+    master_owner = None
+    master_data = None
+    slave_owner = None
+    if cc.num_local_slaves() > 0:
+        slave_owner = MPI.COMM_WORLD.rank
+        l2g = np.array(cc.index_map().global_indices(False))
+        slave = cc.slaves()[0]
+        print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}"
+              .format(uhcc.array[slave], u_.vector.array[slave]))
+        master_owner = cc.owners().links(0)[0]
+        master_data = [l2g[cc.masters_local().array[0]], cc.coefficients()[0]]
+        # If master not on proc send info to this processor
+        if MPI.COMM_WORLD.rank != master_owner:
+            MPI.COMM_WORLD.send(master_data, dest=master_owner, tag=1)
+        else:
+            print("Master*Coeff: {0:.5e}"
+                  .format(cc.coefficients()[0] *
+                          uhcc.array[cc.masters_local().array[0]]))
+    # As a processor with a master is not aware that it has a master,
+    # Determine this so that it can receive the global dof and coefficient
+    master_recv = MPI.COMM_WORLD.allgather(master_owner)
+    for master in master_recv:
+        if master is not None:
+            master_owner = master
+            break
+    if slave_owner != master_owner and MPI.COMM_WORLD.rank == master_owner:
+        in_data = MPI.COMM_WORLD.recv(source=MPI.ANY_SOURCE, tag=1)
+        l2g = np.array(cc.index_map().global_indices(False))
+        l_index = np.flatnonzero(l2g == in_data[0])[0]
+        print("Master*Coeff (on other proc): {0:.5e}"
+              .format(uhcc.array[l_index]*in_data[1]))
+    assert(np.allclose(
+        uhcc.array, uh_numpy[uhcc.owner_range[0]:uhcc.owner_range[1]]))
 
 
 if __name__ == "__main__":
     demo_elasticity()
-    dolfinx.common.list_timings(
-        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    # dolfinx.common.list_timings(
+    #     MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
