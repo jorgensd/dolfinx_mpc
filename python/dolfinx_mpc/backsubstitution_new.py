@@ -11,8 +11,8 @@ def backsubstitution_local(constraint, vector):
     slaves_local = constraint.slaves()
     constraint_wrapper = (slaves_local, masters_local,
                           coefficients, offsets)
-
-    backsubstitution_local_numba(vector, constraint_wrapper)
+    if len(slaves_local) > 0:
+        backsubstitution_local_numba(vector, constraint_wrapper)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
     return vector

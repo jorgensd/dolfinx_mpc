@@ -56,25 +56,40 @@ def demo_elasticity():
     lhs = ufl.inner(ufl.as_vector((0, (x[0] - 0.5)*10**4*x[1])), v) * ufl.dx
 
     # Create MPC
-    dof_at = dolfinx_mpc.dof_close_to
-    s_m_c = {lambda x: dof_at(x, [1, 0]): {lambda x: dof_at(x, [1, 1]): 0.9}}
-    (slaves, masters,
-     coeffs, offsets,
-     owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                       1, 1)
+    with dolfinx.common.Timer("~MPC: Old init"):
+        dof_at = dolfinx_mpc.dof_close_to
+        s_m_c = {lambda x: dof_at(x, [1, 0]): {
+            lambda x: dof_at(x, [1, 1]): 0.9}}
+        (slaves, masters,
+         coeffs, offsets,
+         owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
+                                                           1, 1)
+        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                       masters, coeffs, offsets,
+                                                       owner_ranks)
 
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   owner_ranks)
+    with dolfinx.common.Timer("~MPC: New init"):
+        def l2b(li):
+            return np.array(li, dtype=np.float64).tobytes()
+        s_m_c_new = {l2b([1, 0]): {l2b([1, 1]): 0.9}}
+        cc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c_new, 1, 1)
+
     # Setup MPC system
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
-
-    # Apply boundary conditions
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    with dolfinx.common.Timer("~MPC: New assembly"):
+        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+        dolfinx.fem.apply_lifting(bcc, [a], [bcs])
+        bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                        mode=PETSc.ScatterMode.REVERSE)
+        dolfinx.fem.set_bc(bcc, bcs)
+    with dolfinx.common.Timer("~MPC: Old assembly"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
+        # Apply boundary conditions
+        dolfinx.fem.apply_lifting(b, [a], [bcs])
+        b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                      mode=PETSc.ScatterMode.REVERSE)
+        dolfinx.fem.set_bc(b, bcs)
 
     # Solve Linear problem
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -87,9 +102,19 @@ def demo_elasticity():
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
-    # Back substitute to slave dofs
-    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    solver.setOperators(Acc)
+    uhcc = bcc.copy()
+    uhcc.set(0)
+    solver.solve(bcc, uhcc)
+    uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                     mode=PETSc.ScatterMode.FORWARD)
 
+    # Back substitute to slave dofs
+    with dolfinx.common.Timer("~MPC: Old backsub"):
+        dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    with dolfinx.common.Timer("~MPC: New backsub"):
+        dolfinx_mpc.backsubstitution_local(cc, uhcc)
+    return
     # Create functionspace and function for mpc vector
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
@@ -166,3 +191,5 @@ def demo_elasticity():
 
 if __name__ == "__main__":
     demo_elasticity()
+    dolfinx.common.list_timings(
+        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
