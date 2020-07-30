@@ -172,44 +172,6 @@ def compare_matrices(reduced_A, A, constraint):
     assert np.allclose(A, A_numpy_padded)
 
 
-def cache_numba(matrix=False, vector=False, backsubstitution=False):
-    """
-    Build a minimal numba cache for all operations
-    """
-    dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                    "Building Numba cache...")
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD,
-                                  MPI.COMM_WORLD.size,
-                                  MPI.COMM_WORLD.size)
-    V = dolfinx.FunctionSpace(mesh, ("CG", 1))
-    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-    a = ufl.inner(u, v) * ufl.dx
-    L = ufl.inner(dolfinx.Constant(mesh, 1), v) * ufl.dx
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object,
-                                                   np.array([],
-                                                            dtype=np.int64),
-                                                   np.array([],
-                                                            dtype=np.int64),
-                                                   np.array([],
-                                                            dtype=np.float64),
-                                                   np.array([0],
-                                                            dtype=np.int64),
-                                                   np.array([],
-                                                            dtype=np.int32))
-    if matrix:
-        with dolfinx.common.Timer("MPC: Cache Matrix"):
-            A = dolfinx_mpc.assemble_matrix(a, mpc, [])
-            A.assemble()
-    if vector:
-        with dolfinx.common.Timer("MPC: Cache Vector"):
-            b = dolfinx_mpc.assemble_vector(L, mpc)
-
-        if backsubstitution:
-            c = b.copy()
-            with dolfinx.common.Timer("MPC: Cache Backsubstitution"):
-                dolfinx_mpc.backsubstitution(mpc, c, V.dofmap)
-
-
 def log_info(message):
     """
     Wrapper for logging a simple string on the zeroth communicator
