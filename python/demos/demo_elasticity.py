@@ -65,7 +65,8 @@ def demo_elasticity():
          owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
                                                            1, 1)
         mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                       masters, coeffs, offsets,
+                                                       masters, coeffs,
+                                                       offsets,
                                                        owner_ranks)
 
     with dolfinx.common.Timer("~MPC: New init"):
