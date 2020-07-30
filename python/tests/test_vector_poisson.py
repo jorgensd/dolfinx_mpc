@@ -108,8 +108,8 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                      mode=PETSc.ScatterMode.FORWARD)
     dolfinx_mpc.backsubstitution_local(cc, uhcc)
-    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
+    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -143,4 +143,5 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, cc)
     dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, cc)
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+    assert np.allclose(
+        uhcc.array, uh_numpy[uhcc.owner_range[0]:uhcc.owner_range[1]])
