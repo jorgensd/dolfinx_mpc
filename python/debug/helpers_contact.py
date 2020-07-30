@@ -180,8 +180,6 @@ def recv_masters(loc_slaves_flat, glob_slaves, possible_recv, tag):
         data = MPI.COMM_WORLD.recv(source=proc, tag=tag)
         if len(data.keys()) > 0:
             narrow_master_recv.append(proc)
-            # print("{0:d} received masters for {2:d} slaves from {1:d}".format(
-            #     MPI.COMM_WORLD.rank, proc, len(data.keys())))
             # Loop through the slaves which sending proc has masters for
             for global_slave in data.keys():
                 idx = np.where(glob_slaves == global_slave)[0][0]

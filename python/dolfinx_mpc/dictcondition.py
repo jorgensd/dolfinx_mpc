@@ -2,12 +2,8 @@ import typing
 
 import dolfinx_mpc.cpp
 import numpy as np
-from petsc4py import PETSc
-import dolfinx.cpp
 import dolfinx.fem as fem
 import dolfinx.function as function
-import dolfinx.geometry as geometry
-from mpi4py import MPI
 
 
 def close_to(point):

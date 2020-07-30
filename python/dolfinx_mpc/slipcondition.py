@@ -1,5 +1,4 @@
 import dolfinx.fem as fem
-import dolfinx_mpc
 import numpy as np
 import dolfinx_mpc.cpp as cpp
 
@@ -32,7 +31,7 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
         n_imap = normal.function_space.dofmap.index_map
         x = W.tabulate_dof_coordinates()
         facet_dofs = fem.locate_dofs_topological(
-            (Wsub, normal.function_space), tdim - 1, marked_facets)
+            (Wsub, normal.function_space), fdim, marked_facets)
         local_dofs = facet_dofs[facet_dofs[:, 1] < n_imap.size_local *
                                 n_imap.block_size]
 
@@ -77,7 +76,7 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
                                 pair_owners.append(
                                     ghost_owners[n_to_W[normal_dofs[index]]//bs
                                                  - local_size])
-                    # If all coeffs are 0 (normal aligned with spatial coordinate,
+                    # If all coeffs are 0 (normal aligned with axis),
                     # append one to enforce Dirichlet BC 0
                     if len(pair_masters) == 0:
                         master = n_to_W[global_indices[
@@ -131,7 +130,8 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
 
         # Receive ghost slaves
         ghost_dofs = np.array(facet_dofs[n_imap.size_local *
-                                         n_imap.block_size <= facet_dofs[:, 1]])
+                                         n_imap.block_size
+                                         <= facet_dofs[:, 1]])
         ghost_blocks = ghost_dofs[:, 0]//bs - local_size
         receiving_procs = []
         for block in ghost_blocks:

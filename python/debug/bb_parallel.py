@@ -4,7 +4,6 @@ import dolfinx_mpc.utils
 import numpy as np
 import pygmsh
 import ufl
-from IPython import embed
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -13,7 +12,7 @@ import dolfinx.common as common
 import dolfinx.fem as fem
 import dolfinx.geometry as geometry
 import dolfinx.io as io
-import dolfinx.log as log
+# import dolfinx.log as log
 from helpers_contact import (compute_masters_from_global,
                              compute_masters_local,
                              compute_masters_local_block, flatten_ghosts,
