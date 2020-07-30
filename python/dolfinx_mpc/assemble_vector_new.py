@@ -7,11 +7,13 @@ import numba
 import numpy
 
 import dolfinx
-import dolfinx.common.Timer as Timer
+import dolfinx.common
 import dolfinx.log
 
 from .assemble_matrix_new import in_numpy_array, pack_facet_info
 from .numba_setup import PETSc, ffi
+
+Timer = dolfinx.common.Timer
 
 
 def assemble_vector_local(form, constraint,

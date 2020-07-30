@@ -8,10 +8,11 @@ import numpy
 
 import dolfinx
 import dolfinx.common
-import dolfinx.common.Timer as Timer
 import dolfinx.log
 
 from .numba_setup import PETSc, ffi, mode, set_values_local, sink
+
+Timer = dolfinx.common.Timer
 
 
 @numba.njit(cache=True)
