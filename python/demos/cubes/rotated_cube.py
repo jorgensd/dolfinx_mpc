@@ -170,8 +170,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                 s_side = np.array([global_indices[dofx[0, 0]]], dtype=np.int64)
                 m_side = np.array([global_indices[dofy[0, 0]]], dtype=np.int64)
                 o_side = np.array([len(masters) + 1], dtype=np.int32)
-                c_side = np.array(
-                    [-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]], dtype=PETSc.ScalarType)
+                c_side = np.array([-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]],
+                                  dtype=PETSc.ScalarType)
                 o_r_side = np.array([comm.rank], dtype=np.int32)
             else:
                 s_side = np.array([], dtype=np.int64)
@@ -195,7 +195,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             assert(not np.all(np.isin(slaves, masters)))
 
         mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                       masters, coeffs, offsets,
+                                                       masters, coeffs,
+                                                       offsets,
                                                        owner_ranks)
     with dolfinx.common.Timer("~Contact: Create new constraint"):
         cc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
@@ -341,7 +342,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         print("DIFF", max(abs(uhcc.array - uh_numpy[uhcc.owner_range[0]:
                                                     uhcc.owner_range[1]])))
         assert np.allclose(uhcc.array, uh_numpy[uhcc.owner_range[0]:
-                                                uhcc.owner_range[1]], atol=1e-7)
+                                                uhcc.owner_range[1]],
+                           atol=1e-7)
 
 
 if __name__ == "__main__":

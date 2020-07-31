@@ -6,9 +6,7 @@
 
 from contextlib import ExitStack
 
-import dolfinx_mpc
 import numpy as np
-import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
