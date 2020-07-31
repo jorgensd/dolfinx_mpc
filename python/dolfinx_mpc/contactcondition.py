@@ -17,6 +17,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
     # Compute approximate facet normal used in contact condition
     # over slave facets
+
     nh = facet_normal_approximation(V, meshtag, slave_marker)
     n_vec = nh.vector.getArray()
 
@@ -38,7 +39,8 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
         (V.sub(tdim-1), V.sub(tdim-1).collapse()), fdim, slave_facets)[:, 0]
     slave_coordinates = x[slaves]
     num_owned_slaves = len(slaves[slaves < local_size])
-
+    import dolfinx.common
+    t0 = dolfinx.common.Timer("~DEBUG: master block")
     # Find masters and coefficients in same block as slave
     masters_block = {}
     for i, slave in enumerate(slaves[:num_owned_slaves]):
@@ -55,7 +57,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                                             "coeffs": [coeff],
                                             "owners": [comm.rank]}
             del coeff, master
-
+    t0.stop()
     # Find all local cells that can contain masters
     facet_to_cell = V.mesh.topology.connectivity(fdim, tdim)
     if facet_to_cell is None:
@@ -136,6 +138,23 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                                     "coeffs": coeffs, "owners": owners}
         del (b_off, block_dofs, n, cell, coord, basis_values, cell_dofs,
              masters, owners, coeffs)
+    if comm.size == 1:
+        # Gather all masters and create constraint
+        masters, coeffs, owners, offsets = [], [], [], [0]
+        for slave in slaves[:num_owned_slaves]:
+            if slave in masters_block.keys():
+                masters.extend(masters_block[slave]["masters"])
+                coeffs.extend(masters_block[slave]["coeffs"])
+                owners.extend(masters_block[slave]["owners"])
+            if slave in masters_local.keys():
+                masters.extend(masters_local[slave]["masters"])
+                coeffs.extend(masters_local[slave]["coeffs"])
+                owners.extend(masters_local[slave]["owners"])
+            offsets.append(len(masters))
+        num_owned_slaves = len(slaves)
+        cc = cpp.mpc.ContactConstraint(V._cpp_object, slaves, num_owned_slaves)
+        cc.add_masters(masters, coeffs, owners, offsets)
+        return cc
 
     # Find all processors which a slave collides with
     # (according to the bounding boxes). Send the slaves global dof number,

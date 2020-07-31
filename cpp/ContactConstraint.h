@@ -78,7 +78,10 @@ public:
   std::int32_t num_local_slaves() { return _num_local_slaves; }
 
   /// Return constraint IndexMap
-  std::shared_ptr<dolfinx::common::IndexMap> index_map() { return _index_map; }
+  std::shared_ptr<const dolfinx::common::IndexMap> index_map()
+  {
+    return _index_map;
+  }
 
   /// Create map from cell to slaves and its inverse
   /// @param[in] The local degrees of freedom that will be used to compute
@@ -142,7 +145,7 @@ private:
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _master_block_map;
   // Index map including masters
-  std::shared_ptr<dolfinx::common::IndexMap> _index_map;
+  std::shared_ptr<const dolfinx::common::IndexMap> _index_map;
   // Dofmap including masters
   std::shared_ptr<dolfinx::fem::DofMap> _dofmap;
 };
