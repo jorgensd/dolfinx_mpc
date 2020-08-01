@@ -48,6 +48,7 @@ void mpc(py::module& m)
       .def("mpc_dofmap", &dolfinx_mpc::MultiPointConstraint::mpc_dofmap);
   m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices);
+  m.def("add_pattern_diagonal", &dolfinx_mpc::add_pattern_diagonal);
 
   // dolfinx_mpc::ContactConstraint
   py::class_<dolfinx_mpc::ContactConstraint,

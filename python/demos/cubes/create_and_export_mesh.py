@@ -1,10 +1,12 @@
-import pygmsh
 import meshio
 import numpy as np
+import pygmsh
+import ufl
+from mpi4py import MPI
+
 import dolfinx
 import dolfinx.fem
 import dolfinx.io
-from mpi4py import MPI
 
 
 def merge_msh_meshes(msh0, msh1, celltype, facettype):
@@ -220,8 +222,8 @@ def mesh_2D_dolfin(celltype, theta=0):
         return lambda x: x[1] > p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0])
 
     # Using built in meshes, stacking cubes on top of each other
-    N = 2
-    if celltype == "quad":
+    N = 15
+    if celltype == "quadrilateral":
         ct = dolfinx.cpp.mesh.CellType.quadrilateral
     elif celltype == "triangle":
         ct = dolfinx.cpp.mesh.CellType.triangle
@@ -271,9 +273,9 @@ def mesh_2D_dolfin(celltype, theta=0):
             cells1[cell, v] = vertex_to_node[c2v.links(
                 cell)[v]] + mesh0.geometry.x.shape[0]
     cells = np.vstack([cells0, cells1])
-    mesh = dolfinx.Mesh(MPI.COMM_WORLD,
-                        ct, points, cells, [], degree=1,
-                        ghost_mode=dolfinx.cpp.mesh.GhostMode.none)
+    cell = ufl.Cell(celltype, geometric_dimension=points.shape[1])
+    domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
+    mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
     tdim = mesh.topology.dim
     fdim = tdim - 1
 

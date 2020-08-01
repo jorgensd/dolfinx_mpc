@@ -39,8 +39,6 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
         (V.sub(tdim-1), V.sub(tdim-1).collapse()), fdim, slave_facets)[:, 0]
     slave_coordinates = x[slaves]
     num_owned_slaves = len(slaves[slaves < local_size])
-    import dolfinx.common
-    t0 = dolfinx.common.Timer("~DEBUG: master block")
     # Find masters and coefficients in same block as slave
     masters_block = {}
     for i, slave in enumerate(slaves[:num_owned_slaves]):
@@ -57,7 +55,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                                             "coeffs": [coeff],
                                             "owners": [comm.rank]}
             del coeff, master
-    t0.stop()
+
     # Find all local cells that can contain masters
     facet_to_cell = V.mesh.topology.connectivity(fdim, tdim)
     if facet_to_cell is None:

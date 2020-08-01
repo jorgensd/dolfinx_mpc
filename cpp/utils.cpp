@@ -286,3 +286,16 @@ std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
   return V->dofmap()->index_map->compute_shared_indices();
 };
 //-----------------------------------------------------------------------------
+void dolfinx_mpc::add_pattern_diagonal(
+    dolfinx::la::SparsityPattern& pattern,
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
+    std::int32_t block_size)
+{
+  for (std::int32_t i = 0; i < blocks.rows(); ++i)
+  {
+    Eigen::Array<PetscInt, Eigen::Dynamic, 1> diag_block(block_size);
+    for (std::size_t comp = 0; comp < block_size; comp++)
+      diag_block(comp) = block_size * blocks[i] + comp;
+    pattern.insert(diag_block, diag_block);
+  }
+}

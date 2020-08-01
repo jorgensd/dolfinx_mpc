@@ -50,4 +50,12 @@ get_basis_functions(
 std::map<std::int32_t, std::set<int>>
 compute_shared_indices(std::shared_ptr<dolfinx::function::FunctionSpace> V);
 
+/// Append diagonal entries to sparsity pattern
+/// @param[in] pattern The sparsity pattern
+/// @param[in] dofs The dofs that require diagonal additions
+/// @param[in] block size of problem
+void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
+                          Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
+                          std::int32_t block_size);
+
 } // namespace dolfinx_mpc
