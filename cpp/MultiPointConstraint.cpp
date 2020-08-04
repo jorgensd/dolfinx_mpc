@@ -258,8 +258,8 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
 
   dolfinx::mesh::Topology topology = mesh.topology();
   dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
-  auto [unused_indexmap, _dofmap] = dolfinx::fem::DofMapBuilder::build(
-      mesh.mpi_comm(), topology, layout, bs);
+  auto [unused_indexmap, _dofmap]
+      = dolfinx::fem::DofMapBuilder::build(mesh.mpi_comm(), topology, layout);
   _mpc_dofmap = std::make_shared<dolfinx::fem::DofMap>(
       old_dofmap->element_dof_layout, _index_map, _dofmap);
 
