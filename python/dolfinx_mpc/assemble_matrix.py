@@ -134,12 +134,12 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
     pattern = multipointconstraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
 
-    with dolfinx.common.Timer("*MPC: Assemble matrix (Create matrix)"):
+    with dolfinx.common.Timer("~MPC: Assemble matrix (Create matrix)"):
         A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
         A.zeroEntries()
 
     # Assemble the matrix with all entries
-    with dolfinx.common.Timer("*MPC: Assemble matrix (classical components)"):
+    with dolfinx.common.Timer("~MPC: Assemble matrix old (classical components)"):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
 
     # General assembly data
@@ -161,14 +161,14 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
 
     for i in range(num_cell_integrals):
         subdomain_id = subdomain_ids[i]
-        with dolfinx.common.Timer("*MPC: Assemble matrix (cell kernel)"):
+        with dolfinx.common.Timer("~MPC: Assemble matrix (cell kernel)"):
             cell_kernel = ufc_form.create_cell_integral(
                 subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
             dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
-        with dolfinx.common.Timer("*MPC: Assemble matrix (numba cells)"):
+        with dolfinx.common.Timer("~MPC: Assemble matrix old (numba cells)"):
             assemble_cells(A.handle, cell_kernel,
                            active_cells[slave_cell_indices],
                            (pos, x_dofs, x),
@@ -193,10 +193,10 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         facet_info = pack_facet_info(V.mesh, formintegral, j)
 
         subdomain_id = subdomain_ids[j]
-        with dolfinx.common.Timer("*MPC: Assemble matrix (ext. facet kernel)"):
+        with dolfinx.common.Timer("~MPC: Assemble matrix (ext. facet kernel)"):
             facet_kernel = ufc_form.create_exterior_facet_integral(
                 subdomain_id).tabulate_tensor
-        with dolfinx.common.Timer("*MPC: Assemble matrix (numba ext. facet)"):
+        with dolfinx.common.Timer("~MPC: Assemble matrix (numba ext. facet)"):
             assemble_exterior_facets(A.handle, facet_kernel,
                                      (pos, x_dofs, x), gdim,
                                      form_coeffs, form_consts,
@@ -204,13 +204,13 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
                                      facet_info, mpc_data, ghost_info,
                                      bc_array)
 
-    with dolfinx.common.Timer("*MPC: Assemble matrix (diagonal handling)"):
+    with dolfinx.common.Timer("~MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs
         # NOTE: In the future one could use a constant in the DirichletBC
         if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
             dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
                                          bc_mpc, 1.0)
-    with dolfinx.common.Timer("*MPC: Assemble matrix (Finalize matrix)"):
+    with dolfinx.common.Timer("~MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()
     timer_matrix.stop()
     return A

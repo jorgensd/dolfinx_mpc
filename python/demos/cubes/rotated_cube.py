@@ -200,7 +200,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                                                        owner_ranks)
     with dolfinx.common.Timer("~Contact: Create new constraint"):
         cc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
-    return
+
     # Setup MPC system
     with dolfinx.common.Timer("~Contact: Assemble old"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
@@ -351,16 +351,16 @@ if __name__ == "__main__":
                                   "results/rotated_cube.xdmf", "w")
     # Built in meshes aligned with coordinate system
     demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
-    # demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
-    # # Built in meshes non-aligned
-    # demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=True)
-    # demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=False)
-    # # Gmsh aligned
-    # demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=False)
-    # demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=True)
-    # # Gmsh non-aligned
-    # demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=False)
-    # demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    # Built in meshes non-aligned
+    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=True)
+    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=False)
+    # Gmsh aligned
+    demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=False)
+    demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=True)
+    # Gmsh non-aligned
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=True)
 
     outfile.close()
     dolfinx.common.list_timings(

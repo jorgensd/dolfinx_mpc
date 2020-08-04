@@ -30,7 +30,7 @@ dolfinx_mpc::locate_cells_with_dofs(
     std::vector<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> dofs)
 {
   dolfinx::common::Timer timer(
-      "*MPC: Init: Locate slave and master cells given their dofs");
+      "~MPC: Init: Locate slave and master cells given their dofs");
 
   // Flatten data from dofs (To vector of function space, 1 if marked, else 0)
   std::vector<std::vector<std::int64_t>> flatten_dofs(dofs.size());
@@ -178,7 +178,6 @@ void dolfinx_mpc::build_standard_pattern(
     dolfinx::fem::SparsityPatternBuilder::exterior_facets(
         pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
   }
-  dolfinx::common::Timer timer2("MPC: END");
 }
 //-----------------------------------------------------------------------------
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>

@@ -208,7 +208,6 @@ void ContactConstraint::create_new_index_map()
     {
       ghost_ranks[num_ghosts + i] = new_ranks[i];
     }
-    std::cout << "NEW GHOSTS:" << new_ghosts.size() << "\n";
     dolfinx::common::Timer timer_indexmap("MPC: Init indexmap");
 
     _index_map = std::make_shared<dolfinx::common::IndexMap>(

@@ -380,7 +380,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
         return lambda x: n[0]*x[0] + n[1]*x[1] + D > -n[2]*x[2]
 
-    N = 3
+    N = 4
 
     nv = dolfinx.cpp.mesh.cell_num_vertices(ct)
     mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
@@ -425,9 +425,9 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
             cells1[cell, v] = vertex_to_node[c2v.links(
                 cell)[v]] + mesh0.geometry.x.shape[0]
     cells = np.vstack([cells0, cells1])
-    mesh = dolfinx.Mesh(MPI.COMM_WORLD,
-                        ct, points, cells, [], degree=1,
-                        ghost_mode=dolfinx.cpp.mesh.GhostMode.none)
+    cell = ufl.Cell(ext, geometric_dimension=points.shape[1])
+    domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
+    mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
     tdim = mesh.topology.dim
     fdim = tdim - 1
 
