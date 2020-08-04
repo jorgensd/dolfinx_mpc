@@ -163,12 +163,12 @@ def assemble_matrix_local(form, constraint, bcs=[]):
             numpy.isin(active_cells, slave_cells))
         with Timer("~MPC: Assemble matrix (numba cells)"):
             assemble_cells(A.handle, cell_kernel,
-                            active_cells[slave_cell_indices],
-                            (pos, x_dofs, x),
-                            gdim, form_coeffs, form_consts,
-                            permutation_info,
-                            dofs, num_dofs_per_element, mpc_data,
-                            bc_array)
+                           active_cells[slave_cell_indices],
+                           (pos, x_dofs, x),
+                           gdim, form_coeffs, form_consts,
+                           permutation_info,
+                           dofs, num_dofs_per_element, mpc_data,
+                           bc_array)
 
     # Assemble over exterior facets
     subdomain_ids = formintegral.integral_ids(
@@ -191,11 +191,11 @@ def assemble_matrix_local(form, constraint, bcs=[]):
                 subdomain_id).tabulate_tensor
         with Timer("~MPC: Assemble matrix (numba ext. facet)"):
             assemble_exterior_facets(A.handle, facet_kernel,
-                                        (pos, x_dofs, x), gdim,
-                                        form_coeffs, form_consts,
-                                        perm, dofs, num_dofs_per_element,
-                                        facet_info, mpc_data,
-                                        bc_array)
+                                     (pos, x_dofs, x), gdim,
+                                     form_coeffs, form_consts,
+                                     perm, dofs, num_dofs_per_element,
+                                     facet_info, mpc_data,
+                                     bc_array)
 
     with Timer("~MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs

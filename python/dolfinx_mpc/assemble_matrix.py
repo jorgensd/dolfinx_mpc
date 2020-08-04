@@ -194,10 +194,12 @@ def assemble_matrix(form, multipointconstraint, bcs=[]):
         facet_info = pack_facet_info(V.mesh, formintegral, j)
 
         subdomain_id = subdomain_ids[j]
-        with dolfinx.common.Timer("~MPC: Assemble matrix (ext. facet kernel old)"):
+        with dolfinx.common.Timer(
+                "~MPC: Assemble matrix (ext. facet kernel old)"):
             facet_kernel = ufc_form.create_exterior_facet_integral(
                 subdomain_id).tabulate_tensor
-        with dolfinx.common.Timer("~MPC: Assemble matrix (numba ext. facet old)"):
+        with dolfinx.common.Timer(
+                "~MPC: Assemble matrix (numba ext. facet old)"):
             assemble_exterior_facets(A.handle, facet_kernel,
                                      (pos, x_dofs, x), gdim,
                                      form_coeffs, form_consts,
