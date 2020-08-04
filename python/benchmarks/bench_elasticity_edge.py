@@ -67,7 +67,6 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         Create a one-to-one relation between all dofs at (1, i/N, 0)
         and (1, i/N, 1)
         """
-        dolfinx.common.Timer("~Elasticity: Create slave-master relationship")
 
         x = V.tabulate_dof_coordinates()
 
@@ -108,35 +107,58 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
         return slaves, masters, owner_ranks
 
-    # Find all masters and slaves
-    masters = []
-    slaves = []
-    master_ranks = []
-    # Only constraining z-component
-    for j in [mesh.topology.dim-1]:  # range(mesh.topology.dim):
-        Vj = V.sub(j).collapse()
-        slave_dofs = dolfinx.fem.locate_dofs_geometrical(
-            (V.sub(j), Vj), slaves_locater).T[0]
-        master_dofs = dolfinx.fem.locate_dofs_geometrical(
-            (V.sub(j), Vj), master_locater).T[0]
-        snew, mnew, mranks = create_master_slave_map(master_dofs, slave_dofs)
-        mastersj = sum(MPI.COMM_WORLD.allgather(mnew))
-        slavesj = sum(MPI.COMM_WORLD.allgather(snew))
-        ownersj = sum(MPI.COMM_WORLD.allgather(mranks))
-        masters.append(mastersj)
-        slaves.append(slavesj)
-        master_ranks.append(ownersj)
+    with dolfinx.common.Timer("~PERIODIC: Init old"):
+        # Find all masters and slaves
+        masters = []
+        slaves = []
+        master_ranks = []
+        # Only constraining z-component
+        for j in range(mesh.topology.dim):
+            Vj = V.sub(j).collapse()
+            slave_dofs = dolfinx.fem.locate_dofs_geometrical(
+                (V.sub(j), Vj), slaves_locater).T[0]
+            master_dofs = dolfinx.fem.locate_dofs_geometrical(
+                (V.sub(j), Vj), master_locater).T[0]
+            snew, mnew, mranks = create_master_slave_map(
+                master_dofs, slave_dofs)
+            mastersj = sum(MPI.COMM_WORLD.allgather(mnew))
+            slavesj = sum(MPI.COMM_WORLD.allgather(snew))
+            ownersj = sum(MPI.COMM_WORLD.allgather(mranks))
+            masters.append(mastersj)
+            slaves.append(slavesj)
+            master_ranks.append(ownersj)
 
-    masters = np.hstack(masters)
-    slaves = np.hstack(slaves)
-    master_ranks = np.hstack(master_ranks)
-    offsets = np.array(range(len(slaves)+1), dtype=np.int64)
-    coeffs = 0.5*np.ones(len(masters), dtype=np.float64)
+        masters = np.hstack(masters)
+        slaves = np.hstack(slaves)
+        master_ranks = np.hstack(master_ranks)
+        offsets = np.array(range(len(slaves)+1), dtype=np.int64)
+        coeffs = 0.5*np.ones(len(masters), dtype=np.float64)
 
-    # Create MPC
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   master_ranks)
+        # Create MPC
+        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                       masters, coeffs,
+                                                       offsets, master_ranks)
+
+    def PeriodicBoundary(x):
+        return np.logical_and(np.isclose(x[0], 1), np.isclose(x[2], 0))
+
+    def periodic_relation(x):
+        out_x = np.zeros(x.shape)
+        out_x[0] = x[0]
+        out_x[1] = x[1]
+        out_x[2] = x[2] + 1
+        return out_x
+
+    with dolfinx.common.Timer("~PERIODIC: Init new"):
+        edim = mesh.topology.dim-2
+        edges = dolfinx.mesh.locate_entities_boundary(
+            mesh, edim, PeriodicBoundary)
+        periodic_mt = dolfinx.MeshTags(mesh, edim,
+                                       edges, np.full(len(edges), 2,
+                                                      dtype=np.int32))
+        cc = dolfinx_mpc.create_periodic_condition(
+            V, periodic_mt, 2, periodic_relation, bcs,
+            scale=0.5)
 
     # Create traction meshtag
     def traction_boundary(x):
