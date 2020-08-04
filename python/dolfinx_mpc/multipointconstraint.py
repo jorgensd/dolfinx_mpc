@@ -197,7 +197,7 @@ def dof_close_to(x, point):
 
 
 def facet_normal_approximation(V, mt, mt_id):
-    timer = dolfinx.common.Timer("MPC: Facet normal projection")
+    timer = dolfinx.common.Timer("~MPC: Facet normal projection")
     comm = V.mesh.mpi_comm()
     n = ufl.FacetNormal(V.mesh)
     nh = dolfinx.Function(V)

@@ -67,7 +67,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         Create a one-to-one relation between all dofs at (1, i/N, 0)
         and (1, i/N, 1)
         """
-        dolfinx.common.Timer("MPC: Create slave-master relationship")
+        dolfinx.common.Timer("~Elasticity: Create slave-master relationship")
 
         x = V.tabulate_dof_coordinates()
 
@@ -188,7 +188,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
-    with dolfinx.common.Timer("MPC: Apply lifting"):
+    with dolfinx.common.Timer("~Elasticity: Apply lifting"):
         dolfinx.fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
@@ -228,7 +228,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     uh.set(0)
     if info:
         dolfinx_mpc.utils.log_info("Run {0:1d}: Solving".format(r_lvl))
-    with dolfinx.common.Timer("MPC: Solve") as timer:
+    with dolfinx.common.Timer("~Elasticity: Solve") as timer:
         solver.solve(b, uh)
         solve_time = timer.elapsed()[0]
 
@@ -239,7 +239,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     if info:
         dolfinx_mpc.utils.log_info("Run {0:1d}: Backsubstitution"
                                    .format(r_lvl))
-    with dolfinx.common.Timer("MPC: Backsubstitution"):
+    with dolfinx.common.Timer("~Elasticity: Backsubstitution"):
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
     if kspview:

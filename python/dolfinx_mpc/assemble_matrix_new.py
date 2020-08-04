@@ -126,7 +126,6 @@ def assemble_matrix_local(form, constraint, bcs=[]):
     # Create sparsity pattern
     pattern = constraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
-
     with Timer("~MPC: Assemble matrix (Create matrix)"):
         A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
         A.zeroEntries()
@@ -134,69 +133,69 @@ def assemble_matrix_local(form, constraint, bcs=[]):
     # Assemble the matrix with all entries
     with Timer("~MPC: Assemble matrix (classical components)"):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
-    if len(slaves_local) > 0:
-        # General assembly data
-        num_dofs_per_element = dofmap.dof_layout.num_dofs
 
-        gdim = V.mesh.geometry.dim
-        tdim = V.mesh.topology.dim
+    # General assembly data
+    num_dofs_per_element = dofmap.dof_layout.num_dofs
 
-        # Get integrals as FormIntegral
-        formintegral = cpp_form.integrals
+    gdim = V.mesh.geometry.dim
+    tdim = V.mesh.topology.dim
 
-        # Assemble over cells
-        subdomain_ids = formintegral.integral_ids(
-            dolfinx.fem.IntegralType.cell)
-        num_cell_integrals = len(subdomain_ids)
+    # Get integrals as FormIntegral
+    formintegral = cpp_form.integrals
 
-        if num_cell_integrals > 0:
-            V.mesh.topology.create_entity_permutations()
-            permutation_info = V.mesh.topology.get_cell_permutation_info()
+    # Assemble over cells
+    subdomain_ids = formintegral.integral_ids(
+        dolfinx.fem.IntegralType.cell)
+    num_cell_integrals = len(subdomain_ids)
 
-        for i in range(num_cell_integrals):
-            subdomain_id = subdomain_ids[i]
-            with Timer("~MPC: Assemble matrix (cell kernel)"):
-                cell_kernel = ufc_form.create_cell_integral(
-                    subdomain_id).tabulate_tensor
-            active_cells = numpy.array(formintegral.integral_domains(
-                dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
-            slave_cell_indices = numpy.flatnonzero(
-                numpy.isin(active_cells, slave_cells))
-            with Timer("~MPC: Assemble matrix (numba cells)"):
-                assemble_cells(A.handle, cell_kernel,
-                               active_cells[slave_cell_indices],
-                               (pos, x_dofs, x),
-                               gdim, form_coeffs, form_consts,
-                               permutation_info,
-                               dofs, num_dofs_per_element, mpc_data,
-                               bc_array)
+    if num_cell_integrals > 0:
+        V.mesh.topology.create_entity_permutations()
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
 
-        # Assemble over exterior facets
-        subdomain_ids = formintegral.integral_ids(
-            dolfinx.fem.IntegralType.exterior_facet)
-        num_exterior_integrals = len(subdomain_ids)
+    for i in range(num_cell_integrals):
+        subdomain_id = subdomain_ids[i]
+        with Timer("~MPC: Assemble matrix (cell kernel)"):
+            cell_kernel = ufc_form.create_cell_integral(
+                subdomain_id).tabulate_tensor
+        active_cells = numpy.array(formintegral.integral_domains(
+            dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
+        slave_cell_indices = numpy.flatnonzero(
+            numpy.isin(active_cells, slave_cells))
+        with Timer("~MPC: Assemble matrix (numba cells)"):
+            assemble_cells(A.handle, cell_kernel,
+                            active_cells[slave_cell_indices],
+                            (pos, x_dofs, x),
+                            gdim, form_coeffs, form_consts,
+                            permutation_info,
+                            dofs, num_dofs_per_element, mpc_data,
+                            bc_array)
 
-        # Get cell orientation data
-        if num_exterior_integrals > 0:
-            V.mesh.topology.create_entities(tdim - 1)
-            V.mesh.topology.create_connectivity(tdim - 1, tdim)
-            permutation_info = V.mesh.topology.get_cell_permutation_info()
-            facet_permutation_info = V.mesh.topology.get_facet_permutations()
-            perm = (permutation_info, facet_permutation_info)
-        for j in range(num_exterior_integrals):
-            facet_info = pack_facet_info(V.mesh, formintegral, j)
+    # Assemble over exterior facets
+    subdomain_ids = formintegral.integral_ids(
+        dolfinx.fem.IntegralType.exterior_facet)
+    num_exterior_integrals = len(subdomain_ids)
 
-            subdomain_id = subdomain_ids[j]
-            with Timer("~MPC: Assemble matrix (ext. facet kernel)"):
-                facet_kernel = ufc_form.create_exterior_facet_integral(
-                    subdomain_id).tabulate_tensor
-            with Timer("~MPC: Assemble matrix (numba ext. facet)"):
-                assemble_exterior_facets(A.handle, facet_kernel,
-                                         (pos, x_dofs, x), gdim,
-                                         form_coeffs, form_consts,
-                                         perm, dofs, num_dofs_per_element,
-                                         facet_info, mpc_data,
-                                         bc_array)
+    # Get cell orientation data
+    if num_exterior_integrals > 0:
+        V.mesh.topology.create_entities(tdim - 1)
+        V.mesh.topology.create_connectivity(tdim - 1, tdim)
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
+        facet_permutation_info = V.mesh.topology.get_facet_permutations()
+        perm = (permutation_info, facet_permutation_info)
+    for j in range(num_exterior_integrals):
+        facet_info = pack_facet_info(V.mesh, formintegral, j)
+
+        subdomain_id = subdomain_ids[j]
+        with Timer("~MPC: Assemble matrix (ext. facet kernel)"):
+            facet_kernel = ufc_form.create_exterior_facet_integral(
+                subdomain_id).tabulate_tensor
+        with Timer("~MPC: Assemble matrix (numba ext. facet)"):
+            assemble_exterior_facets(A.handle, facet_kernel,
+                                        (pos, x_dofs, x), gdim,
+                                        form_coeffs, form_consts,
+                                        perm, dofs, num_dofs_per_element,
+                                        facet_info, mpc_data,
+                                        bc_array)
 
     with Timer("~MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs

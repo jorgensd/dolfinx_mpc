@@ -16,7 +16,7 @@ from .assemble_matrix import in_numpy_array, pack_facet_info
 def assemble_vector(form, multipointconstraint,
                     bcs=[numpy.array([]), numpy.array([])]):
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
-    timer_vector = dolfinx.common.Timer("MPC: Assemble vector")
+    timer_vector = dolfinx.common.Timer("~MPC: Assemble vector")
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
 

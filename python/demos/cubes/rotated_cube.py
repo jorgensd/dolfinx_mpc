@@ -311,7 +311,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     dolfinx_mpc.utils.log_info(
         "Solving reference problem with global matrix (using numpy)")
 
-    with dolfinx.common.Timer("MPC: Reference problem"):
+    with dolfinx.common.Timer("~MPC: Reference problem"):
         # Generate reference matrices and unconstrained solution
         A_org = fem.assemble_matrix(a, bcs)
 
@@ -335,7 +335,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         # Back substitution to full solution vector
         uh_numpy = np.dot(K, d)
 
-    with dolfinx.common.Timer("MPC: Compare"):
+    with dolfinx.common.Timer("~MPC: Compare"):
         # Compare LHS, RHS and solution with reference values
         dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, cc)
         dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, cc)

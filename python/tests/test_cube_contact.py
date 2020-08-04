@@ -236,13 +236,13 @@ def test_cube_contact():
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
-    with dolfinx.common.Timer("MPC: Solve"):
+    with dolfinx.common.Timer("~MPC: Solve"):
         solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
     # Back substitute to slave dofs
-    with dolfinx.common.Timer("MPC: Backsubstitute"):
+    with dolfinx.common.Timer("~MPC: Backsubstitute"):
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
     # REIMPLEMENTATION
@@ -261,7 +261,7 @@ def test_cube_contact():
     solver.setOperators(Acc)
     uhcc = bcc.copy()
     uhcc.set(0)
-    with dolfinx.common.Timer("MPC: Solve"):
+    with dolfinx.common.Timer("~MPC: Solve"):
         solver.solve(bcc, uhcc)
     uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                      mode=PETSc.ScatterMode.FORWARD)
@@ -282,7 +282,7 @@ def test_cube_contact():
     outfile.close()
 
     # Transfer data from the MPC problem to numpy arrays for comparison
-    with dolfinx.common.Timer("MPC: Petsc->numpy"):
+    with dolfinx.common.Timer("~MPC: Petsc->numpy"):
         A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
         mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
@@ -291,7 +291,7 @@ def test_cube_contact():
     dolfinx_mpc.utils.log_info(
         "Solving reference problem with global matrix (using numpy)")
 
-    with dolfinx.common.Timer("MPC: Reference problem"):
+    with dolfinx.common.Timer("~MPC: Reference problem"):
 
         # Generate reference matrices and unconstrained solution
         A_org = fem.assemble_matrix(a, bcs)
@@ -316,7 +316,7 @@ def test_cube_contact():
         d = np.linalg.solve(reduced_A, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = np.dot(K, d)
-    with dolfinx.common.Timer("MPC: Compare"):
+    with dolfinx.common.Timer("~MPC: Compare"):
         # Compare LHS, RHS and solution with reference values
         dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, cc)
         dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, cc)
