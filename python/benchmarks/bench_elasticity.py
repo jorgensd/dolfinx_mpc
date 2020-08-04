@@ -82,34 +82,49 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
                                  subdomain_data=mt, subdomain_id=1)
 
     # Create MPC
-    dof_at = dolfinx_mpc.dof_close_to
-    s_m_c = {lambda x: dof_at(x, [1, 0, 0]): {
-        lambda x: dof_at(x, [1, 0, 1]): 0.5}}
-    # , lambda x: dof_at(x, [1, 1, 0]): {
-    # lambda x: dof_at(x, [1, 1, 1]): 0.5}}
-    (slaves, masters,
-     coeffs, offsets,
-     owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
-                                                       2, 2)
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   owner_ranks)
+    with dolfinx.common.Timer("~Elasticity: Init constraint (old)"):
+        dof_at = dolfinx_mpc.dof_close_to
+        s_m_c = {lambda x: dof_at(x, [1, 0, 0]): {
+            lambda x: dof_at(x, [1, 0, 1]): 0.5}}
+        # , lambda x: dof_at(x, [1, 1, 0]): {
+        # lambda x: dof_at(x, [1, 1, 1]): 0.5}}
+        (slaves, masters,
+         coeffs, offsets,
+         owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c,
+                                                           2, 2)
+        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                       masters, coeffs,
+                                                       offsets, owner_ranks)
+
+    with dolfinx.common.Timer("~Elasticity: Init constraint"):
+        def l2b(li):
+            return np.array(li, dtype=np.float64).tobytes()
+        s_m_c_new = {l2b([1, 0, 0]): {l2b([1, 0, 1]): 0.5}}
+        cc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c_new, 2, 2)
+
     # Setup MPC system
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
-
-    # Create functionspace and function for mpc vector
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.mpc_dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
-    A.setNearNullSpace(null_space)
-
+    with dolfinx.common.Timer("~Elasticity: Assemble (old)"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
     # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
+
+    with dolfinx.common.Timer("~Elasticity: Assemble"):
+        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+    # Apply boundary conditions
+    dolfinx.fem.apply_lifting(bcc, [a], [bcs])
+    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(bcc, bcs)
+
+    # Create functionspace and function for mpc vector
+
+    # Solve Linear problem
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
     opts = PETSc.Options()
     if boomeramg:
         opts["ksp_type"] = "cg"
@@ -132,22 +147,47 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
 
-    # Solve Linear problem
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setFromOptions()
-    solver.setOperators(A)
-
-    # Solve linear problem
-    uh = b.copy()
-    uh.set(0)
-    start = time.time()
-    with dolfinx.common.Timer("Ref solve"):
+    with dolfinx.common.Timer("~Elasticity: Solve problem old"):
+        Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                      mpc.mpc_dofmap())
+        Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+        null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+        A.setNearNullSpace(null_space)
+        solver.setFromOptions()
+        solver.setOperators(A)
+        # Solve linear problem
+        uh = b.copy()
+        uh.set(0)
+        start = time.time()
         solver.solve(b, uh)
-    end = time.time()
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
-    # Back substitute to slave dofs
-    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+        end = time.time()
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                       mode=PETSc.ScatterMode.FORWARD)
+
+    with dolfinx.common.Timer("~Elasticity: Solve problem"):
+        Vcc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                     cc.dofmap())
+        Vcc = dolfinx.FunctionSpace(None, V.ufl_element(), Vcc_cpp)
+        null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vcc)
+        Acc.setNearNullSpace(null_space)
+        solver.setFromOptions()
+        solver.setOperators(Acc)
+        # Solve linear problem
+        uhcc = bcc.copy()
+        uhcc.set(0)
+        start = time.time()
+        solver.solve(bcc, uhcc)
+        end = time.time()
+        uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                         mode=PETSc.ScatterMode.FORWARD)
+
+    with dolfinx.common.Timer("~Elasticity: Backsubstitute (old)"):
+        # Back substitute to slave dofs
+        dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+
+    with dolfinx.common.Timer("~Elasticity: Backsubstitute"):
+        # Back substitute to slave dofs
+        dolfinx_mpc.backsubstitution_local(cc, uhcc)
 
     it = solver.getIterationNumber()
     if kspview:
@@ -174,11 +214,17 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         u_h = dolfinx.Function(Vmpc)
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
+
+        u_hcc = dolfinx.Function(Vcc)
+        u_hcc.vector.setArray(uhcc.array)
+        u_hcc.name = "u_mpc_cc"
+
         fname = "results/bench_elasticity_{0:d}.xdmf".format(r_lvl)
         outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                       fname, "w")
         outfile.write_mesh(mesh)
         outfile.write_function(u_h)
+        outfile.write_function(u_hcc)
         outfile.close()
 
 
@@ -228,7 +274,7 @@ if __name__ == "__main__":
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         bench_elasticity_one(r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
                              boomeramg=boomeramg, kspview=kspview)
-        if timings:
+        if timings and i == N-1:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()
