@@ -143,7 +143,7 @@ void dolfinx_mpc::build_standard_pattern(
     dolfinx::la::SparsityPattern& pattern,
     const dolfinx::fem::Form<PetscScalar>& a)
 {
-  dolfinx::common::Timer timer("MPC: Build classic sparsity pattern");
+  dolfinx::common::Timer timer("~MPC: Build classic sparsity pattern");
   // Get dof maps
   std::array<const dolfinx::fem::DofMap*, 2> dofmaps
       = {{a.function_space(0)->dofmap().get(),

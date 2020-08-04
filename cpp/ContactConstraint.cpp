@@ -45,7 +45,7 @@ std::pair<
 ContactConstraint::create_cell_maps(
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs)
 {
-  dolfinx::common::Timer timer("MPC: Create slave->cell  and cell->slave map");
+  dolfinx::common::Timer timer("~MPC: Create slave->cell  and cell->slave map");
   const dolfinx::mesh::Mesh& mesh = *(_V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(_V->dofmap());
   const int tdim = mesh.topology().dim();
@@ -138,7 +138,7 @@ void ContactConstraint::add_masters(
 
 void ContactConstraint::create_new_index_map()
 {
-  dolfinx::common::Timer timer("MPC: Create new index map");
+  dolfinx::common::Timer timer("~MPC: Create new index map");
   MPI_Comm comm = _V->mesh()->mpi_comm();
   const dolfinx::fem::DofMap& dofmap = *(_V->dofmap());
 
@@ -257,7 +257,7 @@ dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";
-  dolfinx::common::Timer timer("MPC: Sparsitypattern Total");
+  dolfinx::common::Timer timer("~MPC: Sparsitypattern Total");
   if (a.rank() != 2)
   {
     throw std::runtime_error(
