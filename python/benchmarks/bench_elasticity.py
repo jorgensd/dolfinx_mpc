@@ -89,8 +89,8 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Setup MPC system
     with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
     # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
@@ -142,7 +142,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution_local(mpc, uh)
+        dolfinx_mpc.backsubstitution(mpc, uh)
         solver_time = timer.elapsed()
 
     it = solver.getIterationNumber()

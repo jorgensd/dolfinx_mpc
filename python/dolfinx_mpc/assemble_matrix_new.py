@@ -67,7 +67,7 @@ def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
     return facet_info
 
 
-def assemble_matrix_local(form, constraint, bcs=[]):
+def assemble_matrix(form, constraint, bcs=[]):
     """
     Assembles a ufl form given a multi point constraint and possible
     Dirichlet boundary conditions.

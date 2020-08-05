@@ -16,8 +16,8 @@ from .numba_setup import PETSc, ffi
 Timer = dolfinx.common.Timer
 
 
-def assemble_vector_local(form, constraint,
-                          bcs=[numpy.array([]), numpy.array([])]):
+def assemble_vector(form, constraint,
+                    bcs=[numpy.array([]), numpy.array([])]):
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
     timer_vector = Timer("~MPC: Assemble vector")
     bc_dofs, bc_values = bcs

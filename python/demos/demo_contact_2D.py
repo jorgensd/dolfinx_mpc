@@ -90,14 +90,12 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
             mesh.topology.create_connectivity(fdim, tdim)
-            ct = xdmf.read_meshtags(mesh, name="mesh_tags")
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
 
     # dolfinx.io.VTKFile("results/mesh.pvd").write(mesh)
     # Helper until MeshTags can be read in from xdmf
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
     V0 = V.sub(0).collapse()
-    V1 = V.sub(1).collapse()
 
     r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
@@ -314,8 +312,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             mpc = merge_constraints([mpc, mpc2])
 
     with dolfinx.common.Timer("~Contact: Assemble LHS and RHS"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
@@ -353,7 +351,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution_local(mpc, uh)
+    dolfinx_mpc.backsubstitution(mpc, uh)
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
         print("Number of iterations: {0:d}".format(it))

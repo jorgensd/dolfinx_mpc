@@ -36,7 +36,7 @@ def test_mpc_assembly(master_point, degree, celltype):
                            l2b([1, 1]): 0.11},
              l2b([0, 0]): {l2b(master_point): 0.69}}
     mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c)
-    b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+    b = dolfinx_mpc.assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 

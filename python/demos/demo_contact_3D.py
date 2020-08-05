@@ -140,8 +140,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         mpc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
 
     with dolfinx.common.Timer("~Contact: Assembly"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -178,7 +178,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution_local(mpc, uh)
+        dolfinx_mpc.backsubstitution(mpc, uh)
 
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:

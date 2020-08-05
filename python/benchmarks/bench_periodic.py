@@ -101,11 +101,11 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Assemble LHS and RHS with multi-point constraint
     dolfinx_mpc.utils.log_info("Run {0:1d}: Assemble matrix".format(r_lvl))
     with dolfinx.common.Timer("~Periodic: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
     dolfinx_mpc.utils.log_info("Run {0:1d}: Assembling vector".format(r_lvl))
     with dolfinx.common.Timer("~Periodic: Assemble vector (Total time)"):
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     # Apply boundary conditions
     dolfinx_mpc.utils.log_info("Run {0:1d}: Apply lifting".format(r_lvl))
@@ -153,7 +153,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution_local(mpc, uh)
+        dolfinx_mpc.backsubstitution(mpc, uh)
         solver_time = timer.elapsed()
         if kspview:
             solver.view()

@@ -59,9 +59,9 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     mpc = dolfinx_mpc.create_dictionary_constraint(
         V, s_m_c, slave_space, master_space)
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -72,7 +72,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution_local(mpc, uh)
+    dolfinx_mpc.backsubstitution(mpc, uh)
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 

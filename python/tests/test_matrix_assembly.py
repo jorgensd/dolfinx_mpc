@@ -39,7 +39,7 @@ def test_mpc_assembly(master_point, degree, celltype):
     mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c)
 
     with dolfinx.common.Timer("~Test: Assemble new"):
-        A_mpc = dolfinx_mpc.assemble_matrix_local(a, mpc)
+        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
 
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
 
@@ -78,7 +78,7 @@ def test_slave_on_same_cell(master_point, degree, celltype):
     a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A_mpc = dolfinx_mpc.assemble_matrix_local(a, mpc)
+        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
     with dolfinx.common.Timer("~TEST: Compare with numpy"):
 
         A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)

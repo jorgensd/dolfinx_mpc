@@ -74,10 +74,10 @@ def test_cell_domains():
 
     # Setup MPC system
     with dolfinx.common.Timer("~Test: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc)
+        A = dolfinx_mpc.assemble_matrix(a, mpc)
 
     with dolfinx.common.Timer("~Test: Assemble vector"):
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
@@ -93,7 +93,7 @@ def test_cell_domains():
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
-    dolfinx_mpc.backsubstitution_local(mpc, uh)
+    dolfinx_mpc.backsubstitution(mpc, uh)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)

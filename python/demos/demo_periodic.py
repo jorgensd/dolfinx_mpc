@@ -22,7 +22,6 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
 import numpy as np
-import time
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -93,8 +92,8 @@ rhs = ufl.inner(f, v)*ufl.dx
 
 # Setup MPC system
 with dolfinx.common.Timer("~PERIODIC: Assemble LHS and RHS"):
-    A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-    b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
 
 # Apply boundary conditions
@@ -128,7 +127,7 @@ with dolfinx.common.Timer("~PERIODIC: Solve old"):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution_local(mpc, uh)
+    dolfinx_mpc.backsubstitution(mpc, uh)
 
     # solver.view()
     it = solver.getIterationNumber()

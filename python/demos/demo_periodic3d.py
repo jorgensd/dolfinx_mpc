@@ -98,8 +98,8 @@ def demo_periodic3D(celltype, out_periodic):
     rhs = ufl.inner(f, v)*ufl.dx
 
     with dolfinx.common.Timer("~Periodic: Assemble LHS and RHS"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
@@ -131,7 +131,7 @@ def demo_periodic3D(celltype, out_periodic):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution_local(mpc, uh)
+        dolfinx_mpc.backsubstitution(mpc, uh)
         # solver.view()
         it = solver.getIterationNumber()
         print("Constrained solver iterations {0:d}".format(it))

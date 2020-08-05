@@ -110,8 +110,8 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         dolfinx_mpc.utils.log_info("Run {0:1d}: Assembling matrix and vector"
                                    .format(r_lvl))
     with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     # Create nullspace for elasticity problem and assign to matrix
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
@@ -164,7 +164,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution_local(mpc, uh)
+        dolfinx_mpc.backsubstitution(mpc, uh)
         solver_time = timer.elapsed()
     if kspview:
         solver.view()

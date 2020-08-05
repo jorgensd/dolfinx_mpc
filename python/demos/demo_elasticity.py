@@ -64,8 +64,8 @@ def demo_elasticity():
 
     # Setup MPC system
     with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
-        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
         dolfinx.fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
@@ -81,7 +81,7 @@ def demo_elasticity():
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution_local(mpc, uh)
+    dolfinx_mpc.backsubstitution(mpc, uh)
 
     # Create functionspace and function for mpc vector
     V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,

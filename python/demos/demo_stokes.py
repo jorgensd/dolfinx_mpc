@@ -138,9 +138,9 @@ L = ufl.inner(f, v) * ufl.dx
 
 # Assemble LHS matrix and RHS vector
 with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
-    A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs)
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs)
     A.assemble()
-    b = dolfinx_mpc.assemble_vector_local(L, mpc)
+    b = dolfinx_mpc.assemble_vector(L, mpc)
 
 # Set Dirichlet boundary condition values in the RHS
 dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])
@@ -156,7 +156,7 @@ ksp.getPC().setFactorSolverType("mumps")
 uh = b.copy()
 ksp.solve(b, uh)
 
-dolfinx_mpc.backsubstitution_local(mpc, uh)
+dolfinx_mpc.backsubstitution(mpc, uh)
 
 # Write solution to file
 Wmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, W.element,

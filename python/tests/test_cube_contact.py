@@ -201,8 +201,8 @@ def test_cube_contact():
 
     # Create MPC contact conditon and assemble matrices
     mpc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
-    A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-    b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    b = dolfinx_mpc.assemble_vector(rhs, mpc)
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -215,7 +215,7 @@ def test_cube_contact():
         solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution_local(mpc, uh)
+    dolfinx_mpc.backsubstitution(mpc, uh)
 
     # Write solution to file
     V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
