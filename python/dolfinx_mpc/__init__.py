@@ -10,9 +10,9 @@
 import dolfinx_mpc.cpp
 
 # New local assemblies
-from .assemble_matrix_new import assemble_matrix
-from .assemble_vector_new import assemble_vector
-from .backsubstitution_new import backsubstitution
+from .assemble_matrix import assemble_matrix
+from .assemble_vector import assemble_vector
+from .backsubstitution import backsubstitution
 from .contactcondition import create_contact_condition
 from .slipcondition import create_slip_condition
 from .dictcondition import create_dictionary_constraint

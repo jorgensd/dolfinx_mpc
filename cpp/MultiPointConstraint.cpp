@@ -4,7 +4,7 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
-#include "ContactConstraint.h"
+#include "MultiPointConstraint.h"
 #include "utils.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
@@ -18,7 +18,7 @@
 #include <iostream>
 using namespace dolfinx_mpc;
 
-ContactConstraint::ContactConstraint(
+MultiPointConstraint::MultiPointConstraint(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves,
     std::int32_t num_local_slaves)
@@ -42,7 +42,7 @@ std::pair<
     std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>,
     std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
               std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
-ContactConstraint::create_cell_maps(
+MultiPointConstraint::create_cell_maps(
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs)
 {
   dolfinx::common::Timer timer("~MPC: Create slave->cell  and cell->slave map");
@@ -119,7 +119,7 @@ ContactConstraint::create_cell_maps(
   return std::make_pair(adj_ptr, std::make_pair(dof_cells, adj2_ptr));
 }
 
-void ContactConstraint::add_masters(
+void MultiPointConstraint::add_masters(
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
     Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coeffs,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> owners,
@@ -136,7 +136,7 @@ void ContactConstraint::add_masters(
   create_new_index_map();
 }
 
-void ContactConstraint::create_new_index_map()
+void MultiPointConstraint::create_new_index_map()
 {
   dolfinx::common::Timer timer("~MPC: Create new index map");
   MPI_Comm comm = _V->mesh()->mpi_comm();
@@ -253,7 +253,7 @@ void ContactConstraint::create_new_index_map()
 }
 
 /// Create MPC specific sparsity pattern
-dolfinx::la::SparsityPattern ContactConstraint::create_sparsity_pattern(
+dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";

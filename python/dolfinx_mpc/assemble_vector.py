@@ -10,7 +10,7 @@ import dolfinx
 import dolfinx.common
 import dolfinx.log
 
-from .assemble_matrix_new import in_numpy_array, pack_facet_info
+from .assemble_matrix import in_numpy_array, pack_facet_info
 from .numba_setup import PETSc, ffi
 
 Timer = dolfinx.common.Timer

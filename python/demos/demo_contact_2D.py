@@ -229,7 +229,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                 owners.extend(recv_slaves[slave]["owners"])
                 offsets.append(len(masters))
         # Create constraint
-        cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+        cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
             V._cpp_object, slaves, len(slaves))
         cc.add_masters(masters, coeffs, owners, offsets)
         return cc
@@ -297,7 +297,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
             offsets = np.array(offsets, dtype=np.int32)
 
         # Create constraint)
-        cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+        cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
             V._cpp_object, slaves, num_local_slaves)
         cc.add_masters(masters, coeffs, owners, offsets)
         return cc

@@ -230,7 +230,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
         owners.extend(ghost_dofs[dof]["owners"])
         offsets.append(len(masters))
 
-    cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+    cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
         V._cpp_object, slaves, num_local_dofs)
     cc.add_masters(masters, coeffs, owners, offsets)
     return cc

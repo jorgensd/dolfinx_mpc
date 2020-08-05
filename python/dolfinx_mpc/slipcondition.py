@@ -150,7 +150,7 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
                 offsets.append(len(masters))
 
     # Create constraint
-    cc = cpp.mpc.ContactConstraint(
+    cc = cpp.mpc.MultiPointConstraint(
         W._cpp_object, slaves, len(slaves))
     cc.add_masters(masters, coeffs, owners, offsets)
     return cc

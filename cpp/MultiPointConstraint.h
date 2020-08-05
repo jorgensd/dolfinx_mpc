@@ -18,7 +18,7 @@
 namespace dolfinx_mpc
 {
 
-class ContactConstraint
+class MultiPointConstraint
 {
 
 public:
@@ -29,9 +29,10 @@ public:
   /// @param[in] slaves_cells List of local slave cells
   /// @param[in] offsets Offsets for local slave cells
 
-  ContactConstraint(std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
-                    std::int32_t num_local_slaves);
+  MultiPointConstraint(
+      std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
+      std::int32_t num_local_slaves);
 
   /// Return the array of master dofs and corresponding coefficients
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves()

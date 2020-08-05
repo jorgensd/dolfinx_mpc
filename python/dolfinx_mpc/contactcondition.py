@@ -150,7 +150,8 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                 owners.extend(masters_local[slave]["owners"])
             offsets.append(len(masters))
         num_owned_slaves = len(slaves)
-        cc = cpp.mpc.ContactConstraint(V._cpp_object, slaves, num_owned_slaves)
+        cc = cpp.mpc.MultiPointConstraint(
+            V._cpp_object, slaves, num_owned_slaves)
         cc.add_masters(masters, coeffs, owners, offsets)
         return cc
 
@@ -380,7 +381,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     del ghost_masters
 
     # Create contact constraint
-    cc = cpp.mpc.ContactConstraint(
+    cc = cpp.mpc.MultiPointConstraint(
         V._cpp_object, slaves, num_owned_slaves)
     cc.add_masters(masters, coeffs, owners, offsets)
     return cc
