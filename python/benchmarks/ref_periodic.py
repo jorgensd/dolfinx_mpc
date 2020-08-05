@@ -82,12 +82,12 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     dz = x[2] - 0.1
     f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
         + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
-    lhs = ufl.inner(f, v)*ufl.dx
+    rhs = ufl.inner(f, v)*ufl.dx
 
-    # Assemble LHS, RHS and apply lifting
+    # Assemble rhs, RHS and apply lifting
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
-    L_org = dolfinx.fem.assemble_vector(lhs)
+    L_org = dolfinx.fem.assemble_vector(rhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)

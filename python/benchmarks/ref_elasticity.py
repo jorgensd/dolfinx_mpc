@@ -89,7 +89,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
+    rhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
                                  subdomain_data=mt, subdomain_id=1)\
         + ufl.inner(f, v)*ufl.dx
     if MPI.COMM_WORLD.rank == 0:
@@ -101,7 +101,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     null_space_org = rigid_motions_nullspace(V)
     A_org.setNearNullSpace(null_space_org)
 
-    L_org = dolfinx.fem.assemble_vector(lhs)
+    L_org = dolfinx.fem.assemble_vector(rhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
