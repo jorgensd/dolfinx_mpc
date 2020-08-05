@@ -102,13 +102,13 @@ def test_surface_integrals():
                                                    mpc.dofmap())
     V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
     # Write solution to file
-    u_h = dolfinx.Function(V_mpc)
-    u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc"
-    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "output/uh.xdmf", "w")
-    outfile.write_mesh(mesh)
-    outfile.write_function(u_h)
-    outfile.close()
+    # u_h = dolfinx.Function(V_mpc)
+    # u_h.vector.setArray(uh.array)
+    # u_h.name = "u_mpc"
+    # outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "output/uh.xdmf", "w")
+    # outfile.write_mesh(mesh)
+    # outfile.write_function(u_h)
+    # outfile.close()
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values

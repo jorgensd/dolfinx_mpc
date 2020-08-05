@@ -226,13 +226,13 @@ def test_cube_contact():
     u_h.name = "u_{0:.2f}".format(theta)
 
     # NOTE: Output for debug
-    outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
-    outfile.write_mesh(mesh)
-    outfile.write_function(u_h, 0.0,
-                           "Xdmf/Domain/"
-                           + "Grid[@Name='{0:s}'][1]"
-                           .format(mesh.name))
-    outfile.close()
+    # outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
+    # outfile.write_mesh(mesh)
+    # outfile.write_function(u_h, 0.0,
+    #                        "Xdmf/Domain/"
+    #                        + "Grid[@Name='{0:s}'][1]"
+    #                        .format(mesh.name))
+    # outfile.close()
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
