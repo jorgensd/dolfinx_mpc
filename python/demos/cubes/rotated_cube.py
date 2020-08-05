@@ -134,6 +134,19 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
+    def left_corner(x):
+        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
+
+    if np.isclose(theta, 0):
+        # Restrict normal sliding by restricting one dof in the top corner
+        V0 = V.sub(0).collapse()
+        zero = dolfinx.Function(V0)
+        with zero.vector.localForm() as zero_local:
+            zero_local.set(0.0)
+        dofs = fem.locate_dofs_geometrical((V.sub(0), V0), left_corner)
+        bc_corner = dolfinx.DirichletBC(zero, dofs, V.sub(0))
+        bcs.append(bc_corner)
+
     # Create standard master slave relationsship
     # Find slave master relationship and initialize MPC class
     with dolfinx.common.Timer("~Contact: Create old constraint"):
@@ -141,19 +154,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
          owner_ranks) = dolfinx_mpc.create_collision_constraint(
             V, (mt, 4, 9), (ct, 2))
 
-        def left_corner(x):
-            return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
-
-        if np.isclose(theta, 0):
-            # Restrict normal sliding by restricting one dof in the top corner
-            V0 = V.sub(0).collapse()
-            zero = dolfinx.Function(V0)
-            with zero.vector.localForm() as zero_local:
-                zero_local.set(0.0)
-            dofs = fem.locate_dofs_geometrical((V.sub(0), V0), left_corner)
-            bc_corner = dolfinx.DirichletBC(zero, dofs, V.sub(0))
-            bcs.append(bc_corner)
-        else:
+        if not np.isclose(theta, 0):
             # approximate tangent with normal on left side.
             tangent = dolfinx_mpc.facet_normal_approximation(V, mt, 6)
             t_vec = tangent.vector.getArray()
@@ -198,8 +199,164 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                                                        masters, coeffs,
                                                        offsets,
                                                        owner_ranks)
+
+    def tangent_point_condition(V, mt, tangent, point_locator):
+        comm = V.mesh.mpi_comm()
+        size_local = V.dofmap.index_map.size_local
+        block_size = V.dofmap.index_map.block_size
+        global_indices = np.array(V.dofmap.index_map.global_indices(False))
+
+        dofs = dolfinx.fem.locate_dofs_geometrical(V, point_locator)[:, 0]
+        num_local_dofs = len(dofs[dofs < size_local*block_size])
+
+        t_vec = tangent.vector.getArray()
+        slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
+        if num_local_dofs > 0:
+            tangent_vector = t_vec[dofs[:num_local_dofs]]
+            slave_index = np.argmax(np.abs(tangent_vector))
+            master_indices = np.delete(np.arange(len(dofs)), slave_index)
+            slaves.append(dofs[slave_index])
+            for index in master_indices:
+                coeff = -(tangent_vector[index] /
+                          tangent_vector[slave_index])
+                if not np.isclose(coeff, 0):
+                    masters.append(global_indices[dofs[index]])
+                    coeffs.append(coeff)
+                    owners.append(V.mesh.mpi_comm().rank)
+            if len(masters) == 0:
+                masters.append(global_indices[dofs[master_indices[0]]])
+                coeffs.append(0)
+                owners.append(V.mesh.mpi_comm().rank)
+            offsets.append(len(masters))
+        shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(
+            V._cpp_object)
+        blocks = np.array(slaves)//V.dofmap.index_map.block_size
+        ghost_indices = np.flatnonzero(
+            np.isin(blocks, np.array(list(shared_indices.keys()))))
+        slaves_to_send = {}
+        for slave_index in ghost_indices:
+            for proc in shared_indices[slaves[slave_index]]:
+                if (proc in slaves_to_send.keys()):
+                    slaves_to_send[proc][global_indices[
+                        slaves[slave_index]]] = {
+                        "masters": masters[offsets[slave_index]:
+                                           offsets[slave_index+1]],
+                        "coeffs": coeffs[offsets[slave_index]:
+                                         offsets[slave_index+1]],
+                        "owners": owners[offsets[slave_index]:
+                                         offsets[slave_index+1]]
+                    }
+
+                else:
+                    slaves_to_send[proc] = {global_indices[
+                        slaves[slave_index]]: {
+                        "masters": masters[offsets[slave_index]:
+                                           offsets[slave_index+1]],
+                        "coeffs": coeffs[offsets[slave_index]:
+                                         offsets[slave_index+1]],
+                        "owners": owners[offsets[slave_index]:
+                                         offsets[slave_index+1]]}}
+
+        for proc in slaves_to_send.keys():
+            comm.send(slaves_to_send[proc], dest=proc, tag=15)
+
+        # Receive ghost slaves
+        ghost_owners = V.dofmap.index_map.ghost_owner_rank()
+        ghost_dofs = dofs[num_local_dofs:]
+        ghost_blocks = ghost_dofs//block_size - size_local
+        receiving_procs = []
+        for block in ghost_blocks:
+            receiving_procs.append(ghost_owners[block])
+        unique_procs = set(receiving_procs)
+        recv_slaves = {}
+        for proc in unique_procs:
+            recv_data = comm.recv(source=proc, tag=15)
+            recv_slaves.update(recv_data)
+        for i, slave in enumerate(global_indices[ghost_dofs]):
+            if slave in recv_slaves.keys():
+                slaves.append(ghost_dofs[i])
+                masters.extend(recv_slaves[slave]["masters"])
+                coeffs.extend(recv_slaves[slave]["coeffs"])
+                owners.extend(recv_slaves[slave]["owners"])
+                offsets.append(len(masters))
+        # Create constraint
+        cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+            V._cpp_object, slaves, len(slaves))
+        cc.add_masters(masters, coeffs, owners, offsets)
+        return cc
+
+    def merge_constraints(ccs):
+        local_slaves, local_masters, local_coeffs, local_owners, offsets =\
+            [], [], [], [], [0]
+        g_slaves, g_masters, g_coeffs, g_owners, g_offsets = \
+            [], [], [], [], [0]
+        for cc in ccs:
+            global_indices = np.array(cc.index_map().global_indices(False))
+            if len(cc.slaves()) > 0:
+                num_local_slaves = cc.num_local_slaves()
+                local_max = cc.masters_local().offsets[num_local_slaves]
+                if num_local_slaves > 0:
+                    local_offset = cc.masters_local(
+                    ).offsets[1:num_local_slaves+1]
+                    offsets.extend((len(local_masters)+local_offset).tolist())
+                    local_slaves.extend(
+                        cc.slaves()[:num_local_slaves].tolist())
+                    local_masters.extend(
+                        global_indices[cc.masters_local()
+                                       .array[:local_max]].tolist())
+                    local_coeffs.extend(cc.coefficients()[:local_max].tolist())
+                    local_owners.extend(cc.owners().array[:local_max].tolist())
+                if len(cc.slaves()) > num_local_slaves:
+                    g_offset = np.array(cc.masters_local(
+                    ).offsets[num_local_slaves:])
+                    g_offset -= g_offset[0]
+                    g_offset = g_offset[1:]
+                    g_offsets.extend(
+                        len(g_masters)+g_offset)
+                    g_slaves.extend(
+                        cc.slaves()[num_local_slaves:].tolist())
+                    g_masters.extend(
+                        global_indices[cc.masters_local()
+                                       .array[local_max:]].tolist())
+                    g_coeffs.extend(
+                        cc.coefficients()[local_max:].tolist())
+                    g_owners.extend(cc.owners().array[local_max:].tolist())
+        if len(g_slaves) > 0:
+            slaves = np.hstack([local_slaves, g_slaves])
+            slaves = np.array(slaves, dtype=np.int32)
+        else:
+            slaves = np.array(local_slaves, dtype=np.int32)
+        num_local_slaves = len(local_slaves)
+        if len(g_masters) > 0:
+            masters = np.hstack([local_masters, g_masters])
+            masters = np.array(masters, dtype=np.int64)
+            masters.dtype = np.int64
+            coeffs = np.hstack([local_coeffs, g_coeffs])
+            coeffs = np.array(coeffs, dtype=PETSc.ScalarType)
+            owners = np.hstack([local_owners, g_owners])
+            owners = np.array(owners, dtype=np.int32)
+            g_offsets = np.array(g_offsets, dtype=np.int32) + offsets[-1]
+            offsets = np.hstack([offsets, g_offsets[1:]])
+            offsets = np.array(offsets, dtype=np.int32)
+        else:
+            masters = np.array(local_masters, dtype=np.int32)
+            coeffs = np.array(local_coeffs, dtype=PETSc.ScalarType)
+            owners = np.array(local_owners, dtype=np.int32)
+            offsets = np.array(offsets, dtype=np.int32)
+
+        # Create constraint)
+        cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+            V._cpp_object, slaves, num_local_slaves)
+        cc.add_masters(masters, coeffs, owners, offsets)
+        return cc
+
     with dolfinx.common.Timer("~Contact: Create new constraint"):
         cc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+
+    if not np.isclose(theta, 0):
+        with dolfinx.common.Timer("~Contact: Add tangential constraint"):
+            cc2 = tangent_point_condition(V, mt, tangent, left_corner)
+            cc = merge_constraints([cc, cc2])
 
     # Setup MPC system
     with dolfinx.common.Timer("~Contact: Assemble old"):
@@ -305,15 +462,17 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
 
-    # Transfer data from the MPC problem to numpy arrays for comparison
-    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
     A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
     cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+    if np.isclose(theta, 0):
+        # As the tangential condition is not the same in old an new
+        # implementation, only compar in the case of theta=0
+        A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+        mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
-    assert(np.allclose(A_cc_np, A_mpc_np))
-    assert(np.allclose(mpc_vec_np, cc_vec_np))
+        assert(np.allclose(A_cc_np, A_mpc_np))
+        assert(np.allclose(mpc_vec_np, cc_vec_np))
+
     assert(np.allclose(uhcc.array, uh.array))
 
     # Solve the MPC problem using a global transformation matrix
@@ -347,8 +506,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     with dolfinx.common.Timer("~MPC: Compare"):
         # Compare LHS, RHS and solution with reference values
-        dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, cc)
-        dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, cc)
+        dolfinx_mpc.utils.compare_matrices(reduced_A, A_cc_np, cc)
+        dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)
         print("DIFF", max(abs(uhcc.array - uh_numpy[uhcc.owner_range[0]:
                                                     uhcc.owner_range[1]])))
         assert np.allclose(uhcc.array, uh_numpy[uhcc.owner_range[0]:
