@@ -5,6 +5,7 @@ import h5py
 import mpi4py
 import argparse
 import sys
+import numpy as np
 
 
 def visualize_elasticity():
@@ -12,7 +13,7 @@ def visualize_elasticity():
                   driver='mpio', comm=mpi4py.MPI.COMM_WORLD)
     iterations = f.get("its")[:]
     dofs = f.get("num_dofs")[:]
-    slaves = f.get("num_slaves")[:]
+    slaves = np.sum(f.get("num_slaves")[:], axis=1)
     solver = f.get("solve_time").attrs["solver"].decode("utf-8")
     ct = f.get("solve_time").attrs["ct"].decode("utf-8")
     degree = f.get("solve_time").attrs["degree"].decode("utf-8")
@@ -65,7 +66,8 @@ def visualize_periodic():
                   driver='mpio', comm=mpi4py.MPI.COMM_WORLD)
     iterations = f.get("its")[:]
     dofs = f.get("num_dofs")[:]
-    slaves = f.get("num_slaves")[:]
+    slaves = np.sum(f.get("num_slaves")[:], axis=1)
+
     solver = f.get("solve_time").attrs["solver"].decode("utf-8")
     ct = f.get("solve_time").attrs["ct"].decode("utf-8")
     degree = f.get("solve_time").attrs["degree"].decode("utf-8")

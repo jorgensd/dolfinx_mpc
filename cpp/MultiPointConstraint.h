@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Jorgen S. Dokken
+// Copyright (C) 2019 Jorgen S. Dokken
 //
 // This file is part of DOLFINX_MPC
 //
@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "utils.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
@@ -18,39 +17,97 @@
 
 namespace dolfinx_mpc
 {
-/// This class provides the interface for setting multi-point
-/// constraints.
-///
-///   u_i = u_j,
-///
-/// where u_i and u_j denotes the i-th and j-th global degree of freedom
-/// in the corresponding function space. A MultiPointBC is specified by
-/// the function space (trial space), and a vector of pairs, connecting
-/// master and slave nodes with a linear dependency.
 
 class MultiPointConstraint
 {
 
 public:
-  /// Create multi-point constraint
+  /// Create contact constraint
   ///
-  /// @param[in] V The functionspace on which the multipoint constraint
-  /// condition is applied
-  /// @param[in] slaves List of slave nodes
-  /// @param[in] masters List of master nodes, listed such as all the
-  /// master nodes for the first coefficients comes first, then the
-  /// second slave node etc.
-  /// @param[in] coefficients List of coefficients corresponding to the
-  /// it-h master node
-  /// @param[in] offsets Gives the starting point for the i-th slave
-  /// node in the master and coefficients list.
+  /// @param[in] V The function space
+  /// @param[in] slaves List of local slave dofs
+  /// @param[in] slaves_cells List of local slave cells
+  /// @param[in] offsets Offsets for local slave cells
+
   MultiPointConstraint(
       std::shared_ptr<const dolfinx::function::FunctionSpace> V,
-      Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves,
-      Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-      Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients,
-      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets,
-      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_owner_ranks);
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
+      std::int32_t num_local_slaves);
+
+  /// Return the array of master dofs and corresponding coefficients
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves()
+  {
+    return _slaves->array();
+  };
+
+  /// Return point to array of all unique local cells containing a slave
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cells()
+  {
+    return _slave_cells->array();
+  };
+
+  /// Return map from slave to cells containing that slave
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> slave_to_cells()
+  {
+    return _slave_to_cells_map;
+  }
+
+  /// Return map from cell to slaves contained in that cell
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> cell_to_slaves()
+  {
+    return _cell_to_slaves_map;
+  }
+  /// Return map from slave to masters (local_index)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters_local()
+  {
+    return _master_local_map;
+  }
+
+  /// Return map from slave to coefficients
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients()
+  {
+    return _coeff_map->array();
+  }
+
+  /// Return map from slave to masters (global index)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> owners()
+  {
+    return _owner_map;
+  }
+
+  /// Return number of local slaves
+  std::int32_t num_local_slaves() { return _num_local_slaves; }
+
+  /// Return constraint IndexMap
+  std::shared_ptr<const dolfinx::common::IndexMap> index_map()
+  {
+    return _index_map;
+  }
+
+  /// Create map from cell to slaves and its inverse
+  /// @param[in] The local degrees of freedom that will be used to compute
+  /// the cell to dof map
+  std::pair<
+      std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>,
+      std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+                std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
+  create_cell_maps(Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs);
+
+  /// Add masters for the slaves in the contact constraint.
+  /// Identifies which masters are non-local, and creates a new index-map where
+  /// These entries are added
+  /// @param[in] masters Array of all masters
+  /// @param[in] coeffs Coefficients corresponding to each master
+  /// @param[in] owners Owners for each master
+  /// @param[in] offsets Offsets for masters
+  void add_masters(Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+                   Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
+                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>);
+  /// Helper function for creating new index map
+  /// including all masters as ghosts and replacing
+  /// _master_block_map and _master_local_map
+  void create_new_index_map();
 
   /// Add sparsity pattern for multi-point constraints to existing
   /// sparsity pattern
@@ -59,84 +116,38 @@ public:
   dolfinx::la::SparsityPattern
   create_sparsity_pattern(const dolfinx::fem::Form<PetscScalar>& a);
 
-  /// Generate indexmap including MPC ghosts
-  std::shared_ptr<dolfinx::common::IndexMap> generate_index_map();
-
-  /// Return array of slave coefficients
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slaves() { return _slaves; };
-
-  /// Return array of slave coefficients
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves_local()
-  {
-    return _slaves_local;
-  };
-
-  /// Return local_indices of master coefficients
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters_local()
-  {
-    return _masters_local;
-  };
-
-  // Local indices of cells containing slave coefficients
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> slave_cells()
-  {
-    return _slave_cells;
-  };
-
-  /// Return the index_map for the test and trial space
-  std::shared_ptr<dolfinx::common::IndexMap> index_map() { return _index_map; };
-
-  /// Return the array of master dofs and corresponding coefficients
-  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients()
-  {
-    return _coefficients;
-  };
-
-  /// Return map from cell with slaves to the slave degrees of freedom
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>
-  slave_cell_to_dofs()
-  {
-    return _cells_to_dofs[0];
-  };
-
-  // Return the rank of the owner of the master dof
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
-  master_owner_ranks()
-  {
-    return _master_owner_ranks;
-  }
-
-  /// Return dofmap with MPC ghost values.
-  std::shared_ptr<dolfinx::fem::DofMap> mpc_dofmap() { return _mpc_dofmap; };
+  std::shared_ptr<dolfinx::fem::DofMap> dofmap() { return _dofmap; }
 
 private:
-  std::shared_ptr<const dolfinx::function::FunctionSpace> _function_space;
-  std::shared_ptr<dolfinx::common::IndexMap> _index_map;
-  std::shared_ptr<dolfinx::fem::DofMap> _mpc_dofmap;
-
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slaves;
-
-  // AdjacencyList for master and local master
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _masters;
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _masters_local;
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> _slaves_local;
-
-  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> _coefficients;
-
-  // AdjacencyLists for slave cells and master cells
-  Eigen::Array<std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>,
-               Eigen::Dynamic, 1>
-      _cells_to_dofs;
-  // Cell to _slaves index (will have same offsets as _cells to dofs)
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>>
-      _cell_to_slave_index;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _slave_cells;
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> _master_cells;
-  // AdjacencyList for the corresponding ranks owning each master
+  // Original function space
+  std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
+  // Array including all slaves (local + ghosts)
+  std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slaves;
+  // Array for all cells containing slaves (local + ghosts)
+  std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slave_cells;
+  // Map from slave cell to index in _slaves for a given slave cell
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
-      _master_owner_ranks;
-  // AdjacencyList for the number of occurances of a local master
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _master_num_occ;
+      _cell_to_slaves_map;
+  // Map from slave (local+ghosts) to cells it is in
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _slave_to_cells_map;
+  // Number of local slaves
+  std::int32_t _num_local_slaves;
+  // Map from local slave to masters (global index)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int64_t>> _master_map;
+  // Map from local slave to coefficients
+  std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> _coeff_map;
+  // Map from local slave to rank of process owning master
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
+  // Map from local slave to master (local index)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _master_local_map;
+  // Map from local slave to master block (local)
+  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      _master_block_map;
+  // Index map including masters
+  std::shared_ptr<const dolfinx::common::IndexMap> _index_map;
+  // Dofmap including masters
+  std::shared_ptr<dolfinx::fem::DofMap> _dofmap;
 };
-
 } // namespace dolfinx_mpc

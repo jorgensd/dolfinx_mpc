@@ -2,7 +2,7 @@ import numba
 from petsc4py import PETSc
 
 
-def backsubstitution_local(constraint, vector):
+def backsubstitution(constraint, vector):
 
     # Unravel data from constraint
     coefficients = constraint.coefficients()
@@ -11,14 +11,14 @@ def backsubstitution_local(constraint, vector):
     slaves_local = constraint.slaves()
     constraint_wrapper = (slaves_local, masters_local,
                           coefficients, offsets)
-    backsubstitution_local_numba(vector, constraint_wrapper)
+    backsubstitution_numba(vector, constraint_wrapper)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
     return vector
 
 
 @numba.njit(cache=True)
-def backsubstitution_local_numba(b, mpc):
+def backsubstitution_numba(b, mpc):
     """
     Insert mpc values into vector bc
     """

@@ -224,7 +224,7 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
         owners.extend(ghosted_slaves[slave_index]["owners"])
         coeffs.extend(ghosted_slaves[slave_index]["coeffs"])
         offsets.append(len(masters))
-    cc = dolfinx_mpc.cpp.mpc.ContactConstraint(
+    cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
         V._cpp_object, slaves, num_owned_slaves)
     cc.add_masters(masters, coeffs, owners, offsets)
     return cc

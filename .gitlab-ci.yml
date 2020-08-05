@@ -121,13 +121,10 @@ nightly-complex:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - cd cubes
-    - mkdir meshes
-    - mkdir results
-    - python3 rotated_cube.py
-    - mpirun -n 4 python3 rotated_cube.py
-    - python3 rotated_cube3D.py
-    - mpirun -n 4 python3 rotated_cube3D.py
+    - python3 demo_contact_2D.py
+    - mpirun -n 4 python3 demo_contact_2D.py
+    - python3 demo_contact_3D.py
+    - mpirun -n 4 python3 demo_contact_3D.py
 
 
 nightly-real:
@@ -187,10 +184,7 @@ nightly-real:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - cd cubes
-    - mkdir meshes
-    - mkdir results
-    - python3 rotated_cube.py
-    - mpirun -n 4 python3 rotated_cube.py
-    - python3 rotated_cube3D.py
-    - mpirun -n 4 python3 rotated_cube3D.py
+    - python3 demo_contact_2D.py
+    - mpirun -n 4 python3 demo_contact_2D.py
+    - python3 demo_contact_3D.py
+    - mpirun -n 4 python3 demo_contact_3D.py
