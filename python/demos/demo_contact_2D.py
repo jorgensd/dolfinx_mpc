@@ -131,7 +131,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
                      subdomain_id=3)
-    lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
         + ufl.inner(g, v)*ds
 
     def left_corner(x):
@@ -147,60 +147,11 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         bc_corner = dolfinx.DirichletBC(zero, dofs, V.sub(0))
         bcs.append(bc_corner)
 
-    # Create standard master slave relationsship
-    # Find slave master relationship and initialize MPC class
-    with dolfinx.common.Timer("~Contact: Create old constraint"):
-        (slaves, masters, coeffs, offsets,
-         owner_ranks) = dolfinx_mpc.create_collision_constraint(
-            V, (mt, 4, 9), (ct, 2))
-
-        if not np.isclose(theta, 0):
-            # approximate tangent with normal on left side.
-            tangent = dolfinx_mpc.facet_normal_approximation(V, mt, 6)
-            t_vec = tangent.vector.getArray()
-
-            dofx = fem.locate_dofs_geometrical((V.sub(0), V0), left_corner)
-            dofy = fem.locate_dofs_geometrical((V.sub(1), V1), left_corner)
-
-            indexmap = V.dofmap.index_map
-            bs = indexmap.block_size
-            global_indices = indexmap.global_indices(False)
-            lmin = bs*indexmap.local_range[0]
-            lmax = bs*indexmap.local_range[1]
-            if (len(dofx) > 0) and (lmin <= global_indices[dofx[0, 0]] < lmax):
-                s_side = np.array([global_indices[dofx[0, 0]]], dtype=np.int64)
-                m_side = np.array([global_indices[dofy[0, 0]]], dtype=np.int64)
-                o_side = np.array([len(masters) + 1], dtype=np.int32)
-                c_side = np.array([-t_vec[dofy[0, 0]]/t_vec[dofx[0, 0]]],
-                                  dtype=PETSc.ScalarType)
-                o_r_side = np.array([comm.rank], dtype=np.int32)
-            else:
-                s_side = np.array([], dtype=np.int64)
-                m_side = np.array([], dtype=np.int64)
-                o_side = np.array([], dtype=np.int32)
-                c_side = np.array([], dtype=PETSc.ScalarType)
-                o_r_side = np.array([], dtype=np.int32)
-
-            s_side_g = np.hstack(comm.allgather(s_side))
-            m_side_g = np.hstack(comm.allgather(m_side))
-            o_side_g = np.hstack(comm.allgather(o_side))
-            c_side_g = np.hstack(comm.allgather(c_side))
-            o_r_side_g = np.hstack(comm.allgather(o_r_side))
-            masters = np.append(masters, m_side_g)
-            slaves = np.append(slaves, s_side_g)
-            coeffs = np.append(coeffs, c_side_g)
-            offsets = np.append(offsets, o_side_g)
-            owner_ranks = np.append(owner_ranks, o_r_side_g)
-            assert(len(masters) == len(owner_ranks))
-            assert(len(slaves) == len(offsets)-1)
-            assert(not np.all(np.isin(slaves, masters)))
-
-        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                       masters, coeffs,
-                                                       offsets,
-                                                       owner_ranks)
-
     def tangent_point_condition(V, mt, tangent, point_locator):
+        """
+        Helper function to create a dot(u,t)=0 on a single dof
+        on the side of the cube
+        """
         comm = V.mesh.mpi_comm()
         size_local = V.dofmap.index_map.size_local
         block_size = V.dofmap.index_map.block_size
@@ -286,6 +237,9 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         return cc
 
     def merge_constraints(ccs):
+        """
+        Merge multiple constraints into one
+        """
         local_slaves, local_masters, local_coeffs, local_owners, offsets =\
             [], [], [], [], [0]
         g_slaves, g_masters, g_coeffs, g_owners, g_offsets = \
@@ -351,37 +305,22 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         return cc
 
     with dolfinx.common.Timer("~Contact: Create new constraint"):
-        cc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+        mpc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
 
     if not np.isclose(theta, 0):
         with dolfinx.common.Timer("~Contact: Add tangential constraint"):
-            cc2 = tangent_point_condition(V, mt, tangent, left_corner)
-            cc = merge_constraints([cc, cc2])
+            tangent = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 6)
+            mpc2 = tangent_point_condition(V, mt, tangent, left_corner)
+            mpc = merge_constraints([mpc, mpc2])
 
-    # Setup MPC system
-    with dolfinx.common.Timer("~Contact: Assemble old"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector(lhs, mpc)
-    with dolfinx.common.Timer("~Contact: Assemble old comp"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    with dolfinx.common.Timer("~Contact: Assemble LHS and RHS"):
+        A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
 
-    # Apply boundary conditions
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
-
-    with dolfinx.common.Timer("~Contact: Assemble new"):
-        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
-        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
-    with dolfinx.common.Timer("~Contact: Assemble new comp"):
-        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
-        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
-    fem.apply_lifting(bcc, [a], [bcs])
-    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                    mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(bcc, bcs)
 
     # Solve Linear problem
     opts = PETSc.Options()
@@ -401,7 +340,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     # Create functionspace and build near nullspace
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.mpc_dofmap())
+                                                  mpc.dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
@@ -414,33 +353,14 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    dolfinx_mpc.backsubstitution_local(mpc, uh)
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
         print("Number of iterations: {0:d}".format(it))
 
-    # New implementation
-
-    Vcc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                 cc.dofmap())
-    Vcc = dolfinx.FunctionSpace(None, V.ufl_element(), Vcc_cpp)
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vcc)
-    Acc.setNearNullSpace(null_space)
-    solver.setOperators(Acc)
-    uhcc = bcc.copy()
-    uhcc.set(0)
-    solver.solve(bcc, uhcc)
-    uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                     mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution_local(cc, uhcc)
-    it = solver.getIterationNumber()
+    unorm = uh.norm()
     if MPI.COMM_WORLD.rank == 0:
-        print("Number of iterations: {0:d}".format(it))
-
-    unorm = uhcc.norm()
-    uoldnorm = uh.norm()
-    if MPI.COMM_WORLD.rank == 0:
-        print(unorm, uoldnorm)
+        print(unorm)
 
     # Write solution to file
     ext = "gmsh" if gmsh else ""
@@ -448,32 +368,11 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
 
-    u_hcc = dolfinx.Function(Vcc)
-    u_hcc.vector.setArray(uhcc.array)
-    u_hcc.name = "u_cc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
-
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0,
                            "Xdmf/Domain/"
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
-    outfile.write_function(u_hcc, 0.0,
-                           "Xdmf/Domain/"
-                           + "Grid[@Name='{0:s}'][1]"
-                           .format(mesh.name))
-
-    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
-    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
-    if np.isclose(theta, 0):
-        # As the tangential condition is not the same in old an new
-        # implementation, only compar in the case of theta=0
-        A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-        mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
-        assert(np.allclose(A_cc_np, A_mpc_np))
-        assert(np.allclose(mpc_vec_np, cc_vec_np))
-
-    assert(np.allclose(uhcc.array, uh.array))
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
@@ -485,14 +384,14 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         A_org = fem.assemble_matrix(a, bcs)
 
         A_org.assemble()
-        L_org = fem.assemble_vector(lhs)
+        L_org = fem.assemble_vector(rhs)
         fem.apply_lifting(L_org, [a], [bcs])
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                           mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(L_org, bcs)
 
         # Create global transformation matrix
-        K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
+        K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
         # Create reduced A
         A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
         reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -506,18 +405,17 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     with dolfinx.common.Timer("~MPC: Compare"):
         # Compare LHS, RHS and solution with reference values
-        dolfinx_mpc.utils.compare_matrices(reduced_A, A_cc_np, cc)
-        dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)
-        print("DIFF", max(abs(uhcc.array - uh_numpy[uhcc.owner_range[0]:
-                                                    uhcc.owner_range[1]])))
-        assert np.allclose(uhcc.array, uh_numpy[uhcc.owner_range[0]:
-                                                uhcc.owner_range[1]],
-                           atol=1e-7)
+        A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+        b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+        dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
+        dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
+        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
+                                              uh.owner_range[1]], atol=1e-7)
 
 
 if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                  "results/rotated_cube.xdmf", "w")
+                                  "results/demo_contact_2D.xdmf", "w")
     # Built in meshes aligned with coordinate system
     demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
     demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
