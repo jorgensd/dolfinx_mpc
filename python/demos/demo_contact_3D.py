@@ -7,6 +7,8 @@
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
 
+import argparse
+
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
@@ -20,7 +22,6 @@ import dolfinx.fem as fem
 import dolfinx.io
 import dolfinx.la
 from create_and_export_mesh import mesh_3D_dolfin, mesh_3D_rot
-
 
 comm = MPI.COMM_WORLD
 
@@ -199,42 +200,49 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
-    if compare:
-        dolfinx_mpc.utils.log_info(
-            "Solving reference problem with global matrix (using numpy)")
+    if not compare:
+        return
 
-        with dolfinx.common.Timer("~Contact: Reference problem"):
-            A_org = fem.assemble_matrix(a, bcs)
-            A_org.assemble()
-            L_org = fem.assemble_vector(rhs)
-            fem.apply_lifting(L_org, [a], [bcs])
-            L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                              mode=PETSc.ScatterMode.REVERSE)
-            fem.set_bc(L_org, bcs)
-            K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-            A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+    dolfinx_mpc.utils.log_info(
+        "Solving reference problem with global matrix (using numpy)")
+    with dolfinx.common.Timer("~Contact: Reference problem"):
+        A_org = fem.assemble_matrix(a, bcs)
+        A_org.assemble()
+        L_org = fem.assemble_vector(rhs)
+        fem.apply_lifting(L_org, [a], [bcs])
+        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                          mode=PETSc.ScatterMode.REVERSE)
+        fem.set_bc(L_org, bcs)
+        K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
+        A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
 
-            reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-            vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-            reduced_L = np.dot(K.T, vec)
-            d = np.linalg.solve(reduced_A, reduced_L)
-            uh_numpy = np.dot(K, d)
+        reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+        vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
+        reduced_L = np.dot(K.T, vec)
+        d = np.linalg.solve(reduced_A, reduced_L)
+        uh_numpy = np.dot(K, d)
 
-        with dolfinx.common.Timer("~Contact: Compare LHS, RHS and solution"):
-            A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-            b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-            dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-            dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-            assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                                  uh.owner_range[1]])
+    with dolfinx.common.Timer("~Contact: Compare LHS, RHS and solution"):
+        A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+        b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+        dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
+        dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
+        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
+                                              uh.owner_range[1]])
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    comp = parser.add_mutually_exclusive_group(required=False)
+    comp.add_argument('--compare', dest='compare', action='store_true',
+                      help="Compare with global solution", default=False)
+    compare = parser.parse_args().compare
+
     outfile = dolfinx.io.XDMFFile(comm,
                                   "results/demo_contact_3D.xdmf", "w")
     cts = [dolfinx.cpp.mesh.CellType.hexahedron,
            dolfinx.cpp.mesh.CellType.tetrahedron]
-    compare = True
+
     for ct in cts:
         demo_stacked_cubes(
             outfile, theta=0, dolfin_mesh=True, ct=ct, compare=compare)
