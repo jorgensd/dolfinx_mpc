@@ -74,7 +74,6 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
                                  "meshes/facet_{0:s}_{1:.2f}_gmsh.xdmf"
                                  .format(ext, theta), "r") as xdmf:
             mt = xdmf.read_meshtags(mesh, "Grid")
-    top_cube_marker = 2
 
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
