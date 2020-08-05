@@ -20,7 +20,7 @@ import dolfinx.la
 import dolfinx.log
 import dolfinx.mesh
 import ufl
-from dolfinx_mpc.utils import build_elastic_nullspace
+from dolfinx_mpc.utils import rigid_motions_nullspace
 from mpi4py import MPI
 
 
@@ -98,7 +98,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Generate reference matrices and unconstrained solution
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
-    null_space_org = build_elastic_nullspace(V)
+    null_space_org = rigid_motions_nullspace(V)
     A_org.setNearNullSpace(null_space_org)
 
     L_org = dolfinx.fem.assemble_vector(lhs)

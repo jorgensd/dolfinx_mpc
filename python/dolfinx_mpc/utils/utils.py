@@ -183,7 +183,7 @@ def log_info(message):
         dolfinx.log.set_log_level(old_level)
 
 
-def build_elastic_nullspace(V):
+def rigid_motions_nullspace(V):
     """Function to build nullspace for 2D/3D elasticity"""
 
     # Get geometric dim

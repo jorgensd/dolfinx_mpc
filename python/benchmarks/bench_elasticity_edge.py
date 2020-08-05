@@ -203,7 +203,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
@@ -228,7 +228,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     Vcc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                  cc.dofmap())
     Vcc = dolfinx.FunctionSpace(None, V.ufl_element(), Vcc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vcc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vcc)
     Acc.setNearNullSpace(null_space)
 
     opts = PETSc.Options()

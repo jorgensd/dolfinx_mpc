@@ -246,7 +246,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -267,7 +267,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
     Vcc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                  cc.dofmap())
     Vcc = dolfinx.FunctionSpace(None, V.ufl_element(), Vcc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vcc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vcc)
     Acc.setNearNullSpace(null_space)
     solver.setOperators(Acc)
     uhcc = bcc.copy()
