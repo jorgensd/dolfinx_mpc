@@ -12,6 +12,7 @@
 # Additional constraints to avoid tangential movement is
 # added to the to left corner of the top cube.
 
+import argparse
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
@@ -37,7 +38,8 @@ get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 comm = MPI.COMM_WORLD
 
 
-def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
+def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
+                       compare=False):
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
@@ -374,9 +376,10 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
+    if not compare:
+        return
     dolfinx_mpc.utils.log_info(
         "Solving reference problem with global matrix (using numpy)")
-
     with dolfinx.common.Timer("~MPC: Reference problem"):
         # Generate reference matrices and unconstrained solution
         A_org = fem.assemble_matrix(a, bcs)
@@ -412,20 +415,34 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    comp = parser.add_mutually_exclusive_group(required=False)
+    comp.add_argument('--compare', dest='compare', action='store_true',
+                      help="Compare with global solution", default=False)
+    compare = parser.parse_args().compare
+
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/demo_contact_2D.xdmf", "w")
     # Built in meshes aligned with coordinate system
-    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=True)
-    demo_stacked_cubes(outfile, theta=0, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False,
+                       triangle=True, compare=compare)
+    demo_stacked_cubes(outfile, theta=0, gmsh=False,
+                       triangle=False, compare=compare)
     # Built in meshes non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=True)
-    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False, triangle=False)
+    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False,
+                       triangle=True, compare=compare)
+    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False,
+                       triangle=False, compare=compare)
     # Gmsh aligned
-    demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=False)
-    demo_stacked_cubes(outfile, theta=0, gmsh=True, triangle=True)
+    demo_stacked_cubes(outfile, theta=0, gmsh=True,
+                       triangle=False, compare=compare)
+    demo_stacked_cubes(outfile, theta=0, gmsh=True,
+                       triangle=True, compare=compare)
     # Gmsh non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=False)
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True, triangle=True)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True,
+                       triangle=False, compare=compare)
+    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True,
+                       triangle=True, compare=compare)
 
     outfile.close()
     dolfinx.common.list_timings(
