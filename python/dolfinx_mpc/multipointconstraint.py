@@ -4,16 +4,19 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
+import types
 import typing
+
 import numba
+import numpy
+from dolfinx_mpc import cpp
 from mpi4py import MPI
 from petsc4py import PETSc
-import types
+
 import dolfinx.cpp
-from dolfinx_mpc import cpp
-from dolfinx import function, fem, log, geometry
+from dolfinx import fem, function, geometry, log
+import ufl
 from .assemble_matrix import in_numpy_array
-import numpy
 
 
 def backsubstitution(mpc, vector, dofmap):
@@ -23,17 +26,18 @@ def backsubstitution(mpc, vector, dofmap):
     coefficients = mpc.coefficients()
     masters = mpc.masters_local()
     slave_cell_to_dofs = mpc.slave_cell_to_dofs()
-    cell_to_slave = slave_cell_to_dofs.array()
-    cell_to_slave_offset = slave_cell_to_dofs.offsets()
+    cell_to_slave = slave_cell_to_dofs.array
+    cell_to_slave_offset = slave_cell_to_dofs.offsets
     slaves = mpc.slaves()
-    masters_local = masters.array()
-    offsets = masters.offsets()
+    masters_local = masters.array
+    offsets = masters.offsets
     mpc_wrapper = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
                    masters_local, coefficients, offsets)
-    num_dofs_per_element = dofmap.dof_layout.num_dofs
+    num_dofs_per_element = (dofmap.dof_layout.num_dofs *
+                            dofmap.dof_layout.block_size())
     index_map = mpc.index_map()
     global_indices = index_map.indices(True)
-    backsubstitution_numba(vector, dofmap.list.array(),
+    backsubstitution_numba(vector, dofmap.list.array,
                            num_dofs_per_element, mpc_wrapper, global_indices)
     vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
@@ -194,17 +198,16 @@ def dof_close_to(x, point):
 
 
 def facet_normal_approximation(V, mt, mt_id):
-    import dolfinx
-    import ufl
-    timer = dolfinx.common.Timer("MPC: Create approximate facet normal")
+    timer = dolfinx.common.Timer("~MPC: Facet normal projection")
+    comm = V.mesh.mpi_comm()
     n = ufl.FacetNormal(V.mesh)
     nh = dolfinx.Function(V)
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-    a = (dolfinx.Constant(V.mesh, 0)*ufl.inner(u, v)*ufl.dx
-         + ufl.inner(u, v)*ufl.ds)
     ds = ufl.ds(domain=V.mesh, subdomain_data=mt, subdomain_id=mt_id)
+    a = (ufl.inner(u, v)*ufl.ds)
     L = ufl.inner(n, v)*ds
 
+    # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
     all_dofs = numpy.array(
         range(imap.size_local*imap.block_size), dtype=numpy.int32)
@@ -212,24 +215,47 @@ def facet_normal_approximation(V, mt, mt_id):
     top_dofs = dolfinx.fem.locate_dofs_topological(
         V, V.mesh.topology.dim-1, top_facets)[:, 0]
     deac_dofs = all_dofs[numpy.isin(all_dofs, top_dofs, invert=True)]
+
+    # Note there should be a better way to do this
+    # Create sparsity pattern only for constraint + bc
+    cpp_form = dolfinx.Form(a)._cpp_object
+    pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
+    block_size = V.dofmap.index_map.block_size
+    blocks = numpy.unique(deac_dofs // block_size)
+    cpp.mpc.add_pattern_diagonal(
+        pattern, blocks, block_size)
+    pattern.assemble()
+
     u_0 = dolfinx.Function(V)
     u_0.vector.set(0)
-    bc_deac = fem.DirichletBC(u_0, deac_dofs)
-    A = dolfinx.fem.assemble_matrix(a, bcs=[bc_deac])
+
+    bc_deac = dolfinx.fem.DirichletBC(u_0, deac_dofs)
+    A = dolfinx.cpp.la.create_matrix(comm, pattern)
+    A.zeroEntries()
+    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
+                                     [bc_deac], 1.0)
+    # Assemble the matrix with all entries
+    dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, [bc_deac])
+    A.assemble()
+
     b = dolfinx.fem.assemble_vector(L)
 
     dolfinx.fem.apply_lifting(b, [a], [[bc_deac]])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, [bc_deac])
+    opts = PETSc.Options()
+    opts["ksp_type"] = "cg"
+    opts["ksp_rtol"] = 1.0e-8
+    # opts["help"] = None # List all available options
+    # opts["ksp_view"] = None # List progress of solver
 
-    A.assemble()
-    ksp = PETSc.KSP().create(V.mesh.mpi_comm())
-    ksp.setOperators(A)
-    ksp.setType("preonly")
-    ksp.getPC().setType("lu")
-    ksp.getPC().setFactorSolverType("mumps")
-    ksp.solve(b, nh.vector)
+    # Solve Linear problem
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver.setFromOptions()
+    solver.setOperators(A)
+    solver.solve(b, nh.vector)
     timer.stop()
     return nh
 
@@ -258,9 +284,10 @@ def create_collision_constraint(V, interface_info, cell_info):
 
     # Get dofmap info
     comm = V.mesh.mpi_comm()
-    dofs = V.dofmap.list.array()
+    dofs = V.dofmap.list.array
     dof_coords = V.tabulate_dof_coordinates()
-    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
+    num_dofs_per_element = (V.dofmap.dof_layout.num_dofs *
+                            V.dofmap.dof_layout.block_size())
     indexmap = V.dofmap.index_map
     bs = indexmap.block_size
     global_indices = numpy.array(indexmap.global_indices(False),

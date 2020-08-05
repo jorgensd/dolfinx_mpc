@@ -39,7 +39,7 @@ MultiPointConstraint::MultiPointConstraint(
   assert(offsets_master.tail(1)[0] == masters.size());
 
   LOG(INFO) << "Initializing MPC class";
-  dolfinx::common::Timer timer("MPC: Init: Total time");
+  dolfinx::common::Timer timer("~MPC: Init: Total time");
   _masters = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
       masters, offsets_master);
   _master_owner_ranks
@@ -68,7 +68,7 @@ MultiPointConstraint::MultiPointConstraint(
   _index_map = generate_index_map();
 
   dolfinx::common::Timer timer_local(
-      "*MPC: Init: Setup local indices per processor");
+      "~MPC: Init: Setup local indices per processor");
   /// Find all local indices for master
   std::vector<std::int64_t> master_vec(masters.data(),
                                        masters.data() + masters.size());
@@ -96,7 +96,7 @@ std::shared_ptr<dolfinx::common::IndexMap>
 MultiPointConstraint::generate_index_map()
 {
   LOG(INFO) << "Generating MPC index map with additional ghosts";
-  dolfinx::common::Timer timer("*MPC: Init: Indexmap Total");
+  dolfinx::common::Timer timer("~MPC: Init: Indexmap Total");
   const dolfinx::mesh::Mesh& mesh = *(_function_space->mesh());
   const dolfinx::fem::DofMap& dofmap = *(_function_space->dofmap());
 
@@ -211,7 +211,7 @@ MultiPointConstraint::generate_index_map()
   }
 
   dolfinx::common::Timer timer_im_init(
-      "*MPC: Init: Indexmap Make new indexmap");
+      "~MPC: Init: Indexmap Make new indexmap");
   std::shared_ptr<dolfinx::common::IndexMap> new_index_map
       = std::make_shared<dolfinx::common::IndexMap>(
           mesh.mpi_comm(), index_map->size_local(),
@@ -229,7 +229,7 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";
-  dolfinx::common::Timer timer("MPC: Sparsitypattern Total");
+  dolfinx::common::Timer timer("~MPC: Sparsitypattern Total");
   if (a.rank() != 2)
   {
     throw std::runtime_error(
@@ -258,12 +258,8 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
 
   dolfinx::mesh::Topology topology = mesh.topology();
   dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
-  if (bs != 1)
-  {
-    layout = *old_dofmap->element_dof_layout->sub_dofmap({0});
-  }
-  auto [unused_indexmap, _dofmap] = dolfinx::fem::DofMapBuilder::build(
-      mesh.mpi_comm(), topology, layout, bs);
+  auto [unused_indexmap, _dofmap]
+      = dolfinx::fem::DofMapBuilder::build(mesh.mpi_comm(), topology, layout);
   _mpc_dofmap = std::make_shared<dolfinx::fem::DofMap>(
       old_dofmap->element_dof_layout, _index_map, _dofmap);
 

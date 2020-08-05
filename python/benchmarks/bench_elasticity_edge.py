@@ -67,7 +67,6 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         Create a one-to-one relation between all dofs at (1, i/N, 0)
         and (1, i/N, 1)
         """
-        dolfinx.common.Timer("MPC: Create slave-master relationship")
 
         x = V.tabulate_dof_coordinates()
 
@@ -108,37 +107,60 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
         return slaves, masters, owner_ranks
 
-    # Find all masters and slaves
-    masters = []
-    slaves = []
-    master_ranks = []
-    # Only constraining z-component
-    for j in [mesh.topology.dim-1]:  # range(mesh.topology.dim):
-        Vj = V.sub(j).collapse()
-        slave_dofs = dolfinx.fem.locate_dofs_geometrical(
-            (V.sub(j), Vj), slaves_locater).T[0]
-        master_dofs = dolfinx.fem.locate_dofs_geometrical(
-            (V.sub(j), Vj), master_locater).T[0]
-        snew, mnew, mranks = create_master_slave_map(master_dofs, slave_dofs)
-        mastersj = sum(MPI.COMM_WORLD.allgather(mnew))
-        slavesj = sum(MPI.COMM_WORLD.allgather(snew))
-        ownersj = sum(MPI.COMM_WORLD.allgather(mranks))
-        masters.append(mastersj)
-        slaves.append(slavesj)
-        master_ranks.append(ownersj)
+    with dolfinx.common.Timer("~Elasticity: Init old"):
+        # Find all masters and slaves
+        masters = []
+        slaves = []
+        master_ranks = []
+        # Only constraining z-component
+        for j in range(mesh.topology.dim):
+            Vj = V.sub(j).collapse()
+            slave_dofs = dolfinx.fem.locate_dofs_geometrical(
+                (V.sub(j), Vj), slaves_locater).T[0]
+            master_dofs = dolfinx.fem.locate_dofs_geometrical(
+                (V.sub(j), Vj), master_locater).T[0]
+            snew, mnew, mranks = create_master_slave_map(
+                master_dofs, slave_dofs)
+            mastersj = sum(MPI.COMM_WORLD.allgather(mnew))
+            slavesj = sum(MPI.COMM_WORLD.allgather(snew))
+            ownersj = sum(MPI.COMM_WORLD.allgather(mranks))
+            masters.append(mastersj)
+            slaves.append(slavesj)
+            master_ranks.append(ownersj)
 
-    masters = np.hstack(masters)
-    slaves = np.hstack(slaves)
-    master_ranks = np.hstack(master_ranks)
-    offsets = np.array(range(len(slaves)+1), dtype=np.int64)
-    coeffs = 0.5*np.ones(len(masters), dtype=np.float64)
+        masters = np.hstack(masters)
+        slaves = np.hstack(slaves)
+        master_ranks = np.hstack(master_ranks)
+        offsets = np.array(range(len(slaves)+1), dtype=np.int64)
+        coeffs = 0.5*np.ones(len(masters), dtype=np.float64)
 
-    # Create MPC
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   master_ranks)
+        # Create MPC
+        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                       masters, coeffs,
+                                                       offsets, master_ranks)
+
+    def PeriodicBoundary(x):
+        return np.logical_and(np.isclose(x[0], 1), np.isclose(x[2], 0))
+
+    def periodic_relation(x):
+        out_x = np.zeros(x.shape)
+        out_x[0] = x[0]
+        out_x[1] = x[1]
+        out_x[2] = x[2] + 1
+        return out_x
+    with dolfinx.common.Timer("~Elasticity: Init new"):
+        edim = mesh.topology.dim-2
+        edges = dolfinx.mesh.locate_entities_boundary(
+            mesh, edim, PeriodicBoundary)
+        periodic_mt = dolfinx.MeshTags(mesh, edim,
+                                       edges, np.full(len(edges), 2,
+                                                      dtype=np.int32))
+        cc = dolfinx_mpc.create_periodic_condition(
+            V, periodic_mt, 2, periodic_relation, bcs,
+            scale=0.5)
 
     # Create traction meshtag
+
     def traction_boundary(x):
         return np.isclose(x[0], 1)
     t_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
@@ -153,7 +175,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
     g = dolfinx.Constant(mesh, (0, 0, -1e2))
     x = ufl.SpatialCoordinate(mesh)
-    f = dolfinx.Constant(mesh, 1e4) * \
+    f = dolfinx.Constant(mesh, 1e3) * \
         ufl.as_vector((0, -(x[2]-0.5)**2, (x[1]-0.5)**2))
 
     # Stress computation
@@ -171,28 +193,43 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Setup MPC system
     if info:
-        dolfinx_mpc.utils.log_info("Run {0:1d}: Assembling matrix"
+        dolfinx_mpc.utils.log_info("Run {0:1d}: Assembling matrix and vector"
                                    .format(r_lvl))
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-
-    if info:
-        dolfinx_mpc.utils.log_info("Run {0:1d}: Assembling vector"
-                                   .format(r_lvl))
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    with dolfinx.common.Timer("~Elasticity: Assemble (old)"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     # Create nullspace for elasticity problem and assign to matrix
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
-    with dolfinx.common.Timer("MPC: Apply lifting"):
+    with dolfinx.common.Timer("~Elasticity: Apply lifting (old)"):
         dolfinx.fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
         dolfinx.fem.set_bc(b, bcs)
+
+    with dolfinx.common.Timer("~Elasticity: Assemble"):
+        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+
+    # Apply boundary conditions
+    with dolfinx.common.Timer("~Elasticity: Apply lifting"):
+        dolfinx.fem.apply_lifting(bcc, [a], [bcs])
+        bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                        mode=PETSc.ScatterMode.REVERSE)
+        dolfinx.fem.set_bc(bcc, bcs)
+
+    # Create nullspace for elasticity problem and assign to matrix
+    Vcc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                 cc.dofmap())
+    Vcc = dolfinx.FunctionSpace(None, V.ufl_element(), Vcc_cpp)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vcc)
+    Acc.setNearNullSpace(null_space)
 
     opts = PETSc.Options()
     if boomeramg:
@@ -221,27 +258,38 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Setup PETSc solver
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setFromOptions()
-    solver.setOperators(A)
 
-    # Solve Linear problem
-    uh = b.copy()
-    uh.set(0)
     if info:
         dolfinx_mpc.utils.log_info("Run {0:1d}: Solving".format(r_lvl))
-    with dolfinx.common.Timer("MPC: Solve") as timer:
+
+    with dolfinx.common.Timer("~Elasticity: Solve old") as timer:
+        solver.setOperators(A)
+        uh = b.copy()
+        uh.set(0)
         solver.solve(b, uh)
         solve_time = timer.elapsed()[0]
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                       mode=PETSc.ScatterMode.FORWARD)
 
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+    with dolfinx.common.Timer("~Elasticity: Solve") as timer:
+        solver.setOperators(Acc)
+        uhcc = bcc.copy()
+        uhcc.set(0)
+        solver.solve(bcc, uhcc)
+        solve_time = timer.elapsed()[0]
+        uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                         mode=PETSc.ScatterMode.FORWARD)
 
     # Back substitute to slave dofs
     if info:
         dolfinx_mpc.utils.log_info("Run {0:1d}: Backsubstitution"
                                    .format(r_lvl))
-    with dolfinx.common.Timer("MPC: Backsubstitution"):
-        dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
+    with dolfinx.common.Timer("~Elasticity: Backsubstitution (old)"):
+        dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    with dolfinx.common.Timer("~Elasticity: Backsubstitution"):
+        dolfinx_mpc.backsubstitution_local(cc, uhcc)
+    assert(np.allclose(uh.array, uhcc.array, atol=1e-6))
     if kspview:
         solver.view()
 
@@ -269,11 +317,16 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         u_h = dolfinx.Function(Vmpc)
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
+
+        u_hcc = dolfinx.Function(Vcc)
+        u_hcc.vector.setArray(uhcc.array)
+        u_hcc.name = "u_cc"
         fname = "results/bench_elasticity_edge_{0:d}.xdmf".format(r_lvl)
         outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                       fname, "w")
         outfile.write_mesh(mesh)
         outfile.write_function(u_h)
+        outfile.write_function(u_hcc)
         outfile.close()
 
 

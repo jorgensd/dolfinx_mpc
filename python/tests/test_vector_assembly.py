@@ -44,22 +44,32 @@ def test_mpc_assembly(master_point, degree, celltype):
                                                    masters, coeffs, offsets,
                                                    master_owners)
     b = dolfinx_mpc.assemble_vector(lhs, mpc)
-
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
+    def l2b(li):
+        return np.array(li, dtype=np.float64).tobytes()
+    s_m_c_new = {l2b([1, 0]): {l2b([0, 1]): 0.43,
+                               l2b([1, 1]): 0.11},
+                 l2b([0, 0]): {l2b(master_point): 0.69}}
+    cc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c_new)
+    bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+
+    assert(np.allclose(mpc_vec_np, cc_vec_np))
 
     # Reduce system with global matrix K after assembly
     L_org = dolfinx.fem.assemble_vector(lhs)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
 
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
 
     vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
     reduced_L = np.dot(K.T, vec)
 
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)

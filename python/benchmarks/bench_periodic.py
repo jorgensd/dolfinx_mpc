@@ -92,10 +92,6 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         not_edges = np.logical_and(not_edges_y, not_edges_z)
         return np.logical_and(np.isclose(x[0], 0), not_edges)
 
-    # Find all masters and slaves
-    slave_dofs = dolfinx.fem.locate_dofs_geometrical(V, slaves_locater).T[0]
-    master_dofs = dolfinx.fem.locate_dofs_geometrical(V, master_locater).T[0]
-
     def create_master_slave_map(master_dofs, slave_dofs):
         """
         Helper function that creates the relationship between the correct
@@ -103,7 +99,8 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         This function is much more efficient than calling
         dolfinx.fem.locate_dofs_geometrical in a loop
         """
-        timer = dolfinx.common.Timer("MPC: Create slave-master relationship")
+        timer = dolfinx.common.Timer(
+            "~Periodic: Create slave-master relationship")
         x = V.tabulate_dof_coordinates()
         local_min = (V.dofmap.index_map.local_range[0]
                      * V.dofmap.index_map.block_size)
@@ -150,13 +147,40 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Create master-slave map".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    snew, mnew, mrankloc = create_master_slave_map(master_dofs, slave_dofs)
-    masters = sum(MPI.COMM_WORLD.allgather(mnew))
-    slaves = sum(MPI.COMM_WORLD.allgather(snew))
-    mrank = sum(MPI.COMM_WORLD.allgather(mrankloc))
+    with dolfinx.common.Timer("~Periodic: Old init"):
+        # Find all masters and slaves
+        slave_dofs = dolfinx.fem.locate_dofs_geometrical(
+            V, slaves_locater).T[0]
+        master_dofs = dolfinx.fem.locate_dofs_geometrical(
+            V, master_locater).T[0]
+        snew, mnew, mrankloc = create_master_slave_map(master_dofs, slave_dofs)
+        masters = sum(MPI.COMM_WORLD.allgather(mnew))
+        slaves = sum(MPI.COMM_WORLD.allgather(snew))
+        mrank = sum(MPI.COMM_WORLD.allgather(mrankloc))
+        offsets = np.array(range(len(slaves)+1), dtype=np.int64)
+        coeffs = np.ones(len(masters), dtype=np.float64)
+        # Setup multi-point constraint
+        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                       masters, coeffs,
+                                                       offsets, mrank)
 
-    offsets = np.array(range(len(slaves)+1), dtype=np.int64)
-    coeffs = 0.8*np.ones(len(masters), dtype=np.float64)
+    def PeriodicBoundary(x):
+        return np.isclose(x[0], 1)
+
+    def periodic_relation(x):
+        out_x = np.zeros(x.shape)
+        out_x[0] = 1-x[0]
+        out_x[1] = x[1]
+        out_x[2] = x[2]
+        return out_x
+
+    with dolfinx.common.Timer("~Periodic: New init"):
+        facets = dolfinx.mesh.locate_entities_boundary(
+            mesh, mesh.topology.dim-1, PeriodicBoundary)
+        mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
+                              facets, np.full(len(facets), 2, dtype=np.int32))
+        cc = dolfinx_mpc.create_periodic_condition(
+            V, mt, 2, periodic_relation, bcs)
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -171,10 +195,6 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     lhs = ufl.inner(f, v)*ufl.dx
 
-    # Setup multi-point constraint
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   mrank)
     # Assemble LHS and RHS with multi-point constraint
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -182,17 +202,20 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                         "Run {0:1d}: Assemble matrix".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
-    with dolfinx.common.Timer("MPC: Assemble matrix (Total time)"):
+    with dolfinx.common.Timer("~Periodic: Assemble matrix old"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    with dolfinx.common.Timer("~Periodic: Assemble matrix new"):
+        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
 
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Assembling vector".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-
-    with dolfinx.common.Timer("MPC: Assemble vector (Total time)"):
+    with dolfinx.common.Timer("~Periodic: Assemble vector (Total time old)"):
         b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    with dolfinx.common.Timer("~Periodic: Assemble vector (Total time)"):
+        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
 
     # Apply boundary conditions
     if MPI.COMM_WORLD.rank == 0:
@@ -200,65 +223,83 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Apply lifting".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    with dolfinx.common.Timer("MPC: Apply lifting"):
+    with dolfinx.common.Timer("~Periodic: Apply lifting old"):
         dolfinx.fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
         dolfinx.fem.set_bc(b, bcs)
+    with dolfinx.common.Timer("~Periodic: Apply lifting"):
+        dolfinx.fem.apply_lifting(bcc, [a], [bcs])
+        bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                        mode=PETSc.ScatterMode.REVERSE)
+        dolfinx.fem.set_bc(bcc, bcs)
 
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Prepare solver".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    with dolfinx.common.Timer("MPC: Prepare solver"):
-        # Create nullspace
-        nullspace = PETSc.NullSpace().create(constant=True)
-        PETSc.Mat.setNearNullSpace(A, nullspace)
+    # Create nullspace
+    nullspace = PETSc.NullSpace().create(constant=True)
 
-        # Set PETSc solver options
-        opts = PETSc.Options()
-        if boomeramg:
-            opts["ksp_type"] = "cg"
-            opts["ksp_rtol"] = 1.0e-5
-            opts["pc_type"] = "hypre"
-            opts['pc_hypre_type'] = 'boomeramg'
-            opts["pc_hypre_boomeramg_max_iter"] = 1
-            opts["pc_hypre_boomeramg_cycle_type"] = "v"
-            # opts["pc_hypre_boomeramg_print_statistics"] = 1
-        else:
-            opts["ksp_type"] = "cg"
-            opts["ksp_rtol"] = 1.0e-12
-            opts["pc_type"] = "gamg"
-            opts["pc_gamg_type"] = "agg"
-            opts["pc_gamg_sym_graph"] = True
+    # Set PETSc solver options
+    opts = PETSc.Options()
+    if boomeramg:
+        opts["ksp_type"] = "cg"
+        opts["ksp_rtol"] = 1.0e-5
+        opts["pc_type"] = "hypre"
+        opts['pc_hypre_type'] = 'boomeramg'
+        opts["pc_hypre_boomeramg_max_iter"] = 1
+        opts["pc_hypre_boomeramg_cycle_type"] = "v"
+        # opts["pc_hypre_boomeramg_print_statistics"] = 1
+    else:
+        opts["ksp_type"] = "cg"
+        opts["ksp_rtol"] = 1.0e-12
+        opts["pc_type"] = "gamg"
+        opts["pc_gamg_type"] = "agg"
+        opts["pc_gamg_sym_graph"] = True
 
-            # Use Chebyshev smoothing for multigrid
-            opts["mg_levels_ksp_type"] = "richardson"
-            opts["mg_levels_pc_type"] = "sor"
-        # opts["help"] = None # List all available options
-        # opts["ksp_view"] = None # List progress of solver
-
-        # Create solver, set operator and options
-        solver = PETSc.KSP().create(MPI.COMM_WORLD)
-        solver.setFromOptions()
-        solver.setOperators(A)
+        # Use Chebyshev smoothing for multigrid
+        opts["mg_levels_ksp_type"] = "richardson"
+        opts["mg_levels_pc_type"] = "sor"
+    # opts["help"] = None # List all available options
+    # opts["ksp_view"] = None # List progress of solver
 
     # Solve linear problem
-    uh = b.copy()
-    uh.set(0)
-    start = time.time()
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,
                         "Run {0:1d}: Solving".format(r_lvl))
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
-    with dolfinx.common.Timer("MPC: Solve"):
+    with dolfinx.common.Timer("~Periodic: Solve old"):
+        # Create solver, set operator and options
+        PETSc.Mat.setNearNullSpace(A, nullspace)
+        uh = b.copy()
+        uh.set(0)
+        solver = PETSc.KSP().create(MPI.COMM_WORLD)
+        solver.setFromOptions()
+        solver.setOperators(A)
         solver.solve(b, uh)
-    end = time.time()
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                       mode=PETSc.ScatterMode.FORWARD)
+
+    with dolfinx.common.Timer("~Periodic: Solve"):
+        # Create solver, set operator and options
+        PETSc.Mat.setNearNullSpace(Acc, nullspace)
+        uhcc = bcc.copy()
+        uhcc.set(0)
+        solver = PETSc.KSP().create(MPI.COMM_WORLD)
+        solver.setFromOptions()
+        solver.setOperators(Acc)
+        start = time.time()
+        solver.solve(bcc, uhcc)
+        end = time.time()
+        uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                         mode=PETSc.ScatterMode.FORWARD)
+
+        if kspview:
+            solver.view()
 
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
@@ -267,11 +308,11 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
     # Back substitute to slave dofs
-    with dolfinx.common.Timer("MPC: Backsubstitute"):
+    with dolfinx.common.Timer("~Periodic: Backsubstitute old"):
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
-    if kspview:
-        solver.view()
+    with dolfinx.common.Timer("~Periodic: Backsubstitute"):
+        dolfinx_mpc.backsubstitution_local(cc, uhcc)
 
     # Output information to HDF5
     it = solver.getIterationNumber()
@@ -299,17 +340,28 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                       mpc.mpc_dofmap())
         Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+        u_hold = dolfinx.Function(Vmpc)
+        u_hold.vector.setArray(uh.array)
+
+        # New implementation
+        Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                      cc.dofmap())
+        Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
         u_h = dolfinx.Function(Vmpc)
-        u_h.vector.setArray(uh.array)
+        u_h.vector.setArray(uhcc.array)
 
         # Name formatting of functions
         mesh.name = "mesh_" + ext
         u_h.name = "u_" + ext
-
         fname = "results/bench_periodic3d_{0:d}_{1:s}.xdmf".format(r_lvl, ext)
         out_xdmf = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
         out_xdmf.write_mesh(mesh)
         out_xdmf.write_function(u_h, 0.0,
+                                "Xdmf/Domain/"
+                                + "Grid[@Name='{0:s}'][1]"
+                                .format(mesh.name))
+        u_hold.name = u_h.name + "_old"
+        out_xdmf.write_function(u_hold, 0.0,
                                 "Xdmf/Domain/"
                                 + "Grid[@Name='{0:s}'][1]"
                                 .format(mesh.name))

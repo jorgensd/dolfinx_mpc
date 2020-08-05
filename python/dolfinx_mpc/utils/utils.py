@@ -6,9 +6,7 @@
 
 from contextlib import ExitStack
 
-import dolfinx_mpc
 import numpy as np
-import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -18,7 +16,25 @@ import dolfinx.log
 import dolfinx.la
 
 
-def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
+def gather_slaves_global(constraint):
+    """
+    Given a multi point constraint,
+    return slaves for all processors with global dof numbering
+    """
+    loc_to_glob = np.array(
+        constraint.index_map().global_indices(False), dtype=np.int64)
+    if constraint.num_local_slaves() > 0:
+        glob_slaves = np.array(loc_to_glob[
+            constraint.slaves()[:constraint.num_local_slaves()]],
+            dtype=np.int64)
+    else:
+        glob_slaves = np.array([], dtype=np.int64)
+
+    slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
+    return slaves
+
+
+def create_transformation_matrix(V, constraint):
     """
     Creates the transformation matrix K (dim x dim-len(slaves)) f
     or a given set of slaves, masters and coefficients.
@@ -39,19 +55,42 @@ def create_transformation_matrix(dim, slaves, masters, coeffs, offsets):
     Output:
       K = [[1,0], [alpha beta], [0,1]]
     """
+    # Gather slaves from all procs
+    loc_to_glob = np.array(
+        constraint.index_map().global_indices(False), dtype=np.int64)
+    if constraint.num_local_slaves() > 0:
+        local_slaves = constraint.slaves()[:constraint.num_local_slaves()]
+        glob_slaves = np.array(loc_to_glob[local_slaves], dtype=np.int64)
+    else:
+        local_slaves = np.array([], dtype=np.int32)
+        glob_slaves = np.array([], dtype=np.int64)
 
-    K = np.zeros((dim, dim - len(slaves)), dtype=PETSc.ScalarType)
+    global_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
+    masters = constraint.masters_local().array
+    coeffs = constraint.coefficients()
+    offsets = constraint.masters_local().offsets
+    K = np.zeros((V.dim, V.dim - len(global_slaves)), dtype=PETSc.ScalarType)
+    # Add entries to
     for i in range(K.shape[0]):
-        if i in slaves:
-            index = np.argwhere(slaves == i)[0, 0]
-            masters_index = masters[offsets[index]: offsets[index+1]]
-            coeffs_index = coeffs[offsets[index]: offsets[index+1]]
+        local_index = np.flatnonzero(i == loc_to_glob[local_slaves])
+        if len(local_index) > 0:
+            # If local master add coeffs
+            local_index = local_index[0]
+            masters_index = loc_to_glob[masters[offsets[local_index]:
+                                                offsets[local_index+1]]]
+            coeffs_index = coeffs[offsets[local_index]: offsets[local_index+1]]
             for master, coeff in zip(masters_index, coeffs_index):
-                count = sum(master > np.array(slaves))
+                count = sum(master > global_slaves)
                 K[i, master - count] = coeff
+        elif i in global_slaves:
+            # Do not add anything if there is a master
+            pass
         else:
-            count = sum(i > slaves)
-            K[i, i-count] = 1
+            # For all other nodes add one over number of procs to sum to 1
+            count = sum(i > global_slaves)
+            K[i, i-count] = 1/MPI.COMM_WORLD.size
+    # Gather K
+    K = np.sum(MPI.COMM_WORLD.allgather(K), axis=0)
     return K
 
 
@@ -83,12 +122,12 @@ def PETScMatrix_to_global_numpy(A):
     return A_numpy
 
 
-def compare_vectors(reduced_vec, vec, global_zeros):
+def compare_vectors(reduced_vec, vec, constraint):
     """
     Compare two numpy vectors of different lengths,
-    where global_zeros are the indices of vec that are not in
-    reduced vec.
+    where the constraints slaves are not in the reduced vector
     """
+    global_zeros = gather_slaves_global(constraint)
     count = 0
     for i in range(len(vec)):
         if i in global_zeros:
@@ -98,18 +137,13 @@ def compare_vectors(reduced_vec, vec, global_zeros):
             assert(np.isclose(reduced_vec[i-count], vec[i]))
 
 
-def compare_matrices(reduced_A, A, global_ones):
+def compare_matrices(reduced_A, A, constraint):
     """
-    Compare two numpy matrices of different sizes, where global_ones
-    corresponds to places where matrix has 1 on the diagonal,
-    and the reduced_matrix does not have entries.
-    Example:
-    Input:
-      A = [[0.1, 0 0.3], [0, 1, 0], [0.2, 0, 0.4]]
-      reduced_A = [[0.1, 0.3], [0.2, 0.4]]
-      global_ones = [1]
+    Compare a reduced matrix (stemming from numpy global matrix product),
+    with a matrix stemming from MPC computations (having identity
+    rows for slaves) given a multi-point constraint
     """
-
+    global_ones = gather_slaves_global(constraint)
     A_numpy_padded = np.zeros(A.shape, dtype=reduced_A.dtype)
     count = 0
     for i in range(A.shape[0]):
@@ -136,44 +170,6 @@ def compare_matrices(reduced_A, A, global_ones):
     assert np.allclose(A, A_numpy_padded)
 
 
-def cache_numba(matrix=False, vector=False, backsubstitution=False):
-    """
-    Build a minimal numba cache for all operations
-    """
-    dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                    "Building Numba cache...")
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD,
-                                  MPI.COMM_WORLD.size,
-                                  MPI.COMM_WORLD.size)
-    V = dolfinx.FunctionSpace(mesh, ("CG", 1))
-    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-    a = ufl.inner(u, v) * ufl.dx
-    L = ufl.inner(dolfinx.Constant(mesh, 1), v) * ufl.dx
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object,
-                                                   np.array([],
-                                                            dtype=np.int64),
-                                                   np.array([],
-                                                            dtype=np.int64),
-                                                   np.array([],
-                                                            dtype=np.float64),
-                                                   np.array([0],
-                                                            dtype=np.int64),
-                                                   np.array([],
-                                                            dtype=np.int32))
-    if matrix:
-        with dolfinx.common.Timer("MPC: Cache Matrix"):
-            A = dolfinx_mpc.assemble_matrix(a, mpc, [])
-            A.assemble()
-    if vector:
-        with dolfinx.common.Timer("MPC: Cache Vector"):
-            b = dolfinx_mpc.assemble_vector(L, mpc)
-
-        if backsubstitution:
-            c = b.copy()
-            with dolfinx.common.Timer("MPC: Cache Backsubstitution"):
-                dolfinx_mpc.backsubstitution(mpc, c, V.dofmap)
-
-
 def log_info(message):
     """
     Wrapper for logging a simple string on the zeroth communicator
@@ -187,7 +183,7 @@ def log_info(message):
         dolfinx.log.set_log_level(old_level)
 
 
-def build_elastic_nullspace(V):
+def rigid_motions_nullspace(V):
     """Function to build nullspace for 2D/3D elasticity"""
 
     # Get geometric dim
@@ -207,11 +203,11 @@ def build_elastic_nullspace(V):
         basis = [np.asarray(x) for x in vec_local]
 
         x = V.tabulate_dof_coordinates()
-        dofs = [V.sub(i).dofmap.list.array() for i in range(gdim)]
+        dofs = [V.sub(i).dofmap.list.array for i in range(gdim)]
 
         # Build translational null space basis
         for i in range(gdim):
-            basis[i][V.sub(i).dofmap.list.array()] = 1.0
+            basis[i][V.sub(i).dofmap.list.array] = 1.0
 
         # Build rotational null space basis
         if gdim == 2:

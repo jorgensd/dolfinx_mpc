@@ -1,10 +1,12 @@
-import pygmsh
 import meshio
 import numpy as np
+import pygmsh
+import ufl
+from mpi4py import MPI
+
 import dolfinx
 import dolfinx.fem
 import dolfinx.io
-from mpi4py import MPI
 
 
 def merge_msh_meshes(msh0, msh1, celltype, facettype):
@@ -92,7 +94,7 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     Generate the box [x0,y0,z0]x[y0,y1,z0], rotated theta degrees around
     the origin over axis [0,1,1] with resolution res,
     where markers are is an array containing markers
-    array of markers for [left, back, top, bottom, front, right]
+    array of markers for [back, bottom, right, left, top, front]
     and an optional volume_marker.
     """
     geom = pygmsh.built_in.Geometry()
@@ -220,8 +222,8 @@ def mesh_2D_dolfin(celltype, theta=0):
         return lambda x: x[1] > p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0])
 
     # Using built in meshes, stacking cubes on top of each other
-    N = 2
-    if celltype == "quad":
+    N = 15
+    if celltype == "quadrilateral":
         ct = dolfinx.cpp.mesh.CellType.quadrilateral
     elif celltype == "triangle":
         ct = dolfinx.cpp.mesh.CellType.triangle
@@ -271,9 +273,9 @@ def mesh_2D_dolfin(celltype, theta=0):
             cells1[cell, v] = vertex_to_node[c2v.links(
                 cell)[v]] + mesh0.geometry.x.shape[0]
     cells = np.vstack([cells0, cells1])
-    mesh = dolfinx.Mesh(MPI.COMM_WORLD,
-                        ct, points, cells, [], degree=1,
-                        ghost_mode=dolfinx.cpp.mesh.GhostMode.none)
+    cell = ufl.Cell(celltype, geometric_dimension=points.shape[1])
+    domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
+    mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
     tdim = mesh.topology.dim
     fdim = tdim - 1
 
@@ -378,7 +380,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
         return lambda x: n[0]*x[0] + n[1]*x[1] + D > -n[2]*x[2]
 
-    N = 3
+    N = 4
 
     nv = dolfinx.cpp.mesh.cell_num_vertices(ct)
     mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
@@ -423,9 +425,9 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
             cells1[cell, v] = vertex_to_node[c2v.links(
                 cell)[v]] + mesh0.geometry.x.shape[0]
     cells = np.vstack([cells0, cells1])
-    mesh = dolfinx.Mesh(MPI.COMM_WORLD,
-                        ct, points, cells, [], degree=1,
-                        ghost_mode=dolfinx.cpp.mesh.GhostMode.none)
+    cell = ufl.Cell(ext, geometric_dimension=points.shape[1])
+    domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
+    mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
     tdim = mesh.topology.dim
     fdim = tdim - 1
 

@@ -23,7 +23,6 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 import ufl
 import numpy as np
-import time
 from petsc4py import PETSc
 from mpi4py import MPI
 
@@ -82,10 +81,34 @@ def demo_periodic3D(celltype, out_periodic):
             s_m_c[slave_locater(i, j, M)] = {
                 master_locater(i, j, M): 1}
 
-    (slaves, masters,
-     coeffs,
-     offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V,
-                                                                s_m_c)
+    with dolfinx.common.Timer("~Periodic: Old init"):
+        (slaves, masters,
+         coeffs,
+         offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V,
+                                                                    s_m_c)
+        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                       masters, coeffs,
+                                                       offsets,
+                                                       owner_ranks)
+
+    def PeriodicBoundary(x):
+        return np.isclose(x[0], 1)
+
+    facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, mesh.topology.dim-1, PeriodicBoundary)
+    mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
+                          facets, np.full(len(facets), 2, dtype=np.int32))
+
+    def periodic_relation(x):
+        out_x = np.zeros(x.shape)
+        out_x[0] = 1-x[0]
+        out_x[1] = x[1]
+        out_x[2] = x[2]
+        return out_x
+
+    with dolfinx.common.Timer("~Periodic: New init"):
+        cc = dolfinx_mpc.create_periodic_condition(
+            V, mt, 2, periodic_relation, bcs)
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -104,19 +127,26 @@ def demo_periodic3D(celltype, out_periodic):
     # Compute solution
     u = dolfinx.Function(V)
     u.name = "uh"
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   owner_ranks)
 
     # Setup MPC system
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    with dolfinx.common.Timer("~Periodic: NUMBA compile old"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
-    # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
+
+    with dolfinx.common.Timer("~Periodic: NUMBA compile new"):
+        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+
+    # Apply boundary conditions
+    dolfinx.fem.apply_lifting(bcc, [a], [bcs])
+    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(bcc, bcs)
 
     # Solve Linear problem
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -135,40 +165,52 @@ def demo_periodic3D(celltype, out_periodic):
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
         solver.setFromOptions()
 
-    solver.setOperators(A)
+    with dolfinx.common.Timer("~PERIODIC: Solve old"):
+        solver.setOperators(A)
+        uh = b.copy()
+        uh.set(0)
+        solver.solve(b, uh)
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                       mode=PETSc.ScatterMode.FORWARD)
+        # solver.view()
+        it = solver.getIterationNumber()
+        print("Iterations {0:d}".format(it))
 
-    uh = b.copy()
-    uh.set(0)
-    start = time.time()
-    solver.solve(b, uh)
-    # solver.view()
-    end = time.time()
-    it = solver.getIterationNumber()
-    print("Solver time: {0:.2e}, Iterations {1:d}".format(end-start, it))
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+    with dolfinx.common.Timer("~PERIODIC: Solve new"):
+        solver.setOperators(Acc)
+        uhcc = bcc.copy()
+        uhcc.set(0)
+        solver.solve(bcc, uhcc)
+        uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                         mode=PETSc.ScatterMode.FORWARD)
+        # solver.view()
+        it = solver.getIterationNumber()
+        print("Iterations {0:d}".format(it))
 
     # Back substitute to slave dofs
-    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    with dolfinx.common.Timer("~Periodic: Backsubstitute old"):
+        dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+    with dolfinx.common.Timer("~Periodic: Backsubstitute new"):
+        dolfinx_mpc.backsubstitution_local(cc, uhcc)
 
     # Create functionspace and function for mpc vector
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.mpc_dofmap())
+                                                  cc.dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 
     # Write solution to file
-    u_h = dolfinx.Function(Vmpc)
-    u_h.vector.setArray(uh.array)
+    u_hcc = dolfinx.Function(Vmpc)
+    u_hcc.vector.setArray(uhcc.array)
     if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
         ext = "tet"
     else:
         ext = "hex"
 
     mesh.name = "mesh_" + ext
-    u_h.name = "u_" + ext
+    u_hcc.name = "u_" + ext
 
     out_periodic.write_mesh(mesh)
-    out_periodic.write_function(u_h, 0.0,
+    out_periodic.write_function(u_hcc, 0.0,
                                 "Xdmf/Domain/"
                                 + "Grid[@Name='{0:s}'][1]"
                                 .format(mesh.name))
@@ -185,12 +227,10 @@ def demo_periodic3D(celltype, out_periodic):
     dolfinx.fem.set_bc(L_org, bcs)
     solver.setOperators(A_org)
     u_ = dolfinx.Function(V)
-    start = time.time()
-    solver.solve(L_org, u_.vector)
-    end = time.time()
-
-    it = solver.getIterationNumber()
-    print("Org solver time: {0:.2e}, Iterations {1:d}".format(end-start, it))
+    with dolfinx.common.Timer("~Periodic: Original solve"):
+        solver.solve(L_org, u_.vector)
+        it = solver.getIterationNumber()
+    print("Original Iterations {0:d}".format(it))
     u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                           mode=PETSc.ScatterMode.FORWARD)
     u_.name = "u_" + ext + "_unconstrained"
@@ -203,10 +243,14 @@ def demo_periodic3D(celltype, out_periodic):
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
+    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
+    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+
+    assert(np.allclose(A_cc_np, A_mpc_np))
+    assert(np.allclose(mpc_vec_np, cc_vec_np))
+    assert(np.allclose(uhcc.array, uh.array))
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -220,9 +264,10 @@ def demo_periodic3D(celltype, out_periodic):
     uh_numpy = np.dot(K, d)
 
     # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, cc)
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, cc)
+    assert np.allclose(
+        uhcc.array, uh_numpy[uhcc.owner_range[0]:uhcc.owner_range[1]])
 
 
 if __name__ == "__main__":
@@ -233,3 +278,5 @@ if __name__ == "__main__":
                      dolfinx.cpp.mesh.CellType.hexahedron]:
         demo_periodic3D(celltype, out_periodic)
     out_periodic.close()
+    dolfinx.common.list_timings(
+        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

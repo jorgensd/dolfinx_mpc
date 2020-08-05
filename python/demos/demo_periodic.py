@@ -33,7 +33,7 @@ else:
     complex = False
 
 # Create mesh and finite element
-N = 12
+N = 50
 mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N)
 V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
@@ -54,6 +54,28 @@ bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
 
 
+def PeriodicBoundary(x):
+    return np.isclose(x[0], 1)
+
+
+facets = dolfinx.mesh.locate_entities_boundary(
+    mesh, mesh.topology.dim-1, PeriodicBoundary)
+mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
+                      facets, np.full(len(facets), 2, dtype=np.int32))
+
+
+def periodic_relation(x):
+    out_x = np.zeros(x.shape)
+    out_x[0] = 1-x[0]
+    out_x[1] = x[1]
+    out_x[2] = x[2]
+    return out_x
+
+
+with dolfinx.common.Timer("~PERIODIC: Init new"):
+    cc = dolfinx_mpc.create_periodic_condition(
+        V, mt, 2, periodic_relation, bcs)
+
 # Create MPC (map all left dofs to right
 dof_at = dolfinx_mpc.dof_close_to
 
@@ -70,8 +92,13 @@ s_m_c = {}
 for i in range(1, N):
     s_m_c[slave_locater(i, N)] = {master_locater(i, N): 1}
 
-(slaves, masters,
- coeffs, offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V, s_m_c)
+with dolfinx.common.Timer("~PERIODIC: Init old"):
+    (slaves, masters,
+     coeffs, offsets, owner_ranks) = dolfinx_mpc.slave_master_structure(V,
+                                                                        s_m_c)
+    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                   masters, coeffs, offsets,
+                                                   owner_ranks)
 
 # Define variational problem
 u = ufl.TrialFunction(V)
@@ -89,19 +116,28 @@ lhs = ufl.inner(f, v)*ufl.dx
 # Compute solution
 u = dolfinx.Function(V)
 u.name = "uh"
-mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                               masters, coeffs, offsets,
-                                               owner_ranks)
+
 # Setup MPC system
 
-A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-b = dolfinx_mpc.assemble_vector(lhs, mpc)
+with dolfinx.common.Timer("~PERIODIC: NUMBA compile old"):
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
-# Apply boundary conditions
 dolfinx.fem.apply_lifting(b, [a], [bcs])
 b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
               mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.set_bc(b, bcs)
+
+with dolfinx.common.Timer("~PERIODIC: NUMBA compile new"):
+    Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+    bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+
+
+# Apply boundary conditions
+dolfinx.fem.apply_lifting(bcc, [a], [bcs])
+bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                mode=PETSc.ScatterMode.REVERSE)
+dolfinx.fem.set_bc(bcc, bcs)
 
 # Solve Linear problem
 solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -120,37 +156,48 @@ else:
     # opts["pc_hypre_boomeramg_print_statistics"] = 1
     solver.setFromOptions()
 
-solver.setOperators(A)
 
-uh = b.copy()
-uh.set(0)
-start = time.time()
-solver.solve(b, uh)
-# solver.view()
-end = time.time()
-it = solver.getIterationNumber()
+with dolfinx.common.Timer("~PERIODIC: Solve old"):
+    solver.setOperators(A)
+    uh = b.copy()
+    uh.set(0)
+    solver.solve(b, uh)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                   mode=PETSc.ScatterMode.FORWARD)
+    # solver.view()
+    it = solver.getIterationNumber()
+    print("Iterations {0:d}".format(it))
 
-print("Solver time: {0:.2e}, Iterations {1:d}".format(end-start, it))
-
-uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-               mode=PETSc.ScatterMode.FORWARD)
+with dolfinx.common.Timer("~PERIODIC: Solve new"):
+    solver.setOperators(Acc)
+    uhcc = bcc.copy()
+    uhcc.set(0)
+    solver.solve(bcc, uhcc)
+    uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                     mode=PETSc.ScatterMode.FORWARD)
+    # solver.view()
+    it = solver.getIterationNumber()
+    print("Iterations {0:d}".format(it))
 
 # Back substitute to slave dofs
-dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+with dolfinx.common.Timer("~Periodic: Backsubstitute old"):
+    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+with dolfinx.common.Timer("~Periodic: Backsubstitute new"):
+    dolfinx_mpc.backsubstitution_local(cc, uhcc)
 
 # Create functionspace and function for mpc vector
 Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                              mpc.mpc_dofmap())
+                                              cc.dofmap())
 Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
 
 # Write solution to file
-u_h = dolfinx.Function(Vmpc)
-u_h.vector.setArray(uh.array)
-u_h.name = "u_mpc"
+u_hcc = dolfinx.Function(Vmpc)
+u_hcc.vector.setArray(uh.array)
+u_hcc.name = "u_mpc"
 outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                               "results/demo_periodic.xdmf", "w")
 outfile.write_mesh(mesh)
-outfile.write_function(u_h)
+outfile.write_function(u_hcc)
 
 
 print("----Verification----")
@@ -180,10 +227,14 @@ outfile.write_function(u_)
 A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
 mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
+A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
+cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+
+assert(np.allclose(A_cc_np, A_mpc_np))
+assert(np.allclose(mpc_vec_np, cc_vec_np))
+assert(np.allclose(uhcc.array, uh.array))
 # Create global transformation matrix
-K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                   masters, coeffs,
-                                                   offsets)
+K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
 # Create reduced A
 A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
 reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -199,6 +250,8 @@ uh_numpy = np.dot(K, d)
 
 # compare LHS, RHS and solution with reference values
 
-dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)
+dolfinx_mpc.utils.compare_matrices(reduced_A, A_cc_np, cc)
+assert np.allclose(
+    uhcc.array, uh_numpy[uhcc.owner_range[0]:uhcc.owner_range[1]])
+dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

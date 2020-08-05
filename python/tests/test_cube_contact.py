@@ -27,7 +27,7 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
     Generate the box [x0,y0,z0]x[y0,y1,z0], rotated theta degrees around
     the origin over axis [0,1,1] with resolution res,
     where markers are is an array containing markers
-    array of markers for [left, back, top, bottom, front, right]
+    array of markers for [back, bottom, right, left, top, front]
     and an optional volume_marker.
     """
     geom = pygmsh.built_in.Geometry()
@@ -226,7 +226,7 @@ def test_cube_contact():
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
     solver = PETSc.KSP().create(comm)
@@ -236,14 +236,36 @@ def test_cube_contact():
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
-    with dolfinx.common.Timer("MPC: Solve"):
+    with dolfinx.common.Timer("~MPC: Solve"):
         solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
     # Back substitute to slave dofs
-    with dolfinx.common.Timer("MPC: Backsubstitute"):
+    with dolfinx.common.Timer("~MPC: Backsubstitute"):
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
+
+    # REIMPLEMENTATION
+    cc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+    Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+    bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+    fem.apply_lifting(bcc, [a], [bcs])
+    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+    fem.set_bc(bcc, bcs)
+    Vcc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                 cc.dofmap())
+    Vcc = dolfinx.FunctionSpace(None, V.ufl_element(), Vcc_cpp)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vcc)
+    A.setNearNullSpace(null_space)
+    solver.setOperators(Acc)
+    uhcc = bcc.copy()
+    uhcc.set(0)
+    with dolfinx.common.Timer("~MPC: Solve"):
+        solver.solve(bcc, uhcc)
+    uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                     mode=PETSc.ScatterMode.FORWARD)
+    dolfinx_mpc.backsubstitution_local(cc, uhcc)
 
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
@@ -260,7 +282,7 @@ def test_cube_contact():
     outfile.close()
 
     # Transfer data from the MPC problem to numpy arrays for comparison
-    with dolfinx.common.Timer("MPC: Petsc->numpy"):
+    with dolfinx.common.Timer("~MPC: Petsc->numpy"):
         A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
         mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
@@ -269,7 +291,7 @@ def test_cube_contact():
     dolfinx_mpc.utils.log_info(
         "Solving reference problem with global matrix (using numpy)")
 
-    with dolfinx.common.Timer("MPC: Reference problem"):
+    with dolfinx.common.Timer("~MPC: Reference problem"):
 
         # Generate reference matrices and unconstrained solution
         A_org = fem.assemble_matrix(a, bcs)
@@ -282,9 +304,7 @@ def test_cube_contact():
         fem.set_bc(L_org, bcs)
 
         # Create global transformation matrix
-        K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                           masters, coeffs,
-                                                           offsets)
+        K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
         # Create reduced A
         A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
 
@@ -296,14 +316,12 @@ def test_cube_contact():
         d = np.linalg.solve(reduced_A, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = np.dot(K, d)
-    with dolfinx.common.Timer("MPC: Compare"):
+    with dolfinx.common.Timer("~MPC: Compare"):
         # Compare LHS, RHS and solution with reference values
-        dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-        dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                              uh.owner_range[1]])
+        dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, cc)
+        dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, cc)
+        assert np.allclose(uhcc.array, uh_numpy[uhcc.owner_range[0]:
+                                                uhcc.owner_range[1]])
+    assert(np.allclose(uhcc.array, uh.array))
     # dolfinx.common.list_timings(
     #     comm, [dolfinx.common.TimingType.wall])
-
-
-test_cube_contact()

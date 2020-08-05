@@ -4,18 +4,16 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import time
-
-import numpy as np
-import pytest
-
-from mpi4py import MPI
-from petsc4py import PETSc
-import dolfinx
-import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
+import numpy as np
+import pytest
 import ufl
+from mpi4py import MPI
+from petsc4py import PETSc
+
+import dolfinx
+import dolfinx.io
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
@@ -61,14 +59,31 @@ def test_pipeline(master_point):
                                                    master_owners)
 
     # Setup MPC system
-    start = time.time()
-    A = dolfinx_mpc.assemble_matrix(a, mpc)
-    end = time.time()
-    print("Runtime: {0:.2e}".format(end-start))
+    with dolfinx.common.Timer("~Test: Assemble matrix"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc)
 
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    with dolfinx.common.Timer("~Test: Assemble matrix"):
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
+
+    def l2b(li):
+        return np.array(li, dtype=np.float64).tobytes()
+    s_m_c_new = {l2b([1, 0]):
+                 {l2b([0, 1]): 0.43,
+                  l2b([1, 1]): 0.11},
+                 l2b([0, 0]):
+                 {l2b(master_point): 0.69}}
+
+    cc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c_new)
+    A_cc = dolfinx_mpc.assemble_matrix_local(a, cc)
+    bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+
+    assert(np.allclose(mpc_vec_np, cc_vec_np))
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
@@ -84,17 +99,30 @@ def test_pipeline(master_point):
 
     dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
+    uh_cc = bcc.copy()
+    uh_cc.set(0)
+
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver.setType(PETSc.KSP.Type.PREONLY)
+    solver.getPC().setType(PETSc.PC.Type.LU)
+    solver.setOperators(A_cc)
+    solver.solve(bcc, uh_cc)
+    uh_cc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                      mode=PETSc.ScatterMode.FORWARD)
+    dolfinx_mpc.backsubstitution_local(cc, uh_cc)
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_cc)
+    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+    assert(np.allclose(A_mpc_np, A_cc_np))
+    assert(np.allclose(mpc_vec_np, cc_vec_np))
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -107,7 +135,13 @@ def test_pipeline(master_point):
     uh_numpy = np.dot(K, d)
 
     # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_cc_np, cc)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)
 
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+    # Move solution to global array
+    sol_mpc = dolfinx_mpc.utils.PETScVector_to_global_numpy(uh)
+    sol_cc = dolfinx_mpc.utils.PETScVector_to_global_numpy(uh_cc)
+    assert(np.allclose(sol_mpc, sol_cc))
+    assert(np.allclose(sol_cc, uh_numpy))
+    assert np.allclose(uh_cc.array, uh_numpy[uh_cc.owner_range[0]:
+                                             uh_cc.owner_range[1]])

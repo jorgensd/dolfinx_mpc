@@ -137,21 +137,36 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         + ufl.inner(g, v)*ds
 
     # Find slave master relationship and initialize MPC class
-    (slaves, masters, coeffs, offsets,
-     owner_ranks) = dolfinx_mpc.create_collision_constraint(
-        V, (mt, 4, 9), (ct, top_cube_marker))
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   owner_ranks)
+    with dolfinx.common.Timer("~Contact: Create old constraint"):
+        (slaves, masters, coeffs, offsets,
+         owner_ranks) = dolfinx_mpc.create_collision_constraint(
+            V, (mt, 4, 9), (ct, top_cube_marker))
+        mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
+                                                       masters, coeffs,
+                                                       offsets,
+                                                       owner_ranks)
+
+    with dolfinx.common.Timer("~Contact: Create new constraint"):
+        cc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+
     # Setup MPC system
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    with dolfinx.common.Timer("~Contact: Assemble old"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        b = dolfinx_mpc.assemble_vector(lhs, mpc)
 
     # Apply boundary conditions
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
+
+    with dolfinx.common.Timer("~Contact: Assemble new"):
+        Acc = dolfinx_mpc.assemble_matrix_local(a, cc, bcs=bcs)
+        bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
+    fem.apply_lifting(bcc, [a], [bcs])
+    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                    mode=PETSc.ScatterMode.REVERSE)
+    fem.set_bc(bcc, bcs)
 
     # Solve Linear problem
     opts = PETSc.Options()
@@ -173,7 +188,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
                                                   mpc.mpc_dofmap())
     Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
     A.setNearNullSpace(null_space)
 
     solver = PETSc.KSP().create(comm)
@@ -181,22 +196,45 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
-    with dolfinx.common.Timer("MPC: Solve"):
+    with dolfinx.common.Timer("~Contact: Solve old"):
         solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
     # Back substitute to slave dofs
-    with dolfinx.common.Timer("MPC: Backsubstitute"):
+    with dolfinx.common.Timer("~Contact: Backsubstitute old"):
         dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
 
     it = solver.getIterationNumber()
-    if comm.rank == 0:
+    if MPI.COMM_WORLD.rank == 0:
         print("Number of iterations: {0:d}".format(it))
+
+    # New implementation
+    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                  cc.dofmap())
+    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
+    Acc.setNearNullSpace(null_space)
+    solver.setOperators(Acc)
+    uhcc = bcc.copy()
+    uhcc.set(0)
+    with dolfinx.common.Timer("~Contact: Solve"):
+        solver.solve(bcc, uhcc)
+    uhcc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                     mode=PETSc.ScatterMode.FORWARD)
+    with dolfinx.common.Timer("~Contact: Backsubstitute"):
+        dolfinx_mpc.backsubstitution_local(cc, uhcc)
+    it = solver.getIterationNumber()
+    if MPI.COMM_WORLD.rank == 0:
+        print("Number of iterations: {0:d}".format(it))
+
+    unorm = uhcc.norm()
+    if comm.rank == 0:
+        print("Norm of u {0:.5e}".format(unorm))
 
     # Write solution to file
     u_h = dolfinx.Function(Vmpc)
-    u_h.vector.setArray(uh.array)
+    u_h.vector.setArray(uhcc.array)
     u_h.name = "u_{0:s}_{1:.2f}".format(ext, theta)
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0,
@@ -207,14 +245,10 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     if compare:
-        # Transfer data from the MPC problem to numpy arrays for comparison
-        A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-        mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
         dolfinx_mpc.utils.log_info(
             "Solving reference problem with global matrix (using numpy)")
 
-        with dolfinx.common.Timer("MPC: Reference problem"):
+        with dolfinx.common.Timer("~Contact: Reference problem"):
 
             # Generate reference matrices and unconstrained solution
             A_org = fem.assemble_matrix(a, bcs)
@@ -227,9 +261,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
             fem.set_bc(L_org, bcs)
 
             # Create global transformation matrix
-            K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                               masters, coeffs,
-                                                               offsets)
+            K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
             # Create reduced A
             A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
 
@@ -241,15 +273,23 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
             d = np.linalg.solve(reduced_A, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = np.dot(K, d)
-        with dolfinx.common.Timer("MPC: Compare"):
+        with dolfinx.common.Timer("~Contact: Compare"):
+            # Transfer data from the MPC problem to numpy arrays for comparison
+            A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+            mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+
+            A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
+            cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
+
+            assert(np.allclose(A_cc_np, A_mpc_np))
+            assert(np.allclose(mpc_vec_np, cc_vec_np))
+            assert(np.allclose(uhcc.array, uh.array))
+
             # Compare LHS, RHS and solution with reference values
-            dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-            dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-            assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                                  uh.owner_range[1]])
-    unorm = uh.norm()
-    if comm.rank == 0:
-        print(unorm)
+            dolfinx_mpc.utils.compare_matrices(reduced_A, A_cc_np, cc)
+            dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)
+            assert np.allclose(uhcc.array, uh_numpy[uh.owner_range[0]:
+                                                    uh.owner_range[1]])
 
 
 if __name__ == "__main__":
@@ -257,20 +297,19 @@ if __name__ == "__main__":
                                   "results/rotated_cube3D.xdmf", "w")
     cts = [dolfinx.cpp.mesh.CellType.hexahedron,
            dolfinx.cpp.mesh.CellType.tetrahedron]
-
+    compare = True
     for ct in cts:
         demo_stacked_cubes(
-            outfile, theta=0, dolfin_mesh=True, ct=ct, compare=True)
+            outfile, theta=0, dolfin_mesh=True, ct=ct, compare=compare)
         demo_stacked_cubes(
-            outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct, compare=True)
-    # NOTE: Unstructured hex meshes not working nicely as interfaces
-    # do not match.
+            outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct, compare=compare)
+    # NOTE: Unstructured solution experience slight unphysical deformation
     demo_stacked_cubes(
         outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
-        compare=False)
+        compare=compare)
     demo_stacked_cubes(
         outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.hexahedron,
-        compare=False)
+        compare=compare)
     if comm.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         dolfinx.log.log(dolfinx.log.LogLevel.INFO,

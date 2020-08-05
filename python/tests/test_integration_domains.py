@@ -4,17 +4,16 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import time
 
-import numpy as np
-
-from mpi4py import MPI
-from petsc4py import PETSc
-import dolfinx
-import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
+import numpy as np
 import ufl
+from mpi4py import MPI
+from petsc4py import PETSc
+
+import dolfinx
+import dolfinx.io
 
 
 def test_cell_domains():
@@ -65,33 +64,20 @@ def test_cell_domains():
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
 
-    # Create MPC (map all left dofs to right)
-    dof_at = dolfinx_mpc.dof_close_to
-
-    def slave_locater(i, N):
-        return lambda x: dof_at(x, [1, float(i/N)])
-
-    def master_locater(i, N):
-        return lambda x: dof_at(x, [0, float(i/N)])
+    def l2b(li):
+        return np.array(li, dtype=np.float64).tobytes()
 
     s_m_c = {}
     for i in range(0, N+1):
-        s_m_c[slave_locater(i, N)] = {master_locater(i, N): 1}
-
-    (slaves, masters,
-     coeffs, offsets,
-     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   master_owners)
+        s_m_c[l2b([1, i/N])] = {l2b([0, i/N]): 1}
+    mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c)
 
     # Setup MPC system
-    start = time.time()
-    A = dolfinx_mpc.assemble_matrix(a, mpc)
-    end = time.time()
-    print("Runtime: {0:.2e}".format(end-start))
+    with dolfinx.common.Timer("~Test: Assemble matrix"):
+        A = dolfinx_mpc.assemble_matrix_local(a, mpc)
 
-    b = dolfinx_mpc.assemble_vector(lhs, mpc)
+    with dolfinx.common.Timer("~Test: Assemble vector"):
+        b = dolfinx_mpc.assemble_vector_local(lhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
@@ -107,16 +93,7 @@ def test_cell_domains():
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
-    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
-    # Create functionspace and function for mpc vector
-    # Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-    #                                               mpc.mpc_dofmap())
-    # Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-
-    # # Write solution to file
-    # u_h = dolfinx.Function(Vmpc)
-    # u_h.vector.setArray(uh.array)
-    # u_h.name = "u_mpc"
+    dolfinx_mpc.backsubstitution_local(mpc, uh)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
@@ -124,11 +101,8 @@ def test_cell_domains():
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
-
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V.dim, slaves,
-                                                       masters, coeffs,
-                                                       offsets)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -140,7 +114,7 @@ def test_cell_domains():
     # # Backsubstitution to full solution vector
     uh_numpy = np.dot(K, d)
     # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, mpc)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, mpc)
 
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])

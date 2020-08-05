@@ -4,6 +4,8 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
+#pragma once
+
 #include <Eigen/Dense>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
@@ -43,5 +45,17 @@ get_basis_functions(
     std::shared_ptr<const dolfinx::function::FunctionSpace> V,
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index);
+
+/// Given a function space, compute its shared entities
+std::map<std::int32_t, std::set<int>>
+compute_shared_indices(std::shared_ptr<dolfinx::function::FunctionSpace> V);
+
+/// Append diagonal entries to sparsity pattern
+/// @param[in] pattern The sparsity pattern
+/// @param[in] dofs The dofs that require diagonal additions
+/// @param[in] block size of problem
+void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
+                          Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
+                          std::int32_t block_size);
 
 } // namespace dolfinx_mpc
