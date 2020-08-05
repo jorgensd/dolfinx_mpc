@@ -96,6 +96,7 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
                     offsets.append(len(masters))
                     owners.extend(pair_owners)
         # Send ghost slaves to other processors
+        num_slaves_local = len(slaves)
         shared_indices = cpp.mpc.compute_shared_indices(
             W._cpp_object)
         blocks = np.array(slaves)//W.dofmap.index_map.block_size
@@ -151,6 +152,6 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
 
     # Create constraint
     cc = cpp.mpc.MultiPointConstraint(
-        W._cpp_object, slaves, len(slaves))
+        W._cpp_object, slaves, num_slaves_local)
     cc.add_masters(masters, coeffs, owners, offsets)
     return cc
