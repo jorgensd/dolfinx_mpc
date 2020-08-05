@@ -16,7 +16,7 @@ from .assemble_matrix import in_numpy_array, pack_facet_info
 def assemble_vector(form, multipointconstraint,
                     bcs=[numpy.array([]), numpy.array([])]):
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
-    timer_vector = dolfinx.common.Timer("~MPC: Assemble vector")
+    timer_vector = dolfinx.common.Timer("~MPC: Assemble vector old")
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
 
@@ -72,14 +72,14 @@ def assemble_vector(form, multipointconstraint,
 
     for i in range(num_cell_integrals):
         subdomain_id = subdomain_ids[i]
-        with dolfinx.common.Timer("*MPC: Assemble vector (cell kernel)"):
+        with dolfinx.common.Timer("*MPC: Assemble vector (cell kernel old)"):
             cell_kernel = ufc_form.create_cell_integral(
                 subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
             dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
-        with dolfinx.common.Timer("*MPC: Assemble vector (cell numba)"):
+        with dolfinx.common.Timer("*MPC: Assemble vector (cell numba old)"):
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel,
                                active_cells[slave_cell_indices],

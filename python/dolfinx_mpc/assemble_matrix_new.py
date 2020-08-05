@@ -73,7 +73,7 @@ def assemble_matrix_local(form, constraint, bcs=[]):
     Dirichlet boundary conditions.
     NOTE: Dirichlet conditions cant be on master dofs.
     """
-    timer_matrix = Timer("MPC: Assemble matrix")
+    timer_matrix = Timer("~MPC: Assemble matrix")
 
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() ==

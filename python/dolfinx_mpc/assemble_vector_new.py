@@ -19,7 +19,7 @@ Timer = dolfinx.common.Timer
 def assemble_vector_local(form, constraint,
                           bcs=[numpy.array([]), numpy.array([])]):
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
-    timer_vector = Timer("MPC: Assemble vector")
+    timer_vector = Timer("~MPC: Assemble vector")
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
     # Unpack mesh and dofmap data
