@@ -135,7 +135,8 @@ def assemble_matrix_local(form, constraint, bcs=[]):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
 
     # General assembly data
-    num_dofs_per_element = dofmap.dof_layout.num_dofs
+    num_dofs_per_element = (dofmap.dof_layout.num_dofs *
+                            dofmap.dof_layout.block_size())
 
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim

@@ -264,10 +264,10 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
 
     # New implementation
 
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  cc.dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vmpc)
+    Vcc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+                                                 cc.dofmap())
+    Vcc = dolfinx.FunctionSpace(None, V.ufl_element(), Vcc_cpp)
+    null_space = dolfinx_mpc.utils.build_elastic_nullspace(Vcc)
     Acc.setNearNullSpace(null_space)
     solver.setOperators(Acc)
     uhcc = bcc.copy()
@@ -281,20 +281,30 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
         print("Number of iterations: {0:d}".format(it))
 
     unorm = uhcc.norm()
+    uoldnorm = uh.norm()
     if MPI.COMM_WORLD.rank == 0:
-        print(unorm)
+        print(unorm, uoldnorm)
 
     # Write solution to file
-    u_h = dolfinx.Function(Vmpc)
-    u_h.vector.setArray(uhcc.array)
     ext = "gmsh" if gmsh else ""
+    u_h = dolfinx.Function(Vmpc)
+    u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
+
+    u_hcc = dolfinx.Function(Vcc)
+    u_hcc.vector.setArray(uhcc.array)
+    u_hcc.name = "u_cc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
+
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0,
                            "Xdmf/Domain/"
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
-    return
+    outfile.write_function(u_hcc, 0.0,
+                           "Xdmf/Domain/"
+                           + "Grid[@Name='{0:s}'][1]"
+                           .format(mesh.name))
+
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)

@@ -33,7 +33,8 @@ def backsubstitution(mpc, vector, dofmap):
     offsets = masters.offsets
     mpc_wrapper = (slaves, slave_cells, cell_to_slave, cell_to_slave_offset,
                    masters_local, coefficients, offsets)
-    num_dofs_per_element = dofmap.dof_layout.num_dofs
+    num_dofs_per_element = (dofmap.dof_layout.num_dofs *
+                            dofmap.dof_layout.block_size())
     index_map = mpc.index_map()
     global_indices = index_map.indices(True)
     backsubstitution_numba(vector, dofmap.list.array,
@@ -285,7 +286,8 @@ def create_collision_constraint(V, interface_info, cell_info):
     comm = V.mesh.mpi_comm()
     dofs = V.dofmap.list.array
     dof_coords = V.tabulate_dof_coordinates()
-    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
+    num_dofs_per_element = (V.dofmap.dof_layout.num_dofs *
+                            V.dofmap.dof_layout.block_size())
     indexmap = V.dofmap.index_map
     bs = indexmap.block_size
     global_indices = numpy.array(indexmap.global_indices(False),

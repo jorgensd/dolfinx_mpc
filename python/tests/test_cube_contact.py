@@ -325,6 +325,3 @@ def test_cube_contact():
     assert(np.allclose(uhcc.array, uh.array))
     # dolfinx.common.list_timings(
     #     comm, [dolfinx.common.TimingType.wall])
-
-
-test_cube_contact()

@@ -54,7 +54,8 @@ def assemble_vector_local(form, constraint,
     formintegral = cpp_form.integrals
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
-    num_dofs_per_element = V.dofmap.dof_layout.num_dofs
+    num_dofs_per_element = (V.dofmap.dof_layout.num_dofs *
+                            V.dofmap.dof_layout.block_size())
 
     # Assemble vector with all entries
     dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form)
