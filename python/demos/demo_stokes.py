@@ -5,7 +5,6 @@ import dolfinx_mpc.utils
 import meshio
 import numpy as np
 import pygmsh
-import time
 import ufl
 from petsc4py import PETSc
 from mpi4py import MPI
@@ -82,14 +81,13 @@ W = dolfinx.FunctionSpace(mesh, TH)
 V, V_to_W = W.sub(0).collapse(True)
 Q = W.sub(1).collapse()
 
-# Inlet velocity Dirichlet BC
-
 
 def inlet_velocity_expression(x):
     return np.stack((np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2)),
                      5*x[1]*np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2))))
 
 
+# Inlet velocity Dirichlet BC
 inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
@@ -113,7 +111,7 @@ bc2 = dolfinx.DirichletBC(zero, dofs, W1)
 bcs = [bc1, bc2]
 
 # Create slip condition
-n = dolfinx_mpc.facet_normal_approximation(V, mt, 1)
+n = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 1)
 mpc = dolfinx_mpc.create_slip_condition(
     (W, W.sub(0)), n, np.array(V_to_W), (mt, 1), bcs=bcs)
 
@@ -139,49 +137,37 @@ a = (ufl.inner(ufl.grad(u), ufl.grad(v)) + ufl.inner(p, ufl.div(v))
 L = ufl.inner(f, v) * ufl.dx
 
 # Assemble LHS matrix and RHS vector
-start = time.time()
-A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs)
-end = time.time()
-print("Matrix assembly time: {0:.2e} ".format(end-start))
-A.assemble()
-start = time.time()
-b = dolfinx_mpc.assemble_vector_local(L, mpc)
-end = time.time()
-print("Vector assembly time: {0:.2e} ".format(end-start))
-
-dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
+    A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs)
+    A.assemble()
+    b = dolfinx_mpc.assemble_vector_local(L, mpc)
 
 # Set Dirichlet boundary condition values in the RHS
+dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])
+b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.assemble.set_bc(b, bcs)
 
-# Create and configure solver
+# Solve problem
 ksp = PETSc.KSP().create(mesh.mpi_comm())
 ksp.setOperators(A)
 ksp.setType("preonly")
 ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("mumps")
-
-# Compute the solution
 uh = b.copy()
-start = time.time()
 ksp.solve(b, uh)
-end = time.time()
-print("Solve time {0:.2e}".format(end-start))
 
-# Back substitute to slave dofs
 dolfinx_mpc.backsubstitution_local(mpc, uh)
+
+# Write solution to file
 Wmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, W.element,
                                               mpc.dofmap())
 
 
 Wmpc = dolfinx.FunctionSpace(None, W.ufl_element(), Wmpc_cpp)
 
-# Write solution to file
 U = dolfinx.Function(Wmpc)
 U.vector.setArray(uh.array)
 
-# Split the mixed solution and collapse
 u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 u.name = "u"
@@ -191,24 +177,17 @@ outfile.write_function(u)
 outfile.close()
 
 # Transfer data from the MPC problem to numpy arrays for comparison
-A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
 # Solve the MPC problem using a global transformation matrix
 # and numpy solvers to get reference values
-exit()
 # Generate reference matrices and unconstrained solution
-print("---Reference timings---")
-start = time.time()
-A_org = dolfinx.fem.assemble_matrix(a, bcs)
-end = time.time()
-print("Normal matrix assembly {0:.2e}".format(end-start))
-A_org.assemble()
+with dolfinx.common.Timer("~Stokes: Unconstrained assembly"):
+    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org.assemble()
 
-start = time.time()
-L_org = dolfinx.fem.assemble_vector(L)
-end = time.time()
-print("Normal vector assembly {0:.2e}".format(end-start))
+    L_org = dolfinx.fem.assemble_vector(L)
 
 dolfinx.fem.apply_lifting(L_org, [a], [bcs])
 L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
@@ -221,26 +200,18 @@ ksp.getPC().setFactorSolverType("mumps")
 solver.setOperators(A_org)
 
 # Create global transformation matrix
-K = dolfinx_mpc.utils.create_transformation_matrix(W, mpc)
-# Create reduced A
-A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-start = time.time()
-reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-end = time.time()
-print("Numpy matrix reduction: {0:.2e}".format(end-start))
-# Created reduced L
-vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-reduced_L = np.dot(K.T, vec)
-# Solve linear system
-start = time.time()
-d = np.linalg.solve(reduced_A, reduced_L)
-end = time.time()
-print("Numpy solve {0:.2e}".format(end-start))
-# Back substitution to full solution vector
-uh_numpy = np.dot(K, d)
+with dolfinx.common.Timer("~Stokes: Solve using global matrix"):
+    K = dolfinx_mpc.utils.create_transformation_matrix(W, mpc)
+    A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+    reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
+    reduced_L = np.dot(K.T, vec)
+    d = np.linalg.solve(reduced_A, reduced_L)
+    uh_numpy = np.dot(K, d)
 
-# Compare LHS, RHS and solution with reference values
-slaves = mpc.slaves()
-dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, slaves)
-dolfinx_mpc.utils.compare_vectors(reduced_L, mpc_vec_np, slaves)
-assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+with dolfinx.common.Timer("~Stokes: Compare global and local solution"):
+    # Compare LHS, RHS and solution with reference values
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
+    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
