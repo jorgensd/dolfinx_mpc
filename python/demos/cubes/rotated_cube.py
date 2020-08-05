@@ -462,14 +462,17 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True):
                            + "Grid[@Name='{0:s}'][1]"
                            .format(mesh.name))
 
-    # Transfer data from the MPC problem to numpy arrays for comparison
-    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
     A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Acc)
     cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
-    # assert(np.allclose(A_cc_np, A_mpc_np))
-    # assert(np.allclose(mpc_vec_np, cc_vec_np))
+    if np.isclose(theta, 0):
+        # As the tangential condition is not the same in old an new
+        # implementation, only compar in the case of theta=0
+        A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+        mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+
+        assert(np.allclose(A_cc_np, A_mpc_np))
+        assert(np.allclose(mpc_vec_np, cc_vec_np))
+
     assert(np.allclose(uhcc.array, uh.array))
 
     # Solve the MPC problem using a global transformation matrix
