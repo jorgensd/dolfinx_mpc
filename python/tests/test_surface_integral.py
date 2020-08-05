@@ -97,11 +97,10 @@ def test_surface_integrals():
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
-    # Create functionspace and function for mpc vector
-    V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                   mpc.dofmap())
-    V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
     # Write solution to file
+    # V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+    #                                                mpc.dofmap())
+    # V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
     # u_h = dolfinx.Function(V_mpc)
     # u_h.vector.setArray(uh.array)
     # u_h.name = "u_mpc"

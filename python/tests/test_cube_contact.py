@@ -218,14 +218,12 @@ def test_cube_contact():
     dolfinx_mpc.backsubstitution(mpc, uh)
 
     # Write solution to file
-    V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                   mpc.dofmap())
-    V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
-    u_h = dolfinx.Function(V_mpc)
-    u_h.vector.setArray(uh.array)
-    u_h.name = "u_{0:.2f}".format(theta)
-
-    # NOTE: Output for debug
+    # V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
+    #                                                mpc.dofmap())
+    # V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
+    # u_h = dolfinx.Function(V_mpc)
+    # u_h.vector.setArray(uh.array)
+    # u_h.name = "u_{0:.2f}".format(theta)
     # outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
     # outfile.write_mesh(mesh)
     # outfile.write_function(u_h, 0.0,
