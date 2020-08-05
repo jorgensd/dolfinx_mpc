@@ -6,14 +6,79 @@
 
 from contextlib import ExitStack
 
+import dolfinx_mpc.cpp
 import numpy as np
+import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx
 import dolfinx.common
-import dolfinx.log
 import dolfinx.la
+import dolfinx.log
+
+
+def facet_normal_approximation(V, mt, mt_id):
+    timer = dolfinx.common.Timer("~MPC: Facet normal projection")
+    comm = V.mesh.mpi_comm()
+    n = ufl.FacetNormal(V.mesh)
+    nh = dolfinx.Function(V)
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    ds = ufl.ds(domain=V.mesh, subdomain_data=mt, subdomain_id=mt_id)
+    a = (ufl.inner(u, v)*ufl.ds)
+    L = ufl.inner(n, v)*ds
+
+    # Find all dofs that are not boundary dofs
+    imap = V.dofmap.index_map
+    all_dofs = np.array(
+        range(imap.size_local*imap.block_size), dtype=np.int32)
+    top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
+    top_dofs = dolfinx.fem.locate_dofs_topological(
+        V, V.mesh.topology.dim-1, top_facets)[:, 0]
+    deac_dofs = all_dofs[np.isin(all_dofs, top_dofs, invert=True)]
+
+    # Note there should be a better way to do this
+    # Create sparsity pattern only for constraint + bc
+    cpp_form = dolfinx.Form(a)._cpp_object
+    pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
+    block_size = V.dofmap.index_map.block_size
+    blocks = np.unique(deac_dofs // block_size)
+    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(
+        pattern, blocks, block_size)
+    pattern.assemble()
+
+    u_0 = dolfinx.Function(V)
+    u_0.vector.set(0)
+
+    bc_deac = dolfinx.fem.DirichletBC(u_0, deac_dofs)
+    A = dolfinx.cpp.la.create_matrix(comm, pattern)
+    A.zeroEntries()
+    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
+                                     [bc_deac], 1.0)
+    # Assemble the matrix with all entries
+    dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, [bc_deac])
+    A.assemble()
+
+    b = dolfinx.fem.assemble_vector(L)
+
+    dolfinx.fem.apply_lifting(b, [a], [[bc_deac]])
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                  mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(b, [bc_deac])
+    opts = PETSc.Options()
+    opts["ksp_type"] = "cg"
+    opts["ksp_rtol"] = 1.0e-8
+    # opts["help"] = None # List all available options
+    # opts["ksp_view"] = None # List progress of solver
+
+    # Solve Linear problem
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver.setFromOptions()
+    solver.setOperators(A)
+    solver.solve(b, nh.vector)
+    timer.stop()
+    return nh
 
 
 def gather_slaves_global(constraint):

@@ -7,11 +7,6 @@
 
 # flake8: noqa
 
-from .multipointconstraint import (backsubstitution, slave_master_structure, dof_close_to, facet_normal_approximation,
-                                   create_collision_constraint)
-from .assemble_matrix import assemble_matrix
-from .assemble_vector import assemble_vector
-
 import dolfinx_mpc.cpp
 
 # New local assemblies

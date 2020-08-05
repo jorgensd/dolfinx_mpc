@@ -121,11 +121,10 @@ include(GNUInstallDirs)
 #------------------------------------------------------------------------------
 
 install(FILES dolfinx_mpc.h  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
-install(FILES ContactConstraint.h MultiPointConstraint.h utils.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
+install(FILES ContactConstraint.h utils.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
 
 # Add source files to the target
 target_sources(dolfinx_mpc PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/MultiPointConstraint.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ContactConstraint.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/utils.cpp
 )
