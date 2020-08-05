@@ -191,7 +191,7 @@ def test_cube_contact():
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    lhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx
 
     # Create LU solver
     solver = PETSc.KSP().create(comm)
@@ -202,7 +202,7 @@ def test_cube_contact():
     # Create MPC contact conditon and assemble matrices
     mpc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
     A = dolfinx_mpc.assemble_matrix_local(a, mpc, bcs=bcs)
-    b = dolfinx_mpc.assemble_vector_local(lhs, mpc)
+    b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -245,7 +245,7 @@ def test_cube_contact():
         A_org = fem.assemble_matrix(a, bcs)
 
         A_org.assemble()
-        L_org = fem.assemble_vector(lhs)
+        L_org = fem.assemble_vector(rhs)
         fem.apply_lifting(L_org, [a], [bcs])
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                           mode=PETSc.ScatterMode.REVERSE)

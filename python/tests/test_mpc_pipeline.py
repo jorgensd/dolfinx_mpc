@@ -36,54 +36,28 @@ def test_pipeline(master_point):
     h.interpolate(lambda x: 2+x[1]*x[0])
 
     a = d*g*ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
-    lhs = h*ufl.inner(f, v)*ufl.dx
+    rhs = h*ufl.inner(f, v)*ufl.dx
     # Generate reference matrices
     A_org = dolfinx.fem.assemble_matrix(a)
     A_org.assemble()
-    L_org = dolfinx.fem.assemble_vector(lhs)
+    L_org = dolfinx.fem.assemble_vector(rhs)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                       mode=PETSc.ScatterMode.REVERSE)
 
-    # Create MPC
-    dof_at = dolfinx_mpc.dof_close_to
-    s_m_c = {lambda x: dof_at(x, [1, 0]):
-             {lambda x: dof_at(x, [0, 1]): 0.43,
-              lambda x: dof_at(x, [1, 1]): 0.11},
-             lambda x: dof_at(x, [0, 0]):
-             {lambda x: dof_at(x, master_point): 0.69}}
-    (slaves, masters,
-     coeffs, offsets,
-     master_owners) = dolfinx_mpc.slave_master_structure(V, s_m_c)
-    mpc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(V._cpp_object, slaves,
-                                                   masters, coeffs, offsets,
-                                                   master_owners)
-
-    # Setup MPC system
-    with dolfinx.common.Timer("~Test: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc)
-
-    with dolfinx.common.Timer("~Test: Assemble matrix"):
-        b = dolfinx_mpc.assemble_vector(lhs, mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
-
+    # Create multipoint constraint
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()
-    s_m_c_new = {l2b([1, 0]):
-                 {l2b([0, 1]): 0.43,
-                  l2b([1, 1]): 0.11},
-                 l2b([0, 0]):
+    s_m_c = {l2b([1, 0]):
+             {l2b([0, 1]): 0.43,
+              l2b([1, 1]): 0.11},
+             l2b([0, 0]):
                  {l2b(master_point): 0.69}}
 
-    cc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c_new)
-    A_cc = dolfinx_mpc.assemble_matrix_local(a, cc)
-    bcc = dolfinx_mpc.assemble_vector_local(lhs, cc)
-    bcc.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                    mode=PETSc.ScatterMode.REVERSE)
-    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
-
-    assert(np.allclose(mpc_vec_np, cc_vec_np))
+    mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c)
+    A = dolfinx_mpc.assemble_matrix_local(a, mpc)
+    b = dolfinx_mpc.assemble_vector_local(rhs, mpc)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
+                  mode=PETSc.ScatterMode.REVERSE)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
@@ -96,52 +70,35 @@ def test_pipeline(master_point):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
+    dolfinx_mpc.backsubstitution_local(mpc, uh)
 
-    dolfinx_mpc.backsubstitution(mpc, uh, V.dofmap)
-
-    uh_cc = bcc.copy()
-    uh_cc.set(0)
-
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
-    solver.setOperators(A_cc)
-    solver.solve(bcc, uh_cc)
-    uh_cc.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                      mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution_local(cc, uh_cc)
     # Transfer data from the MPC problem to numpy arrays for comparison
-    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-    A_cc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_cc)
-    cc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(bcc)
-    assert(np.allclose(A_mpc_np, A_cc_np))
-    assert(np.allclose(mpc_vec_np, cc_vec_np))
+    A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
 
     # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V, cc)
+    K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
+
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+
     # Created reduced L
     vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
     reduced_L = np.dot(K.T, vec)
+
     # Solve linear system
     d = np.linalg.solve(reduced_A, reduced_L)
     # Backsubstitution to full solution vector
     uh_numpy = np.dot(K, d)
 
     # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_cc_np, cc)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, cc_vec_np, cc)
+    dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
+    dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
 
     # Move solution to global array
-    sol_mpc = dolfinx_mpc.utils.PETScVector_to_global_numpy(uh)
-    sol_cc = dolfinx_mpc.utils.PETScVector_to_global_numpy(uh_cc)
-    assert(np.allclose(sol_mpc, sol_cc))
-    assert(np.allclose(sol_cc, uh_numpy))
-    assert np.allclose(uh_cc.array, uh_numpy[uh_cc.owner_range[0]:
-                                             uh_cc.owner_range[1]])
+    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
+                                          uh.owner_range[1]])
