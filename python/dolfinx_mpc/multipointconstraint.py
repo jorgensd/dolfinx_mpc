@@ -5,6 +5,7 @@ import dolfinx
 from .contactcondition import create_contact_condition
 from .slipcondition import create_slip_condition
 from .periodic_condition import create_periodic_condition
+from .dictcondition import create_dictionary_constraint
 
 
 class MultiPointConstraint():
@@ -137,6 +138,30 @@ class MultiPointConstraint():
             W = (self.V, sub_space)
         slaves, masters, coeffs, owners, offsets = create_slip_condition(
             W, normal, sub_map, entity_data, bcs)
+        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+
+    def create_general_constraint(self, slave_master_dict, subspace_slave=None,
+                                  subspace_master=None):
+        """
+        Input:
+            V - The function space
+            slave_master_dict - The dictionary.
+            subspace_slave - If using mixed or vector space,
+                            and only want to use dofs from
+                            a sub space as slave add index here
+            subspace_master - Subspace index for mixed or vector spaces
+        Example:
+            If the dof D located at [d0,d1] should be constrained to the dofs
+             E and F at [e0,e1] and [f0,f1] as
+            D = alpha E + beta F
+            the dictionary should be:
+                {np.array([d0, d1], dtype=np.float64).tobytes():
+                    {np.array([e0, e1], dtype=np.float64).tobytes(): alpha,
+                    np.array([f0, f1], dtype=np.float64).tobytes(): beta}}
+        """
+        slaves, masters, coeffs, owners, offsets\
+            = create_dictionary_constraint(
+                self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def slaves(self):

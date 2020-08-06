@@ -77,8 +77,9 @@ def test_surface_integrals():
     s_m_c = {}
     for i in range(1, N):
         s_m_c[l2b([1, i/N])] = {l2b([1, 1]): 0.8}
-    mpc = dolfinx_mpc.create_dictionary_constraint(
-        V, s_m_c, 1, 1)
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_general_constraint(s_m_c, 1, 1)
+    mpc.finalize()
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
@@ -98,10 +99,7 @@ def test_surface_integrals():
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
     # Write solution to file
-    # V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-    #                                                mpc.dofmap())
-    # V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
-    # u_h = dolfinx.Function(V_mpc)
+    # u_h = dolfinx.Function(mpc.function_space())
     # u_h.vector.setArray(uh.array)
     # u_h.name = "u_mpc"
     # outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "output/uh.xdmf", "w")
@@ -178,8 +176,10 @@ def test_surface_integral_dependency():
     s_m_c = {}
     for i in range(1, N):
         s_m_c[l2b([1, i/N])] = {l2b([1, 1]): 0.3}
-    mpc = dolfinx_mpc.create_dictionary_constraint(
-        V, s_m_c, 1, 1)
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_general_constraint(s_m_c, 1, 1)
+    mpc.finalize()
+
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
         A = dolfinx_mpc.assemble_matrix(a, mpc)
     with dolfinx.common.Timer("~TEST: Assemble vector"):

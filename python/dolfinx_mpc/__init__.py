@@ -13,5 +13,5 @@ import dolfinx_mpc.cpp
 from .assemble_matrix import assemble_matrix
 from .assemble_vector import assemble_vector
 from .backsubstitution import backsubstitution
-from .dictcondition import create_dictionary_constraint
+#from .dictcondition import create_dictionary_constraint
 from .multipointconstraint import MultiPointConstraint

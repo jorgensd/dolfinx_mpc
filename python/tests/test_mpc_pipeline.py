@@ -53,7 +53,10 @@ def test_pipeline(master_point):
              l2b([0, 0]):
                  {l2b(master_point): 0.69}}
 
-    mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c)
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_general_constraint(s_m_c)
+    mpc.finalize()
+
     A = dolfinx_mpc.assemble_matrix(a, mpc)
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
