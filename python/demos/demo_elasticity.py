@@ -148,7 +148,7 @@ def demo_elasticity():
         slave = mpc.slaves()[0]
         print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}"
               .format(uh.array[slave], u_.vector.array[slave]))
-        master_owner = mpc.owners().links(0)[0]
+        master_owner = mpc._cpp_object.owners().links(0)[0]
         master_data = [l2g[mpc.masters_local().array[0]],
                        mpc.coefficients()[0]]
         # If master not on proc send info to this processor
