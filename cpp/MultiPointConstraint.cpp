@@ -219,6 +219,16 @@ void MultiPointConstraint::create_new_index_map()
 
     timer_indexmap.stop();
   }
+  // Create new dofmap
+  const dolfinx::fem::DofMap* old_dofmap = _V->dofmap().get();
+  const int bs = old_dofmap->element_dof_layout->block_size();
+  dolfinx::mesh::Topology topology = _V->mesh()->topology();
+  dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
+  auto [unused_indexmap, o_dofmap] = dolfinx::fem::DofMapBuilder::build(
+      _V->mesh()->mpi_comm(), topology, layout);
+  _dofmap = std::make_shared<dolfinx::fem::DofMap>(
+      old_dofmap->element_dof_layout, _index_map, o_dofmap);
+
   // Compute local master index before creating new index-map
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_blocks
       = _master_map->array();
@@ -273,21 +283,9 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
   int block_size = _index_map->block_size();
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> ghosts = _index_map->ghosts();
 
-  /// Create new dofmap using the MPC index-maps
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
   new_maps[0] = _index_map;
   new_maps[1] = _index_map;
-  const dolfinx::fem::DofMap* old_dofmap = a.function_space(0)->dofmap().get();
-
-  /// Get AdjacencyList for old dofmap
-  const int bs = old_dofmap->element_dof_layout->block_size();
-
-  dolfinx::mesh::Topology topology = mesh.topology();
-  dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
-  auto [unused_indexmap, o_dofmap]
-      = dolfinx::fem::DofMapBuilder::build(mesh.mpi_comm(), topology, layout);
-  _dofmap = std::make_shared<dolfinx::fem::DofMap>(
-      old_dofmap->element_dof_layout, _index_map, o_dofmap);
 
   std::array<std::int64_t, 2> local_range = _dofmap->index_map->local_range();
   std::int64_t local_size = local_range[1] - local_range[0];

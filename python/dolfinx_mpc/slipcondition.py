@@ -96,7 +96,6 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
                     offsets.append(len(masters))
                     owners.extend(pair_owners)
         # Send ghost slaves to other processors
-        num_slaves_local = len(slaves)
         shared_indices = cpp.mpc.compute_shared_indices(
             W._cpp_object)
         blocks = np.array(slaves)//W.dofmap.index_map.block_size
@@ -139,19 +138,20 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
             receiving_procs.append(ghost_owners[block])
         unique_procs = set(receiving_procs)
         recv_slaves = {}
+
         for proc in unique_procs:
             recv_data = comm.recv(source=proc, tag=1)
             recv_slaves.update(recv_data)
+        ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners,\
+            ghost_offsets = [], [], [], [], [0]
         for i, slave in enumerate(global_indices[ghost_dofs[:, 0]]):
             if slave in recv_slaves.keys():
-                slaves.append(ghost_dofs[i, 0])
-                masters.extend(recv_slaves[slave]["masters"])
-                coeffs.extend(recv_slaves[slave]["coeffs"])
-                owners.extend(recv_slaves[slave]["owners"])
-                offsets.append(len(masters))
+                ghost_slaves.append(ghost_dofs[i, 0])
+                ghost_masters.extend(recv_slaves[slave]["masters"])
+                ghost_coeffs.extend(recv_slaves[slave]["coeffs"])
+                ghost_owners.extend(recv_slaves[slave]["owners"])
+                ghost_offsets.append(len(ghost_masters))
 
-    # Create constraint
-    cc = cpp.mpc.MultiPointConstraint(
-        W._cpp_object, slaves, num_slaves_local)
-    cc.add_masters(masters, coeffs, owners, offsets)
-    return cc
+    return ((slaves, ghost_slaves),
+            (masters, ghost_masters), (coeffs, ghost_coeffs),
+            (owners, ghost_owners), (offsets, ghost_offsets))

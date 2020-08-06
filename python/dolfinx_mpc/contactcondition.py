@@ -150,10 +150,8 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                 owners.extend(masters_local[slave]["owners"])
             offsets.append(len(masters))
         num_owned_slaves = len(slaves)
-        cc = cpp.mpc.MultiPointConstraint(
-            V._cpp_object, slaves, num_owned_slaves)
-        cc.add_masters(masters, coeffs, owners, offsets)
-        return cc
+        return ((slaves, []), (masters, []),
+                (coeffs, []), (owners, []), (offsets, [0]))
 
     # Find all processors which a slave collides with
     # (according to the bounding boxes). Send the slaves global dof number,
@@ -262,7 +260,6 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                     masters_for_recv_slaves[recv_owners[index]][slave] = {
                         "masters": masters, "coeffs": coeffs, "owners": owners}
                 else:
-                    print(index, len(owners))
                     masters_for_recv_slaves[recv_owners[index]] = {
                         slave: {"masters": masters, "coeffs": coeffs,
                                 "owners": owners}}
@@ -367,21 +364,21 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     ghost_recv = set(ghost_recv)
 
     # Receive masters for ghosted slaves
-    ghost_masters = {}
+    recv_ghost_masters = {}
     for owner in ghost_recv:
         proc_masters = comm.recv(source=owner, tag=3)
-        ghost_masters.update(proc_masters)
+        recv_ghost_masters.update(proc_masters)
 
     # Add ghost masters to array
+    ghost_masters, ghost_coeffs, ghost_owners, ghost_offsets\
+        = [], [], [], [0]
     for slave in loc_to_glob[slaves[num_owned_slaves:]]:
-        masters.extend(ghost_masters[slave]["masters"])
-        coeffs.extend(ghost_masters[slave]["coeffs"])
-        owners.extend(ghost_masters[slave]["owners"])
-        offsets.append(len(masters))
-    del ghost_masters
+        ghost_masters.extend(recv_ghost_masters[slave]["masters"])
+        ghost_coeffs.extend(recv_ghost_masters[slave]["coeffs"])
+        ghost_owners.extend(recv_ghost_masters[slave]["owners"])
+        ghost_offsets.append(len(ghost_masters))
+    del recv_ghost_masters
 
-    # Create contact constraint
-    cc = cpp.mpc.MultiPointConstraint(
-        V._cpp_object, slaves, num_owned_slaves)
-    cc.add_masters(masters, coeffs, owners, offsets)
-    return cc
+    return ((slaves[:num_owned_slaves], slaves[num_owned_slaves:]),
+            (masters, ghost_masters), (coeffs, ghost_coeffs),
+            (owners, ghost_owners), (offsets, ghost_offsets))

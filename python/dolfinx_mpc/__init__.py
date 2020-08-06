@@ -13,7 +13,6 @@ import dolfinx_mpc.cpp
 from .assemble_matrix import assemble_matrix
 from .assemble_vector import assemble_vector
 from .backsubstitution import backsubstitution
-from .contactcondition import create_contact_condition
-from .slipcondition import create_slip_condition
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition
+from .multipointconstraint import MultiPointConstraint
