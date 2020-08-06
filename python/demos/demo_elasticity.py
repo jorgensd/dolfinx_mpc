@@ -60,7 +60,9 @@ def demo_elasticity():
         def l2b(li):
             return np.array(li, dtype=np.float64).tobytes()
         s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.9}}
-        mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c, 1, 1)
+        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc.create_general_constraint(s_m_c, 1, 1)
+        mpc.finalize()
 
     # Setup MPC system
     with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
@@ -83,13 +85,8 @@ def demo_elasticity():
                    mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
 
-    # Create functionspace and function for mpc vector
-    V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                   mpc.dofmap())
-    V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
-
     # Write solution to file
-    u_h = dolfinx.Function(V_mpc)
+    u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
