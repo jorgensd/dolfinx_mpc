@@ -69,6 +69,7 @@ nightly-complex:
   only:
     - schedules
     - master
+    - merge_requests
   tags:
     - docker
   image:
@@ -132,6 +133,7 @@ nightly-real:
   only:
     - schedules
     - master
+    - merge_requests
   tags:
     - docker
   image:
