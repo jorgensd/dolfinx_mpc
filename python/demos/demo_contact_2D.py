@@ -24,7 +24,6 @@ from petsc4py import PETSc
 
 import dolfinx
 import dolfinx.fem as fem
-import dolfinx.geometry as geometry
 import dolfinx.io
 import dolfinx.la
 import dolfinx.log
@@ -32,8 +31,6 @@ from create_and_export_mesh import mesh_2D_dolfin, mesh_2D_gmsh
 
 dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
-comp_col_pts = geometry.compute_collisions_point
-get_basis = dolfinx_mpc.cpp.mpc.get_basis_functions
 
 comm = MPI.COMM_WORLD
 
@@ -147,11 +144,12 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
         bc_corner = dolfinx.DirichletBC(zero, dofs, V.sub(0))
         bcs.append(bc_corner)
 
-    def tangent_point_condition(V, mt, tangent, point_locator):
+    def tangent_point_condition(constraint, mt, tangent, point_locator):
         """
         Helper function to create a dot(u,t)=0 on a single dof
         on the side of the cube
         """
+        V = constraint.function_space()
         comm = V.mesh.mpi_comm()
         size_local = V.dofmap.index_map.size_local
         block_size = V.dofmap.index_map.block_size
@@ -223,6 +221,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
         for proc in unique_procs:
             recv_data = comm.recv(source=proc, tag=15)
             recv_slaves.update(recv_data)
+        ghost_slaves, ghost_masters, ghost_coeffs,\
+            ghost_owners, ghost_offsets = [], [], [], [], [0]
         for i, slave in enumerate(global_indices[ghost_dofs]):
             if slave in recv_slaves.keys():
                 slaves.append(ghost_dofs[i])
@@ -230,88 +230,27 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
                 coeffs.extend(recv_slaves[slave]["coeffs"])
                 owners.extend(recv_slaves[slave]["owners"])
                 offsets.append(len(masters))
-        # Create constraint
-        cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-            V._cpp_object, slaves, len(slaves))
-        cc.add_masters(masters, coeffs, owners, offsets)
-        return cc
+                ghost_slaves.append(ghost_dofs[i])
+                ghost_masters.extend(recv_slaves[slave]["masters"])
+                ghost_coeffs.extend(recv_slaves[slave]["coeffs"])
+                ghost_owners.extend(recv_slaves[slave]["owners"])
+                ghost_offsets.append(len(ghost_masters))
 
-    def merge_constraints(ccs):
-        """
-        Merge multiple constraints into one
-        """
-        local_slaves, local_masters, local_coeffs, local_owners, offsets =\
-            [], [], [], [], [0]
-        g_slaves, g_masters, g_coeffs, g_owners, g_offsets = \
-            [], [], [], [], [0]
-        for cc in ccs:
-            global_indices = np.array(cc.index_map().global_indices(False))
-            if len(cc.slaves()) > 0:
-                num_local_slaves = cc.num_local_slaves()
-                local_max = cc.masters_local().offsets[num_local_slaves]
-                if num_local_slaves > 0:
-                    local_offset = cc.masters_local(
-                    ).offsets[1:num_local_slaves+1]
-                    offsets.extend((len(local_masters)+local_offset).tolist())
-                    local_slaves.extend(
-                        cc.slaves()[:num_local_slaves].tolist())
-                    local_masters.extend(
-                        global_indices[cc.masters_local()
-                                       .array[:local_max]].tolist())
-                    local_coeffs.extend(cc.coefficients()[:local_max].tolist())
-                    local_owners.extend(cc.owners().array[:local_max].tolist())
-                if len(cc.slaves()) > num_local_slaves:
-                    g_offset = np.array(cc.masters_local(
-                    ).offsets[num_local_slaves:])
-                    g_offset -= g_offset[0]
-                    g_offset = g_offset[1:]
-                    g_offsets.extend(
-                        len(g_masters)+g_offset)
-                    g_slaves.extend(
-                        cc.slaves()[num_local_slaves:].tolist())
-                    g_masters.extend(
-                        global_indices[cc.masters_local()
-                                       .array[local_max:]].tolist())
-                    g_coeffs.extend(
-                        cc.coefficients()[local_max:].tolist())
-                    g_owners.extend(cc.owners().array[local_max:].tolist())
-        if len(g_slaves) > 0:
-            slaves = np.hstack([local_slaves, g_slaves])
-            slaves = np.array(slaves, dtype=np.int32)
-        else:
-            slaves = np.array(local_slaves, dtype=np.int32)
-        num_local_slaves = len(local_slaves)
-        if len(g_masters) > 0:
-            masters = np.hstack([local_masters, g_masters])
-            masters = np.array(masters, dtype=np.int64)
-            masters.dtype = np.int64
-            coeffs = np.hstack([local_coeffs, g_coeffs])
-            coeffs = np.array(coeffs, dtype=PETSc.ScalarType)
-            owners = np.hstack([local_owners, g_owners])
-            owners = np.array(owners, dtype=np.int32)
-            g_offsets = np.array(g_offsets, dtype=np.int32) + offsets[-1]
-            offsets = np.hstack([offsets, g_offsets[1:]])
-            offsets = np.array(offsets, dtype=np.int32)
-        else:
-            masters = np.array(local_masters, dtype=np.int32)
-            coeffs = np.array(local_coeffs, dtype=PETSc.ScalarType)
-            owners = np.array(local_owners, dtype=np.int32)
-            offsets = np.array(offsets, dtype=np.int32)
+        constraint.add_constraint(V, (slaves, ghost_slaves),
+                                  (masters, ghost_masters),
+                                  (coeffs, ghost_coeffs),
+                                  (owners, ghost_owners),
+                                  (offsets, ghost_offsets))
 
-        # Create constraint)
-        cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-            V._cpp_object, slaves, num_local_slaves)
-        cc.add_masters(masters, coeffs, owners, offsets)
-        return cc
-
-    with dolfinx.common.Timer("~Contact: Create new constraint"):
-        mpc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_contact_constraint(mt, 4, 9)
 
     if not np.isclose(theta, 0):
         with dolfinx.common.Timer("~Contact: Add tangential constraint"):
             tangent = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 6)
-            mpc2 = tangent_point_condition(V, mt, tangent, left_corner)
-            mpc = merge_constraints([mpc, mpc2])
+            tangent_point_condition(mpc, mt, tangent, left_corner)
+
+    mpc.finalize()
 
     with dolfinx.common.Timer("~Contact: Assemble LHS and RHS"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
@@ -339,10 +278,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
     # opts["ksp_view"] = None # List progress of solver
 
     # Create functionspace and build near nullspace
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(
+        mpc.function_space())
     A.setNearNullSpace(null_space)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -353,7 +290,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
         print("Number of iterations: {0:d}".format(it))
@@ -364,7 +301,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
     # Write solution to file
     ext = "gmsh" if gmsh else ""
-    u_h = dolfinx.Function(Vmpc)
+    u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
 
@@ -445,5 +382,5 @@ if __name__ == "__main__":
                        triangle=True, compare=compare)
 
     outfile.close()
-    dolfinx.common.list_timings(
-        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    # dolfinx.common.list_timings(
+    #     MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

@@ -69,9 +69,11 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         periodic_mt = dolfinx.MeshTags(mesh, edim,
                                        edges, np.full(len(edges), 2,
                                                       dtype=np.int32))
-        mpc = dolfinx_mpc.create_periodic_condition(
-            V, periodic_mt, 2, periodic_relation, bcs,
-            scale=0.5)
+
+        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc.create_periodic_constraint(periodic_mt, 2, periodic_relation,
+                                       bcs, scale=0.5)
+        mpc.finalize()
 
     # Create traction meshtag
 
@@ -114,10 +116,8 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     # Create nullspace for elasticity problem and assign to matrix
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(
+        mpc.function_space())
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
@@ -164,7 +164,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution(mpc, uh)
+        mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
     if kspview:
         solver.view()
@@ -189,7 +189,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     if xdmf:
         # Write solution to file
-        u_h = dolfinx.Function(Vmpc)
+        u_h = dolfinx.Function(mpc.function_space())
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
 

@@ -137,7 +137,9 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         + ufl.inner(g, v)*ds
 
     with dolfinx.common.Timer("~Contact: Create contact constraint"):
-        mpc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc.create_contact_constraint(mt, 4, 9)
+        mpc.finalize()
 
     with dolfinx.common.Timer("~Contact: Assembly"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
@@ -164,10 +166,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     # opts["ksp_view"] = None # List progress of solver
 
     # Create functionspace and build near nullspace
-    Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                  mpc.dofmap())
-    Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(
+        mpc.function_space())
     A.setNearNullSpace(null_space)
     solver = PETSc.KSP().create(comm)
     solver.setOperators(A)
@@ -178,7 +178,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution(mpc, uh)
+        mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
@@ -189,7 +189,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
         print("Norm of u {0:.5e}".format(unorm))
 
     # Write solution to file
-    u_h = dolfinx.Function(Vmpc)
+    u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
     u_h.name = "u_{0:s}_{1:.2f}".format(ext, theta)
     outfile.write_mesh(mesh)

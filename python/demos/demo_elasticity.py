@@ -81,7 +81,7 @@ def demo_elasticity():
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
 
     # Create functionspace and function for mpc vector
     V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,

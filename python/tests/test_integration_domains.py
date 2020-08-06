@@ -70,7 +70,9 @@ def test_cell_domains():
     s_m_c = {}
     for i in range(0, N+1):
         s_m_c[l2b([1, i/N])] = {l2b([0, i/N]): 1}
-    mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c)
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_general_constraint(s_m_c)
+    mpc.finalize()
 
     # Setup MPC system
     with dolfinx.common.Timer("~Test: Assemble matrix"):
@@ -93,7 +95,7 @@ def test_cell_domains():
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
 
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
 
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)

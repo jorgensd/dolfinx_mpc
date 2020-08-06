@@ -199,8 +199,11 @@ def test_cube_contact():
     solver.setTolerances(rtol=1.0e-14)
     solver.getPC().setType("lu")
 
-    # Create MPC contact conditon and assemble matrices
-    mpc = dolfinx_mpc.create_contact_condition(V, mt, 4, 9)
+    # Create MPC contact condition and assemble matrices
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_contact_constraint(mt, 4, 9)
+    mpc.finalize()
+
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
     fem.apply_lifting(b, [a], [bcs])
@@ -215,13 +218,10 @@ def test_cube_contact():
         solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
 
     # Write solution to file
-    # V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-    #                                                mpc.dofmap())
-    # V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
-    # u_h = dolfinx.Function(V_mpc)
+    # u_h = dolfinx.Function(mpc.function_space())
     # u_h.vector.setArray(uh.array)
     # u_h.name = "u_{0:.2f}".format(theta)
     # outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")

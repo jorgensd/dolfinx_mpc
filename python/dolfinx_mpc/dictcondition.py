@@ -1,6 +1,5 @@
 import typing
 
-import dolfinx_mpc.cpp
 import numpy as np
 import dolfinx.fem as fem
 import dolfinx.function as function
@@ -216,15 +215,16 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
         coeffs.extend(owned_slaves[slave_index]["coeffs"])
         offsets.append(len(masters))
 
-    num_owned_slaves = len(slaves)
     # Flatten slaves (ghosts)
+    ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners,\
+        ghost_offsets = [], [], [], [], [0]
+
     for slave_index in slaves_ghost.keys():
-        slaves.append(slaves_ghost[slave_index])
-        masters.extend(ghosted_slaves[slave_index]["masters"])
-        owners.extend(ghosted_slaves[slave_index]["owners"])
-        coeffs.extend(ghosted_slaves[slave_index]["coeffs"])
-        offsets.append(len(masters))
-    cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-        V._cpp_object, slaves, num_owned_slaves)
-    cc.add_masters(masters, coeffs, owners, offsets)
-    return cc
+        ghost_slaves.append(slaves_ghost[slave_index])
+        ghost_masters.extend(ghosted_slaves[slave_index]["masters"])
+        ghost_owners.extend(ghosted_slaves[slave_index]["owners"])
+        ghost_coeffs.extend(ghosted_slaves[slave_index]["coeffs"])
+        ghost_offsets.append(len(ghost_masters))
+    return ((slaves, ghost_slaves), (masters, ghost_masters),
+            (coeffs, ghost_coeffs), (owners, ghost_owners),
+            (offsets, ghost_offsets))

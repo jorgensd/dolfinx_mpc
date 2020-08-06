@@ -80,8 +80,9 @@ def demo_periodic3D(celltype, out_periodic):
         return out_x
 
     with dolfinx.common.Timer("~Periodic: New init"):
-        mpc = dolfinx_mpc.create_periodic_condition(
-            V, mt, 2, periodic_relation, bcs)
+        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc.create_periodic_constraint(mt, 2, periodic_relation, bcs)
+        mpc.finalize()
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -131,18 +132,13 @@ def demo_periodic3D(celltype, out_periodic):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution(mpc, uh)
+        mpc.backsubstitution(uh)
         # solver.view()
         it = solver.getIterationNumber()
         print("Constrained solver iterations {0:d}".format(it))
 
-    # Create functionspace and function for mpc vector
-    V_mpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                   mpc.dofmap())
-    V_mpc = dolfinx.FunctionSpace(None, V.ufl_element(), V_mpc_cpp)
-
     # Write solution to file
-    u_h = dolfinx.Function(V_mpc)
+    u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
     if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
         ext = "tet"

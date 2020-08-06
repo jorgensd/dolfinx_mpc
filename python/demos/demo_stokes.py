@@ -112,9 +112,9 @@ bcs = [bc1, bc2]
 
 # Create slip condition
 n = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 1)
-mpc = dolfinx_mpc.create_slip_condition(
-    (W, W.sub(0)), n, np.array(V_to_W), (mt, 1), bcs=bcs)
-
+mpc = dolfinx_mpc.MultiPointConstraint(W)
+mpc.create_slip_constraint(W.sub(0), n, np.array(V_to_W), (mt, 1), bcs=bcs)
+mpc.finalize()
 # Write cell partitioning to file
 tdim = mesh.topology.dim
 cell_map = mesh.topology.index_map(tdim)
@@ -156,16 +156,10 @@ ksp.getPC().setFactorSolverType("mumps")
 uh = b.copy()
 ksp.solve(b, uh)
 
-dolfinx_mpc.backsubstitution(mpc, uh)
+mpc.backsubstitution(uh)
 
 # Write solution to file
-Wmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, W.element,
-                                              mpc.dofmap())
-
-
-Wmpc = dolfinx.FunctionSpace(None, W.ufl_element(), Wmpc_cpp)
-
-U = dolfinx.Function(Wmpc)
+U = dolfinx.Function(mpc.function_space())
 U.vector.setArray(uh.array)
 
 u = U.sub(0).collapse()
