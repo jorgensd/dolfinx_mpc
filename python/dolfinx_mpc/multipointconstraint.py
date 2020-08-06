@@ -4,6 +4,7 @@ import dolfinx
 
 from .contactcondition import create_contact_condition
 from .slipcondition import create_slip_condition
+from .periodic_condition import create_periodic_condition
 
 
 class MultiPointConstraint():
@@ -103,6 +104,21 @@ class MultiPointConstraint():
         """
         slaves, masters, coeffs, owners, offsets = create_contact_condition(
             self.V, meshtag, slave_marker, master_marker)
+        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+
+    def create_periodic_constraint(self, meshtag, tag, relation, bcs, scale=1):
+        """
+        Create a periodic boundary condition (possibly scaled).
+        Input:
+            meshtag: MeshTag for entity to apply the periodic condition on
+            tag: Tag indicating which entities should be slaves
+            relation: Lambda function describing the geometrical relation
+            bcs: Dirichlet boundary conditions for the problem
+               (Periodic constraints will be ignored for these dofs)
+            scale: Float for scaling bc
+        """
+        slaves, masters, coeffs, owners, offsets = create_periodic_condition(
+            self.V, meshtag, tag, relation, bcs, scale)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def create_slip_constraint(self, sub_space, normal, sub_map, entity_data,

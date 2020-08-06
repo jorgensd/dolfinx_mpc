@@ -37,7 +37,6 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     del cell_map
     master_coordinates = relation(x[slave_dofs].T).T
 
-    # If data
     constraint_data = {slave_dof: {}
                        for slave_dof in slave_dofs[:num_local_dofs]}
     remaining_slaves = list(slave_dofs[:num_local_dofs])
@@ -211,11 +210,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                 ghost_dofs[dof]["owners"] = \
                     from_owner[loc_to_glob[dof]]["owners"]
     # Flatten out arrays
-    slaves = []
-    masters = []
-    coeffs = []
-    owners = []
-    offsets = [0]
+    slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
     for dof in constraint_data.keys():
         slaves.append(dof)
         masters.extend(constraint_data[dof]["masters"])
@@ -223,14 +218,15 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
         owners.extend(constraint_data[dof]["owners"])
         offsets.append(len(masters))
 
+    ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners, \
+        ghost_offsets = [], [], [], [], [0]
     for dof in ghost_dofs.keys():
-        slaves.append(dof)
-        masters.extend(ghost_dofs[dof]["masters"])
-        coeffs.extend(ghost_dofs[dof]["coeffs"])
-        owners.extend(ghost_dofs[dof]["owners"])
-        offsets.append(len(masters))
+        ghost_slaves.append(dof)
+        ghost_masters.extend(ghost_dofs[dof]["masters"])
+        ghost_coeffs.extend(ghost_dofs[dof]["coeffs"])
+        ghost_owners.extend(ghost_dofs[dof]["owners"])
+        ghost_offsets.append(len(ghost_masters))
 
-    cc = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-        V._cpp_object, slaves, num_local_dofs)
-    cc.add_masters(masters, coeffs, owners, offsets)
-    return cc
+    return ((slaves, ghost_slaves), (masters, ghost_masters),
+            (coeffs, ghost_coeffs), (owners, ghost_owners),
+            (offsets, ghost_offsets))

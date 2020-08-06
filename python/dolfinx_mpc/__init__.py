@@ -14,5 +14,4 @@ from .assemble_matrix import assemble_matrix
 from .assemble_vector import assemble_vector
 from .backsubstitution import backsubstitution
 from .dictcondition import create_dictionary_constraint
-from .periodic_condition import create_periodic_condition
 from .multipointconstraint import MultiPointConstraint
