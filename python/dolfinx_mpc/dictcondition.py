@@ -1,6 +1,5 @@
 import typing
 
-import dolfinx_mpc.cpp
 import numpy as np
 import dolfinx.fem as fem
 import dolfinx.function as function
