@@ -127,7 +127,7 @@ with dolfinx.common.Timer("~PERIODIC: Solve old"):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
 
     # solver.view()
     it = solver.getIterationNumber()

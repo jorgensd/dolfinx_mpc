@@ -84,8 +84,10 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     with dolfinx.common.Timer("~Elasticity: Init constraint"):
         def l2b(li):
             return np.array(li, dtype=np.float64).tobytes()
-        s_m_c_new = {l2b([1, 0, 0]): {l2b([1, 0, 1]): 0.5}}
-        mpc = dolfinx_mpc.create_dictionary_constraint(V, s_m_c_new, 2, 2)
+        s_m_c = {l2b([1, 0, 0]): {l2b([1, 0, 1]): 0.5}}
+        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc.create_general_constraint(s_m_c, 2, 2)
+        mpc.finalize()
 
     # Setup MPC system
     with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
@@ -129,10 +131,8 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     # opts["ksp_view"] = None # List progress of solver
 
     with dolfinx.common.Timer("~Elasticity: Solve problem") as timer:
-        Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                      mpc.dofmap())
-        Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-        null_space = dolfinx_mpc.utils.rigid_motions_nullspace(Vmpc)
+        null_space = dolfinx_mpc.utils.rigid_motions_nullspace(
+            mpc.function_space())
         A.setNearNullSpace(null_space)
         solver.setFromOptions()
         solver.setOperators(A)
@@ -142,7 +142,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution(mpc, uh)
+        mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
 
     it = solver.getIterationNumber()
@@ -166,7 +166,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
     if xdmf:
         # Write solution to file
-        u_h = dolfinx.Function(Vmpc)
+        u_h = dolfinx.Function(mpc.function_space())
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
 

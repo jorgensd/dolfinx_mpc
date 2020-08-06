@@ -156,7 +156,7 @@ ksp.getPC().setFactorSolverType("mumps")
 uh = b.copy()
 ksp.solve(b, uh)
 
-dolfinx_mpc.backsubstitution(mpc, uh)
+mpc.backsubstitution(uh)
 
 # Write solution to file
 U = dolfinx.Function(mpc.function_space())

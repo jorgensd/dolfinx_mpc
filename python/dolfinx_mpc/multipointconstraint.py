@@ -1,11 +1,15 @@
-import dolfinx_mpc.cpp
 import warnings
+
+import dolfinx_mpc.cpp
+import numba
+from petsc4py import PETSc
+
 import dolfinx
 
 from .contactcondition import create_contact_condition
-from .slipcondition import create_slip_condition
-from .periodic_condition import create_periodic_condition
 from .dictcondition import create_dictionary_constraint
+from .periodic_condition import create_periodic_condition
+from .slipcondition import create_slip_condition
 
 
 class MultiPointConstraint():
@@ -212,3 +216,27 @@ class MultiPointConstraint():
             return self.V
         else:
             return self.V_mpc
+
+    def backsubstitution(self, vector):
+
+        # Unravel data from constraint
+        coefficients = self._cpp_object.coefficients()
+        masters = self._cpp_object.masters_local().array
+        offsets = self._cpp_object.masters_local().offsets
+        slaves = self._cpp_object.slaves()
+        backsubstitution_numba(vector, slaves, masters, coefficients, offsets)
+        vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                           mode=PETSc.ScatterMode.FORWARD)
+        return vector
+
+
+@numba.njit(cache=True)
+def backsubstitution_numba(b, slaves, masters, coefficients, offsets):
+    """
+    Insert mpc values into vector bc
+    """
+    for i, slave in enumerate(slaves):
+        masters_i = masters[offsets[i]:offsets[i+1]]
+        coeffs_i = coefficients[offsets[i]:offsets[i+1]]
+        for master, coeff in zip(masters_i, coeffs_i):
+            b[slave] += coeff*b[master]

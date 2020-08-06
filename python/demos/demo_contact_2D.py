@@ -290,7 +290,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
         print("Number of iterations: {0:d}".format(it))

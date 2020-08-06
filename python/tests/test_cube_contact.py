@@ -218,7 +218,7 @@ def test_cube_contact():
         solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
 
     # Write solution to file
     # u_h = dolfinx.Function(mpc.function_space())

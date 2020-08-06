@@ -94,7 +94,7 @@ def test_surface_integrals():
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
-    dolfinx_mpc.backsubstitution(mpc, uh)
+    mpc.backsubstitution(uh)
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 

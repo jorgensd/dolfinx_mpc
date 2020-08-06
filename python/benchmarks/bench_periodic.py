@@ -47,7 +47,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
 
     V = dolfinx.FunctionSpace(mesh, ("CG", degree))
-    print(N*degree)
+
     # Create Dirichlet boundary condition
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
@@ -82,8 +82,9 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
             mesh, mesh.topology.dim-1, PeriodicBoundary)
         mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
                               facets, np.full(len(facets), 2, dtype=np.int32))
-        mpc = dolfinx_mpc.create_periodic_condition(
-            V, mt, 2, periodic_relation, bcs)
+        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc.create_periodic_constraint(mt, 2, periodic_relation, bcs)
+        mpc.finalize()
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -153,7 +154,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution(mpc, uh)
+        mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
         if kspview:
             solver.view()
@@ -181,10 +182,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
             ext = "hex"
 
         # Create function space with correct index map for MPC
-        Vmpc_cpp = dolfinx.cpp.function.FunctionSpace(mesh, V.element,
-                                                      mpc.dofmap())
-        Vmpc = dolfinx.FunctionSpace(None, V.ufl_element(), Vmpc_cpp)
-        u_h = dolfinx.Function(Vmpc)
+        u_h = dolfinx.Function(mpc.function_space())
         u_h.vector.setArray(uh.array)
 
         # Name formatting of functions

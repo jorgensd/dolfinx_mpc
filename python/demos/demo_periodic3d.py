@@ -132,7 +132,7 @@ def demo_periodic3D(celltype, out_periodic):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
-        dolfinx_mpc.backsubstitution(mpc, uh)
+        mpc.backsubstitution(uh)
         # solver.view()
         it = solver.getIterationNumber()
         print("Constrained solver iterations {0:d}".format(it))
