@@ -75,8 +75,9 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
                                 pair_owners.append(comm.rank)
                             else:
                                 pair_owners.append(
-                                    W_ghost_owners[n_to_W[normal_dofs[index]]//W_bs
-                                                   - W_local_size])
+                                    W_ghost_owners[
+                                        n_to_W[normal_dofs[index]]//W_bs
+                                        - W_local_size])
                     # If all coeffs are 0 (normal aligned with axis),
                     # append one to enforce Dirichlet BC 0
                     if len(pair_masters) == 0:
