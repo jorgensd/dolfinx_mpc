@@ -1,10 +1,11 @@
 import dolfinx.fem as fem
 import numpy as np
-import dolfinx_mpc.cpp as cpp
+import dolfinx.common as common
 
 
 def create_slip_condition(V, normal, n_to_W, facet_info,
                           bcs=[]):
+    timer = common.Timer("~MPC: Create slip condition")
     if isinstance(V, tuple):
         W, Wsub = V
     else:
@@ -28,29 +29,29 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
     if Wsub is None:
         raise NotImplementedError("not implemented for non-sub spaces")
     else:
-        n_imap = normal.function_space.dofmap.index_map
         x = W.tabulate_dof_coordinates()
         facet_dofs = fem.locate_dofs_topological(
             (Wsub, normal.function_space), fdim, marked_facets)
-        local_dofs = facet_dofs[facet_dofs[:, 1] < n_imap.size_local *
-                                n_imap.block_size]
-
+        local_dofs = facet_dofs
         # Info from parent space
-        global_indices = np.array(W.dofmap.index_map.global_indices(False))
-        ghost_owners = W.dofmap.index_map.ghost_owner_rank()
-        bs = W.dofmap.index_map.block_size
-        local_size = W.dofmap.index_map.size_local
+        W_global_indices = np.array(W.dofmap.index_map.global_indices(False))
+        W_ghost_owners = W.dofmap.index_map.ghost_owner_rank()
+        W_bs = W.dofmap.index_map.block_size
+        W_local_size = W.dofmap.index_map.size_local
 
-        pairs = []
-        n_vec = normal.vector.getArray()
-
+        # Normal vector with ghost values
+        n_vec = normal.x.array()
         # Determine which dofs are located at the same coordinate
         # and create a mapping for the local slaves
+        pairs = []
         for i in range(len(local_dofs[:, 0])):
             pairs.append(np.flatnonzero(np.isclose(np.linalg.norm(
                 x[local_dofs[:, 0]]-x[local_dofs[i, 0]], axis=1), 0)))
         # Check if any dofs are on this processor
         slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
+        ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners,\
+            ghost_offsets = [], [], [], [], [0]
+
         if len(pairs) > 0:
             unique_pairs = np.unique(pairs, axis=0)
 
@@ -68,90 +69,41 @@ def create_slip_condition(V, normal, n_to_W, facet_info,
                                   n_vec[normal_dofs[slave_index]])
                         if not np.isclose(coeff, 0):
                             pair_masters.append(
-                                global_indices[n_to_W[normal_dofs[index]]])
+                                W_global_indices[n_to_W[normal_dofs[index]]])
                             pair_coeffs.append(coeff)
-                            if n_to_W[normal_dofs[index]] < local_size*bs:
+                            if n_to_W[normal_dofs[index]] < W_local_size*W_bs:
                                 pair_owners.append(comm.rank)
                             else:
                                 pair_owners.append(
-                                    ghost_owners[n_to_W[normal_dofs[index]]//bs
-                                                 - local_size])
+                                    W_ghost_owners[n_to_W[normal_dofs[index]]//W_bs
+                                                   - W_local_size])
                     # If all coeffs are 0 (normal aligned with axis),
                     # append one to enforce Dirichlet BC 0
                     if len(pair_masters) == 0:
-                        master = n_to_W[global_indices[
+                        master = n_to_W[W_global_indices[
                             normal_dofs[master_indices[0]]]]
                         pair_masters = [normal_dofs[master_indices[0]]]
                         pair_coeffs = [-n_vec[normal_dofs[master_indices[0]]] /
                                        n_vec[normal_dofs[slave_index]]]
-                        if master < local_size*bs:
+                        if master < W_local_size*W_bs:
                             pair_owners.append(comm.rank)
                         else:
                             pair_owners.append(
-                                ghost_owners[master//bs - local_size])
+                                ghost_owners[master//W_bs - W_local_size])
+                    if n_to_W[normal_dofs[slave_index]] < W_local_size*W_bs:
+                        slaves.append(n_to_W[normal_dofs[slave_index]])
+                        masters.extend(pair_masters)
+                        coeffs.extend(pair_coeffs)
+                        offsets.append(len(masters))
+                        owners.extend(pair_owners)
+                    else:
+                        ghost_slaves.append(n_to_W[normal_dofs[slave_index]])
+                        ghost_masters.extend(pair_masters)
+                        ghost_coeffs.extend(pair_coeffs)
+                        ghost_offsets.append(len(ghost_masters))
+                        ghost_owners.extend(pair_owners)
 
-                    slaves.append(n_to_W[normal_dofs[slave_index]])
-                    masters.extend(pair_masters)
-                    coeffs.extend(pair_coeffs)
-                    offsets.append(len(masters))
-                    owners.extend(pair_owners)
-        # Send ghost slaves to other processors
-        shared_indices = cpp.mpc.compute_shared_indices(
-            W._cpp_object)
-        blocks = np.array(slaves)//W.dofmap.index_map.block_size
-        ghost_indices = np.flatnonzero(
-            np.isin(blocks, np.array(list(shared_indices.keys()))))
-        slaves_to_send = {}
-        for slave_index in ghost_indices:
-            for proc in shared_indices[slaves[slave_index]]:
-                if (proc in slaves_to_send.keys()):
-                    slaves_to_send[proc][global_indices[
-                        slaves[slave_index]]] = {
-                        "masters": masters[offsets[slave_index]:
-                                           offsets[slave_index+1]],
-                        "coeffs": coeffs[offsets[slave_index]:
-                                         offsets[slave_index+1]],
-                        "owners": owners[offsets[slave_index]:
-                                         offsets[slave_index+1]]
-                    }
-
-                else:
-                    slaves_to_send[proc] = {global_indices[
-                        slaves[slave_index]]: {
-                        "masters": masters[offsets[slave_index]:
-                                           offsets[slave_index+1]],
-                        "coeffs": coeffs[offsets[slave_index]:
-                                         offsets[slave_index+1]],
-                        "owners": owners[offsets[slave_index]:
-                                         offsets[slave_index+1]]}}
-
-        for proc in slaves_to_send.keys():
-            comm.send(slaves_to_send[proc], dest=proc, tag=1)
-
-        # Receive ghost slaves
-        ghost_dofs = np.array(facet_dofs[n_imap.size_local *
-                                         n_imap.block_size
-                                         <= facet_dofs[:, 1]])
-        ghost_blocks = ghost_dofs[:, 0]//bs - local_size
-        receiving_procs = []
-        for block in ghost_blocks:
-            receiving_procs.append(ghost_owners[block])
-        unique_procs = set(receiving_procs)
-        recv_slaves = {}
-
-        for proc in unique_procs:
-            recv_data = comm.recv(source=proc, tag=1)
-            recv_slaves.update(recv_data)
-        ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners,\
-            ghost_offsets = [], [], [], [], [0]
-        for i, slave in enumerate(global_indices[ghost_dofs[:, 0]]):
-            if slave in recv_slaves.keys():
-                ghost_slaves.append(ghost_dofs[i, 0])
-                ghost_masters.extend(recv_slaves[slave]["masters"])
-                ghost_coeffs.extend(recv_slaves[slave]["coeffs"])
-                ghost_owners.extend(recv_slaves[slave]["owners"])
-                ghost_offsets.append(len(ghost_masters))
-
+    timer.stop()
     return ((slaves, ghost_slaves),
             (masters, ghost_masters), (coeffs, ghost_coeffs),
             (owners, ghost_owners), (offsets, ghost_offsets))
