@@ -23,8 +23,9 @@ def create_mesh_gmsh():
     Outlet: 2
     Inlet: 3
     """
+    lcar = 0.1
     geom = pygmsh.built_in.Geometry()
-    rect = geom.add_rectangle(0.0, L, 0.0, H, 0.0, lcar=0.2)
+    rect = geom.add_rectangle(0.0, L, 0.0, H, 0.0, lcar=lcar)
     geom.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
 
     geom.add_physical([rect.line_loop.lines[0], rect.line_loop.lines[2]], 1)
@@ -155,7 +156,8 @@ ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("mumps")
 uh = b.copy()
 ksp.solve(b, uh)
-
+uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+               mode=PETSc.ScatterMode.FORWARD)
 mpc.backsubstitution(uh)
 
 # Write solution to file
