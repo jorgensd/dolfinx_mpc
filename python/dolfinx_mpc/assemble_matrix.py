@@ -234,8 +234,7 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
                           dtype=PETSc.ScalarType)
 
     # Loop over all cells
-    slave_cell_index = 0
-    for cell_index in active_cells:
+    for slave_cell_index, cell_index in enumerate(active_cells):
         num_vertices = pos[cell_index + 1] - pos[cell_index]
 
         # Compute vertices of cell from mesh data
@@ -271,7 +270,6 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
                               local_pos, mpc, num_dofs_per_element)
         # Remove already assembled contribution to matrix
         A_contribution = A_local - A_local_copy
-        slave_cell_index += 1
 
         # Insert local contribution
         ierr_loc = set_values_local(A, num_dofs_per_element, ffi_fb(local_pos),
