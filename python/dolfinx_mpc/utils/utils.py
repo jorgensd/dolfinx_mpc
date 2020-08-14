@@ -18,15 +18,32 @@ import dolfinx.la
 import dolfinx.log
 
 
-def facet_normal_approximation(V, mt, mt_id):
+def facet_normal_approximation(V, mt, mt_id, tangent=False):
     timer = dolfinx.common.Timer("~MPC: Facet normal projection")
     comm = V.mesh.mpi_comm()
     n = ufl.FacetNormal(V.mesh)
     nh = dolfinx.Function(V)
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
     ds = ufl.ds(domain=V.mesh, subdomain_data=mt, subdomain_id=mt_id)
-    a = (ufl.inner(u, v)*ufl.ds)
-    L = ufl.inner(n, v)*ds
+    if tangent:
+        if V.mesh.geometry.dim == 1:
+            raise ValueError("Tangent not defined for 1D problem")
+        elif V.mesh.geometry.dim == 2:
+            a = ufl.inner(u, v)*ds
+            L = ufl.inner(ufl.as_vector([-n[1], n[0]]), v)*ds
+        else:
+            def tangential_proj(u, n):
+                """
+                See for instance:
+                https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf
+                """
+                return (ufl.Identity(u.ufl_shape[0]) - ufl.outer(n, n)) * u
+            c = dolfinx.Constant(V.mesh, [1, 1, 1])
+            a = ufl.inner(u, v)*ds
+            L = ufl.inner(tangential_proj(c, n), v)*ds
+    else:
+        a = (ufl.inner(u, v)*ufl.ds)
+        L = ufl.inner(n, v)*ds
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
@@ -66,15 +83,11 @@ def facet_normal_approximation(V, mt, mt_id):
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, [bc_deac])
-    opts = PETSc.Options()
-    opts["ksp_type"] = "cg"
-    opts["ksp_rtol"] = 1.0e-8
-    # opts["help"] = None # List all available options
-    # opts["ksp_view"] = None # List progress of solver
 
     # Solve Linear problem
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setFromOptions()
+    solver.setType("cg")
+    solver.rtol = 1e-8
     solver.setOperators(A)
     solver.solve(b, nh.vector)
     nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,

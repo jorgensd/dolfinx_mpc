@@ -90,13 +90,12 @@ def assemble_vector(form, constraint,
     subdomain_ids = formintegral.integral_ids(
         dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
-    exterior_integrals = form.integrals_by_type("exterior_facet")
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
-    for i in range(len(exterior_integrals)):
+    for i in range(num_exterior_integrals):
         facet_info = pack_facet_info(V.mesh, formintegral, i)
         subdomain_id = subdomain_ids[i]
         facet_kernel = ufc_form.create_exterior_facet_integral(
