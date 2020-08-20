@@ -19,8 +19,7 @@ use PETSc matrices.
 
 Requirements: dolfinx
 Easiest way to install dolfinx is to use docker.
-The dolfinx docker images goes under the name [dolfinx/real](https://hub.docker.com/r/dolfinx/real) and [dolfinx/complex](https://hub.docker.com/r/dolfinx/complex).
-
+The dolfinx docker images goes under the name [dolfinx/dolfinx](https://hub.docker.com/r/dolfinx/dolfinx)
 To install the library run the following code from this directory:
 ```
 rm -rf build
