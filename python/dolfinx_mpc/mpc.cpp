@@ -65,7 +65,7 @@ void mpc(py::module& m)
             &dolfinx::geometry::compute_process_collisions));
   m.def("assemble_matrix",
         [](Mat A, const dolfinx::fem::Form<PetscScalar>& a,
-           const dolfinx_mpc::MultiPointConstraint& mpc,
+           dolfinx_mpc::MultiPointConstraint& mpc,
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs) {
           dolfinx_mpc::assemble_matrix(dolfinx::la::PETScMatrix::add_fn(A), a,

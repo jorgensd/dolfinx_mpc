@@ -80,6 +80,7 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
         A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
         A.zeroEntries()
     cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, bcs)
+    return A
 
 
 def assemble_matrix(form, constraint, bcs=[]):
