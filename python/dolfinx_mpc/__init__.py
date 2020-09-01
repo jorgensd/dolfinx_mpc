@@ -10,6 +10,6 @@
 import dolfinx_mpc.cpp
 
 # New local assemblies
-from .assemble_matrix import assemble_matrix
+from .assemble_matrix import assemble_matrix, assemble_matrix_cpp
 from .assemble_vector import assemble_vector
 from .multipointconstraint import MultiPointConstraint

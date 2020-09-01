@@ -4,18 +4,25 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
+#include "caster_petsc.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
+#include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
+#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
+#include <dolfinx_mpc/assembly.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>
+#include <petscmat.h>
 #include <pybind11/eigen.h>
+#include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+
 namespace py = pybind11;
 
 namespace dolfinx_mpc_wrappers
@@ -56,5 +63,13 @@ void mpc(py::module& m)
         py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,
                           const Eigen::Vector3d&>(
             &dolfinx::geometry::compute_process_collisions));
+  m.def("assemble_matrix",
+        [](Mat A, const dolfinx::fem::Form<PetscScalar>& a,
+           const dolfinx_mpc::MultiPointConstraint& mpc,
+           const std::vector<std::shared_ptr<
+               const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs) {
+          dolfinx_mpc::assemble_matrix(dolfinx::la::PETScMatrix::add_fn(A), a,
+                                       mpc, bcs);
+        });
 }
 } // namespace dolfinx_mpc_wrappers

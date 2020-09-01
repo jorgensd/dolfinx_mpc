@@ -11,7 +11,7 @@ import dolfinx.common
 import dolfinx.log
 
 from .numba_setup import PETSc, ffi, mode, set_values_local, sink
-
+from dolfinx_mpc import cpp
 Timer = dolfinx.common.Timer
 
 
@@ -65,6 +65,21 @@ def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
         local_index = numpy.flatnonzero(facet == local_facets)[0]
         facet_info[j, :] = [cells[0], local_index]
     return facet_info
+
+
+def assemble_matrix_cpp(form, constraint, bcs=[]):
+    assert(form.arguments()[0].ufl_function_space() ==
+           form.arguments()[1].ufl_function_space())
+    V = form.arguments()[0].ufl_function_space()
+
+    # Generate matrix with MPC sparsity pattern
+    cpp_form = dolfinx.Form(form)._cpp_object
+    pattern = constraint.create_sparsity_pattern(cpp_form)
+    pattern.assemble()
+    with Timer("~MPC: Assemble matrix (Create matrix)"):
+        A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
+        A.zeroEntries()
+    cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, bcs)
 
 
 def assemble_matrix(form, constraint, bcs=[]):
