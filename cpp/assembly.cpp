@@ -200,8 +200,12 @@ void assemble_cells_impl(
       = mpc.cell_to_slaves();
   for (std::int32_t i = 0; i < slave_cells.rows(); ++i)
   {
-    is_slave_cell[slave_cells[i]] = true;
-    slave_cell_index[slave_cells[i]] = i;
+    for (std::int32_t j = 0; j < active_cells.size(); ++j)
+      if (slave_cells[i] == active_cells[j])
+      {
+        is_slave_cell[j] = true;
+        slave_cell_index[j] = i;
+      }
   }
 
   // Iterate over active cells

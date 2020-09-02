@@ -75,10 +75,14 @@ def test_cell_domains():
     mpc.finalize()
 
     # Setup MPC system
-    with dolfinx.common.Timer("~Test: Assemble matrix"):
+    with dolfinx.common.Timer("~TEST: Assemble matrix old"):
         A = dolfinx_mpc.assemble_matrix(a, mpc)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
+        Anew = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
 
-    with dolfinx.common.Timer("~Test: Assemble vector"):
+    with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -100,7 +104,10 @@ def test_cell_domains():
     # Transfer data from the MPC problem to numpy arrays for comparison
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     mpc_vec_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
+    A_new_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Anew)
+    assert np.allclose(A_mpc_np, A_new_np)
+    dolfinx.common.list_timings(
+        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     # Create global transformation matrix
