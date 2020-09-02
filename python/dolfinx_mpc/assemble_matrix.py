@@ -68,6 +68,8 @@ def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
 
 
 def assemble_matrix_cpp(form, constraint, bcs=[]):
+    timer_matrix = Timer("~MPC: Assemble matrix (C++)")
+
     assert(form.arguments()[0].ufl_function_space() ==
            form.arguments()[1].ufl_function_space())
     V = form.arguments()[0].ufl_function_space()
@@ -80,6 +82,19 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
         A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
         A.zeroEntries()
     cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, bcs)
+
+    # Add Dirichlet boundary conditions (including slave dofs)
+    slaves_local = constraint.slaves()
+    local_slave_dofs_trimmed = slaves_local[:constraint.num_local_slaves()]
+    V = form.arguments()[0].ufl_function_space()
+    bc_mpc = [dolfinx.DirichletBC(
+        dolfinx.Function(V), local_slave_dofs_trimmed)]
+    if len(bcs) > 0:
+        bc_mpc.extend(bcs)
+    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1)
+    A.assemble()
+    timer_matrix.stop()
     return A
 
 
@@ -410,15 +425,20 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
 
     cell_slaves = cell_to_slave[cell_to_slave_offsets[slave_cell_index]:
                                 cell_to_slave_offsets[slave_cell_index+1]]
+    # Find local indices for each slave
+    slave_indices = numpy.zeros(len(cell_slaves), dtype=numpy.int32)
+    for i, slave_index in enumerate(cell_slaves):
+        for j, dof in enumerate(local_pos):
+            if dof == slaves[slave_index]:
+                slave_indices[i] = j
+                break
 
     for i, slave_index in enumerate(cell_slaves):
         cell_masters = masters_local[offsets[slave_index]:
                                      offsets[slave_index+1]]
         cell_coeffs = coefficients[offsets[slave_index]:
                                    offsets[slave_index+1]]
-        # # Variable for local position of slave dof
-        local_idx = numpy.flatnonzero(
-            slaves[slave_index] == local_pos)[0]
+        local_idx = slave_indices[i]
         # Loop through each master dof to take individual contributions
         for master, coeff in zip(cell_masters, cell_coeffs):
             # Reset local contribution matrices
@@ -441,9 +461,7 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
             # move them to the corresponding master dof
             # and multiply by the corresponding coefficient
             for j, other_slave in enumerate(cell_slaves):
-                # Find local index of the other slave
-                o_local_idx = numpy.flatnonzero(
-                    slaves[other_slave] == local_pos)[0]
+                o_local_idx = slave_indices[j]
                 # Zero out for other slave
                 A_row[o_local_idx, 0] = 0
                 A_col[0, o_local_idx] = 0
@@ -523,7 +541,6 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
                                            1, ffi_fb(m0_index),
                                            ffi_fb(A_c1), mode)
                 assert(ierr_c1 == 0)
-
     sink(A_m0m1, A_m1m0, m1_index, A_row, A_col, m0_index, mpc_pos,
          A_master, A_c0, A_c1)
 

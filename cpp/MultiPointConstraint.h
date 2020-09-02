@@ -69,6 +69,12 @@ public:
     return _coeff_map->array();
   }
 
+  /// Return map from slave to coefficients
+  std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> coeffs()
+  {
+    return _coeff_map;
+  }
+
   /// Return map from slave to masters (global index)
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> owners()
   {

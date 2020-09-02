@@ -20,17 +20,139 @@ void modify_mpc_cell(
         Ae,
     const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& dofs,
     dolfinx_mpc::MultiPointConstraint& mpc,
-    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> cell_slaves)
+    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_indices)
 {
+  dolfinx::common::Timer timer("~MPC: Modify Ae for cell contributions");
+
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters
+      = mpc.masters_local();
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> coeffs
+      = mpc.coeffs();
   // Create copy to use for distribution to master dofs
   Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
       Ae_original = Ae;
 
-  for (std::int32_t i = 0; i < cell_slaves.size(); ++i)
+  // Find local indices for each slave
+  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves = mpc.slaves();
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_indices(
+      slave_indices.size());
+  for (std::int32_t i = 0; i < slave_indices.size(); ++i)
   {
-    std::cout << cell_slaves[i] << ", ";
+    for (std::int32_t j = 0; j < dofs.size(); ++j)
+    {
+      if (dofs[j] == slaves[slave_indices[i]])
+      {
+        local_indices[i] = j;
+        break;
+      }
+    }
   }
-  std::cout << "Cell modidified\n";
+
+  // Matrices used for master insertion
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Am0m1(1, 1);
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Am1m0(1, 1);
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Arow(num_dofs, 1);
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Acol(1, num_dofs);
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Amaster(1, 1);
+
+  // Arrays used for master indices
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> m0(1);
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> m1(1);
+  for (std::int32_t i = 0; i < slave_indices.size(); ++i)
+  {
+    const std::int32_t local_index = local_indices[i];
+    assert(local_index != -1);
+    // Loop through each master dof to take individual contributions
+    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_masters
+        = masters->links(slave_indices[i]);
+    const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> local_coeffs
+        = coeffs->links(slave_indices[i]);
+    for (std::int32_t j = 0; j < local_masters.size(); ++j)
+    {
+      const std::int32_t master = local_masters[j];
+      const PetscScalar coeff = local_coeffs[j];
+      Arow.setZero();
+      Acol.setZero();
+      Amaster.setZero();
+      Arow.col(0) = coeff * Ae_original.col(local_index);
+      Acol.row(0) = coeff * Ae_original.row(local_index);
+      Amaster(0, 0) = coeff * Arow(local_index, 0);
+      // Remove row contribution for slave dof
+      Arow.col(0)[local_index] = 0;
+      Acol.row(0)[local_index] = 0;
+
+      // Remove contributions from element matrix
+      Ae.col(local_index).setZero();
+      Ae.row(local_index).setZero();
+
+      // Loop through other masters on the same cell
+      for (std::int32_t k = 0; k < slave_indices.size(); ++k)
+      {
+        const std::int32_t other_local_index = local_indices[k];
+        const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> other_local_masters
+            = masters->links(slave_indices[k]);
+        const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> other_local_coeffs
+            = coeffs->links(slave_indices[k]);
+        // Zero out contributions from the other slave
+        Arow.col(0)[other_local_index] = 0;
+        Acol.row(0)[other_local_index] = 0;
+        for (std::int32_t l = 0; l < other_local_masters.size(); ++l)
+        {
+          const std::int32_t other_master = other_local_masters[l];
+          const PetscScalar other_coeff = other_local_coeffs[l];
+          Am0m1.setZero();
+          Am1m0.setZero();
+          Am0m1(0, 0) = coeff * other_coeff
+                        * Ae_original(local_index, other_local_index);
+          Am1m0(0, 0) = coeff * other_coeff
+                        * Ae_original(other_local_index, local_index);
+
+          m0(0) = master;
+          m1(0) = other_master;
+          // Insert once per slave pair
+          if (k > i)
+          {
+            mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
+            mat_set(1, m1.data(), 1, m0.data(), Am1m0.data());
+          }
+        }
+      }
+      // Add slave column/row to master column/row
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> m0(1);
+      m0(0) = master;
+      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> mpc_dofs = dofs;
+      mpc_dofs[local_index] = master;
+      mat_set(num_dofs, mpc_dofs.data(), 1, m0.data(), Arow.data());
+      mat_set(1, m0.data(), num_dofs, mpc_dofs.data(), Acol.data());
+      mat_set(1, m0.data(), 1, m0.data(), Amaster.data());
+    }
+    // Add contributions for different masters on the same cell
+    for (std::int32_t j = 0; j < local_masters.size(); ++j)
+    {
+      const std::int32_t master = local_masters[j];
+      const PetscScalar coeff = local_coeffs[j];
+      for (std::int32_t k = j + 1; k < local_masters.size(); ++k)
+      {
+        const std::int32_t other_master = local_masters[k];
+        const PetscScalar other_coeff = local_coeffs[k];
+        Am0m1.setZero();
+        Am1m0.setZero();
+        m0(0) = master;
+        m1(0) = other_master;
+        Am0m1(0, 0)
+            = coeff * other_coeff * Ae_original(local_index, local_index);
+        Am1m0(0, 0)
+            = coeff * other_coeff * Ae_original(local_index, local_index);
+        mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
+        mat_set(1, m1.data(), 1, m0.data(), Am1m0.data());
+      }
+    }
+  }
 }
 //-----------------------------------------------------------------------------
 void assemble_cells_impl(
@@ -121,8 +243,8 @@ void assemble_cells_impl(
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
       assert(slave_cell_index[k] != -1);
-      auto cell_slaves = cell_to_slaves->links(slave_cell_index[k]);
-      modify_mpc_cell(mat_set, num_dofs0, Ae, dofs0, mpc, cell_slaves);
+      auto slave_indices = cell_to_slaves->links(slave_cell_index[k]);
+      modify_mpc_cell(mat_set, num_dofs0, Ae, dofs0, mpc, slave_indices);
     }
     mat_set(dofs0.size(), dofs0.data(), dofs1.size(), dofs1.data(), Ae.data());
   }
