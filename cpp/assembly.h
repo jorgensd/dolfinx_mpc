@@ -19,7 +19,7 @@ void assemble_matrix(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const PetscScalar*)>& mat_add,
     const dolfinx::fem::Form<PetscScalar>& a,
-    dolfinx_mpc::MultiPointConstraint& mpc,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint>& mpc,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs);
 

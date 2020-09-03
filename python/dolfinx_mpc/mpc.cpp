@@ -65,11 +65,23 @@ void mpc(py::module& m)
             &dolfinx::geometry::compute_process_collisions));
   m.def("assemble_matrix",
         [](Mat A, const dolfinx::fem::Form<PetscScalar>& a,
-           dolfinx_mpc::MultiPointConstraint& mpc,
+           const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint>& mpc,
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs) {
           dolfinx_mpc::assemble_matrix(dolfinx::la::PETScMatrix::add_fn(A), a,
                                        mpc, bcs);
         });
+
+  m.def(
+      "create_matrix",
+      [](const dolfinx::fem::Form<PetscScalar>& a,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint>& mpc) {
+        auto A = dolfinx_mpc::create_matrix(a, mpc);
+        Mat _A = A.mat();
+        PetscObjectReference((PetscObject)_A);
+        return _A;
+      },
+      py::return_value_policy::take_ownership,
+      "Create a PETSc Mat for bilinear form.");
 }
 } // namespace dolfinx_mpc_wrappers

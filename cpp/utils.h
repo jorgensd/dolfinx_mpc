@@ -6,10 +6,12 @@
 
 #pragma once
 
+#include "MultiPointConstraint.h"
 #include <Eigen/Dense>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
+#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
 
 namespace dolfinx_mpc
@@ -43,5 +45,9 @@ compute_shared_indices(std::shared_ptr<dolfinx::function::FunctionSpace> V);
 void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
                           Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
                           std::int32_t block_size);
+
+dolfinx::la::PETScMatrix
+create_matrix(const dolfinx::fem::Form<PetscScalar>& a,
+              const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc);
 
 } // namespace dolfinx_mpc

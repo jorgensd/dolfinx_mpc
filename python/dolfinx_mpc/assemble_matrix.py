@@ -68,19 +68,14 @@ def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
 
 
 def assemble_matrix_cpp(form, constraint, bcs=[]):
-    timer_matrix = Timer("~MPC: Assemble matrix (C++)")
-
     assert(form.arguments()[0].ufl_function_space() ==
            form.arguments()[1].ufl_function_space())
     V = form.arguments()[0].ufl_function_space()
 
     # Generate matrix with MPC sparsity pattern
     cpp_form = dolfinx.Form(form)._cpp_object
-    pattern = constraint.create_sparsity_pattern(cpp_form)
-    pattern.assemble()
-    with Timer("~MPC: Assemble matrix (Create matrix)"):
-        A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
-        A.zeroEntries()
+    A = cpp.mpc.create_matrix(cpp_form, constraint._cpp_object)
+    A.zeroEntries()
     cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, bcs)
 
     # Add Dirichlet boundary conditions (including slave dofs)
@@ -92,9 +87,9 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
     if len(bcs) > 0:
         bc_mpc.extend(bcs)
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1)
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
+                                     bc_mpc, 1)
     A.assemble()
-    timer_matrix.stop()
     return A
 
 
@@ -104,7 +99,6 @@ def assemble_matrix(form, constraint, bcs=[]):
     Dirichlet boundary conditions.
     NOTE: Dirichlet conditions cant be on master dofs.
     """
-    timer_matrix = Timer("~MPC: Assemble matrix")
 
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() ==
@@ -146,23 +140,22 @@ def assemble_matrix(form, constraint, bcs=[]):
 
     # Generate ufc_form
     ufc_form = dolfinx.jit.ffcx_jit(form)
+    cpp_form = dolfinx.Form(form)._cpp_object
 
     # Generate matrix with MPC sparsity pattern
-    cpp_form = dolfinx.Form(form)._cpp_object
+    pattern = constraint.create_sparsity_pattern(cpp_form)
+    pattern.assemble()
 
     # Pack constants and coefficients
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     # Create sparsity pattern
-    pattern = constraint.create_sparsity_pattern(cpp_form)
-    pattern.assemble()
-    with Timer("~MPC: Assemble matrix (Create matrix)"):
-        A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
-        A.zeroEntries()
+    A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
+    A.zeroEntries()
 
     # Assemble the matrix with all entries
-    with Timer("~MPC: Assemble matrix (classical components)"):
+    with Timer("~MPC: Assemble unconstrained matrix"):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
 
     # General assembly data
@@ -186,14 +179,13 @@ def assemble_matrix(form, constraint, bcs=[]):
 
     for i in range(num_cell_integrals):
         subdomain_id = subdomain_ids[i]
-        with Timer("~MPC: Assemble matrix (cell kernel)"):
-            cell_kernel = ufc_form.create_cell_integral(
-                subdomain_id).tabulate_tensor
+        cell_kernel = ufc_form.create_cell_integral(
+            subdomain_id).tabulate_tensor
         active_cells = numpy.array(formintegral.integral_domains(
             dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
-        with Timer("~MPC: Assemble matrix (numba cells)"):
+        with Timer("~MPC: Modify MPC cells (Python)"):
             assemble_cells(A.handle, cell_kernel,
                            active_cells[slave_cell_indices],
                            (pos, x_dofs, x),
@@ -218,27 +210,21 @@ def assemble_matrix(form, constraint, bcs=[]):
         facet_info = pack_facet_info(V.mesh, formintegral, j)
 
         subdomain_id = subdomain_ids[j]
-        with Timer("~MPC: Assemble matrix (ext. facet kernel)"):
-            facet_kernel = ufc_form.create_exterior_facet_integral(
-                subdomain_id).tabulate_tensor
-        with Timer("~MPC: Assemble matrix (numba ext. facet)"):
+        facet_kernel = ufc_form.create_exterior_facet_integral(
+            subdomain_id).tabulate_tensor
+        with Timer("~MPC: Assemble constrained ext. facets (Python))"):
             assemble_exterior_facets(A.handle, facet_kernel,
                                      (pos, x_dofs, x), gdim,
                                      form_coeffs, form_consts,
                                      perm, dofs, num_dofs_per_element,
                                      facet_info, mpc_data,
                                      bc_array)
-
-    with Timer("~MPC: Assemble matrix (diagonal handling)"):
-        # Add one on diagonal for diriclet bc and slave dofs
-        # NOTE: In the future one could use a constant in the DirichletBC
-        if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-            dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
-                                         bc_mpc, 1.0)
-    with Timer("~MPC: Assemble matrix (Finalize matrix)"):
-        A.assemble()
-
-    timer_matrix.stop()
+    # Add one on diagonal for diriclet bc and slave dofs
+    # NOTE: In the future one could use a constant in the DirichletBC
+    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
+                                     bc_mpc, 1.0)
+    A.assemble()
     return A
 
 
@@ -440,7 +426,7 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
                                    offsets[slave_index+1]]
         local_idx = slave_indices[i]
         # Loop through each master dof to take individual contributions
-        for master, coeff in zip(cell_masters, cell_coeffs):
+        for i_0, (master, coeff) in enumerate(zip(cell_masters, cell_coeffs)):
             # Reset local contribution matrices
             A_row.fill(0.0)
             A_col.fill(0.0)
@@ -519,14 +505,13 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
 
             assert(ierr_m0m0 == 0)
 
-        # Add contributions for different masters on the same cell
-        for i_0, (m0, c0) in enumerate(zip(cell_masters, cell_coeffs)):
+            # Add contributions for different masters on the same cell
             for i_1 in range(i_0+1, len(cell_masters)):
                 A_c0.fill(0.0)
                 c1 = cell_coeffs[i_1]
-                A_c0[0, 0] += c0*c1 * \
+                A_c0[0, 0] += coeff*c1 * \
                     A_local_copy[local_idx, local_idx]
-                m0_index[0] = m0
+                m0_index[0] = master
                 m1_index[0] = cell_masters[i_1]
                 ierr_c0 = set_values_local(A,
                                            1, ffi_fb(m0_index),
@@ -534,7 +519,7 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
                                            ffi_fb(A_c0), mode)
                 assert(ierr_c0 == 0)
                 A_c1.fill(0.0)
-                A_c1[0, 0] += c0*c1 * \
+                A_c1[0, 0] += coeff*c1 * \
                     A_local_copy[local_idx, local_idx]
                 ierr_c1 = set_values_local(A,
                                            1, ffi_fb(m1_index),

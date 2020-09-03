@@ -35,48 +35,53 @@ public:
       std::int32_t num_local_slaves);
 
   /// Return the array of master dofs and corresponding coefficients
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves()
+  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves() const
   {
     return _slaves->array();
   };
 
   /// Return point to array of all unique local cells containing a slave
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cells()
+  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cells() const
   {
     return _slave_cells->array();
   };
 
   /// Return map from slave to cells containing that slave
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> slave_to_cells()
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  slave_to_cells() const
   {
     return _slave_to_cells_map;
   }
 
   /// Return map from cell to slaves contained in that cell
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> cell_to_slaves()
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  cell_to_slaves() const
   {
     return _cell_to_slaves_map;
   }
   /// Return map from slave to masters (local_index)
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters_local()
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
+  masters_local() const
   {
     return _master_local_map;
   }
 
   /// Return map from slave to coefficients
-  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients()
+  const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients() const
   {
     return _coeff_map->array();
   }
 
   /// Return map from slave to coefficients
-  std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>> coeffs()
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<PetscScalar>>
+  coeffs() const
   {
     return _coeff_map;
   }
 
   /// Return map from slave to masters (global index)
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> owners()
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  owners() const
   {
     return _owner_map;
   }

@@ -5,6 +5,7 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "utils.h"
+#include "MultiPointConstraint.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
@@ -13,8 +14,10 @@
 #include <dolfinx/fem/FiniteElement.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
+#include <dolfinx/fem/utils.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
+#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
@@ -26,7 +29,7 @@ void dolfinx_mpc::build_standard_pattern(
     dolfinx::la::SparsityPattern& pattern,
     const dolfinx::fem::Form<PetscScalar>& a)
 {
-  dolfinx::common::Timer timer("~MPC: Build classic sparsity pattern");
+  dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
   // Get dof maps
   std::array<const dolfinx::fem::DofMap*, 2> dofmaps
       = {{a.function_space(0)->dofmap().get(),
@@ -180,4 +183,21 @@ void dolfinx_mpc::add_pattern_diagonal(
       diag_block(comp) = block_size * blocks[i] + comp;
     pattern.insert(diag_block, diag_block);
   }
+}
+//-----------------------------------------------------------------------------
+dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
+    const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc)
+{
+
+  // Build sparsitypattern
+  dolfinx::la::SparsityPattern pattern = mpc->create_sparsity_pattern(a);
+
+  // Finalise communication
+  pattern.assemble();
+
+  // Initialize matrix
+  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern);
+
+  return A;
 }
