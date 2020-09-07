@@ -118,7 +118,7 @@ MultiPointConstraint::create_cell_maps(
 
   return std::make_pair(adj_ptr, std::make_pair(dof_cells, adj2_ptr));
 }
-
+//-----------------------------------------------------------------------------
 void MultiPointConstraint::add_masters(
     Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
     Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coeffs,
@@ -135,7 +135,7 @@ void MultiPointConstraint::add_masters(
   // Create new index map with all masters
   create_new_index_map();
 }
-
+//-----------------------------------------------------------------------------
 void MultiPointConstraint::create_new_index_map()
 {
   dolfinx::common::Timer timer("~MPC: Create new index map");
@@ -262,7 +262,7 @@ void MultiPointConstraint::create_new_index_map()
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
           masters_local, _master_map->offsets());
 }
-
+//-----------------------------------------------------------------------------
 /// Create MPC specific sparsity pattern
 dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a)
@@ -286,11 +286,6 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
   new_maps[0] = _index_map;
   new_maps[1] = _index_map;
-
-  const std::array<std::int64_t, 2>& local_range
-      = _dofmap->index_map->local_range();
-  const std::int64_t local_size = local_range[1] - local_range[0];
-
   dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
 
   ///  Create and build sparsity pattern for original form. Should be
@@ -366,6 +361,81 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
 
         pattern.insert(local_master_dof, other_master_dof);
         pattern.insert(other_master_dof, local_master_dof);
+      }
+    }
+  }
+  return pattern;
+};
+//-----------------------------------------------------------------------------
+/// Create MPC specific sparsity pattern
+dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern_new(
+    const dolfinx::fem::Form<PetscScalar>& a)
+{
+  LOG(INFO) << "Generating MPC sparsity pattern";
+  dolfinx::common::Timer timer("~MPC: Create sparsity pattern (MPC) (NEW!)");
+  if (a.rank() != 2)
+  {
+    throw std::runtime_error(
+        "Cannot create sparsity pattern. Form is not a bilinear form");
+  }
+
+  /// Check that we are using the correct function-space in the bilinear
+  /// form otherwise the index map will be wrong
+  assert(a.function_space(0) == _V);
+  assert(a.function_space(1) == _V);
+  const dolfinx::mesh::Mesh& mesh = *(a.mesh());
+
+  std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
+  new_maps[0] = _index_map;
+  new_maps[1] = _index_map;
+  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
+
+  ///  Create and build sparsity pattern for original form. Should be
+  ///  equivalent to calling create_sparsity_pattern(Form a)
+  dolfinx_mpc::build_standard_pattern(pattern, a);
+
+  // Arrays replacing slave dof with master dof in sparsity pattern
+  const int& block_size = _index_map->block_size();
+  Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_slave(block_size);
+  Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_other_slave(block_size);
+
+  for (Eigen::Index i = 0; i < _cell_to_slaves_map->num_nodes(); ++i)
+  {
+
+    auto cell_dofs = _dofmap->cell_dofs(_slave_cells->array()[i]);
+    auto slaves = _cell_to_slaves_map->links(i);
+
+    // Arrays for flattened master slave data
+    std::vector<std::int32_t> flattened_masters;
+    for (std::int32_t j = 0; j < slaves.size(); ++j)
+    {
+      auto local_masters = _master_block_map->links(slaves[j]);
+      for (std::int32_t k = 0; k < local_masters.size(); ++k)
+        flattened_masters.push_back(local_masters[k]);
+    }
+    // Remove duplicate master blocks
+    std::sort(flattened_masters.begin(), flattened_masters.end());
+    flattened_masters.erase(
+        std::unique(flattened_masters.begin(), flattened_masters.end()),
+        flattened_masters.end());
+    for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
+    {
+      const std::int32_t& master_block = flattened_masters[j];
+      // Add all dofs of the slave cell to the master blocks sparsity pattern
+      for (std::size_t comp = 0; comp < block_size; ++comp)
+        master_for_slave(comp) = block_size * master_block + comp;
+
+      pattern.insert(master_for_slave, cell_dofs);
+      pattern.insert(cell_dofs, master_for_slave);
+      // Add sparsity pattern for all master dofs of any slave on this cell
+      for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
+      {
+        const std::int32_t& other_master_block = flattened_masters[k];
+        for (std::size_t comp = 0; comp < block_size; ++comp)
+          master_for_other_slave(comp) = block_size * other_master_block + comp;
+
+        pattern.insert(master_for_slave, master_for_other_slave);
+        pattern.insert(master_for_other_slave, master_for_slave);
       }
     }
   }
