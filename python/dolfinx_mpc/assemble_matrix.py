@@ -282,12 +282,29 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
                     A_local[:, k] = 0
 
         A_local_copy = A_local.copy()
+
+        # Find local position of slaves
+        (slaves_local, masters_local, coefficients, offsets,
+            slave_cells, cell_to_slave, c_to_s_off) = mpc
+        slave_indices = cell_to_slave[c_to_s_off[slave_cell_index]:
+                                      c_to_s_off[slave_cell_index+1]]
+        num_slaves = len(slave_indices)
+        local_indices = numpy.full(num_slaves, -1, dtype=numpy.int32)
+        is_slave = numpy.full(num_dofs_per_element, False,  dtype=numpy.bool_)
+        for i in range(num_slaves):
+            for j in range(num_dofs_per_element):
+                if local_pos[j] == slaves_local[slave_indices[i]]:
+                    local_indices[i] = j
+                    is_slave[j] = True
+        mpc_cell = (slave_indices, masters_local, coefficients,
+                    offsets, local_indices, is_slave)
+        modify_mpc_cell_new(A, num_dofs_per_element, A_local,
+                            local_pos, mpc_cell)
         # If this slave contains a slave dof, modify local contribution
-        modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
-                              local_pos, mpc, num_dofs_per_element)
+        # modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
+        #                       local_pos, mpc, num_dofs_per_element)
         # Remove already assembled contribution to matrix
         A_contribution = A_local - A_local_copy
-
         # Insert local contribution
         ierr_loc = set_values_local(A, num_dofs_per_element, ffi_fb(local_pos),
                                     num_dofs_per_element, ffi_fb(local_pos),
@@ -295,6 +312,97 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
         assert(ierr_loc == 0)
 
     sink(A_contribution, local_pos)
+
+
+@numba.njit
+def modify_mpc_cell_new(A, num_dofs, Ae, local_pos, mpc_cell):
+
+    (slave_indices, masters, coeffs, offsets,
+     local_indices, is_slave) = mpc_cell
+    # Flatten slave->master structure to 1D arrays
+    flattened_masters = []
+    flattened_slaves = []
+    slaves_loc = []
+    flattened_coeffs = []
+    for i in range(len(slave_indices)):
+        local_masters = masters[offsets[slave_indices[i]]:
+                                offsets[slave_indices[i]+1]]
+        local_coeffs = coeffs[offsets[slave_indices[i]]:
+                              offsets[slave_indices[i]+1]]
+        slaves_loc.extend([i, ]*len(local_masters))
+        flattened_slaves.extend([local_indices[i], ]*len(local_masters))
+        flattened_masters.extend(local_masters)
+        flattened_coeffs.extend(local_coeffs)
+    # Create element matrix stripped of slave entries
+    Ae_original = numpy.copy(Ae)
+    Ae_stripped = numpy.zeros((num_dofs, num_dofs), dtype=PETSc.ScalarType)
+    for i in range(num_dofs):
+        for j in range(num_dofs):
+            if is_slave[i] and is_slave[j]:
+                Ae_stripped[i, j] = 0
+            else:
+                Ae_stripped[i, j] = Ae_original[i, j]
+
+    m0 = numpy.zeros(1, dtype=numpy.int32)
+    m1 = numpy.zeros(1, dtype=numpy.int32)
+    Am0m1 = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
+    Arow = numpy.zeros((num_dofs, 1), dtype=PETSc.ScalarType)
+    Acol = numpy.zeros((1, num_dofs), dtype=PETSc.ScalarType)
+
+    num_masters = len(flattened_masters)
+    ffi_fb = ffi.from_buffer
+    for i in range(num_masters):
+        local_index = flattened_slaves[i]
+        master = flattened_masters[i]
+        coeff = flattened_coeffs[i]
+        Ae[:, local_index] = 0
+        Ae[local_index, :] = 0
+        m0[0] = master
+        Arow[:, 0] = coeff*Ae_stripped[:, local_index]
+        Acol[0, :] = coeff*Ae_stripped[local_index, :]
+        Am0m1[0, 0] = coeff**2*Ae_original[local_index, local_index]
+        mpc_dofs = numpy.copy(local_pos)
+        mpc_dofs[local_index] = master
+
+        ierr_row = set_values_local(A, num_dofs,
+                                    ffi_fb(mpc_dofs),
+                                    1, ffi_fb(m0),
+                                    ffi_fb(Arow), mode)
+        assert(ierr_row == 0)
+
+        # Add slave row to master row
+        ierr_col = set_values_local(A, 1, ffi_fb(m0),
+                                    num_dofs,
+                                    ffi_fb(mpc_dofs),
+                                    ffi_fb(Acol), mode)
+        assert(ierr_col == 0)
+
+        ierr_master = set_values_local(A, 1, ffi_fb(
+            m0), 1, ffi_fb(m0), ffi_fb(Am0m1), mode)
+        assert(ierr_master == 0)
+
+        # Create[0, ...., N]\[i]
+        other_masters = numpy.arange(0, num_masters-1, dtype=numpy.int32)
+        if i < num_masters - 1:
+            other_masters[i] = num_masters-1
+        for j in other_masters:
+            other_local_index = flattened_slaves[j]
+            other_master = flattened_masters[j]
+            other_coeff = flattened_coeffs[j]
+            m1[0] = other_master
+            if slaves_loc[i] != slaves_loc[j]:
+                Am0m1[0, 0] = coeff*other_coeff*Ae_original[
+                    local_index, other_local_index]
+                ierr_other_slave = set_values_local(A, 1, ffi_fb(
+                    m0), 1, ffi_fb(m1), ffi_fb(Am0m1), mode)
+                assert(ierr_other_slave == 0)
+            else:
+                Am0m1[0, 0] = coeff*other_coeff*Ae_original[
+                    local_index, local_index]
+                ierr_same_slave = set_values_local(A, 1, ffi_fb(
+                    m0), 1, ffi_fb(m1), ffi_fb(Am0m1), mode)
+                assert(ierr_same_slave == 0)
+    sink(Arow, Acol, Am0m1, m0, m1,  mpc_dofs)
 
 
 @numba.njit
