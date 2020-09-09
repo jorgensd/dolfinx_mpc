@@ -159,7 +159,6 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     slaves_to_send = {}
     loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
                            dtype=np.int64)
-    facettree = geometry.BoundingBoxTree(V.mesh, dim=fdim)
     for (dof, coord) in zip(slaves[:num_owned_slaves],
                             slave_coordinates[:num_owned_slaves]):
         # Find normal vector for local slave (through blocks)
@@ -169,7 +168,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
         # Get processors where boundingbox collides with point
         procs = np.array(cpp.mpc.compute_process_collisions(
-            facettree._cpp_object, coord.T), dtype=np.int32)
+            tree._cpp_object, coord.T), dtype=np.int32)
         procs = procs[procs != comm.rank]
         for proc in procs:
             if proc in slaves_to_send.keys():
