@@ -16,11 +16,14 @@
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/Function.h>
 #include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/geometry/BoundingBoxTree.h>
+#include <dolfinx/geometry/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
+
 using namespace dolfinx_mpc;
 
 //-----------------------------------------------------------------------------
@@ -335,6 +338,7 @@ void dolfinx_mpc::create_contact_condition(
   // vector normal vector)
   const Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1> normal_array
       = nh->x()->array();
+  std::vector<std::int32_t> local_slaves_to_index;
   for (std::int32_t i = 0; i < index_pairs.rows(); ++i)
   {
     auto dofs = index_pairs.row(i);
@@ -351,7 +355,10 @@ void dolfinx_mpc::create_contact_condition(
       if (j == max_index)
       {
         if (is_local)
+        {
+          local_slaves_to_index.push_back(i);
           local_slaves.push_back(dofs[j]);
+        }
         else
           ghost_slaves.push_back(dofs[j]);
       }
@@ -383,5 +390,131 @@ void dolfinx_mpc::create_contact_condition(
 
   std::cout << "\n Rank " << rank << " " << local_slaves.size() << " "
             << ghost_slaves.size() << "\n";
+  V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
+  auto facet_to_cell = V->mesh()->topology().connectivity(fdim, tdim);
+  assert(facet_to_cell);
+  // Find all cells connected to master facets for collision detection
+  std::set<std::int32_t> master_cells;
+  auto facet_values = meshtags.values();
+  auto facet_indices = meshtags.indices();
+  for (std::int32_t i = 0; i < facet_indices.size(); ++i)
+  {
+    if (facet_values[i] == master_marker)
+    {
+      auto cell = facet_to_cell->links(facet_indices[i]);
+      assert(cell.size() == 1);
+      master_cells.insert(cell[0]);
+    }
+  }
+  // Loop through all masters on current processor and check if they collide
+  // with a local master facet
+  dolfinx::geometry::BoundingBoxTree tree(*V->mesh(), tdim);
+  std::int32_t num_local_cells
+      = V->mesh()->topology().index_map(tdim)->size_local();
+  std::map<std::int32_t, std::vector<std::int32_t>> slave_index_to_master_dof;
+  std::map<std::int32_t, std::vector<PetscScalar>> slave_index_to_master_coeff;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
+      = V->dofmap()->index_map->ghost_owner_rank();
+  for (std::int32_t i = 0; i < local_slaves.size(); ++i)
+  {
+    auto coord = coordinates.row(local_slaves[i]);
+    // Narrow number of candidates by using BB collision detection
+    std::vector<std::int32_t> possible_cells
+        = dolfinx::geometry::compute_collisions(tree, coord);
+    if (possible_cells.size() > 0)
+    {
+      // Filter out cell that are not connect to master facet or owned by
+      // processor
+      std::vector<std::int32_t> candidates;
+      for (auto cell : possible_cells)
+      {
+        if ((std::find(master_cells.begin(), master_cells.end(), cell)
+             != master_cells.end())
+            && (cell < num_local_cells))
+          candidates.push_back(cell);
+      }
+      // Use collision detection algorithm (GJK) to check distance from  cell
+      // to point and select one within 1e-10
+      std::vector<std::int32_t> verified_candidates
+          = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
+                                                      coord, 1);
+      if (verified_candidates.size() == 1)
+      {
+        // Get coefficients from slave facet
+        Eigen::Array<PetscScalar, 1, Eigen::Dynamic> coeffs(1, tdim);
+        auto slave_facet_indices = index_pairs.row(local_slaves_to_index[i]);
+        for (std::int32_t j = 0; j < tdim; ++j)
+          coeffs[j] = normal_array[slave_facet_indices[j]];
+        // Compute local contribution of slave on master facet
+        Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic> basis_values
+            = get_basis_functions(V, coord, verified_candidates[0]);
+        auto cell_dofs = V->dofmap()->cell_dofs(verified_candidates[0]);
+        std::vector<std::int32_t> l_master;
+        std::vector<PetscScalar> l_coeff;
+        for (std::int32_t j = 0; j < tdim; ++j)
+        {
+          for (std::int32_t k = 0; k < cell_dofs.size(); ++k)
+          {
+            PetscScalar coeff = basis_values(k, j) * coeffs[j]
+                                / normal_array[local_slaves[i]];
+            if (std::abs(coeff) > 1e-14)
+            {
+              l_master.push_back(cell_dofs(k));
+              l_coeff.push_back(coeff);
+            }
+          }
+        }
+        slave_index_to_master_coeff.insert(std::pair(i, l_coeff));
+        slave_index_to_master_dof.insert(std::pair(i, l_master));
+      }
+    }
+  }
+  int mpi_size = -1;
+  MPI_Comm_size(comm, &mpi_size);
+
+  // If serial, we only have to gather slaves, masters, coeffs in 1D arrays
+  if (mpi_size == 1)
+  {
+    std::vector<std::int64_t> masters_out;
+    std::vector<PetscScalar> coeffs_out;
+    std::vector<std::int32_t> offsets_out = {0};
+    for (std::int32_t i = 0; i < local_slaves.size(); i++)
+    {
+      std::vector<std::int32_t> master_i(
+          local_masters.begin() + local_master_offset[i],
+          local_masters.begin() + local_master_offset[i + 1]);
+      masters_out.insert(masters_out.end(), master_i.begin(), master_i.end());
+      std::vector<std::int32_t> coeffs_i(
+          local_coeffs.begin() + local_master_offset[i],
+          local_coeffs.begin() + local_master_offset[i + 1]);
+      coeffs_out.insert(coeffs_out.end(), coeffs_i.begin(), coeffs_i.end());
+      std::vector<std::int32_t> other_masters = slave_index_to_master_dof[i];
+      std::vector<std::int32_t> other_coeffs = slave_index_to_master_dof[i];
+      masters_out.insert(masters_out.end(), other_masters.begin(),
+                         other_masters.end());
+      coeffs_out.insert(coeffs_out.end(), other_coeffs.begin(),
+                        other_coeffs.end());
+      offsets_out.push_back(masters_out.size());
+    }
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> owners(masters_out.size());
+    owners.fill(1);
+
+    // Map vectors to Eigen arrays
+
+    Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> masters(
+        masters_out.data(), masters_out.size());
+    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> slaves(
+        local_slaves.data(), local_slaves.size());
+    Eigen::Map<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>> coeffs(
+        coeffs_out.data(), coeffs_out.size());
+    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> offsets(
+        offsets_out.data(), offsets_out.size());
+    Eigen::Array<std::int64_t, 0, 1> gm;
+    Eigen::Array<std::int32_t, 0, 1> gs;
+    Eigen::Array<PetscScalar, 0, 1> gc;
+    Eigen::Array<std::int64_t, 1, 1> go(1, 1);
+    go.fill(0);
+  }
+
   // const auto [src_ranks, dest_ranks] = dolfinx::MPI::neighbors(comms[0]);
 }
