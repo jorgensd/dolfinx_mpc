@@ -60,6 +60,14 @@ class MultiPointConstraint():
             self.ghost_coeffs.extend(ghost_coeffs)
             self.ghost_owners.extend(ghost_owners)
 
+    def add_constraint_from_mpc_data(self, V, mpc_data):
+        if self.finalized:
+            raise RuntimeError(
+                "MultiPointConstraint has already been finalized")
+        self.add_constraint(V, mpc_data.get_slaves(), mpc_data.get_masters(),
+                            mpc_data.get_coeffs(), mpc_data.get_owners(),
+                            mpc_data.get_offsets())
+
     def finalize(self):
         """
         Finalizes a multi point constraint by adding all constraints together,

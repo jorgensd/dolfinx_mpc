@@ -15,6 +15,51 @@
 
 namespace dolfinx_mpc
 {
+typedef struct mpc_data mpc_data;
+
+struct mpc_data
+{
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_slaves;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> local_masters;
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> ghost_masters;
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> local_coeffs;
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> ghost_coeffs;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_offsets;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_offsets;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_owners;
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners;
+  std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+            Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+  get_slaves()
+  {
+    return std::make_pair(local_slaves, ghost_slaves);
+  };
+  std::pair<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+            Eigen::Array<std::int64_t, Eigen::Dynamic, 1>>
+  get_masters()
+  {
+    return std::make_pair(local_masters, ghost_masters);
+  };
+  std::pair<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
+            Eigen::Array<PetscScalar, Eigen::Dynamic, 1>>
+  get_coeffs()
+  {
+    return std::make_pair(local_coeffs, ghost_coeffs);
+  };
+  std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+            Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+  get_offsets()
+  {
+    return std::make_pair(local_offsets, ghost_offsets);
+  };
+  std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+            Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+  get_owners()
+  {
+    return std::make_pair(local_owners, ghost_owners);
+  };
+};
 
 /// Append standard sparsity pattern for a given form to a pre-initialized
 /// pattern and a DofMap
@@ -61,7 +106,17 @@ create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t> meshtags,
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
 /// @param[in] nh Function containing the normal at the slave marker interface
-void create_contact_condition(
+//   std::tuple<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//              Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+//              Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+//              Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
+//              Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
+//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+mpc_data create_contact_condition(
     std::shared_ptr<dolfinx::function::FunctionSpace> V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker,

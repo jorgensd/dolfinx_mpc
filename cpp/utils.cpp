@@ -257,7 +257,16 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
   return comms;
 }
 //-----------------------------------------------------------------------------
-void dolfinx_mpc::create_contact_condition(
+// std::tuple<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//            Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//            Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+//            Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
+//            Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
+//            Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
+//            Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//            Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+//            Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
+mpc_data dolfinx_mpc::create_contact_condition(
     std::shared_ptr<dolfinx::function::FunctionSpace> V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker,
@@ -300,6 +309,8 @@ void dolfinx_mpc::create_contact_condition(
 
   // Sort dofs on slave facets from each topological dimension by physical
   // coordinates
+  // FIXME: THis needs to be done through entity dofs of facets instead.
+  dolfinx::common::Timer t2("~Contact (Identify pairs)");
   Eigen::Array<double, Eigen::Dynamic, 3> coordinates
       = V->tabulate_dof_coordinates();
   Eigen::Array<std::int32_t, Eigen::Dynamic, 3> index_pairs(
@@ -323,7 +334,7 @@ void dolfinx_mpc::create_contact_condition(
       }
     }
   }
-
+  t2.stop();
   // Arrays for holding local and ghost data of slave and master coeffs
   std::vector<std::int32_t> local_slaves;
   std::vector<std::int32_t> ghost_slaves;
@@ -388,8 +399,6 @@ void dolfinx_mpc::create_contact_condition(
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
-  std::cout << "\n Rank " << rank << " " << local_slaves.size() << " "
-            << ghost_slaves.size() << "\n";
   V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
   auto facet_to_cell = V->mesh()->topology().connectivity(fdim, tdim);
   assert(facet_to_cell);
@@ -471,6 +480,8 @@ void dolfinx_mpc::create_contact_condition(
   }
   int mpi_size = -1;
   MPI_Comm_size(comm, &mpi_size);
+  // Structure storing mpc arrays
+  dolfinx_mpc::mpc_data mpc;
 
   // If serial, we only have to gather slaves, masters, coeffs in 1D arrays
   if (mpi_size == 1)
@@ -484,12 +495,12 @@ void dolfinx_mpc::create_contact_condition(
           local_masters.begin() + local_master_offset[i],
           local_masters.begin() + local_master_offset[i + 1]);
       masters_out.insert(masters_out.end(), master_i.begin(), master_i.end());
-      std::vector<std::int32_t> coeffs_i(
+      std::vector<PetscScalar> coeffs_i(
           local_coeffs.begin() + local_master_offset[i],
           local_coeffs.begin() + local_master_offset[i + 1]);
       coeffs_out.insert(coeffs_out.end(), coeffs_i.begin(), coeffs_i.end());
       std::vector<std::int32_t> other_masters = slave_index_to_master_dof[i];
-      std::vector<std::int32_t> other_coeffs = slave_index_to_master_dof[i];
+      std::vector<PetscScalar> other_coeffs = slave_index_to_master_coeff[i];
       masters_out.insert(masters_out.end(), other_masters.begin(),
                          other_masters.end());
       coeffs_out.insert(coeffs_out.end(), other_coeffs.begin(),
@@ -498,7 +509,7 @@ void dolfinx_mpc::create_contact_condition(
     }
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> owners(masters_out.size());
     owners.fill(1);
-
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> gowners(0);
     // Map vectors to Eigen arrays
 
     Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> masters(
@@ -509,12 +520,53 @@ void dolfinx_mpc::create_contact_condition(
         coeffs_out.data(), coeffs_out.size());
     Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> offsets(
         offsets_out.data(), offsets_out.size());
-    Eigen::Array<std::int64_t, 0, 1> gm;
-    Eigen::Array<std::int32_t, 0, 1> gs;
-    Eigen::Array<PetscScalar, 0, 1> gc;
-    Eigen::Array<std::int64_t, 1, 1> go(1, 1);
+    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> gm(0, 1);
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> gs(0, 1);
+    Eigen::Array<PetscScalar, Eigen::Dynamic, 1> gc(0, 1);
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> go(0, 1);
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> goff(1, 1);
     go.fill(0);
-  }
+    mpc.local_slaves = slaves;
+    mpc.ghost_slaves = gs;
+    mpc.local_masters = masters;
+    mpc.ghost_masters = gm;
+    mpc.local_offsets = offsets;
+    mpc.ghost_offsets = goff;
+    mpc.local_owners = owners;
+    mpc.ghost_owners = go;
+    mpc.local_coeffs = coeffs;
+    mpc.ghost_coeffs = gc;
 
+    return mpc;
+  }
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> gowners(0);
+
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters(0, 1);
+  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> gm(0, 1);
+
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves(0, 1);
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> gs(0, 1);
+
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coeffs(0, 1);
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 1> gc(0, 1);
+
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets(1, 1);
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> goff(1, 1);
+
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> owners(0);
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> go(0);
+
+  mpc.local_slaves = slaves;
+  mpc.ghost_slaves = gs;
+  mpc.local_masters = masters;
+  mpc.ghost_masters = gm;
+  mpc.local_offsets = offsets;
+  mpc.ghost_offsets = goff;
+  mpc.local_owners = owners;
+  mpc.ghost_owners = go;
+  mpc.local_coeffs = coeffs;
+  mpc.ghost_coeffs = gc;
+
+  return mpc;
   // const auto [src_ranks, dest_ranks] = dolfinx::MPI::neighbors(comms[0]);
 }

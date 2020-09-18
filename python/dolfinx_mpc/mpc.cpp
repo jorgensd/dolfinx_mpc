@@ -52,6 +52,16 @@ void mpc(py::module& m)
       .def("dofmap", &dolfinx_mpc::MultiPointConstraint::dofmap)
       .def("owners", &dolfinx_mpc::MultiPointConstraint::owners);
 
+  py::class_<dolfinx_mpc::mpc_data, std::shared_ptr<dolfinx_mpc::mpc_data>>
+      mpc_data(m, "mpc_data", "Object with data arrays for mpc");
+  mpc_data.def("get_slaves", &dolfinx_mpc::mpc_data::get_slaves)
+      .def("get_masters", &dolfinx_mpc::mpc_data::get_masters)
+      .def("get_coeffs", &dolfinx_mpc::mpc_data::get_coeffs)
+      .def("get_owners", &dolfinx_mpc::mpc_data::get_owners)
+      .def("get_offsets", &dolfinx_mpc::mpc_data::get_offsets);
+
+  //   .def("ghost_masters", &dolfinx_mpc::mpc_data::ghost_masters);
+
   m.def("compute_process_collisions",
         py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,
                           const Eigen::Vector3d&>(
