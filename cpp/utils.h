@@ -8,6 +8,7 @@
 
 #include <Eigen/Dense>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/function/Function.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
@@ -53,5 +54,17 @@ std::array<MPI_Comm, 2>
 create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t> meshtags,
                           std::int32_t slave_marker,
                           std::int32_t master_marker);
+
+/// Create a contact condition between two sets of facets
+/// @param[in] The mpc function space
+/// @param[in] meshtags The meshtag
+/// @param[in] slave_marker Tag for the first interface
+/// @param[in] master_marker Tag for the other interface
+/// @param[in] nh Function containing the normal at the slave marker interface
+void create_contact_condition(
+    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
+    std::int32_t master_marker,
+    std::shared_ptr<dolfinx::function::Function<PetscScalar>> nh);
 
 } // namespace dolfinx_mpc

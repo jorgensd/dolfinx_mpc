@@ -56,6 +56,6 @@ void mpc(py::module& m)
         py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,
                           const Eigen::Vector3d&>(
             &dolfinx::geometry::compute_process_collisions));
-  m.def("create_neighborhood_comms", &dolfinx_mpc::create_neighborhood_comms);
+  m.def("create_contact_condition", &dolfinx_mpc::create_contact_condition);
 }
 } // namespace dolfinx_mpc_wrappers
