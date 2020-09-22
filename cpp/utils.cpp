@@ -190,8 +190,8 @@ void dolfinx_mpc::add_pattern_diagonal(
 
 //-----------------------------------------------------------------------------
 std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
-    dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
-    std::int32_t master_marker)
+    dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t& slave_marker,
+    std::int32_t& master_marker)
 {
   MPI_Comm comm = meshtags.mesh()->mpi_comm();
   int mpi_size = -1;
@@ -257,6 +257,59 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
   }
   return comms;
 }
+//-----------------------------------------------------------------------------
+MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
+    std::vector<std::int32_t>& local_dofs,
+    std::vector<std::int32_t>& ghost_dofs,
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map)
+{
+  // Get data from IndexMap
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
+      = index_map->ghost_owner_rank();
+  const std::int32_t block_size = index_map->block_size();
+  const std::int32_t size_local = index_map->size_local();
+  std::map<std::int32_t, std::set<int>> shared_indices
+      = index_map->compute_shared_indices();
+  MPI_Comm comm
+      = index_map->comm(dolfinx::common::IndexMap::Direction::symmetric);
+
+  // Array of processors sending to the ghost_dofs
+  std::set<std::int32_t> src_edges;
+  // Array of processors the local_dofs are sent to
+  std::set<std::int32_t> dst_edges;
+  int rank = -1;
+  MPI_Comm_rank(comm, &rank);
+
+  for (auto dof : local_dofs)
+  {
+    const std::set<int> procs = shared_indices[dof / block_size];
+    for (auto proc : procs)
+    {
+      dst_edges.insert(proc);
+      std::cout << rank << " " << dof << "old ->" << proc << "\n";
+    }
+  }
+
+  for (auto dof : ghost_dofs)
+  {
+    const std::int32_t proc = ghost_owners[dof / block_size - size_local];
+    src_edges.insert(proc);
+  }
+  MPI_Comm comm_loc = MPI_COMM_NULL;
+  // Create communicator with edges owners (sources) -> ghosts (destinations)
+  std::vector<std::int32_t> source_edges;
+  source_edges.assign(src_edges.begin(), src_edges.end());
+  std::vector<std::int32_t> dest_edges;
+  dest_edges.assign(dst_edges.begin(), dst_edges.end());
+  std::vector<int> source_weights(source_edges.size(), 1);
+  std::vector<int> dest_weights(dest_edges.size(), 1);
+  MPI_Dist_graph_create_adjacent(comm, source_edges.size(), source_edges.data(),
+                                 source_weights.data(), dest_edges.size(),
+                                 dest_edges.data(), dest_weights.data(),
+                                 MPI_INFO_NULL, false, &comm_loc);
+
+  return comm_loc;
+};
 //-----------------------------------------------------------------------------
 mpc_data dolfinx_mpc::create_contact_condition(
     std::shared_ptr<dolfinx::function::FunctionSpace> V,
@@ -389,7 +442,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
   std::map<std::int32_t, std::vector<std::int64_t>> slave_index_to_master_dof;
   std::map<std::int32_t, std::vector<PetscScalar>> slave_index_to_master_coeff;
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
-      = V->dofmap()->index_map->ghost_owner_rank();
+      = imap->ghost_owner_rank();
   Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor> coordinates
       = V->tabulate_dof_coordinates();
   Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>
@@ -773,8 +826,9 @@ mpc_data dolfinx_mpc::create_contact_condition(
         std::vector<std::int32_t>::iterator it
             = std::find(local_slaves.begin(), local_slaves.end(), slave);
         std::int32_t index = std::distance(local_slaves.begin(), it);
-        // Skip if already found
-        if (!found[index])
+
+        // Skip if already found or not on processor
+        if ((!found[index]) && (it != local_slaves.end()))
         {
           std::vector<std::int64_t> masters_(
               masters_in_recv.begin() + master_offsets[j],
@@ -794,36 +848,110 @@ mpc_data dolfinx_mpc::create_contact_condition(
     }
   }
 
-  // Receive
-  // Eigen::Array<std::int32_t, Eigen::Dynamic, 1> gowners(0);
+  // Distribute data for ghosted slaves (the coeffs, owners and offsets)
 
-  // Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters(0, 1);
-  // Eigen::Array<std::int64_t, Eigen::Dynamic, 1> gm(0, 1);
+  // Create communicator local_slaves -> ghost_slaves
+  MPI_Comm slave_to_ghost
+      = create_owner_to_ghost_comm(local_slaves, ghost_slaves, imap);
+  auto [src_ranks_ghost, dest_ranks_ghost]
+      = dolfinx::MPI::neighbors(slave_to_ghost);
+  // Count number of incoming slaves
+  std::vector<std::int32_t> num_inc_slaves(src_ranks_ghost.size(), 0);
+  for (std::int32_t i = 0; i < ghost_slaves.size(); ++i)
+  {
+    const std::int32_t owner
+        = ghost_owners[ghost_slaves[i] / block_size - size_local];
+    std::vector<int>::iterator it
+        = std::find(src_ranks_ghost.begin(), src_ranks_ghost.end(), owner);
+    std::int32_t index = std::distance(src_ranks_ghost.begin(), it);
+    num_inc_slaves[index] += 1;
+    auto global_slaves = imap->local_to_global({ghost_slaves[i]}, false);
+  }
+  // Count number of outgoing slaves and masters
+  std::map<std::int32_t, std::set<int>> shared_indices
+      = imap->compute_shared_indices();
 
-  // Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves(0, 1);
-  // Eigen::Array<std::int32_t, Eigen::Dynamic, 1> gs(0, 1);
+  std::vector<std::int32_t> num_out_slaves(dest_ranks_ghost.size(), 0);
+  std::vector<std::int32_t> num_out_masters(dest_ranks_ghost.size(), 0);
+  std::map<std::int32_t, std::vector<std::int32_t>> proc_to_ghost;
+  for (std::int32_t i = 0; i < num_slaves; ++i)
+  {
+    std::int32_t num_masters = slave_index_to_master_dof[i].size();
+    std::set<int> ghost_procs = shared_indices[local_slaves[i] / block_size];
+    for (auto proc : ghost_procs)
+    {
+      auto it
+          = std::find(dest_ranks_ghost.begin(), dest_ranks_ghost.end(), proc);
+      std::int32_t index = std::distance(dest_ranks_ghost.begin(), it);
+      num_out_masters[index] += num_masters;
+      num_out_slaves[index] += 1;
+      auto global_slaves = imap->local_to_global({local_slaves[i]}, false);
+      proc_to_ghost[index].push_back(global_slaves[0]);
+    }
+  }
+  std::cout << slave_index_to_master_dof.size() << "-" << local_slaves.size()
+            << "\n";
+  for (std::int32_t i = 0; i < dest_ranks_ghost.size(); ++i)
+  {
+    std::cout << "RANK" << rank << " num slaves out"
+              << num_out_slaves[i]
+              // << "  num masters out " << num_out_masters[i] << " to "
+              << " to " << dest_ranks_ghost[i] << " \n";
+  }
+  for (std::int32_t i = 0; i < src_ranks_ghost.size(); ++i)
+  {
+    std::cout << "RANK" << rank << "recv num slaves " << num_inc_slaves[i]
+              << " from " << src_ranks_ghost[i] << "\n";
+  }
 
-  // Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coeffs(0, 1);
-  // Eigen::Array<PetscScalar, Eigen::Dynamic, 1> gc(0, 1);
+  // Prepare communication displacements
+  // std::vector<int> send_disp(dest_ranks.size() + 1, 0),
+  //     recv_disp(src_ranks.size() + 1, 0);
 
-  // Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets(1, 1);
-  // Eigen::Array<std::int32_t, Eigen::Dynamic, 1> goff(1, 1);
+  // Prepare incoming slave array
 
-  // Eigen::Array<std::int32_t, Eigen::Dynamic, 1> owners(0);
-  // Eigen::Array<std::int32_t, Eigen::Dynamic, 1> go(0);
+  // Figure out how many slaves and masters to receive from other procs (those
+  // that have masters on that proc) (Procs with masters -> Procs with slaves)
 
-  // mpc.local_slaves = slaves;
-  // mpc.ghost_slaves = gs;
-  // mpc.local_masters = masters;
-  // mpc.ghost_masters = gm;
-  // mpc.local_offsets = offsets;
-  // mpc.ghost_offsets = goff;
-  // mpc.local_owners = owners;
-  // mpc.ghost_owners = go;
-  // mpc.local_coeffs = coeffs;
-  // mpc.ghost_coeffs = gc;
+  // Sort slaves by proc they are ghosted on
+
+  // const std::int32_t returning_num_slaves = slaves_in.size();
+  //   const std::int32_t returning_num_masters = masters_in.size();
+  //   std::vector<std::int32_t> recv_num_global_slaves(indegree2);
+  //   MPI_Neighbor_allgather(
+  //       &returning_num_slaves, 1, dolfinx::MPI::mpi_type<std::int32_t>(),
+  //       recv_num_global_slaves.data(), 1,
+  //       dolfinx::MPI::mpi_type<std::int32_t>(), neighborhood_comms[1]);
+  //   std::vector<std::int32_t> recv_num_global_masters(indegree2);
+  //   MPI_Neighbor_allgather(
+  //       &returning_num_masters, 1, dolfinx::MPI::mpi_type<std::int32_t>(),
+  //       recv_num_global_masters.data(), 1,
+  //       dolfinx::MPI::mpi_type<std::int32_t>(), neighborhood_comms[1]);
+  //   // Slave processor receives slaves from other processor (where they have
+  //   // masters)
+  //   // Compute displacements for data to receive
+  //   std::vector<int> disp_slaves(indegree2 + 1, 0);
+  //   std::partial_sum(recv_num_global_slaves.begin(),
+  //   recv_num_global_slaves.end(),
+  //                    disp_slaves.begin() + 1);
+
+  //   // Send and recv the global dof number of slaves whose masters has been
+  //   // found
+  //   std::vector<std::int64_t> slaves_in_recv(disp_slaves.back());
+  //   MPI_Neighbor_allgatherv(
+  //       slaves_in.data(), slaves_in.size(),
+  //       dolfinx::MPI::mpi_type<std::int64_t>(), slaves_in_recv.data(),
+  //       recv_num_global_slaves.data(), disp_slaves.data(),
+  //       dolfinx::MPI::mpi_type<std::int64_t>(), neighborhood_comms[1]);
+
+  //   // Receive offsets of masters for each processor (without the first zero)
+  //   std::vector<std::int32_t> master_offsets_in_recv(disp_slaves.back());
+  //   MPI_Neighbor_allgatherv(
+  //       offsets_in.data(), offsets_in.size(),
+  //       dolfinx::MPI::mpi_type<std::int32_t>(),
+  //       master_offsets_in_recv.data(), recv_num_global_slaves.data(),
+  //       disp_slaves.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+  //       neighborhood_comms[1]);
 
   return mpc;
-  // const auto [src_ranks, dest_ranks] =
-  // dolfinx::MPI::neighbors(comms[0]);
 }

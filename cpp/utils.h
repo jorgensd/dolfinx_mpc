@@ -96,9 +96,19 @@ void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
 std::array<MPI_Comm, 2>
-create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t> meshtags,
-                          std::int32_t slave_marker,
-                          std::int32_t master_marker);
+create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
+                          std::int32_t& slave_marker,
+                          std::int32_t& master_marker);
+
+/// Create neighbourhood communicators from local_dofs to processors who has
+/// this as a ghost.
+/// @param[in] local_dofs Vector of local dofs
+/// @param[in] local_dofs Vector of ghost dofs
+/// @param[in] index_map The index map relating procs and ghosts
+MPI_Comm create_owner_to_ghost_comm(
+    std::vector<std::int32_t>& local_dofs,
+    std::vector<std::int32_t>& ghost_dofs,
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map);
 
 /// Create a contact condition between two sets of facets
 /// @param[in] The mpc function space
@@ -106,16 +116,6 @@ create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t> meshtags,
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
 /// @param[in] nh Function containing the normal at the slave marker interface
-//   std::tuple<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-//              Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-//              Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-//              Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
-//              Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
-//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-//              Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
 mpc_data create_contact_condition(
     std::shared_ptr<dolfinx::function::FunctionSpace> V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
