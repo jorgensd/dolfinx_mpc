@@ -797,9 +797,9 @@ mpc_data dolfinx_mpc::create_contact_condition(
   std::vector<PetscScalar> remote_colliding_coeffs(disp_inc_masters.back());
   MPI_Neighbor_alltoallv(
       collision_coeffs_out.data(), num_collision_masters.data(),
-      send_disp_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
       remote_colliding_coeffs.data(), inc_num_collision_masters.data(),
-      disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
       neighborhood_comms[1]);
   std::vector<std::int32_t> remote_colliding_owners(disp_inc_masters.back());
   MPI_Neighbor_alltoallv(
@@ -883,6 +883,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
   std::map<std::int32_t, std::vector<PetscScalar>> proc_to_ghost_coeffs;
   std::map<std::int32_t, std::vector<std::int32_t>> proc_to_ghost_owners;
   std::map<std::int32_t, std::vector<std::int32_t>> proc_to_ghost_offsets;
+
   for (std::int32_t i = 0; i < local_slaves.size(); ++i)
   {
     std::vector<std::int64_t> masters_i = local_masters[i];
@@ -911,14 +912,19 @@ mpc_data dolfinx_mpc::create_contact_condition(
           proc_to_ghost_masters[index].size());
     }
   }
-  // Flatten map of global slave ghost dofs to use allgatherv
+
+  // Flatten map of global slave ghost dofs to use alltoallv
   std::vector<std::int64_t> out_ghost_slaves;
   std::vector<std::int64_t> out_ghost_masters;
   std::vector<PetscScalar> out_ghost_coeffs;
   std::vector<std::int32_t> out_ghost_owners;
   std::vector<std::int32_t> out_ghost_offsets;
+  std::vector<std::int32_t> num_send_slaves(dest_ranks_ghost.size());
+  std::vector<std::int32_t> num_send_masters(dest_ranks_ghost.size());
   for (std::int32_t i = 0; i < dest_ranks_ghost.size(); ++i)
   {
+    num_send_slaves[i] = proc_to_ghost[i].size();
+    num_send_masters[i] = proc_to_ghost_masters[i].size();
     out_ghost_slaves.insert(out_ghost_slaves.end(), proc_to_ghost[i].begin(),
                             proc_to_ghost[i].end());
     out_ghost_masters.insert(out_ghost_masters.end(),
@@ -934,17 +940,31 @@ mpc_data dolfinx_mpc::create_contact_condition(
                              proc_to_ghost_offsets[i].begin(),
                              proc_to_ghost_offsets[i].end());
   }
+
   // Recieve global slave dofs for ghosts structured as on src proc
-  // Compute displacements for data to receive
-  std::vector<int> disp_ghost_slaves(src_ranks_ghost.size() + 1, 0);
+  // Compute displacements for data to send and receive
+  std::vector<int> disp_recv_ghost_slaves(src_ranks_ghost.size() + 1, 0);
   std::partial_sum(inc_num_slaves.begin(), inc_num_slaves.end(),
-                   disp_ghost_slaves.begin() + 1);
-  std::vector<std::int64_t> in_ghost_slaves(disp_ghost_slaves.back());
-  MPI_Neighbor_allgatherv(
-      out_ghost_slaves.data(), out_ghost_slaves.size(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), in_ghost_slaves.data(),
-      inc_num_slaves.data(), disp_ghost_slaves.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), slave_to_ghost);
+                   disp_recv_ghost_slaves.begin() + 1);
+
+  std::vector<int> disp_send_ghost_slaves(dest_ranks_ghost.size() + 1, 0);
+  std::partial_sum(num_send_slaves.begin(), num_send_slaves.end(),
+                   disp_send_ghost_slaves.begin() + 1);
+
+  std::vector<std::int64_t> in_ghost_slaves(disp_recv_ghost_slaves.back());
+  MPI_Neighbor_alltoallv(
+      out_ghost_slaves.data(), num_send_slaves.data(),
+      disp_send_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      in_ghost_slaves.data(), inc_num_slaves.data(),
+      disp_recv_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      slave_to_ghost);
+  std::vector<std::int32_t> in_ghost_offsets(disp_recv_ghost_slaves.back());
+  MPI_Neighbor_alltoallv(
+      out_ghost_offsets.data(), num_send_slaves.data(),
+      disp_send_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      in_ghost_offsets.data(), inc_num_slaves.data(),
+      disp_recv_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      slave_to_ghost);
 
   // Communicate size of communication of masters
   std::vector<int> inc_num_masters(src_ranks_ghost.size());
@@ -952,46 +972,102 @@ mpc_data dolfinx_mpc::create_contact_condition(
                         inc_num_masters.data(), 1, MPI_INT, slave_to_ghost);
   // Send and receive the masters (the proc owning the master) and the
   // corresponding coeffs from the processor owning the slave
-  std::vector<int> disp_ghost_masters(src_ranks_ghost.size() + 1, 0);
+  std::vector<int> disp_recv_ghost_masters(src_ranks_ghost.size() + 1, 0);
   std::partial_sum(inc_num_masters.begin(), inc_num_masters.end(),
-                   disp_ghost_masters.begin() + 1);
-  std::vector<std::int64_t> in_ghost_masters(disp_ghost_masters.back());
-  MPI_Neighbor_allgatherv(
-      out_ghost_masters.data(), out_ghost_masters.size(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), in_ghost_masters.data(),
-      inc_num_masters.data(), disp_ghost_masters.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), slave_to_ghost);
-  std::vector<PetscScalar> in_ghost_coeffs(disp_ghost_masters.back());
-  MPI_Neighbor_allgatherv(
-      out_ghost_coeffs.data(), out_ghost_coeffs.size(),
-      dolfinx::MPI::mpi_type<PetscScalar>(), in_ghost_coeffs.data(),
-      inc_num_masters.data(), disp_ghost_masters.data(),
-      dolfinx::MPI::mpi_type<PetscScalar>(), slave_to_ghost);
-  std::vector<std::int32_t> in_ghost_owners(disp_ghost_masters.back());
-  MPI_Neighbor_allgatherv(
-      out_ghost_owners.data(), out_ghost_owners.size(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), in_ghost_owners.data(),
-      inc_num_masters.data(), disp_ghost_masters.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), slave_to_ghost);
-  std::vector<std::int32_t> in_ghost_offsets(disp_ghost_masters.back());
-  MPI_Neighbor_allgatherv(
-      out_ghost_offsets.data(), out_ghost_offsets.size(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), in_ghost_offsets.data(),
-      inc_num_masters.data(), disp_ghost_masters.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), slave_to_ghost);
+                   disp_recv_ghost_masters.begin() + 1);
+  std::vector<int> disp_send_ghost_masters(dest_ranks_ghost.size() + 1, 0);
+  std::partial_sum(num_send_masters.begin(), num_send_masters.end(),
+                   disp_send_ghost_masters.begin() + 1);
+  std::vector<std::int64_t> in_ghost_masters(disp_recv_ghost_masters.back());
+  MPI_Neighbor_alltoallv(
+      out_ghost_masters.data(), num_send_masters.data(),
+      disp_send_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      in_ghost_masters.data(), inc_num_masters.data(),
+      disp_recv_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      slave_to_ghost);
+  std::vector<PetscScalar> in_ghost_coeffs(disp_recv_ghost_masters.back());
+  MPI_Neighbor_alltoallv(out_ghost_coeffs.data(), num_send_masters.data(),
+                         disp_send_ghost_masters.data(),
+                         dolfinx::MPI::mpi_type<PetscScalar>(),
+                         in_ghost_coeffs.data(), inc_num_masters.data(),
+                         disp_recv_ghost_masters.data(),
+                         dolfinx::MPI::mpi_type<PetscScalar>(), slave_to_ghost);
+  std::vector<std::int32_t> in_ghost_owners(disp_recv_ghost_masters.back());
+  MPI_Neighbor_alltoallv(
+      out_ghost_owners.data(), num_send_masters.data(),
+      disp_send_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      in_ghost_owners.data(), inc_num_masters.data(),
+      disp_recv_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      slave_to_ghost);
 
-  // std::stringstream ss;
-  // ss << "RANK" << rank << "\n";
-  // auto global_ghost_slaves = imap->local_to_global({ghost_slaves}, false);
-  // for (std::int32_t i = 0; i < global_ghost_slaves.size(); ++i)
-  // {
-  //   ss << global_ghost_slaves[i] << " " << in_ghost_slaves[i] << "\n";
-  // }
-  // std::cout << ss.str() << "\n";
-  // // Change offsets to reflect that ghosts are stacked from different
-  // processors std::cout << global_ghost_slaves.size() << "==" <<
-  // in_ghost_slaves.size()
-  //           << "\n";
+  // Accumulate offsets of masters from different processors
+  std::vector<std::int32_t> ghost_offsets_ = {0};
+  for (std::int32_t i = 0; i < src_ranks_ghost.size(); ++i)
+  {
+    const std::int32_t min = disp_recv_ghost_slaves[i];
+    const std::int32_t max = disp_recv_ghost_slaves[i + 1];
+    std::vector<std::int32_t> inc_offset;
+    inc_offset.insert(inc_offset.end(), in_ghost_offsets.begin() + min,
+                      in_ghost_offsets.begin() + max);
+    for (std::int32_t& offset : inc_offset)
+      offset += *(ghost_offsets_.end() - 1);
+    ghost_offsets_.insert(ghost_offsets_.end(), inc_offset.begin(),
+                          inc_offset.end());
+  }
+
+  std::vector<std::int64_t> masters_out;
+  std::vector<PetscScalar> coeffs_out;
+  std::vector<std::int32_t> owners_out;
+  std::vector<std::int32_t> offsets_out = {0};
+  // Flatten local slaves
+  for (std::int32_t i = 0; i < local_slaves.size(); i++)
+  {
+    masters_out.insert(masters_out.end(), local_masters[i].begin(),
+                       local_masters[i].end());
+    coeffs_out.insert(coeffs_out.end(), local_coeffs[i].begin(),
+                      local_coeffs[i].end());
+    offsets_out.push_back(masters_out.size());
+    owners_out.insert(owners_out.end(), local_owners[i].begin(),
+                      local_owners[i].end());
+  }
+  {
+    // Map info of locally owned slaves to Eigen arrays
+    Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> masters(
+        masters_out.data(), masters_out.size());
+    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> slaves(
+        local_slaves.data(), local_slaves.size());
+    Eigen::Map<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>> coeffs(
+        coeffs_out.data(), coeffs_out.size());
+    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> offsets(
+        offsets_out.data(), offsets_out.size());
+    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> owners(
+        owners_out.data(), owners_out.size());
+
+    // Map Ghost data
+    std::vector<std::int32_t> in_ghost_slaves_loc
+        = imap->global_to_local(in_ghost_slaves, false);
+    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> ghost_slaves(
+        in_ghost_slaves_loc.data(), in_ghost_slaves_loc.size());
+    Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> ghost_masters(
+        in_ghost_masters.data(), in_ghost_masters.size());
+    Eigen::Map<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>> ghost_coeffs(
+        in_ghost_coeffs.data(), coeffs_out.size());
+    Eigen::Map<const Eigen::Matrix<std::int32_t, Eigen::Dynamic, 1>>
+        ghost_offsets(ghost_offsets_.data(), ghost_offsets_.size());
+    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> ghost_owners(
+        in_ghost_owners.data(), in_ghost_owners.size());
+
+    mpc.local_slaves = slaves;
+    mpc.ghost_slaves = ghost_slaves;
+    mpc.local_masters = masters;
+    mpc.ghost_masters = ghost_masters;
+    mpc.local_offsets = offsets;
+    mpc.ghost_offsets = ghost_offsets;
+    mpc.local_owners = owners;
+    mpc.ghost_owners = ghost_owners;
+    mpc.local_coeffs = coeffs;
+    mpc.ghost_coeffs = ghost_coeffs;
+  }
 
   return mpc;
 }
