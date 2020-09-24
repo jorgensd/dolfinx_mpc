@@ -355,7 +355,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
 
   // Make maps for local data of slave and master coeffs
   std::vector<std::int32_t> local_slaves;
-  std::map<std::int32_t, std::vector<std::int32_t>> masters;
+  std::map<std::int32_t, std::vector<std::int64_t>> masters;
   std::map<std::int32_t, std::vector<PetscScalar>> coeffs;
   std::map<std::int32_t, std::vector<std::int32_t>> owners;
 
@@ -392,13 +392,21 @@ mpc_data dolfinx_mpc::create_contact_condition(
         {
           PetscScalar coeff_j
               = -normal_array[dofs[j]] / normal_array[dofs[max_index]];
-          owners_i.push_back(rank);
-          masters_i.push_back(dofs[j]);
-          coeffs_i.push_back(coeff_j);
+          if (std::abs(coeff_j) > 1e-14)
+          {
+            owners_i.push_back(rank);
+            masters_i.push_back(dofs[j]);
+            coeffs_i.push_back(coeff_j);
+          }
         }
-      masters.insert({i, masters_i});
-      coeffs.insert({i, coeffs_i});
-      owners.insert({i, owners_i});
+      if (masters_i.size() > 0)
+      {
+        std::vector<std::int64_t> m_glob
+            = imap->local_to_global(masters_i, false);
+        masters.insert({i, m_glob});
+        coeffs.insert({i, coeffs_i});
+        owners.insert({i, owners_i});
+      }
     }
     else
       ghost_slaves.push_back(dofs[max_index]);
@@ -852,6 +860,22 @@ mpc_data dolfinx_mpc::create_contact_condition(
       }
     }
   }
+
+  // Merge arrays from other processors with those of the same block
+  for (const auto& block_masters : masters)
+  {
+    std::int32_t key = block_masters.first;
+    std::vector<std::int64_t> masters_ = block_masters.second;
+    std::vector<PetscScalar> coeffs_ = coeffs[key];
+    std::vector<std::int32_t> owners_ = owners[key];
+    local_masters[key].insert(local_masters[key].end(), masters_.begin(),
+                              masters_.end());
+    local_coeffs[key].insert(local_coeffs[key].end(), coeffs_.begin(),
+                             coeffs_.end());
+    local_owners[key].insert(local_owners[key].end(), owners_.begin(),
+                             owners_.end());
+  }
+
   // Distribute data for ghosted slaves (the coeffs, owners and offsets)
 
   // Create communicator local_slaves -> ghost_slaves
@@ -1030,44 +1054,41 @@ mpc_data dolfinx_mpc::create_contact_condition(
     owners_out.insert(owners_out.end(), local_owners[i].begin(),
                       local_owners[i].end());
   }
-  {
-    // Map info of locally owned slaves to Eigen arrays
-    Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> masters(
-        masters_out.data(), masters_out.size());
-    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> slaves(
-        local_slaves.data(), local_slaves.size());
-    Eigen::Map<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>> coeffs(
-        coeffs_out.data(), coeffs_out.size());
-    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> offsets(
-        offsets_out.data(), offsets_out.size());
-    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> owners(
-        owners_out.data(), owners_out.size());
+  // Map info of locally owned slaves to Eigen arrays
+  Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> loc_masters(
+      masters_out.data(), masters_out.size());
+  Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> slaves(
+      local_slaves.data(), local_slaves.size());
+  Eigen::Map<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>> loc_coeffs(
+      coeffs_out.data(), coeffs_out.size());
+  Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> offsets(
+      offsets_out.data(), offsets_out.size());
+  Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> loc_owners(
+      owners_out.data(), owners_out.size());
 
-    // Map Ghost data
-    std::vector<std::int32_t> in_ghost_slaves_loc
-        = imap->global_to_local(in_ghost_slaves, false);
-    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> ghost_slaves(
-        in_ghost_slaves_loc.data(), in_ghost_slaves_loc.size());
-    Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> ghost_masters(
-        in_ghost_masters.data(), in_ghost_masters.size());
-    Eigen::Map<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>> ghost_coeffs(
-        in_ghost_coeffs.data(), coeffs_out.size());
-    Eigen::Map<const Eigen::Matrix<std::int32_t, Eigen::Dynamic, 1>>
-        ghost_offsets(ghost_offsets_.data(), ghost_offsets_.size());
-    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> ghost_owners(
-        in_ghost_owners.data(), in_ghost_owners.size());
-
-    mpc.local_slaves = slaves;
-    mpc.ghost_slaves = ghost_slaves;
-    mpc.local_masters = masters;
-    mpc.ghost_masters = ghost_masters;
-    mpc.local_offsets = offsets;
-    mpc.ghost_offsets = ghost_offsets;
-    mpc.local_owners = owners;
-    mpc.ghost_owners = ghost_owners;
-    mpc.local_coeffs = coeffs;
-    mpc.ghost_coeffs = ghost_coeffs;
-  }
+  // Map Ghost data
+  std::vector<std::int32_t> in_ghost_slaves_loc
+      = imap->global_to_local(in_ghost_slaves, false);
+  Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> ghost_slaves_eigen(
+      in_ghost_slaves_loc.data(), in_ghost_slaves_loc.size());
+  Eigen::Map<Eigen::Array<std::int64_t, Eigen::Dynamic, 1>> ghost_masters(
+      in_ghost_masters.data(), in_ghost_masters.size());
+  Eigen::Map<Eigen::Array<PetscScalar, Eigen::Dynamic, 1>> ghost_coeffs(
+      in_ghost_coeffs.data(), in_ghost_coeffs.size());
+  Eigen::Map<const Eigen::Matrix<std::int32_t, Eigen::Dynamic, 1>>
+      ghost_offsets(ghost_offsets_.data(), ghost_offsets_.size());
+  Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> m_ghost_owners(
+      in_ghost_owners.data(), in_ghost_owners.size());
+  mpc.local_slaves = slaves;
+  mpc.ghost_slaves = ghost_slaves_eigen;
+  mpc.local_masters = loc_masters;
+  mpc.ghost_masters = ghost_masters;
+  mpc.local_offsets = offsets;
+  mpc.ghost_offsets = ghost_offsets;
+  mpc.local_owners = loc_owners;
+  mpc.ghost_owners = m_ghost_owners;
+  mpc.local_coeffs = loc_coeffs;
+  mpc.ghost_coeffs = ghost_coeffs;
 
   return mpc;
 }
