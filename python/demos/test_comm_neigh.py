@@ -11,6 +11,7 @@
 import pdb
 from IPython import embed
 import dolfinx.io
+import dolfinx.common
 import numpy as np
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -23,7 +24,7 @@ from create_and_export_mesh import mesh_3D_rot
 
 comm = MPI.COMM_WORLD
 ext = "hexahedron"
-theta = np.pi/3
+theta = 0  # np.pi/3
 if comm.size == 1:
     mesh_3D_rot(theta, ext)
 
@@ -45,9 +46,14 @@ with dolfinx.io.XDMFFile(comm,
     mt = xdmf.read_meshtags(mesh, "Grid")
 V = dolfinx.VectorFunctionSpace(mesh, ("CG", 1))
 nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
-dolfinx_mpc.cpp.mpc.create_contact_condition(
+mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
     V._cpp_object, mt, 4, 9, nh._cpp_object)
+mpc = dolfinx_mpc.MultiPointConstraint(V)
+mpc.add_constraint_from_mpc_data(V, mpc_data)
+mpc.finalize()
+# mpc.create_contact_constraint(mt, 4, 9)
 
+#dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
 print(comm.rank, "Slaves:", sum(mt.values == 4)
       > 0, "Masters:", sum(mt.values == 9) > 0)
 # cell_map = mesh.topology.index_map(tdim)
