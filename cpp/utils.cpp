@@ -644,6 +644,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
       collision_coeffs(indegree);
   std::vector<std::map<std::int64_t, std::vector<std::int32_t>>>
       collision_owners(indegree);
+
   // Loop over slaves per incoming processor
   for (std::int32_t i = 0; i < indegree; ++i)
   {
@@ -678,7 +679,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
         std::vector<std::int32_t> verified_candidates
             = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
                                                         slave_coord, 1);
-
         if (verified_candidates.size() == 1)
         {
           // Compute local contribution of slave on master facet
@@ -751,7 +751,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
       collision_offsets_out.push_back(master_offset);
     }
   }
-
   // Get info about reverse communicator
   int indegree_rev(-1), outdegree_rev(-2), weighted_rev(-1);
   MPI_Dist_graph_neighbors_count(neighborhood_comms[1], &indegree_rev,
@@ -838,14 +837,12 @@ mpc_data dolfinx_mpc::create_contact_condition(
     master_offsets.insert(master_offsets.end(),
                           remote_colliding_offsets.begin() + min,
                           remote_colliding_offsets.begin() + max);
-
     // Loop through slaves and add them if they havent already been added
     for (std::int32_t j = 0; j < master_offsets.size() - 1; ++j)
     {
       const std::int32_t slave = recv_slaves_as_local[min + j];
       const std::int64_t key = remote_colliding_slaves[min + j];
       assert(slave != -1);
-
       // Skip if already found on other incoming processor
       if (local_masters[key].size() == 0)
       {
@@ -921,11 +918,12 @@ mpc_data dolfinx_mpc::create_contact_condition(
   std::map<std::int32_t, std::vector<std::int32_t>> proc_to_ghost_owners;
   std::map<std::int32_t, std::vector<std::int32_t>> proc_to_ghost_offsets;
 
-  for (std::int32_t i = 0; i < local_slaves.size(); ++i)
+  for (std::int32_t i = 0; i < local_slaves_as_glob.size(); ++i)
   {
-    std::vector<std::int64_t> masters_i = local_masters[i];
-    std::vector<PetscScalar> coeffs_i = local_coeffs[i];
-    std::vector<std::int32_t> owners_i = local_owners[i];
+    const std::int64_t glob_slave = local_slaves_as_glob[i];
+    std::vector<std::int64_t> masters_i = local_masters[glob_slave];
+    std::vector<PetscScalar> coeffs_i = local_coeffs[glob_slave];
+    std::vector<std::int32_t> owners_i = local_owners[glob_slave];
     std::int32_t num_masters = masters_i.size();
     std::set<int> ghost_procs = shared_indices[local_slaves[i] / block_size];
     for (auto proc : ghost_procs)
@@ -935,6 +933,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
       std::int32_t index = std::distance(dest_ranks_ghost.begin(), it);
       out_num_masters[index] += num_masters;
       out_num_slaves[index]++;
+
       // Map slaves to global dof to be recognized by recv proc
       auto global_slaves = imap->local_to_global({local_slaves[i]}, false);
       proc_to_ghost[index].push_back(global_slaves[0]);
