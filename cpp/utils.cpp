@@ -612,9 +612,10 @@ mpc_data dolfinx_mpc::create_contact_condition(
       dolfinx::MPI::mpi_type<std::int64_t>(), slaves_recv.data(),
       num_slaves_recv.data(), disp.data(),
       dolfinx::MPI::mpi_type<std::int64_t>(), neighborhood_comms[0]);
+
   // Multiply recv size by three to accommodate vector coordinates and function
   // data
-  std::vector<int> num_slaves_recv3(indegree + 1);
+  std::vector<std::int32_t> num_slaves_recv3(indegree);
   for (std::int32_t i = 0; i < num_slaves_recv.size(); ++i)
     num_slaves_recv3[i] = num_slaves_recv[i] * 3;
   std::vector<int> disp3(indegree + 1, 0);
@@ -837,12 +838,14 @@ mpc_data dolfinx_mpc::create_contact_condition(
     master_offsets.insert(master_offsets.end(),
                           remote_colliding_offsets.begin() + min,
                           remote_colliding_offsets.begin() + max);
+
     // Loop through slaves and add them if they havent already been added
     for (std::int32_t j = 0; j < master_offsets.size() - 1; ++j)
     {
       const std::int32_t slave = recv_slaves_as_local[min + j];
       const std::int64_t key = remote_colliding_slaves[min + j];
       assert(slave != -1);
+
       // Skip if already found on other incoming processor
       if (local_masters[key].size() == 0)
       {
@@ -885,7 +888,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
     local_owners[key].insert(local_owners[key].end(), owners_.begin(),
                              owners_.end());
   }
-
   // Distribute data for ghosted slaves (the coeffs, owners and offsets)
 
   // Create communicator local_slaves -> ghost_slaves
@@ -933,7 +935,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
       std::int32_t index = std::distance(dest_ranks_ghost.begin(), it);
       out_num_masters[index] += num_masters;
       out_num_slaves[index]++;
-
       // Map slaves to global dof to be recognized by recv proc
       auto global_slaves = imap->local_to_global({local_slaves[i]}, false);
       proc_to_ghost[index].push_back(global_slaves[0]);
