@@ -446,6 +446,10 @@ mpc_data dolfinx_mpc::create_contact_condition(
   Eigen::Array<PetscScalar, Eigen::Dynamic, 3, Eigen::RowMajor>
       local_slave_normal(local_slaves.size(), 3);
   std::vector<std::int64_t> slaves_wo_local_collision;
+
+  // Map to get coordinates and normals of slaves that should be distributed
+  std::vector<std::int32_t> collision_to_local;
+
   for (std::int32_t i = 0; i < local_slaves.size(); ++i)
   {
     // Get coordinate and coeff for slave and save in send array
@@ -516,20 +520,39 @@ mpc_data dolfinx_mpc::create_contact_condition(
         else
         {
           slaves_wo_local_collision.push_back(local_slaves_as_glob[i]);
+          collision_to_local.push_back(i);
         }
       }
       else
+      {
         slaves_wo_local_collision.push_back(local_slaves_as_glob[i]);
+        collision_to_local.push_back(i);
+      }
     }
     else
+    {
       slaves_wo_local_collision.push_back(local_slaves_as_glob[i]);
+      collision_to_local.push_back(i);
+    }
   }
-  int mpi_size = -1;
-  MPI_Comm_size(comm, &mpi_size);
+  // Extract coordinates and normals to distribute
+  Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>
+      distribute_coordinates(slaves_wo_local_collision.size(), 3);
+  Eigen::Array<PetscScalar, Eigen::Dynamic, 3, Eigen::RowMajor>
+      distribute_normals(slaves_wo_local_collision.size(), 3);
+  for (std::int32_t i = 0; i < collision_to_local.size(); ++i)
+  {
+    distribute_coordinates.row(i)
+        = local_slave_coordinates.row(collision_to_local[i]);
+    distribute_normals.row(i) = local_slave_normal.row(collision_to_local[i]);
+  }
+
   // Structure storing mpc arrays
   dolfinx_mpc::mpc_data mpc;
 
   // If serial, we only have to gather slaves, masters, coeffs in 1D arrays
+  int mpi_size = -1;
+  MPI_Comm_size(comm, &mpi_size);
   if (mpi_size == 1)
   {
     std::vector<std::int64_t> masters_out;
@@ -625,12 +648,12 @@ mpc_data dolfinx_mpc::create_contact_condition(
   // Send slave normal and coordinate to neighbors
   std::vector<double> coord_recv(disp3.back());
   MPI_Neighbor_allgatherv(
-      local_slave_coordinates.data(), local_slave_coordinates.size(),
+      distribute_coordinates.data(), distribute_coordinates.size(),
       dolfinx::MPI::mpi_type<double>(), coord_recv.data(),
       num_slaves_recv3.data(), disp3.data(), dolfinx::MPI::mpi_type<double>(),
       neighborhood_comms[0]);
   std::vector<PetscScalar> normal_recv(disp3.back());
-  MPI_Neighbor_allgatherv(local_slave_normal.data(), local_slave_normal.size(),
+  MPI_Neighbor_allgatherv(distribute_normals.data(), distribute_normals.size(),
                           dolfinx::MPI::mpi_type<PetscScalar>(),
                           normal_recv.data(), num_slaves_recv3.data(),
                           disp3.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
