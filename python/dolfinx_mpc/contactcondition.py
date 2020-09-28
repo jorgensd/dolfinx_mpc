@@ -76,7 +76,8 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     loc2glob_cell = np.array(cell_map.global_indices(False),
                              dtype=np.int64)
     del cell_map
-
+    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
+                           dtype=np.int64)
     # Loop through all local slaves, check if there is any
     # colliding master cell that is local
     slave_to_master_cell = {}
@@ -157,8 +158,6 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     # (according to the bounding boxes). Send the slaves global dof number,
     # physical coordinate and corresponding normal vector to those procs.
     slaves_to_send = {}
-    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
-                           dtype=np.int64)
     facettree = geometry.BoundingBoxTree(V.mesh, dim=fdim)
     for (dof, coord) in zip(slaves[:num_owned_slaves],
                             slave_coordinates[:num_owned_slaves]):

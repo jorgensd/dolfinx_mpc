@@ -90,15 +90,14 @@ void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
                           Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
                           std::int32_t block_size);
 
-/// Create neighbourhood communicators for a MeshTag with two separate entity
-/// tags, slave_marker->master_marker, master_marker->slave_marker
+/// Create neighborhood communicators from every processor with a slave dof on
+/// it, to the processors with a set of master facets.
 /// @param[in] meshtags The meshtag
-/// @param[in] slave_marker Tag for the first interface
+/// @param[in] has_slaves Boolean saying if the processor owns slave dofs
 /// @param[in] master_marker Tag for the other interface
 std::array<MPI_Comm, 2>
 create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
-                          std::int32_t& slave_marker,
-                          std::int32_t& master_marker);
+                          const bool has_slave, std::int32_t& master_marker);
 
 /// Create neighbourhood communicators from local_dofs to processors who has
 /// this as a ghost.

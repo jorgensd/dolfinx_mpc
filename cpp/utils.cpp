@@ -190,7 +190,7 @@ void dolfinx_mpc::add_pattern_diagonal(
 
 //-----------------------------------------------------------------------------
 std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
-    dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t& slave_marker,
+    dolfinx::mesh::MeshTags<std::int32_t>& meshtags, const bool has_slave,
     std::int32_t& master_marker)
 {
   MPI_Comm comm = meshtags.mesh()->mpi_comm();
@@ -199,13 +199,9 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
-  // Check if entities for either master or slave are on this processor
-  std::vector<std::uint8_t> has_slaves(mpi_size, 0);
-  if (std::find(meshtags.values().begin(), meshtags.values().end(),
-                slave_marker)
-      != meshtags.values().end())
-    std::fill(has_slaves.begin(), has_slaves.end(), 1);
-
+  std::uint8_t slave_val = has_slave ? 1 : 0;
+  std::vector<std::uint8_t> has_slaves(mpi_size, slave_val);
+  // Check if entities if master entities are on this processor
   std::vector<std::uint8_t> has_masters(mpi_size, 0);
   if (std::find(meshtags.values().begin(), meshtags.values().end(),
                 master_marker)
@@ -317,10 +313,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
   MPI_Comm comm = meshtags.mesh()->mpi_comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
-
-  // Create slave->master facets and master->slave facets neihborhood comms
-  std::array<MPI_Comm, 2> neighborhood_comms
-      = create_neighborhood_comms(meshtags, slave_marker, master_marker);
 
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
@@ -605,6 +597,10 @@ mpc_data dolfinx_mpc::create_contact_condition(
 
     return mpc;
   }
+  // Create slave_dofs->master facets and master->slave dofs neighborhood comms
+  const bool has_slave = local_slaves.size() > 0 ? 1 : 0;
+  std::array<MPI_Comm, 2> neighborhood_comms
+      = create_neighborhood_comms(meshtags, has_slave, master_marker);
 
   // Get the  slave->master recv from and send to ranks
   int indegree(-1), outdegree(-2), weighted(-1);
@@ -614,8 +610,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
       = dolfinx::MPI::neighbors(neighborhood_comms[0]);
 
   // Figure out how much data to receive from each neighbor
-  // This could be optimized by removing slaves that have already found its
-  // master locally
   const std::int32_t out_collision_slaves = slaves_wo_local_collision.size();
   std::vector<std::int32_t> num_slaves_recv(indegree);
   MPI_Neighbor_allgather(
@@ -636,8 +630,8 @@ mpc_data dolfinx_mpc::create_contact_condition(
       num_slaves_recv.data(), disp.data(),
       dolfinx::MPI::mpi_type<std::int64_t>(), neighborhood_comms[0]);
 
-  // Multiply recv size by three to accommodate vector coordinates and function
-  // data
+  // Multiply recv size by three to accommodate vector coordinates and
+  // function data
   std::vector<std::int32_t> num_slaves_recv3(indegree);
   for (std::int32_t i = 0; i < num_slaves_recv.size(); ++i)
     num_slaves_recv3[i] = num_slaves_recv[i] * 3;
@@ -904,6 +898,11 @@ mpc_data dolfinx_mpc::create_contact_condition(
     std::vector<std::int64_t> masters_ = block_masters.second;
     std::vector<PetscScalar> coeffs_ = coeffs[key];
     std::vector<std::int32_t> owners_ = owners[key];
+
+    // Check that we have actually found a collision
+    if (local_masters[key].size() == 0)
+      throw std::runtime_error("Could not find contact for slave dof.");
+
     local_masters[key].insert(local_masters[key].end(), masters_.begin(),
                               masters_.end());
     local_coeffs[key].insert(local_coeffs[key].end(), coeffs_.begin(),
