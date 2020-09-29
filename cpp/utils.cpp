@@ -318,6 +318,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
   const int tdim = V->mesh()->topology().dim();
+  const int gdim = V->mesh()->geometry().dim();
   const int fdim = tdim - 1;
   const int block_size = V->dofmap()->index_map->block_size();
   std::int32_t size_local = V->dofmap()->index_map->size_local();
@@ -447,11 +448,14 @@ mpc_data dolfinx_mpc::create_contact_condition(
     // Get coordinate and coeff for slave and save in send array
     auto coord = coordinates.row(local_slaves[i]);
     local_slave_coordinates.row(i) = coord;
-    Eigen::Array<PetscScalar, 1, Eigen::Dynamic> coeffs(1, tdim);
+    Eigen::Array<PetscScalar, 1, 3> coeffs;
     std::vector<std::int32_t> dofs(block_size);
     std::iota(dofs.begin(), dofs.end(), slave_blocks(i, 0) * block_size);
-    for (std::int32_t j = 0; j < tdim; ++j)
+    for (std::int32_t j = 0; j < gdim; ++j)
       coeffs[j] = normal_array[dofs[j]];
+    // Pad 2D spaces with zero in normal
+    for (std::int32_t j = gdim; j < 3; ++j)
+      coeffs[j] = 0;
     local_slave_normal.row(i) = coeffs;
 
     // Narrow number of candidates by using BB collision detection

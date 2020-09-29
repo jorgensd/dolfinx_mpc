@@ -37,12 +37,9 @@ comm = MPI.COMM_WORLD
 
 def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
                        compare=False):
-    if MPI.COMM_WORLD.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}"
-                        .format(theta, triangle, gmsh))
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    dolfinx_mpc.utils.log_info(
+        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}"
+        .format(theta, triangle, gmsh))
 
     if gmsh:
         if triangle:
@@ -75,12 +72,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
             celltype = "quadrilateral"
         mesh_name = "mesh"
         filename = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta)
-        if triangle:
-            if MPI.COMM_WORLD.size == 1:
+
+        if MPI.COMM_WORLD.size == 1:
+            if triangle:
                 mesh_2D_dolfin(celltype, theta)
-        else:
-            if MPI.COMM_WORLD.size == 1:
+            else:
                 mesh_2D_dolfin(celltype, theta)
+
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
@@ -134,9 +132,11 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
 
-    with dolfinx.common.Timer(
-            "~Contact: Add contact constraint at interface"):
-        mpc.create_contact_constraint(mt, 4, 9)
+    with dolfinx.common.Timer("~Contact: Create contact constraint"):
+        nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
+            V._cpp_object, mt, 4, 9, nh._cpp_object)
+        mpc.add_constraint_from_mpc_data(V, mpc_data)
 
     with dolfinx.common.Timer(
             "~Contact: Add non-slip condition at bottom interface"):
@@ -260,7 +260,12 @@ if __name__ == "__main__":
     comp = parser.add_mutually_exclusive_group(required=False)
     comp.add_argument('--compare', dest='compare', action='store_true',
                       help="Compare with global solution", default=False)
+    time = parser.add_mutually_exclusive_group(required=False)
+    time.add_argument('--timing', dest='timing', action='store_true',
+                      help="List timings", default=False)
+
     compare = parser.parse_args().compare
+    timing = parser.parse_args().timing
 
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/demo_contact_2D.xdmf", "w")
@@ -286,5 +291,6 @@ if __name__ == "__main__":
                        triangle=True, compare=compare)
 
     outfile.close()
-    # dolfinx.common.list_timings(
-    #     MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    if timing:
+        dolfinx.common.list_timings(
+            MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

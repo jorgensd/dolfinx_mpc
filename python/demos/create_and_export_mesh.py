@@ -176,7 +176,7 @@ def mesh_2D_gmsh(theta, ct="triangle"):
 
 
 def mesh_3D_rot(theta=np.pi/2, ct="tetrahedron"):
-    res = 0.1  # 0.4
+    res = 0.125
     if ct == "tetrahedron":
         msh0 = generate_box(0, 0, 0, 1, 1, 1, theta, res,
                             [11, 12, 4, 5, 13, 14])
