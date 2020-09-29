@@ -365,11 +365,11 @@ mpc_data dolfinx_mpc::create_contact_condition(
     std::vector<std::int32_t> dofs(block_size);
     std::iota(dofs.begin(), dofs.end(), slave_blocks(i, 0) * block_size);
     // Find index of maximum normal vector (determines slave dof)
-    Eigen::Array<PetscScalar, 1, Eigen::Dynamic> abs_coeffs(1, tdim);
+    Eigen::Array<double, 1, Eigen::Dynamic> abs_coeffs(1, tdim);
     for (std::int32_t j = 0; j < tdim; ++j)
       abs_coeffs[j] = std::abs(normal_array[dofs[j]]);
     Eigen::Index max_index;
-    const PetscScalar coeff = abs_coeffs.maxCoeff(&max_index);
+    const double coeff = abs_coeffs.maxCoeff(&max_index);
 
     // Compute coeffs if slave is owned by the processor
     if (dofs[max_index] < size_local * block_size)
