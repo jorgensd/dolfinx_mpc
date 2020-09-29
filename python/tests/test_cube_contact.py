@@ -201,7 +201,11 @@ def test_cube_contact():
 
     # Create MPC contact condition and assemble matrices
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_contact_constraint(mt, 4, 9)
+    with dolfinx.common.Timer("~Contact: Create contact constraint"):
+        nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
+            V._cpp_object, mt, 4, 9, nh._cpp_object)
+        mpc.add_constraint_from_mpc_data(V, mpc_data)
     mpc.finalize()
 
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)

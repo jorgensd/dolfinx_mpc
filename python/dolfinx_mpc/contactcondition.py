@@ -45,7 +45,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
         for j in range(tdim-1):
             master = masters_in_slave_block[j][i]
             coeff = -n_vec[master]/n_vec[slave]
-            if not np.isclose(coeff, 0):
+            if not np.isclose(coeff, 0, atol=1e-6):
                 if slave in masters_block.keys():
                     masters_block[slave]["masters"].append(master)
                     masters_block[slave]["coeffs"].append(coeff)
@@ -76,7 +76,8 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     loc2glob_cell = np.array(cell_map.global_indices(False),
                              dtype=np.int64)
     del cell_map
-
+    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
+                           dtype=np.int64)
     # Loop through all local slaves, check if there is any
     # colliding master cell that is local
     slave_to_master_cell = {}
@@ -123,7 +124,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
             for local_idx, dof in enumerate(cell_dofs):
                 coeff = (basis_values[local_idx, k] *
                          n[k] / n[tdim-1])
-                if not np.isclose(coeff, 0):
+                if not np.isclose(coeff, 0, atol=1e-6):
                     if dof < local_size:
                         owners.append(comm.rank)
                     else:
@@ -157,8 +158,6 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     # (according to the bounding boxes). Send the slaves global dof number,
     # physical coordinate and corresponding normal vector to those procs.
     slaves_to_send = {}
-    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
-                           dtype=np.int64)
     facettree = geometry.BoundingBoxTree(V.mesh, dim=fdim)
     for (dof, coord) in zip(slaves[:num_owned_slaves],
                             slave_coordinates[:num_owned_slaves]):
@@ -181,6 +180,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                                         "coords": [coord.tolist()],
                                         "normals": [n]}
         del b_off, block_dofs, n, procs
+
     # Send information about collisions between slave and bounding
     #  box to the other processors
     bb_collision_recv = list(slaves_to_send.keys())
@@ -246,7 +246,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                     coeff = (basis_values[local_idx, k] *
                              recv_normals[index][k]
                              / recv_normals[index][tdim-1])
-                    if not np.isclose(coeff, 0):
+                    if not np.isclose(coeff, 0, atol=1e-6):
                         if dof < local_size:
                             owners.append(comm.rank)
                         else:
@@ -265,6 +265,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                                 "owners": owners}}
             del (cell, basis_values, cell_dofs, index,
                  masters, owners, coeffs)
+
     # Send masters back to owning processor
     # master_send_procs = list(masters_for_recv_slaves.keys())
     for proc in set(recv_owners):
