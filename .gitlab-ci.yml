@@ -10,7 +10,7 @@ fast-complex:
     entrypoint: [""]
   variables:
     PETSC_ARCH: "linux-gnu-complex-32"
-    PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib"
+    PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
   before_script:
     - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-complex/bin:$PATH"
@@ -43,7 +43,7 @@ fast-real:
     entrypoint: [""]
   variables:
     PETSC_ARCH: "linux-gnu-real-32"
-    PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib"
+    PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
   before_script:
     - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-real/bin:$PATH"

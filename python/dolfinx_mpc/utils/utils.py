@@ -18,6 +18,24 @@ import dolfinx.la
 import dolfinx.log
 
 
+def rotation_matrix(axis, angle):
+    # See https://en.wikipedia.org/wiki/Rotation_matrix,
+    # Subsection: Rotation_matrix_from_axis_and_angle.
+    if np.isclose(np.inner(axis, axis), 1):
+        n_axis = axis
+    else:
+        # Normalize axis
+        n_axis = axis / np.sqrt(np.inner(axis, axis))
+
+    # Define cross product matrix of axis
+    axis_x = np.array([[0, -n_axis[2], n_axis[1]],
+                       [n_axis[2], 0, -n_axis[0]],
+                       [-n_axis[1], n_axis[0], 0]])
+    id = np.cos(angle) * np.eye(3)
+    outer = (1 - np.cos(angle)) * np.outer(n_axis, n_axis)
+    return np.sin(angle) * axis_x + id + outer
+
+
 def facet_normal_approximation(V, mt, mt_id, tangent=False):
     timer = dolfinx.common.Timer("~MPC: Facet normal projection")
     comm = V.mesh.mpi_comm()
