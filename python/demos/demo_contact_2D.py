@@ -115,8 +115,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -124,8 +124,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
                      subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
-        + ufl.inner(g, v)*ds
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * ufl.dx\
+        + ufl.inner(g, v) * ds
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
@@ -275,9 +275,9 @@ if __name__ == "__main__":
     demo_stacked_cubes(outfile, theta=0, gmsh=False,
                        triangle=False, compare=compare)
     # Built in meshes non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False,
+    demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False,
                        triangle=True, compare=compare)
-    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False,
+    demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False,
                        triangle=False, compare=compare)
     # Gmsh aligned
     demo_stacked_cubes(outfile, theta=0, gmsh=True,
@@ -285,9 +285,9 @@ if __name__ == "__main__":
     demo_stacked_cubes(outfile, theta=0, gmsh=True,
                        triangle=True, compare=compare)
     # Gmsh non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True,
+    demo_stacked_cubes(outfile, theta=np.pi / 5, gmsh=True,
                        triangle=False, compare=compare)
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True,
+    demo_stacked_cubes(outfile, theta=np.pi / 5, gmsh=True,
                        triangle=True, compare=compare)
 
     outfile.close()

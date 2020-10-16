@@ -68,13 +68,13 @@ def demo_periodic3D(celltype, out_periodic):
         return np.isclose(x[0], 1)
 
     facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim-1, PeriodicBoundary)
-    mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
+        mesh, mesh.topology.dim - 1, PeriodicBoundary)
+    mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1,
                           facets, np.full(len(facets), 2, dtype=np.int32))
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)
-        out_x[0] = 1-x[0]
+        out_x[0] = 1 - x[0]
         out_x[1] = x[1]
         out_x[2] = x[2]
         return out_x
@@ -87,16 +87,16 @@ def demo_periodic3D(celltype, out_periodic):
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
 
     x = ufl.SpatialCoordinate(mesh)
     dx = x[0] - 0.9
     dy = x[1] - 0.5
     dz = x[2] - 0.1
-    f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
-        + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
+    f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) \
+        + 1.0 * ufl.exp(-(dx * dx + dy * dy + dz * dz) / 0.02)
 
-    rhs = ufl.inner(f, v)*ufl.dx
+    rhs = ufl.inner(f, v) * ufl.dx
 
     with dolfinx.common.Timer("~Periodic: Assemble LHS and RHS"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)

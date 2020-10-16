@@ -45,15 +45,15 @@ def demo_elasticity():
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     x = ufl.SpatialCoordinate(mesh)
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(ufl.as_vector((0, (x[0] - 0.5)*10**4*x[1])), v) * ufl.dx
+    rhs = ufl.inner(ufl.as_vector((0, (x[0] - 0.5) * 10**4 * x[1])), v) * ufl.dx
 
     # Create MPC
     with dolfinx.common.Timer("~Elasticity: Initialize MPC"):
@@ -170,7 +170,7 @@ def demo_elasticity():
         l2g = np.array(mpc.index_map().global_indices(False))
         l_index = np.flatnonzero(l2g == in_data[0])[0]
         print("Master*Coeff (on other proc): {0:.5e}"
-              .format(uh.array[l_index]*in_data[1]))
+              .format(uh.array[l_index] * in_data[1]))
 
 
 if __name__ == "__main__":

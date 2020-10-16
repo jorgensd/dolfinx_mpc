@@ -70,7 +70,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)
-        out_x[0] = 1-x[0]
+        out_x[0] = 1 - x[0]
         out_x[1] = x[1]
         out_x[2] = x[2]
         return out_x
@@ -79,8 +79,8 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         "Run {0:1d}: Create MultiPoint Constraint".format(r_lvl))
     with dolfinx.common.Timer("~Periodic: Initialize periodic constraint"):
         facets = dolfinx.mesh.locate_entities_boundary(
-            mesh, mesh.topology.dim-1, PeriodicBoundary)
-        mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
+            mesh, mesh.topology.dim - 1, PeriodicBoundary)
+        mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1,
                               facets, np.full(len(facets), 2, dtype=np.int32))
         mpc = dolfinx_mpc.MultiPointConstraint(V)
         mpc.create_periodic_constraint(mt, 2, periodic_relation, bcs)
@@ -89,15 +89,15 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     x = ufl.SpatialCoordinate(mesh)
     dx = x[0] - 0.9
     dy = x[1] - 0.5
     dz = x[2] - 0.1
-    f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
-        + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
+    f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) \
+        + 1.0 * ufl.exp(-(dx * dx + dy * dy + dz * dz) / 0.02)
 
-    rhs = ufl.inner(f, v)*ufl.dx
+    rhs = ufl.inner(f, v) * ufl.dx
 
     # Assemble LHS and RHS with multi-point constraint
     dolfinx_mpc.utils.log_info("Run {0:1d}: Assemble matrix".format(r_lvl))
@@ -260,7 +260,7 @@ if __name__ == "__main__":
                         degree=int(degree))
 
         # List_timings
-        if timings and i == N-1:
+        if timings and i == N - 1:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()

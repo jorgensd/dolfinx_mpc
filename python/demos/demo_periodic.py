@@ -58,14 +58,14 @@ def PeriodicBoundary(x):
 
 
 facets = dolfinx.mesh.locate_entities_boundary(
-    mesh, mesh.topology.dim-1, PeriodicBoundary)
-mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
+    mesh, mesh.topology.dim - 1, PeriodicBoundary)
+mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1,
                       facets, np.full(len(facets), 2, dtype=np.int32))
 
 
 def periodic_relation(x):
     out_x = np.zeros(x.shape)
-    out_x[0] = 1-x[0]
+    out_x[0] = 1 - x[0]
     out_x[1] = x[1]
     out_x[2] = x[2]
     return out_x
@@ -79,15 +79,15 @@ with dolfinx.common.Timer("~PERIODIC: Initialize MPC"):
 # Define variational problem
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
-a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
+a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
 
 x = ufl.SpatialCoordinate(mesh)
 dx = x[0] - 0.9
 dy = x[1] - 0.5
-f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
-    + 1.0*ufl.exp(-(dx*dx + dy*dy)/0.02)
+f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) \
+    + 1.0 * ufl.exp(-(dx * dx + dy * dy) / 0.02)
 
-rhs = ufl.inner(f, v)*ufl.dx
+rhs = ufl.inner(f, v) * ufl.dx
 
 
 # Setup MPC system

@@ -26,8 +26,7 @@ def test_surface_integrals():
         return np.isclose(x[0], np.finfo(float).eps)
 
     fdim = mesh.topology.dim - 1
-    left_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
-                                                        left_wall)
+    left_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, left_wall)
     bc_dofs = dolfinx.fem.locate_dofs_topological(V, 1, left_facets)
     u_bc = dolfinx.function.Function(V)
     with u_bc.vector.localForm() as u_local:
@@ -56,15 +55,15 @@ def test_surface_integrals():
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
-        + ufl.inner(g, v)*ds
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * ufl.dx\
+        + ufl.inner(g, v) * ds
 
     # Setup LU solver
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -76,7 +75,7 @@ def test_surface_integrals():
         return np.array(li, dtype=np.float64).tobytes()
     s_m_c = {}
     for i in range(1, N):
-        s_m_c[l2b([1, i/N])] = {l2b([1, 1]): 0.8}
+        s_m_c[l2b([1, i / N])] = {l2b([1, 1]): 0.8}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, 1, 1)
     mpc.finalize()
@@ -157,7 +156,7 @@ def test_surface_integral_dependency():
         values = np.append(values, np.full(len(markers[key]), key,
                                            dtype=np.intc))
 
-    mt = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim-1,
+    mt = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim - 1,
                                np.array(indices, dtype=np.intc),
                                np.array(values, dtype=np.intc))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
@@ -166,16 +165,16 @@ def test_surface_integral_dependency():
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    a = ufl.inner(u, v)*ds(3) + ufl.inner(ufl.grad(u), ufl.grad(v))*ds
+    a = ufl.inner(u, v) * ds(3) + ufl.inner(ufl.grad(u), ufl.grad(v)) * ds
 
-    rhs = ufl.inner(g, v)*ds + ufl.inner(h, v)*ds(3)
+    rhs = ufl.inner(g, v) * ds + ufl.inner(h, v) * ds(3)
 
     # Create multipoint constraint and assemble system
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()
     s_m_c = {}
     for i in range(1, N):
-        s_m_c[l2b([1, i/N])] = {l2b([1, 1]): 0.3}
+        s_m_c[l2b([1, i / N])] = {l2b([1, 1]): 0.3}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, 1, 1)
     mpc.finalize()

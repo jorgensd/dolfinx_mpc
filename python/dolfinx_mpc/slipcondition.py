@@ -53,7 +53,7 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
     pairs = []
     for i in range(len(entity_dofs[:, 0])):
         pairs.append(np.flatnonzero(np.isclose(np.linalg.norm(
-            x[entity_dofs[:, 0]]-x[entity_dofs[i, 0]], axis=1), 0)))
+            x[entity_dofs[:, 0]] - x[entity_dofs[i, 0]], axis=1), 0)))
 
     if len(pairs) > 0:
         unique_pairs = np.unique(pairs, axis=0)
@@ -71,32 +71,32 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
                     np.arange(normal.function_space.num_sub_spaces()),
                     slave_index)
                 for index in master_indices:
-                    coeff = -(n_vec[normal_dofs[index]] /
-                              n_vec[normal_dofs[slave_index]])
+                    coeff = -(n_vec[normal_dofs[index]]
+                              / n_vec[normal_dofs[slave_index]])
                     if not np.isclose(coeff, 0):
                         pair_masters.append(
                             W_global_indices[normal_to_W(index)])
                         pair_coeffs.append(coeff)
-                        if normal_to_W(index) < W_local_size*W_bs:
+                        if normal_to_W(index) < W_local_size * W_bs:
                             pair_owners.append(comm.rank)
                         else:
                             pair_owners.append(
                                 W_ghost_owners[
-                                    normal_to_W(index)//W_bs
+                                    normal_to_W(index) // W_bs
                                     - W_local_size])
                 # If all coeffs are 0 (normal aligned with axis),
                 # append one to enforce Dirichlet BC 0
                 if len(pair_masters) == 0:
                     master = normal_to_W(master_indices[0])
                     pair_masters = [W_global_indices[master]]
-                    pair_coeffs = [-n_vec[master_indices[0]] /
-                                   n_vec[normal_dofs[slave_index]]]
-                    if master < W_local_size*W_bs:
+                    pair_coeffs = [-n_vec[master_indices[0]]
+                                   / n_vec[normal_dofs[slave_index]]]
+                    if master < W_local_size * W_bs:
                         pair_owners.append(comm.rank)
                     else:
                         pair_owners.append(
-                            W_ghost_owners[master//W_bs - W_local_size])
-                if normal_to_W(slave_index) < W_local_size*W_bs:
+                            W_ghost_owners[master // W_bs - W_local_size])
+                if normal_to_W(slave_index) < W_local_size * W_bs:
                     slaves.append(normal_to_W(slave_index))
                     masters.extend(pair_masters)
                     coeffs.extend(pair_coeffs)

@@ -70,15 +70,15 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
-                                 subdomain_data=mt, subdomain_id=1)
+    rhs = ufl.inner(g, v) * ufl.ds(domain=mesh,
+                                   subdomain_data=mt, subdomain_id=1)
 
     # Create MPC
     with dolfinx.common.Timer("~Elasticity: Init constraint"):
@@ -224,7 +224,7 @@ if __name__ == "__main__":
             dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
         bench_elasticity_one(r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
                              boomeramg=boomeramg, kspview=kspview)
-        if timings and i == N-1:
+        if timings and i == N - 1:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()

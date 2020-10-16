@@ -151,7 +151,7 @@ if MPI.COMM_WORLD.Get_rank() == 0:
     ffibuilder.compile(tmpdir=path, verbose=False)
 
 MPI.COMM_WORLD.Barrier()
-module = importlib.import_module("dolfinx_mpc."+module_name)
+module = importlib.import_module("dolfinx_mpc." + module_name)
 
 cffi_support.register_module(module)
 MatSetValues_api = module.lib.MatSetValues

@@ -76,7 +76,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
     # Helper for orienting traction
     r_matrix = pygmsh.helpers.rotation_matrix(
-        [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
+        [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
     g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
     g = dolfinx.Constant(mesh, g_vec)
@@ -118,8 +118,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -128,8 +128,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     # NOTE: Traction deactivated until we have a way of fixing nullspace
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
                      subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
-        + ufl.inner(g, v)*ds
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx\
+        + ufl.inner(g, v) * ds
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     with dolfinx.common.Timer("~Contact: Create contact constraint"):
@@ -249,14 +249,14 @@ if __name__ == "__main__":
         demo_stacked_cubes(
             outfile, theta=0, dolfin_mesh=True, ct=ct, compare=compare)
         demo_stacked_cubes(
-            outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct, compare=compare)
+            outfile, theta=np.pi / 3, dolfin_mesh=True, ct=ct, compare=compare)
 
     # NOTE: Unstructured solution experience slight unphysical deformation
     demo_stacked_cubes(
-        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
+        outfile, theta=np.pi / 5, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         compare=compare)
     demo_stacked_cubes(
-        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.hexahedron,
+        outfile, theta=np.pi / 5, ct=dolfinx.cpp.mesh.CellType.hexahedron,
         compare=compare)
     outfile.close()
 

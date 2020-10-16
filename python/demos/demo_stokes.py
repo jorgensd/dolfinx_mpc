@@ -12,7 +12,7 @@ from mpi4py import MPI
 # Length, width and rotation of channel
 L = 2
 H = 1
-theta = np.pi/5
+theta = np.pi / 5
 
 
 def create_mesh_gmsh():
@@ -64,7 +64,7 @@ with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
     mesh = xdmf.read_mesh(name="Grid")
 
 
-mesh.topology.create_connectivity(mesh.topology.dim-1, mesh.topology.dim)
+mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                          "meshes/facet_mesh.xdmf", "r") as xdmf:
     mt = xdmf.read_meshtags(mesh, name="Grid")
@@ -84,8 +84,8 @@ Q = W.sub(1).collapse()
 
 
 def inlet_velocity_expression(x):
-    return np.stack((np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2)),
-                     5*x[1]*np.sin(np.pi*np.sqrt(x[0]**2+x[1]**2))))
+    return np.stack((np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2)),
+                     5 * x[1] * np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2))))
 
 
 # Inlet velocity Dirichlet BC
@@ -121,7 +121,7 @@ tdim = mesh.topology.dim
 cell_map = mesh.topology.index_map(tdim)
 num_cells_local = cell_map.size_local
 indices = np.arange(num_cells_local)
-values = MPI.COMM_WORLD.rank*np.ones(num_cells_local, np.int32)
+values = MPI.COMM_WORLD.rank * np.ones(num_cells_local, np.int32)
 ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
 ct.name = "cells"
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
