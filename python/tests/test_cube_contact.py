@@ -146,7 +146,7 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
-        gmsh.model.mesh.setOrder(2)
+        gmsh.model.mesh.setOrder(1)
     mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
                                                     facet_data=True)
     gmsh.finalize()
