@@ -14,7 +14,7 @@ import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
-import pygmsh
+#import pygmsh
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc

@@ -12,7 +12,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     fdim = tdim - 1
     bs = V.dofmap.index_map.block_size
     x = V.tabulate_dof_coordinates()
-    local_size = V.dofmap.index_map.size_local*bs
+    local_size = V.dofmap.index_map.size_local * bs
     comm = V.mesh.mpi_comm()
 
     # Compute approximate facet normal used in contact condition
@@ -26,7 +26,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
     # Find masters from the same block as the local slave (no ghosts)
     masters_in_slave_block = []
-    for i in range(tdim-1):
+    for i in range(tdim - 1):
         loc_master_i_dofs = fem.locate_dofs_topological(
             (V.sub(i), V.sub(i).collapse()), fdim, slave_facets)[:, 0]
         # Remove ghosts
@@ -36,15 +36,15 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
     # Locate local slaves (owned and ghosted)
     slaves = fem.locate_dofs_topological(
-        (V.sub(tdim-1), V.sub(tdim-1).collapse()), fdim, slave_facets)[:, 0]
+        (V.sub(tdim - 1), V.sub(tdim - 1).collapse()), fdim, slave_facets)[:, 0]
     slave_coordinates = x[slaves]
     num_owned_slaves = len(slaves[slaves < local_size])
     # Find masters and coefficients in same block as slave
     masters_block = {}
     for i, slave in enumerate(slaves[:num_owned_slaves]):
-        for j in range(tdim-1):
+        for j in range(tdim - 1):
             master = masters_in_slave_block[j][i]
-            coeff = -n_vec[master]/n_vec[slave]
+            coeff = -n_vec[master] / n_vec[slave]
             if not np.isclose(coeff, 0, atol=1e-6):
                 if slave in masters_block.keys():
                     masters_block[slave]["masters"].append(master)
@@ -108,7 +108,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     for slave in slave_to_master_cell.keys():
         # Find normal vector for local slave (through blocks)
         b_off = slave % bs
-        block_dofs = np.array([slave-b_off+i for i in range(bs)])
+        block_dofs = np.array([slave - b_off + i for i in range(bs)])
         n = list(n_vec[block_dofs])
         # Compute basis values for master at slave coordinate
         cell = slave_to_master_cell[slave][0]
@@ -122,19 +122,17 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
         # that yield a non-zero coefficient
         for k in range(tdim):
             for local_idx, dof in enumerate(cell_dofs):
-                coeff = (basis_values[local_idx, k] *
-                         n[k] / n[tdim-1])
+                coeff = basis_values[local_idx, k] * n[k] / n[tdim - 1]
                 if not np.isclose(coeff, 0, atol=1e-6):
                     if dof < local_size:
                         owners.append(comm.rank)
                     else:
-                        owners.append(ghost_owners[dof//bs-local_size//bs])
+                        owners.append(ghost_owners[dof // bs - local_size // bs])
                     masters.append(dof)
                     coeffs.append(coeff)
                 del coeff
         if len(masters) > 0:
-            masters_local[slave] = {"masters": masters,
-                                    "coeffs": coeffs, "owners": owners}
+            masters_local[slave] = {"masters": masters, "coeffs": coeffs, "owners": owners}
         del (b_off, block_dofs, n, cell, coord, basis_values, cell_dofs,
              masters, owners, coeffs)
     if comm.size == 1:
@@ -163,7 +161,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                             slave_coordinates[:num_owned_slaves]):
         # Find normal vector for local slave (through blocks)
         b_off = slave % bs
-        block_dofs = np.array([slave-b_off+i for i in range(bs)])
+        block_dofs = np.array([slave - b_off + i for i in range(bs)])
         n = list(n_vec[block_dofs])
 
         # Get processors where boundingbox collides with point
@@ -199,7 +197,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
         slaves_to_recv = comm.recv(source=proc, tag=1)
         if slaves_to_recv is not None:
             recv_slaves.extend(slaves_to_recv["slaves"])
-            recv_owners.extend([proc]*len(slaves_to_recv["slaves"]))
+            recv_owners.extend([proc] * len(slaves_to_recv["slaves"]))
             recv_coords.extend(slaves_to_recv["coords"])
             recv_normals.extend(slaves_to_recv["normals"])
         del slaves_to_recv
@@ -219,10 +217,8 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                 glob_cells = loc2glob_cell[possible_cells]
                 is_owned = np.logical_and(
                     cmin <= glob_cells, glob_cells < cmax)
-                candidates = possible_cells[np.logical_and(
-                    is_master_cell, is_owned)]
-                verified_candidate = dcpp.geometry.select_colliding_cells(
-                    V.mesh, list(candidates), coord, 1)
+                candidates = possible_cells[np.logical_and(is_master_cell, is_owned)]
+                verified_candidate = dcpp.geometry.select_colliding_cells(V.mesh, list(candidates), coord, 1)
                 if len(verified_candidate) > 0:
                     recv_slave_to_master_cell[dof] = (verified_candidate[0], i)
                 del (is_master_cell, glob_cells, is_owned,
@@ -243,14 +239,12 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
             # that yield a non-zero coefficient
             for k in range(tdim):
                 for local_idx, dof in enumerate(cell_dofs):
-                    coeff = (basis_values[local_idx, k] *
-                             recv_normals[index][k]
-                             / recv_normals[index][tdim-1])
+                    coeff = (basis_values[local_idx, k] * recv_normals[index][k] / recv_normals[index][tdim - 1])
                     if not np.isclose(coeff, 0, atol=1e-6):
                         if dof < local_size:
                             owners.append(comm.rank)
                         else:
-                            owners.append(ghost_owners[dof//bs-local_size//bs])
+                            owners.append(ghost_owners[dof // bs - local_size // bs])
                         masters.append(loc_to_glob[dof])
                         coeffs.append(coeff)
                     del coeff
@@ -261,8 +255,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                         "masters": masters, "coeffs": coeffs, "owners": owners}
                 else:
                     masters_for_recv_slaves[recv_owners[index]] = {
-                        slave: {"masters": masters, "coeffs": coeffs,
-                                "owners": owners}}
+                        slave: {"masters": masters, "coeffs": coeffs, "owners": owners}}
             del (cell, basis_values, cell_dofs, index,
                  masters, owners, coeffs)
 
@@ -285,8 +278,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                 # NOTE: Could be done faster if the global_to_local
                 # function in indexmap was exposed to the python
                 # layer
-                idx = np.where(global_slave ==
-                               loc_to_glob[slaves[:num_owned_slaves]])[0][0]
+                idx = np.where(global_slave == loc_to_glob[slaves[:num_owned_slaves]])[0][0]
                 if slaves[idx] in recv_masters.keys():
                     recv_masters[slaves[idx]][proc] = (
                         recv_master_from_proc[global_slave])
@@ -303,8 +295,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                 key = next(iter(recv_masters[slave]))
                 recv_masters_unique[slave] = recv_masters[slave][key]
             else:
-                selected_proc = np.random.choice(np.fromiter(
-                    recv_masters[slave].keys(), dtype=np.int32))
+                selected_proc = np.random.choice(np.fromiter(recv_masters[slave].keys(), dtype=np.int32))
                 recv_masters_unique[slave] = recv_masters[slave][selected_proc]
     del recv_masters
 
@@ -338,15 +329,15 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
             for proc in shared_indices[block]:
                 if proc in send_ghost_masters.keys():
                     send_ghost_masters[proc][loc_to_glob[slave]] = {
-                        "masters": masters[offsets[i]:offsets[i+1]],
-                        "coeffs": coeffs[offsets[i]:offsets[i+1]],
-                        "owners": owners[offsets[i]:offsets[i+1]]
+                        "masters": masters[offsets[i]:offsets[i + 1]],
+                        "coeffs": coeffs[offsets[i]:offsets[i + 1]],
+                        "owners": owners[offsets[i]:offsets[i + 1]]
                     }
                 else:
                     send_ghost_masters[proc] = {loc_to_glob[slave]: {
-                        "masters": masters[offsets[i]:offsets[i+1]],
-                        "coeffs": coeffs[offsets[i]:offsets[i+1]],
-                        "owners": owners[offsets[i]:offsets[i+1]]}}
+                        "masters": masters[offsets[i]:offsets[i + 1]],
+                        "coeffs": coeffs[offsets[i]:offsets[i + 1]],
+                        "owners": owners[offsets[i]:offsets[i + 1]]}}
         del block
 
     # Send masters for ghosted slaves to respective procs
@@ -358,7 +349,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     local_blocks_size = V.dofmap.index_map.size_local
     ghost_recv = []
     for slave in slaves[num_owned_slaves:]:
-        block = slave//bs - local_blocks_size
+        block = slave // bs - local_blocks_size
         owner = ghost_owners[block]
         ghost_recv.append(owner)
         del block, owner
