@@ -364,7 +364,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
     std::vector<std::int32_t> dofs(block_size);
     std::iota(dofs.begin(), dofs.end(), slave_blocks(i, 0) * block_size);
     // Create normalized local normal vector and fin its max index
-    Eigen::Array<double, 1, Eigen::Dynamic> l_normal(1, tdim);
+    Eigen::Array<PetscScalar, 1, Eigen::Dynamic> l_normal(1, tdim);
     for (std::int32_t j = 0; j < tdim; ++j)
       l_normal[j] = normal_array[dofs[j]];
     l_normal /= std::sqrt(l_normal.abs2().sum());
