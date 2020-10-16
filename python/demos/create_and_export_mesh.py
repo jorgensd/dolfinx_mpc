@@ -62,7 +62,7 @@ def merge_msh_meshes(msh0, msh1, celltype, facettype):
     return mesh, facet_mesh
 
 
-def generate_rectangle(x0, x1, y0, y1, theta,  res, markers,
+def generate_rectangle(x0, x1, y0, y1, theta, res, markers,
                        volume_marker=None, quad=False):
     """
     Generate the rectangle [x0,y0]x[y0,y1], rotated theta degrees around
@@ -103,8 +103,8 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
 
     geom.add_raw_code("Mesh.RecombinationAlgorithm = 2;")
     geom.add_raw_code("Recombine Surface {:};")
-    bottom, volume, sides = geom.extrude(rect, translation_axis=[0, 0, z1-z0],
-                                         num_layers=int(1/res), recombine=True)
+    bottom, volume, sides = geom.extrude(rect, translation_axis=[0, 0, z1 - z0],
+                                         num_layers=int(1 / res), recombine=True)
 
     geom.add_physical(bottom, facet_markers[4])
     if volume_marker is None:
@@ -120,7 +120,7 @@ def generate_hex_box(x0, y0, z0, x1, y1, z1, theta, res, facet_markers,
 
     msh.points[:, -1] += z0
     r_matrix = pygmsh.helpers.rotation_matrix(
-        [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
+        [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
     msh.points[:, :] = np.dot(r_matrix, msh.points.T).T
     return msh
 
@@ -165,7 +165,7 @@ def mesh_2D_gmsh(theta, ct="triangle"):
     msh0 = generate_rectangle(
         0, 1, 0, 1, theta, res=res, markers=[5, 8, 4, 10], quad=quad)
     msh1 = generate_rectangle(
-        0, 1, 1, 2, theta, res=2*res, markers=[9, 7, 3, 6], volume_marker=2,
+        0, 1, 1, 2, theta, res=2 * res, markers=[9, 7, 3, 6], volume_marker=2,
         quad=quad)
 
     mesh, facet_mesh = merge_msh_meshes(msh0, msh1, ct, "line")
@@ -175,18 +175,18 @@ def mesh_2D_gmsh(theta, ct="triangle"):
                  .format(ct, theta), facet_mesh)
 
 
-def mesh_3D_rot(theta=np.pi/2, ct="tetrahedron"):
+def mesh_3D_rot(theta=np.pi / 2, ct="tetrahedron"):
     res = 0.125
     if ct == "tetrahedron":
         msh0 = generate_box(0, 0, 0, 1, 1, 1, theta, res,
                             [11, 12, 4, 5, 13, 14])
-        msh1 = generate_box(0, 0, 1, 1, 1, 2, theta, 2*res,
+        msh1 = generate_box(0, 0, 1, 1, 1, 2, theta, 2 * res,
                             [11, 12, 3, 9, 13, 14], 2)
         mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "tetra", "triangle")
     elif ct == "hexahedron":
         msh0 = generate_hex_box(0, 0, 0, 1, 1, 1, theta, res,
                                 [11, 5, 12, 13, 4, 14])
-        msh1 = generate_hex_box(0, 0, 1, 1, 1, 2, theta, 2*res,
+        msh1 = generate_hex_box(0, 0, 1, 1, 1, 2, theta, 2 * res,
                                 [11, 9, 12, 13, 3, 14], 2)
         mesh, facet_mesh = merge_msh_meshes(msh0, msh1, "hexahedron", "quad")
     else:
@@ -211,15 +211,15 @@ def mesh_2D_dolfin(celltype, theta=0):
         if np.isclose(p1[0], p0[0]):
             return lambda x: np.isclose(x[0], p0[0])
         return lambda x: np.isclose(x[1],
-                                    p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])
-                                    * (x[0]-p0[0]))
+                                    p0[1] + (p1[1] - p0[1]) / (p1[0] - p0[0])
+                                    * (x[0] - p0[0]))
 
     def over_line(p0, p1):
         """
         Check if a point is over or under y=ax+b for each of the
         lines in the mesh https://mathworld.wolfram.com/Two-PointForm.html
         """
-        return lambda x: x[1] > p0[1]+(p1[1]-p0[1])/(p1[0]-p0[0])*(x[0]-p0[0])
+        return lambda x: x[1] > p0[1] + (p1[1] - p0[1]) / (p1[0] - p0[0]) * (x[0] - p0[0])
 
     # Using built in meshes, stacking cubes on top of each other
     N = 15
@@ -232,7 +232,7 @@ def mesh_2D_dolfin(celltype, theta=0):
 
     nv = dolfinx.cpp.mesh.cell_num_vertices(ct)
     mesh0 = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N, ct)
-    mesh1 = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 2*N, 2*N, ct)
+    mesh1 = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 2 * N, 2 * N, ct)
     mesh0.geometry.x[:, 1] += 1
 
     # Stack the two meshes in one mesh
@@ -360,11 +360,11 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         Find plane function given three points:
         http://www.nabla.hr/CG-LinesPlanesIn3DA3.htm
         """
-        v1 = np.array(p1)-np.array(p0)
-        v2 = np.array(p2)-np.array(p0)
+        v1 = np.array(p1) - np.array(p0)
+        v2 = np.array(p2) - np.array(p0)
 
         n = np.cross(v1, v2)
-        D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
+        D = -(n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2])
         return lambda x: np.isclose(0,
                                     np.dot(n, x) + D)
 
@@ -373,23 +373,23 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         Returns function that checks if a point is over a plane defined
         by the points p0, p1 and p2.
         """
-        v1 = np.array(p1)-np.array(p0)
-        v2 = np.array(p2)-np.array(p0)
+        v1 = np.array(p1) - np.array(p0)
+        v2 = np.array(p2) - np.array(p0)
 
         n = np.cross(v1, v2)
-        D = -(n[0]*p0[0]+n[1]*p0[1]+n[2]*p0[2])
-        return lambda x: n[0]*x[0] + n[1]*x[1] + D > -n[2]*x[2]
+        D = -(n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2])
+        return lambda x: n[0] * x[0] + n[1] * x[1] + D > -n[2] * x[2]
 
     N = 4
 
     nv = dolfinx.cpp.mesh.cell_num_vertices(ct)
     mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
-    mesh1 = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 2*N, 2*N, 2*N, ct)
+    mesh1 = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, 2 * N, 2 * N, 2 * N, ct)
     mesh0.geometry.x[:, 2] += 1
 
     # Stack the two meshes in one mesh
     r_matrix = pygmsh.helpers.rotation_matrix(
-        [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
+        [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
     points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
     points = np.dot(r_matrix, points.T).T
 

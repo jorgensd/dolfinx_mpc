@@ -155,9 +155,7 @@ def demo_elasticity():
         if MPI.COMM_WORLD.rank != master_owner:
             MPI.COMM_WORLD.send(master_data, dest=master_owner, tag=1)
         else:
-            print("Master*Coeff: {0:.5e}"
-                  .format(mpc.coefficients()[0] *
-                          uh.array[mpc.masters_local().array[0]]))
+            print("Master*Coeff: {0:.5e}".format(mpc.coefficients()[0] * uh.array[mpc.masters_local().array[0]]))
     # As a processor with a master is not aware that it has a master,
     # Determine this so that it can receive the global dof and coefficient
     master_recv = MPI.COMM_WORLD.allgather(master_owner)

@@ -47,8 +47,8 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
         if V.mesh.geometry.dim == 1:
             raise ValueError("Tangent not defined for 1D problem")
         elif V.mesh.geometry.dim == 2:
-            a = ufl.inner(u, v)*ds
-            L = ufl.inner(ufl.as_vector([-n[1], n[0]]), v)*ds
+            a = ufl.inner(u, v) * ds
+            L = ufl.inner(ufl.as_vector([-n[1], n[0]]), v) * ds
         else:
             def tangential_proj(u, n):
                 """
@@ -57,19 +57,19 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
                 """
                 return (ufl.Identity(u.ufl_shape[0]) - ufl.outer(n, n)) * u
             c = dolfinx.Constant(V.mesh, [1, 1, 1])
-            a = ufl.inner(u, v)*ds
-            L = ufl.inner(tangential_proj(c, n), v)*ds
+            a = ufl.inner(u, v) * ds
+            L = ufl.inner(tangential_proj(c, n), v) * ds
     else:
-        a = (ufl.inner(u, v)*ufl.ds)
-        L = ufl.inner(n, v)*ds
+        a = (ufl.inner(u, v) * ufl.ds)
+        L = ufl.inner(n, v) * ds
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
     all_dofs = np.array(
-        range(imap.size_local*imap.block_size), dtype=np.int32)
+        range(imap.size_local * imap.block_size), dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
     top_dofs = dolfinx.fem.locate_dofs_topological(
-        V, V.mesh.topology.dim-1, top_facets)[:, 0]
+        V, V.mesh.topology.dim - 1, top_facets)[:, 0]
     deac_dofs = all_dofs[np.isin(all_dofs, top_dofs, invert=True)]
 
     # Note there should be a better way to do this
@@ -175,8 +175,8 @@ def create_transformation_matrix(V, constraint):
             # If local master add coeffs
             local_index = local_index[0]
             masters_index = loc_to_glob[masters[offsets[local_index]:
-                                                offsets[local_index+1]]]
-            coeffs_index = coeffs[offsets[local_index]: offsets[local_index+1]]
+                                                offsets[local_index + 1]]]
+            coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
             for master, coeff in zip(masters_index, coeffs_index):
                 count = sum(master > global_slaves)
                 K[i, master - count] = coeff
@@ -186,7 +186,7 @@ def create_transformation_matrix(V, constraint):
         else:
             # For all other nodes add one over number of procs to sum to 1
             count = sum(i > global_slaves)
-            K[i, i-count] = 1/MPI.COMM_WORLD.size
+            K[i, i - count] = 1 / MPI.COMM_WORLD.size
     # Gather K
     K = np.sum(MPI.COMM_WORLD.allgather(K), axis=0)
     return K
@@ -232,7 +232,7 @@ def compare_vectors(reduced_vec, vec, constraint):
             count += 1
             assert np.isclose(vec[i], 0)
         else:
-            assert(np.isclose(reduced_vec[i-count], vec[i]))
+            assert(np.isclose(reduced_vec[i - count], vec[i]))
 
 
 def compare_matrices(reduced_A, A, constraint):
@@ -255,7 +255,7 @@ def compare_matrices(reduced_A, A, constraint):
                 m += 1
                 continue
             else:
-                A_numpy_padded[i, j] = reduced_A[i-count, j-m]
+                A_numpy_padded[i, j] = reduced_A[i - count, j - m]
     D = np.abs(A - A_numpy_padded)
 
     max_index = np.unravel_index(np.argmax(D, axis=None), D.shape)

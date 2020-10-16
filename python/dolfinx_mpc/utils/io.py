@@ -30,8 +30,7 @@ def read_from_msh(filename: str, cell_data=False, facet_data=False, gdim=None):
 
         gmsh.model.add("Mesh from file")
         gmsh.merge(filename)
-    output = gmsh_model_to_mesh(gmsh.mode.getCurrent(), cell_data=cell_data,
-                                facet_data=facet_data, gdim=gdim)
+    output = gmsh_model_to_mesh(gmsh.mode.getCurrent(), cell_data=cell_data, facet_data=facet_data, gdim=gdim)
     if MPI.COMM_WORLD.rank == 0:
         if current_model is None:
             gmsh.finalize()

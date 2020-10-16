@@ -14,7 +14,6 @@ import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
-#import pygmsh
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -75,7 +74,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Helper for orienting traction
-    r_matrix = pygmsh.helpers.rotation_matrix(
+    r_matrix = dolfinx.utils.rotation_matrix(
         [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
     g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])

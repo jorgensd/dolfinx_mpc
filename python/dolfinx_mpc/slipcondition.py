@@ -40,13 +40,15 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
         entity_dofs = fem.locate_dofs_topological(
             W, meshtag.dim, marked_entities)
 
-        def normal_to_W(x): return normal_dofs[x]
+        def normal_to_W(x):
+            return normal_dofs[x]
 
     else:
         entity_dofs = fem.locate_dofs_topological(
             (Wsub, normal.function_space), meshtag.dim, marked_entities)
 
-        def normal_to_W(x): return n_to_W[normal_dofs[x]]
+        def normal_to_W(x):
+            return n_to_W[normal_dofs[x]]
 
     # Determine which dofs are located at the same coordinate
     # and create a mapping for the local slaves
