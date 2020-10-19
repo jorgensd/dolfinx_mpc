@@ -1,9 +1,7 @@
-from IPython import embed
 import dolfinx.cpp
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
-import meshio
 import numpy as np
 import gmsh
 import ufl
