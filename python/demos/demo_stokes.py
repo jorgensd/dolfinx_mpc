@@ -70,10 +70,7 @@ def create_mesh_gmsh():
 
 # Create mesh
 mesh, mt = create_mesh_gmsh()
-outfile = dolfinx.io.XDMFFile(
-    MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w")
-outfile.write_mesh(mesh)
-outfile.write_meshtags(mt)
+
 fdim = mesh.topology.dim - 1
 
 # Create the function space
@@ -170,8 +167,12 @@ u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 u.name = "u"
 p.name = "p"
+
+outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w")
+outfile.write_mesh(mesh)
+outfile.write_meshtags(mt)
 outfile.write_function(u)
-# outfile.write_function(p)
+outfile.write_function(p)
 outfile.close()
 
 # Transfer data from the MPC problem to numpy arrays for comparison
