@@ -43,7 +43,7 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
 
         # Set mesh size at point
         gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0,
-                               numElements=[int(1 / (res))], recombine=True)
+                               numElements=[int(1 / (2 * res))], recombine=True)
         gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12,
                                numElements=[int(1 / (2 * res))], recombine=True)
         # Syncronize to be able to fetch entities
@@ -158,7 +158,7 @@ def test_cube_contact():
 
     # Generate mesh
     theta = np.pi / 5
-    res = 0.125
+    res = 0.2
     with dolfinx.common.Timer("~Contact: Create mesh"):
         mesh, mt = generate_hex_boxes(0, 0, 0, 1, 1, 1, 2, res,
                                       facet_markers=[[11, 5, 12, 13, 4, 14],
