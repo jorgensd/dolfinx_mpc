@@ -1,10 +1,11 @@
+from IPython import embed
 import dolfinx.cpp
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import meshio
 import numpy as np
-import pygmsh
+import gmsh
 import ufl
 from petsc4py import PETSc
 from mpi4py import MPI
@@ -23,55 +24,58 @@ def create_mesh_gmsh():
     Outlet: 2
     Inlet: 3
     """
-    lcar = 0.1
-    geom = pygmsh.built_in.Geometry()
-    rect = geom.add_rectangle(0.0, L, 0.0, H, 0.0, lcar=lcar)
-    geom.rotate(rect, [0, 0, 0], theta, [0, 0, 1])
+    gmsh.initialize()
+    if MPI.COMM_WORLD.rank == 0:
+        gmsh.model.add("Square duct")
 
-    geom.add_physical([rect.line_loop.lines[0], rect.line_loop.lines[2]], 1)
-    geom.add_physical([rect.line_loop.lines[1]], 2)
-    geom.add_physical([rect.line_loop.lines[3]], 3)
-    geom.add_physical([rect.surface], 4)
+        channel = gmsh.model.occ.addRectangle(0, 0, 0, L, H)
+        gmsh.model.occ.synchronize()
+        gmsh.model.addPhysicalGroup(2, [channel], 1)
+        gmsh.model.setPhysicalName(2, 1, "Fluid volume")
 
-    # Generate mesh
-    mesh = pygmsh.generate_mesh(geom, dim=2, prune_z_0=True)
-    cells = np.vstack(np.array([cells.data for cells in mesh.cells
-                                if cells.type == "triangle"]))
+        import numpy as np
+        surfaces = gmsh.model.occ.getEntities(dim=1)
+        inlet_marker, outlet_marker, wall_marker = 3, 2, 1
+        walls = []
+        inlets = []
+        outlets = []
+        for surface in surfaces:
+            com = gmsh.model.occ.getCenterOfMass(surface[0], surface[1])
+            if np.allclose(com, [0, H / 2, 0]):
+                inlets.append(surface[1])
+            elif np.allclose(com, [L, H / 2, 0]):
+                outlets.append(surface[1])
+            elif np.isclose(com[1], 0) or np.isclose(com[1], H):
+                walls.append(surface[1])
 
-    facet_cells = np.vstack(np.array([cells.data for cells in mesh.cells
-                                      if cells.type == "line"]))
+        gmsh.model.occ.rotate([(2, channel)], 0, 0, 0,
+                              0, 0, 1, theta)
+        gmsh.model.occ.synchronize()
+        gmsh.model.addPhysicalGroup(1, walls, wall_marker)
+        gmsh.model.setPhysicalName(1, wall_marker, "Walls")
+        gmsh.model.addPhysicalGroup(1, inlets, inlet_marker)
+        gmsh.model.setPhysicalName(1, inlet_marker, "Fluid inlet")
+        gmsh.model.addPhysicalGroup(1, outlets, outlet_marker)
+        gmsh.model.setPhysicalName(1, outlet_marker, "Fluid outlet")
+        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 0.1)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", 0.1)
+        gmsh.model.mesh.generate(2)
 
-    facet_data = mesh.cell_data_dict["gmsh:physical"]["line"]
-    cell_data = mesh.cell_data_dict["gmsh:physical"]["triangle"]
-    triangle_mesh = meshio.Mesh(points=mesh.points,
-                                cells=[("triangle", cells)],
-                                cell_data={"name_to_read": [cell_data]})
-
-    facet_mesh = meshio.Mesh(points=mesh.points,
-                             cells=[("line", facet_cells)],
-                             cell_data={"name_to_read": [facet_data]})
-    # Write mesh
-    meshio.xdmf.write("meshes/mesh.xdmf", triangle_mesh)
-    meshio.xdmf.write("meshes/facet_mesh.xdmf", facet_mesh)
+    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
+                                                    facet_data=True, gdim=2)
+    gmsh.finalize()
+    return mesh, ft
 
 
 # Create mesh
-if MPI.COMM_WORLD.size == 1:
-    create_mesh_gmsh()
-# Load mesh and corresponding facet markers
-with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                         "meshes/mesh.xdmf", "r") as xdmf:
-    mesh = xdmf.read_mesh(name="Grid")
-
-
-mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
-with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                         "meshes/facet_mesh.xdmf", "r") as xdmf:
-    mt = xdmf.read_meshtags(mesh, name="Grid")
-
+mesh, mt = create_mesh_gmsh()
 outfile = dolfinx.io.XDMFFile(
     MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w")
 outfile.write_mesh(mesh)
+outfile.write_meshtags(mt)
 fdim = mesh.topology.dim - 1
 
 # Create the function space
