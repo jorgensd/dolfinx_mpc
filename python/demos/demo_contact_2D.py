@@ -264,8 +264,6 @@ if __name__ == "__main__":
                        triangle=False, compare=compare)
     # Gmsh aligned
     demo_stacked_cubes(outfile, theta=0, gmsh=True,
-                       triangle=False, compare=compare)
-    demo_stacked_cubes(outfile, theta=0, gmsh=True,
                        triangle=True, compare=compare)
     # Gmsh non-aligned
     demo_stacked_cubes(outfile, theta=np.pi / 5, gmsh=True,

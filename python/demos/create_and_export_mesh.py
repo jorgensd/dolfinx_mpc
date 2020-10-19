@@ -8,6 +8,281 @@ import dolfinx.io
 import gmsh
 
 
+def gmsh_3D_stacked(celltype, theta):
+    if celltype == "tetrahedron":
+        return generate_tet_boxes(0, 0, 0, 1, 1, 1, 2, 0.1,
+                                  facet_markers=[[11, 5, 12, 13, 4, 14],
+                                                 [21, 9, 22, 23, 3, 24]],
+                                  volume_markers=[1, 2])
+    else:
+        return generate_hex_boxes(0, 0, 0, 1, 1, 1, 2, 0.1,
+                                  facet_markers=[[11, 5, 12, 13, 4, 14],
+                                                 [21, 9, 22, 23, 3, 24]],
+                                  volume_markers=[1, 2])
+
+
+def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
+                       volume_markers):
+    """
+    Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
+    [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
+    The markers are is a list of arrays containing markers
+    array of markers for [back, bottom, right, left, top, front] per box
+    volume_markers a list of marker per volume
+    """
+    # Check if GMSH is initialized
+    try:
+        gmsh.model.getCurrent()
+    except ValueError:
+        gmsh.initialize()
+    if MPI.COMM_WORLD.rank == 0:
+        gmsh.option.setNumber("General.Terminal", 0)
+        # Added tolerance to ensure that gmsh separates boxes
+        tol = 1e-12
+        bottom = gmsh.model.occ.addBox(x0, y0, z0, x1 - x0, y1 - y0, z1 - z0)
+        top = gmsh.model.occ.addBox(x0, y0, z1 + tol, x1 - x0, y1 - y0, z2 - z1)
+
+        # Syncronize to be able to fetch entities
+        gmsh.model.occ.synchronize()
+
+        # Create entity -> marker map (to be used after rotation)
+        volumes = gmsh.model.getEntities(3)
+        volume_entities = {"Top": [None, volume_markers[1]],
+                           "Bottom": [None, volume_markers[0]]}
+        for i, volume in enumerate(volumes):
+            com = gmsh.model.occ.getCenterOfMass(volume[0], volume[1])
+            if np.isclose(com[2], (z1 - z0) / 2):
+                bottom_index = i
+                volume_entities["Bottom"][0] = volume
+            elif np.isclose(com[2], (z2 - z1) / 2 + z1):
+                top_index = i
+                volume_entities["Top"][0] = volume
+        surfaces = ["Top", "Bottom", "Left", "Right", "Front", "Back"]
+        entities = {"Bottom": {key: [[], None] for key in surfaces},
+                    "Top": {key: [[], None] for key in surfaces}}
+        # Identitfy entities for each surface of top and bottom cube
+
+        # Physical markers for bottom cube
+        bottom_surfaces = gmsh.model.getBoundary(volumes[bottom_index],
+                                                 recursive=False)
+        for entity in bottom_surfaces:
+            com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
+            if np.allclose(com, [(x1 - x0) / 2, y1, (z1 - z0) / 2]):
+                entities["Bottom"]["Back"][0].append(entity[1])
+                entities["Bottom"]["Back"][1] = facet_markers[0][0]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z0]):
+                entities["Bottom"]["Bottom"][0].append(entity[1])
+                entities["Bottom"]["Bottom"][1] = facet_markers[0][1]
+            elif np.allclose(com, [x1, (y1 - y0) / 2, (z1 - z0) / 2]):
+                entities["Bottom"]["Right"][0].append(entity[1])
+                entities["Bottom"]["Right"][1] = facet_markers[0][2]
+            elif np.allclose(com, [x0, (y1 - y0) / 2, (z1 - z0) / 2]):
+                entities["Bottom"]["Left"][0].append(entity[1])
+                entities["Bottom"]["Left"][1] = facet_markers[0][3]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z1]):
+                entities["Bottom"]["Top"][0].append(entity[1])
+                entities["Bottom"]["Top"][1] = facet_markers[0][4]
+            elif np.allclose(com, [(x1 - x0) / 2, y0, (z1 - z0) / 2]):
+                entities["Bottom"]["Front"][0].append(entity[1])
+                entities["Bottom"]["Front"][1] = facet_markers[0][5]
+        # Physical markers for top
+        top_surfaces = gmsh.model.getBoundary(volumes[top_index],
+                                              recursive=False)
+        for entity in top_surfaces:
+            com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
+            if np.allclose(com, [(x1 - x0) / 2, y1, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Back"][0].append(entity[1])
+                entities["Top"]["Back"][1] = facet_markers[1][0]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z1]):
+                entities["Top"]["Bottom"][0].append(entity[1])
+                entities["Top"]["Bottom"][1] = facet_markers[1][1]
+            elif np.allclose(com, [x1, (y1 - y0) / 2, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Right"][0].append(entity[1])
+                entities["Top"]["Right"][1] = facet_markers[1][2]
+            elif np.allclose(com, [x0, (y1 - y0) / 2, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Left"][0].append(entity[1])
+                entities["Top"]["Left"][1] = facet_markers[1][3]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z2]):
+                entities["Top"]["Top"][0].append(entity[1])
+                entities["Top"]["Top"][1] = facet_markers[1][4]
+            elif np.allclose(com, [(x1 - x0) / 2, y0, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Front"][0].append(entity[1])
+                entities["Top"]["Front"][1] = facet_markers[1][5]
+
+        # Note: Rotation cannot be used on recombined surfaces
+        gmsh.model.occ.synchronize()
+
+        for volume in volume_entities.keys():
+            gmsh.model.addPhysicalGroup(
+                volume_entities[volume][0][0], [volume_entities[volume][0][1]],
+                tag=volume_entities[volume][1])
+            gmsh.model.setPhysicalName(volume_entities[volume][0][0],
+                                       volume_entities[volume][1], volume)
+
+        for box in entities.keys():
+            for surface in entities[box].keys():
+                gmsh.model.addPhysicalGroup(2, entities[box][surface][0],
+                                            tag=entities[box][surface][1])
+                gmsh.model.setPhysicalName(2, entities[box][surface][1], box
+                                           + ":" + surface)
+        gmsh.model.mesh.field.add("Box", 1)
+        gmsh.model.mesh.field.setNumber(1, "VIn", res)
+        gmsh.model.mesh.field.setNumber(1, "VOut", 2 * res)
+        gmsh.model.mesh.field.setNumber(1, "XMin", 0)
+        gmsh.model.mesh.field.setNumber(1, "XMax", 1)
+        gmsh.model.mesh.field.setNumber(1, "YMin", 0)
+        gmsh.model.mesh.field.setNumber(1, "YMax", 1)
+        gmsh.model.mesh.field.setNumber(1, "ZMin", 0)
+        gmsh.model.mesh.field.setNumber(1, "ZMax", 1)
+
+        gmsh.model.mesh.field.setAsBackgroundMesh(1)
+        # NOTE: Need to synchronize after setting mesh sizes
+        gmsh.model.occ.synchronize()
+        # Generate mesh
+        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(1)
+    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
+                                                    facet_data=True)
+    gmsh.finalize()
+    return mesh, ft
+
+
+def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
+                       volume_markers):
+    """
+    Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
+    [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
+    The markers are is a list of arrays containing markers
+    array of markers for [back, bottom, right, left, top, front] per box
+    volume_markers a list of marker per volume
+    """
+    # Check if GMSH is initialized
+    try:
+        gmsh.model.getCurrent()
+    except ValueError:
+        gmsh.initialize()
+    if MPI.COMM_WORLD.rank == 0:
+        gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+        gmsh.option.setNumber("Mesh.RecombineAll", 2)
+        gmsh.option.setNumber("General.Terminal", 1)
+        bottom = gmsh.model.occ.addRectangle(x0, y0, z0, x1 - x0, y1 - y0)
+        top = gmsh.model.occ.addRectangle(x0, y0, z2, x1 - x0, y1 - y0)
+
+        # Set mesh size at point
+        gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0,
+                               numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12,
+                               numElements=[int(1 / (2 * res))], recombine=True)
+        # Syncronize to be able to fetch entities
+        gmsh.model.occ.synchronize()
+
+        # Create entity -> marker map (to be used after rotation)
+        volumes = gmsh.model.getEntities(3)
+        volume_entities = {"Top": [None, volume_markers[1]],
+                           "Bottom": [None, volume_markers[0]]}
+        for i, volume in enumerate(volumes):
+            com = gmsh.model.occ.getCenterOfMass(volume[0], volume[1])
+            if np.isclose(com[2], (z1 - z0) / 2):
+                bottom_index = i
+                volume_entities["Bottom"][0] = volume
+            elif np.isclose(com[2], (z2 - z1) / 2 + z1):
+                top_index = i
+                volume_entities["Top"][0] = volume
+        surfaces = ["Top", "Bottom", "Left", "Right", "Front", "Back"]
+        entities = {"Bottom": {key: [[], None] for key in surfaces},
+                    "Top": {key: [[], None] for key in surfaces}}
+        # Identitfy entities for each surface of top and bottom cube
+
+        # Physical markers for bottom cube
+        bottom_surfaces = gmsh.model.getBoundary(volumes[bottom_index],
+                                                 recursive=False)
+        for entity in bottom_surfaces:
+            com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
+            if np.allclose(com, [(x1 - x0) / 2, y1, (z1 - z0) / 2]):
+                entities["Bottom"]["Back"][0].append(entity[1])
+                entities["Bottom"]["Back"][1] = facet_markers[0][0]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z0]):
+                entities["Bottom"]["Bottom"][0].append(entity[1])
+                entities["Bottom"]["Bottom"][1] = facet_markers[0][1]
+            elif np.allclose(com, [x1, (y1 - y0) / 2, (z1 - z0) / 2]):
+                entities["Bottom"]["Right"][0].append(entity[1])
+                entities["Bottom"]["Right"][1] = facet_markers[0][2]
+            elif np.allclose(com, [x0, (y1 - y0) / 2, (z1 - z0) / 2]):
+                entities["Bottom"]["Left"][0].append(entity[1])
+                entities["Bottom"]["Left"][1] = facet_markers[0][3]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z1]):
+                entities["Bottom"]["Top"][0].append(entity[1])
+                entities["Bottom"]["Top"][1] = facet_markers[0][4]
+            elif np.allclose(com, [(x1 - x0) / 2, y0, (z1 - z0) / 2]):
+                entities["Bottom"]["Front"][0].append(entity[1])
+                entities["Bottom"]["Front"][1] = facet_markers[0][5]
+        # Physical markers for top
+        top_surfaces = gmsh.model.getBoundary(volumes[top_index],
+                                              recursive=False)
+        for entity in top_surfaces:
+            com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
+            if np.allclose(com, [(x1 - x0) / 2, y1, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Back"][0].append(entity[1])
+                entities["Top"]["Back"][1] = facet_markers[1][0]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z1]):
+                entities["Top"]["Bottom"][0].append(entity[1])
+                entities["Top"]["Bottom"][1] = facet_markers[1][1]
+            elif np.allclose(com, [x1, (y1 - y0) / 2, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Right"][0].append(entity[1])
+                entities["Top"]["Right"][1] = facet_markers[1][2]
+            elif np.allclose(com, [x0, (y1 - y0) / 2, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Left"][0].append(entity[1])
+                entities["Top"]["Left"][1] = facet_markers[1][3]
+            elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z2]):
+                entities["Top"]["Top"][0].append(entity[1])
+                entities["Top"]["Top"][1] = facet_markers[1][4]
+            elif np.allclose(com, [(x1 - x0) / 2, y0, (z2 - z1) / 2 + z1]):
+                entities["Top"]["Front"][0].append(entity[1])
+                entities["Top"]["Front"][1] = facet_markers[1][5]
+
+        # gmsh.model.occ.rotate(volumes, 0, 0, 0,
+        #                       1 / np.sqrt(2), 1 / np.sqrt(2), 0, theta)
+        # Note: Rotation cannot be used on recombined surfaces
+        gmsh.model.occ.synchronize()
+
+        for volume in volume_entities.keys():
+            gmsh.model.addPhysicalGroup(
+                volume_entities[volume][0][0], [volume_entities[volume][0][1]],
+                tag=volume_entities[volume][1])
+            gmsh.model.setPhysicalName(volume_entities[volume][0][0],
+                                       volume_entities[volume][1], volume)
+
+        for box in entities.keys():
+            for surface in entities[box].keys():
+                gmsh.model.addPhysicalGroup(2, entities[box][surface][0],
+                                            tag=entities[box][surface][1])
+                gmsh.model.setPhysicalName(2, entities[box][surface][1], box
+                                           + ":" + surface)
+        # Set mesh sizes on the points from the surface we are extruding
+        bottom_nodes = gmsh.model.getBoundary((2, bottom), recursive=True)
+        for entity in bottom_nodes:
+            gmsh.model.occ.mesh.setSize(entity, res)
+        top_nodes = gmsh.model.getBoundary((2, top),
+                                           recursive=True)
+        for entity in top_nodes:
+            gmsh.model.occ.mesh.setSize(entity, 2 * res)
+        # NOTE: Need to synchronize after setting mesh sizes
+        gmsh.model.occ.synchronize()
+        # Generate mesh
+        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(1)
+    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
+                                                    facet_data=True)
+    gmsh.finalize()
+    return mesh, ft
+
+
 def gmsh_2D_stacked(celltype, theta):
     res = 0.1
     x0, y0, z0 = 0, 0, 0
