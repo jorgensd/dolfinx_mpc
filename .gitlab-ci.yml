@@ -13,7 +13,6 @@ fast-complex:
     PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
   before_script:
     - export PETSC_ARCH="linux-gnu-complex-32"
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-complex/bin:$PATH"
     - export PKG_CONFIG_PATH="/usr/local/dolfinx-complex/lib/pkgconfig:$PKG_CONFIG_PATH"
     - flake8 .
@@ -46,7 +45,6 @@ fast-real:
     PETSC_ARCH: "linux-gnu-real-32"
     PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
   before_script:
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-real/bin:$PATH"
     - export PKG_CONFIG_PATH="/usr/local/dolfinx-real/lib/pkgconfig:$PKG_CONFIG_PATH"
     - flake8 .
@@ -81,7 +79,6 @@ nightly-complex:
     PETSC_ARCH: "linux-gnu-complex-32"
   before_script:
     - export PETSC_ARCH="linux-gnu-complex-32"
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:$LD_LIBRARY_PATH"
     - flake8 .
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
@@ -146,7 +143,6 @@ nightly-real:
     PETSC_DIR: "/usr/local/petsc"
     PETSC_ARCH: "linux-gnu-real-32"
   before_script:
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:$LD_LIBRARY_PATH"
     - flake8 .
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
