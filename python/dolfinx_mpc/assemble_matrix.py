@@ -139,7 +139,7 @@ def assemble_matrix(form, constraint, bcs=[]):
         constraint._cpp_object.create_sparsity_pattern_old(cpp_form)
         time_old = timer.elapsed()
     print("New: {0:.2e}, Old: {1:.2e}".format(time[0], time_old[0]))
-    if time[0] > 5e-4:
+    if time[0] > 5e-3:
         assert(time < time_old)
     pattern.assemble()
 

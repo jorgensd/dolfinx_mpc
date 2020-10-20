@@ -43,6 +43,7 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         N = 3
         mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
         for i in range(r_lvl):
+            mesh.topology.create_entities(mesh.topology.dim - 2)
             mesh = refine(mesh, redistribute=True)
             N *= 2
     else:
