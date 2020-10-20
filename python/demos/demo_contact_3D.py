@@ -241,9 +241,9 @@ if __name__ == "__main__":
     demo_stacked_cubes(
         outfile, theta=np.pi / 5, gmsh=True, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         compare=compare)
-    # demo_stacked_cubes(
-    #     outfile, theta=np.pi / 5,gmsh=True, ct=dolfinx.cpp.mesh.CellType.hexahedron,
-    #     compare=compare)
+    demo_stacked_cubes(
+        outfile, theta=np.pi / 5, gmsh=True, ct=dolfinx.cpp.mesh.CellType.hexahedron,
+        compare=compare)
     outfile.close()
 
     dolfinx_mpc.utils.log_info("Simulation finished")

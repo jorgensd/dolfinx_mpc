@@ -8,17 +8,22 @@ import dolfinx.io
 import gmsh
 
 
-def gmsh_3D_stacked(celltype, theta):
+def gmsh_3D_stacked(celltype, theta, res=0.1):
+    res = 0.02
     if celltype == "tetrahedron":
-        return generate_tet_boxes(0, 0, 0, 1, 1, 1, 2, 0.1,
-                                  facet_markers=[[11, 5, 12, 13, 4, 14],
-                                                 [21, 9, 22, 23, 3, 24]],
-                                  volume_markers=[1, 2])
+        mesh, ft = generate_tet_boxes(0, 0, 0, 1, 1, 1, 2, res,
+                                      facet_markers=[[11, 5, 12, 13, 4, 14],
+                                                     [21, 9, 22, 23, 3, 24]],
+                                      volume_markers=[1, 2])
     else:
-        return generate_hex_boxes(0, 0, 0, 1, 1, 1, 2, 0.1,
-                                  facet_markers=[[11, 5, 12, 13, 4, 14],
-                                                 [21, 9, 22, 23, 3, 24]],
-                                  volume_markers=[1, 2])
+        mesh, ft = generate_hex_boxes(0, 0, 0, 1, 1, 1, 2, res,
+                                      facet_markers=[[11, 5, 12, 13, 4, 14],
+                                                     [21, 9, 22, 23, 3, 24]],
+                                      volume_markers=[1, 2])
+    # NOTE: Hex mesh must be rotated after generation due to gmsh API
+    r_matrix = dolfinx_mpc.utils.rotation_matrix([1, 1, 0], -theta)
+    mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
+    return mesh, ft
 
 
 def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
@@ -277,8 +282,7 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
-                                                    facet_data=True)
+    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
     gmsh.finalize()
     return mesh, ft
 
