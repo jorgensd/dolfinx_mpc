@@ -17,7 +17,6 @@
 #include <dolfinx/fem/SparsityPatternBuilder.h>
 #include <dolfinx/function/Function.h>
 #include <dolfinx/function/FunctionSpace.h>
-#include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
@@ -364,12 +363,14 @@ mpc_data dolfinx_mpc::create_contact_condition(
   {
     std::vector<std::int32_t> dofs(block_size);
     std::iota(dofs.begin(), dofs.end(), slave_blocks(i, 0) * block_size);
-    // Find index of maximum normal vector (determines slave dof)
-    Eigen::Array<double, 1, Eigen::Dynamic> abs_coeffs(1, tdim);
+    // Create normalized local normal vector and fin its max index
+    Eigen::Array<PetscScalar, 1, Eigen::Dynamic> l_normal(1, tdim);
     for (std::int32_t j = 0; j < tdim; ++j)
-      abs_coeffs[j] = std::abs(normal_array[dofs[j]]);
+      l_normal[j] = normal_array[dofs[j]];
+    l_normal /= std::sqrt(l_normal.abs2().sum());
+
     Eigen::Index max_index;
-    const double coeff = abs_coeffs.maxCoeff(&max_index);
+    const double coeff = l_normal.abs().maxCoeff(&max_index);
 
     // Compute coeffs if slave is owned by the processor
     if (dofs[max_index] < size_local * block_size)
@@ -384,8 +385,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
       for (Eigen::Index j = 0; j < tdim; ++j)
         if (j != max_index)
         {
-          PetscScalar coeff_j
-              = -normal_array[dofs[j]] / normal_array[dofs[max_index]];
+          PetscScalar coeff_j = -l_normal[j] / l_normal[max_index];
           if (std::abs(coeff_j) > 1e-6)
           {
             owners_i.push_back(rank);
@@ -424,7 +424,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
   }
   // Loop through all masters on current processor and check if they collide
   // with a local master facet
-  dolfinx::geometry::BoundingBoxTree tree(*V->mesh(), tdim);
   std::int32_t num_local_cells
       = V->mesh()->topology().index_map(tdim)->size_local();
   std::map<std::int32_t, std::vector<std::int32_t>> local_owners;
@@ -456,68 +455,54 @@ mpc_data dolfinx_mpc::create_contact_condition(
     // Pad 2D spaces with zero in normal
     for (std::int32_t j = gdim; j < 3; ++j)
       coeffs[j] = 0;
+    coeffs /= std::sqrt(coeffs.abs2().sum());
+    Eigen::Index max_index;
+    const double _c = coeffs.abs().maxCoeff(&max_index);
+
     local_slave_normal.row(i) = coeffs;
 
-    // Narrow number of candidates by using BB collision detection
-    std::vector<std::int32_t> possible_cells
-        = dolfinx::geometry::compute_collisions(tree, coord);
-    if (possible_cells.size() > 0)
+    // Use collision detection algorithm (GJK) to check distance from  cell
+    // to point and select one within 1e-10
+    std::vector<std::int32_t> candidates;
+    for (auto cell : master_cells)
+      candidates.push_back(cell);
+    std::vector<std::int32_t> verified_candidates
+        = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
+                                                    coord, 1);
+    if (verified_candidates.size() == 1)
     {
-      // Filter out cell that are not connect to master facet or owned by
-      // processor
-      std::vector<std::int32_t> candidates;
-      for (auto cell : possible_cells)
+      // Compute local contribution of slave on master facet
+      Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic> basis_values
+          = get_basis_functions(V, coord, verified_candidates[0]);
+      auto cell_dofs = V->dofmap()->cell_dofs(verified_candidates[0]);
+      std::vector<std::int32_t> l_master;
+      std::vector<PetscScalar> l_coeff;
+      std::vector<std::int32_t> l_owner;
+      for (std::int32_t j = 0; j < tdim; ++j)
       {
-        if ((std::find(master_cells.begin(), master_cells.end(), cell)
-             != master_cells.end())
-            && (cell < num_local_cells))
-          candidates.push_back(cell);
-      }
-      // Use collision detection algorithm (GJK) to check distance from  cell
-      // to point and select one within 1e-10
-      std::vector<std::int32_t> verified_candidates
-          = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
-                                                      coord, 1);
-      if (verified_candidates.size() == 1)
-      {
-        // Compute local contribution of slave on master facet
-        Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic> basis_values
-            = get_basis_functions(V, coord, verified_candidates[0]);
-        auto cell_dofs = V->dofmap()->cell_dofs(verified_candidates[0]);
-        std::vector<std::int32_t> l_master;
-        std::vector<PetscScalar> l_coeff;
-        std::vector<std::int32_t> l_owner;
-        for (std::int32_t j = 0; j < tdim; ++j)
+        for (std::int32_t k = 0; k < cell_dofs.size(); ++k)
         {
-          for (std::int32_t k = 0; k < cell_dofs.size(); ++k)
+          PetscScalar coeff
+              = basis_values(k, j) * coeffs[j] / coeffs[max_index];
+          if (std::abs(coeff) > 1e-6)
           {
-            PetscScalar coeff = basis_values(k, j) * coeffs[j]
-                                / normal_array[local_slaves[i]];
-            if (std::abs(coeff) > 1e-6)
-            {
-              l_master.push_back(cell_dofs(k));
-              l_coeff.push_back(coeff);
-              if (cell_dofs[k] < size_local * block_size)
-                l_owner.push_back(rank);
-              else
-                l_owner.push_back(
-                    ghost_owners[cell_dofs[k] / block_size - size_local]);
-            }
+            l_master.push_back(cell_dofs(k));
+            l_coeff.push_back(coeff);
+            if (cell_dofs[k] < size_local * block_size)
+              l_owner.push_back(rank);
+            else
+              l_owner.push_back(
+                  ghost_owners[cell_dofs[k] / block_size - size_local]);
           }
         }
-        if (l_master.size() > 0)
-        {
-          auto global_masters = imap->local_to_global(l_master, false);
-          local_masters.insert(
-              std::pair(local_slaves_as_glob[i], global_masters));
-          local_coeffs.insert(std::pair(local_slaves_as_glob[i], l_coeff));
-          local_owners.insert(std::pair(local_slaves_as_glob[i], l_owner));
-        }
-        else
-        {
-          slaves_wo_local_collision.push_back(local_slaves_as_glob[i]);
-          collision_to_local.push_back(i);
-        }
+      }
+      if (l_master.size() > 0)
+      {
+        auto global_masters = imap->local_to_global(l_master, false);
+        local_masters.insert(
+            std::pair(local_slaves_as_glob[i], global_masters));
+        local_coeffs.insert(std::pair(local_slaves_as_glob[i], l_coeff));
+        local_owners.insert(std::pair(local_slaves_as_glob[i], l_owner));
       }
       else
       {
@@ -551,6 +536,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
   MPI_Comm_size(comm, &mpi_size);
   if (mpi_size == 1)
   {
+    assert(slaves_wo_local_collision.size() == 0);
     std::vector<std::int64_t> masters_out;
     std::vector<PetscScalar> coeffs_out;
     std::vector<std::int32_t> offsets_out = {0};
@@ -681,61 +667,47 @@ mpc_data dolfinx_mpc::create_contact_condition(
       // Find index of slave coord by using block size remainder
       std::int32_t local_index = slaves_recv[j] % block_size;
 
-      // Compute possible collisions on this processor
-      std::vector<std::int32_t> possible_cells
-          = dolfinx::geometry::compute_collisions(tree, slave_coord);
-      if (possible_cells.size() > 0)
-      {
-        // Filter out cell that are not connect to master facet or owned by
-        // processor
-        std::vector<std::int32_t> candidates;
-        for (auto cell : possible_cells)
-        {
-          if ((std::find(master_cells.begin(), master_cells.end(), cell)
-               != master_cells.end())
-              && (cell < num_local_cells))
-            candidates.push_back(cell);
-        }
-        // Use collision detection algorithm (GJK) to check distance from
-        // cell to point and select one within 1e-10
-        std::vector<std::int32_t> verified_candidates
-            = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
-                                                        slave_coord, 1);
-        if (verified_candidates.size() == 1)
-        {
-          // Compute local contribution of slave on master facet
-          Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic> basis_values
-              = get_basis_functions(V, slave_coord, verified_candidates[0]);
-          auto cell_dofs = V->dofmap()->cell_dofs(verified_candidates[0]);
-          std::vector<std::int32_t> l_master;
-          std::vector<PetscScalar> l_coeff;
-          std::vector<std::int32_t> l_owner;
-          for (std::int32_t d = 0; d < tdim; ++d)
-          {
-            for (std::int32_t k = 0; k < cell_dofs.size(); ++k)
-            {
-              PetscScalar coeff = basis_values(k, d) * slave_normal[d]
-                                  / slave_normal[local_index];
-              if (std::abs(coeff) > 1e-6)
-              {
-                l_master.push_back(cell_dofs(k));
-                l_coeff.push_back(coeff);
-                if (cell_dofs[k] < size_local * block_size)
-                  l_owner.push_back(rank);
-                else
+      std::vector<std::int32_t> candidates(master_cells.begin(),
+                                           master_cells.end());
 
-                  l_owner.push_back(
-                      ghost_owners[cell_dofs[k] / block_size - size_local]);
-              }
+      // Use collision detection algorithm (GJK) to check distance from
+      // cell to point and select one within 1e-10
+      std::vector<std::int32_t> verified_candidates
+          = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
+                                                      slave_coord, 1);
+      if (verified_candidates.size() == 1)
+      {
+        // Compute local contribution of slave on master facet
+        Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic> basis_values
+            = get_basis_functions(V, slave_coord, verified_candidates[0]);
+        auto cell_dofs = V->dofmap()->cell_dofs(verified_candidates[0]);
+        std::vector<std::int32_t> l_master;
+        std::vector<PetscScalar> l_coeff;
+        std::vector<std::int32_t> l_owner;
+        for (std::int32_t d = 0; d < tdim; ++d)
+        {
+          for (std::int32_t k = 0; k < cell_dofs.size(); ++k)
+          {
+            PetscScalar coeff = basis_values(k, d) * slave_normal[d]
+                                / slave_normal[local_index];
+            if (std::abs(coeff) > 1e-6)
+            {
+              l_master.push_back(cell_dofs(k));
+              l_coeff.push_back(coeff);
+              if (cell_dofs[k] < size_local * block_size)
+                l_owner.push_back(rank);
+              else
+
+                l_owner.push_back(
+                    ghost_owners[cell_dofs[k] / block_size - size_local]);
             }
           }
-          auto global_masters = imap->local_to_global(l_master, false);
-          collision_slaves[i].push_back(slaves_recv[j]);
-          collision_masters[i].insert(
-              std::pair(slaves_recv[j], global_masters));
-          collision_coeffs[i].insert(std::pair(slaves_recv[j], l_coeff));
-          collision_owners[i].insert(std::pair(slaves_recv[j], l_owner));
         }
+        auto global_masters = imap->local_to_global(l_master, false);
+        collision_slaves[i].push_back(slaves_recv[j]);
+        collision_masters[i].insert(std::pair(slaves_recv[j], global_masters));
+        collision_coeffs[i].insert(std::pair(slaves_recv[j], l_coeff));
+        collision_owners[i].insert(std::pair(slaves_recv[j], l_owner));
       }
     }
   }
@@ -877,6 +849,7 @@ mpc_data dolfinx_mpc::create_contact_condition(
                 + master_offsets[j + 1]);
         local_masters[key].insert(local_masters[key].end(), masters_.begin(),
                                   masters_.end());
+
         std::vector<PetscScalar> coeffs_(
             remote_colliding_coeffs.begin() + disp_inc_masters[i]
                 + master_offsets[j],
@@ -906,7 +879,6 @@ mpc_data dolfinx_mpc::create_contact_condition(
     // Check that we have actually found a collision
     if (local_masters[key].size() == 0)
       throw std::runtime_error("Could not find contact for slave dof.");
-
     local_masters[key].insert(local_masters[key].end(), masters_.begin(),
                               masters_.end());
     local_coeffs[key].insert(local_coeffs[key].end(), coeffs_.begin(),

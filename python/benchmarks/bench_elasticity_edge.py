@@ -63,7 +63,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         out_x[2] = x[2] + 1
         return out_x
     with dolfinx.common.Timer("~Elasticity: Initialize MPC"):
-        edim = mesh.topology.dim-2
+        edim = mesh.topology.dim - 2
         edges = dolfinx.mesh.locate_entities_boundary(
             mesh, edim, PeriodicBoundary)
         periodic_mt = dolfinx.MeshTags(mesh, edim,
@@ -92,20 +92,20 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     g = dolfinx.Constant(mesh, (0, 0, -1e2))
     x = ufl.SpatialCoordinate(mesh)
     f = dolfinx.Constant(mesh, 1e3) * \
-        ufl.as_vector((0, -(x[2]-0.5)**2, (x[1]-0.5)**2))
+        ufl.as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(g, v)*ufl.ds(domain=mesh, subdomain_data=mt,
-                                 subdomain_id=1)\
-        + ufl.inner(f, v)*ufl.dx
+    rhs = ufl.inner(g, v) * ufl.ds(domain=mesh, subdomain_data=mt,
+                                   subdomain_id=1)\
+        + ufl.inner(f, v) * ufl.dx
 
     # Setup MPC system
     if info:
@@ -261,7 +261,7 @@ if __name__ == "__main__":
                               boomeramg=boomeramg, kspview=kspview,
                               degree=degree, info=info)
 
-        if timings and i == N-1:
+        if timings and i == N - 1:
             dolfinx.common.list_timings(MPI.COMM_WORLD,
                                         [dolfinx.common.TimingType.wall])
     h5f.close()

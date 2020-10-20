@@ -45,7 +45,7 @@ def visualize_elasticity():
         degree, ct, solver), fontsize=25)
     plt.legend(fontsize=15)
     ax.minorticks_on()
-    ax.set_ylim([0, max([max(iterations), max(iterations_ref)])+1])
+    ax.set_ylim([0, max([max(iterations), max(iterations_ref)]) + 1])
     ax.set_xlim([1e2, 1e8])
     locmax = LogLocator(
         base=10.0,
@@ -56,7 +56,7 @@ def visualize_elasticity():
         numticks=9)
     ax.xaxis.set_minor_locator(locmin)
     ax.xaxis.set_minor_formatter(NullFormatter())
-    plt.grid(True,  which="both", axis="both")
+    plt.grid(True, which="both", axis="both")
     plt.savefig("elasticity_iterations_CG{0:s}_{1:s}.png".format(
         degree, ct), bbox_inches='tight')
 
@@ -89,8 +89,8 @@ def visualize_periodic():
     ax.tick_params(axis='both', which='major', labelsize=20)
     ax.set_xscale("log")
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.set_ylim([0, max(iterations)+1])
-    ax.set_xlim([1e2, max(dofs)+1])
+    ax.set_ylim([0, max(iterations) + 1])
+    ax.set_xlim([1e2, max(dofs) + 1])
     plt.xlabel("# DOFS", fontsize=20)
     plt.ylabel("# Iterations", fontsize=20)
 
@@ -103,7 +103,7 @@ def visualize_periodic():
         degree, ct, solver), fontsize=25)
     plt.legend(fontsize=15)
     ax.minorticks_on()
-    ax.set_ylim([0, max(iterations)+1])
+    ax.set_ylim([0, max(iterations) + 1])
     ax.set_xlim([1e2, 1e8])
     locmax = LogLocator(
         base=10.0,
@@ -114,7 +114,7 @@ def visualize_periodic():
         numticks=9)
     ax.xaxis.set_minor_locator(locmin)
     ax.xaxis.set_minor_formatter(NullFormatter())
-    plt.grid(True,  which="both", axis="both")
+    plt.grid(True, which="both", axis="both")
     plt.savefig("periodic_iterations_CG{0:s}_{1:s}.png".format(
         degree, ct), bbox_inches='tight')
 

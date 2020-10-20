@@ -28,7 +28,7 @@ def test_mpc_assembly(master_point, degree, celltype):
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
 
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()
@@ -79,7 +79,7 @@ def test_slave_on_same_cell(master_point, degree, celltype):
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
         A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)

@@ -37,7 +37,7 @@ def pack_facet_info(mesh, integrals, i):
     # FIXME: Should be moved to dolfinx C++ layer
     # Set up data required for exterior facet assembly
     tdim = mesh.topology.dim
-    fdim = mesh.topology.dim-1
+    fdim = mesh.topology.dim - 1
     # This connectivities has been computed by normal assembly
     c_to_f = mesh.topology.connectivity(tdim, fdim)
     f_to_c = mesh.topology.connectivity(fdim, tdim)
@@ -57,10 +57,10 @@ def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
     f_to_c_pos, f_to_c_offs = f_to_c
 
     for j, facet in enumerate(active_facets):
-        cells = f_to_c_pos[f_to_c_offs[facet]:f_to_c_offs[facet+1]]
+        cells = f_to_c_pos[f_to_c_offs[facet]:f_to_c_offs[facet + 1]]
         assert(len(cells) == 1)
         local_facets = c_to_f_pos[c_to_f_offs[cells[0]]:
-                                  c_to_f_offs[cells[0]+1]]
+                                  c_to_f_offs[cells[0] + 1]]
         # Should be wrapped in convenience numba function
         local_index = numpy.flatnonzero(facet == local_facets)[0]
         facet_info[j, :] = [cells[0], local_index]
@@ -76,8 +76,8 @@ def assemble_matrix(form, constraint, bcs=[]):
     timer_matrix = Timer("~MPC: Assemble matrix")
 
     # Get data from function space
-    assert(form.arguments()[0].ufl_function_space() ==
-           form.arguments()[1].ufl_function_space())
+    assert(form.arguments()[0].ufl_function_space()
+           == form.arguments()[1].ufl_function_space())
     V = form.arguments()[0].ufl_function_space()
     dofmap = V.dofmap
     dofs = dofmap.list.array
@@ -135,8 +135,8 @@ def assemble_matrix(form, constraint, bcs=[]):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
 
     # General assembly data
-    num_dofs_per_element = (dofmap.dof_layout.num_dofs *
-                            dofmap.dof_layout.block_size())
+    num_dofs_per_element = (dofmap.dof_layout.num_dofs
+                            * dofmap.dof_layout.block_size())
 
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
@@ -228,7 +228,7 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
     facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
     # NOTE: All cells are assumed to be of the same type
-    geometry = numpy.zeros((pos[1]-pos[0], gdim))
+    geometry = numpy.zeros((pos[1] - pos[0], gdim))
 
     A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element),
                           dtype=PETSc.ScalarType)
@@ -393,13 +393,13 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
     m1_index = numpy.zeros(1, dtype=numpy.int32)
 
     cell_slaves = cell_to_slave[cell_to_slave_offsets[slave_cell_index]:
-                                cell_to_slave_offsets[slave_cell_index+1]]
+                                cell_to_slave_offsets[slave_cell_index + 1]]
 
     for i, slave_index in enumerate(cell_slaves):
         cell_masters = masters_local[offsets[slave_index]:
-                                     offsets[slave_index+1]]
+                                     offsets[slave_index + 1]]
         cell_coeffs = coefficients[offsets[slave_index]:
-                                   offsets[slave_index+1]]
+                                   offsets[slave_index + 1]]
         # # Variable for local position of slave dof
         local_idx = numpy.flatnonzero(
             slaves[slave_index] == local_pos)[0]
@@ -409,9 +409,9 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
             A_row.fill(0.0)
             A_col.fill(0.0)
             # Move local contributions with correct coefficients
-            A_row[:, 0] = coeff*A_local_copy[:, local_idx]
-            A_col[0, :] = coeff*A_local_copy[local_idx, :]
-            A_master[0, 0] = coeff*A_row[local_idx, 0]
+            A_row[:, 0] = coeff * A_local_copy[:, local_idx]
+            A_col[0, :] = coeff * A_local_copy[local_idx, :]
+            A_master[0, 0] = coeff * A_row[local_idx, 0]
 
             # Remove row contribution going to central addition
             A_col[0, local_idx] = 0
@@ -434,18 +434,18 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
 
                 # Masters for other cell
                 other_cell_masters = masters_local[offsets[other_slave]:
-                                                   offsets[other_slave+1]]
+                                                   offsets[other_slave + 1]]
                 other_coeffs = coefficients[offsets[other_slave]:
-                                            offsets[other_slave+1]]
+                                            offsets[other_slave + 1]]
                 # Add cross terms for masters
                 for (other_master, other_coeff) in zip(other_cell_masters,
                                                        other_coeffs):
                     A_m0m1.fill(0)
                     A_m1m0.fill(0)
-                    A_m0m1[0, 0] = coeff*other_coeff*A_local_copy[local_idx,
-                                                                  o_local_idx]
-                    A_m1m0[0, 0] = coeff*other_coeff*A_local_copy[o_local_idx,
-                                                                  local_idx]
+                    A_m0m1[0, 0] = coeff * other_coeff * A_local_copy[local_idx,
+                                                                      o_local_idx]
+                    A_m1m0[0, 0] = coeff * other_coeff * A_local_copy[o_local_idx,
+                                                                      local_idx]
                     m0_index[0] = master
                     m1_index[0] = other_master
                     # Insert only once per slave pair on each cell
@@ -487,10 +487,10 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
 
         # Add contributions for different masters on the same cell
         for i_0, (m0, c0) in enumerate(zip(cell_masters, cell_coeffs)):
-            for i_1 in range(i_0+1, len(cell_masters)):
+            for i_1 in range(i_0 + 1, len(cell_masters)):
                 A_c0.fill(0.0)
                 c1 = cell_coeffs[i_1]
-                A_c0[0, 0] += c0*c1 * \
+                A_c0[0, 0] += c0 * c1 * \
                     A_local_copy[local_idx, local_idx]
                 m0_index[0] = m0
                 m1_index[0] = cell_masters[i_1]
@@ -500,7 +500,7 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
                                            ffi_fb(A_c0), mode)
                 assert(ierr_c0 == 0)
                 A_c1.fill(0.0)
-                A_c1[0, 0] += c0*c1 * \
+                A_c1[0, 0] += c0 * c1 * \
                     A_local_copy[local_idx, local_idx]
                 ierr_c1 = set_values_local(A,
                                            1, ffi_fb(m1_index),
