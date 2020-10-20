@@ -54,8 +54,8 @@ def assemble_vector(form, constraint,
     formintegral = cpp_form.integrals
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
-    num_dofs_per_element = (V.dofmap.dof_layout.num_dofs *
-                            V.dofmap.dof_layout.block_size())
+    num_dofs_per_element = (V.dofmap.dof_layout.num_dofs
+                            * V.dofmap.dof_layout.block_size())
 
     # Assemble vector with all entries
     dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form)
@@ -130,7 +130,7 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim,
     # Unpack mesh data
     pos, x_dofmap, x = mesh
 
-    geometry = numpy.zeros((pos[1]-pos[0], gdim))
+    geometry = numpy.zeros((pos[1] - pos[0], gdim))
     b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
 
     for slave_cell_index, cell_index in enumerate(active_cells):
@@ -176,7 +176,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim,
     # Unpack mesh data
     pos, x_dofmap, x = mesh
 
-    geometry = numpy.zeros((pos[1]-pos[0], gdim))
+    geometry = numpy.zeros((pos[1] - pos[0], gdim))
     b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
     slave_cells = mpc[4]
     for i in range(facet_info.shape[0]):
@@ -211,7 +211,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim,
 
 @numba.njit(cache=True)
 def modify_mpc_contributions_local(b, cell_index, slave_cell_index,
-                                   b_local, b_copy,  mpc, dofmap,
+                                   b_local, b_copy, mpc, dofmap,
                                    num_dofs_per_element):
     """
     Modify local entries of b_local with MPC info and add modified
@@ -225,7 +225,7 @@ def modify_mpc_contributions_local(b, cell_index, slave_cell_index,
     # Determine which slaves are in this cell,
     # and which global index they have in 1D arrays
     cell_slaves = cell_to_slave[cell_to_slave_offset[slave_cell_index]:
-                                cell_to_slave_offset[slave_cell_index+1]]
+                                cell_to_slave_offset[slave_cell_index + 1]]
 
     glob = dofmap[num_dofs_per_element * cell_index:
                   num_dofs_per_element * cell_index + num_dofs_per_element]
@@ -233,14 +233,14 @@ def modify_mpc_contributions_local(b, cell_index, slave_cell_index,
     # Loop over the slaves
     for slave_index in cell_slaves:
         cell_masters = masters_local[offsets[slave_index]:
-                                     offsets[slave_index+1]]
+                                     offsets[slave_index + 1]]
         cell_coeffs = coefficients[offsets[slave_index]:
-                                   offsets[slave_index+1]]
+                                   offsets[slave_index + 1]]
 
         # Loop through each master dof to take individual contributions
         for m0, c0 in zip(cell_masters, cell_coeffs):
             # Find local dof and add contribution to another place
             for k, dof in enumerate(glob):
                 if dof == slaves[slave_index]:
-                    b[m0] += c0*b_copy[k]
+                    b[m0] += c0 * b_copy[k]
                     b_local[k] = 0

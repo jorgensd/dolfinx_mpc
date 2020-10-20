@@ -30,7 +30,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 #------------------------------------------------------------------------------
 # General configuration
-
 # Make sure CMake uses the correct DOLFINConfig.cmake for tests and demos
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${CMAKE_CURRENT_BINARY_DIR}/dolfinx_mpc)
 
@@ -41,6 +40,10 @@ include(FeatureSummary)
 
 option(BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries." ON)
 add_feature_info(BUILD_SHARED_LIBS BUILD_SHARED_LIBS "Build DOLFINX_MPC with shared libraries.")
+
+option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath." ON)
+add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
+
 
 # Check for required package Eigen3
 find_package(Eigen3 3.2.90 REQUIRED)
@@ -99,13 +102,31 @@ set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     URL "https://github.com/FEniCS/dolfinx"
     PURPOSE "Main dependency of library")
 
+# MPI and PETSC
+
+# MPI
+find_package(MPI 3 REQUIRED)
+
+# PETSc
+find_package(PETSc 3.10)
+set_package_properties(PETSc PROPERTIES TYPE REQUIRED
+  DESCRIPTION "Portable, Extensible Toolkit for Scientific Computation (PETSc)"
+  URL "https://www.mcs.anl.gov/petsc/"
+  PURPOSE "PETSc linear algebra backend")
+
 feature_summary(WHAT ALL)
 
 
-#------------------------------------------------------------------------------
 # Installation of DOLFIN_MPC library
 
 add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
+
+target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
+target_link_libraries(dolfinx_mpc PUBLIC PETSC::petsc)
+target_link_libraries(dolfinx_mpc PRIVATE PETSC::petsc_static)
+target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${EIGEN3_INCLUDE_DIR})
+
+
 
 if (UFC_FOUND)
     target_include_directories(dolfinx_mpc PRIVATE ${UFC_INCLUDE_DIRS})
@@ -144,28 +165,6 @@ set_target_properties(dolfinx_mpc PROPERTIES
 # Add version to definitions (public)
 target_compile_definitions(dolfinx_mpc PUBLIC DOLFINX_MPC_VERSION="${DOLFINX_MPC_VERSION}")
 
-
-#------------------------------------------------------------------------------
-# Eigen3, MPI and PETSC
-# See DOLFINX for explanation of this variable
-set(DOLFINX_EIGEN_MAX_ALIGN_BYTES "32" CACHE STRING "\
-Minimum alignment in bytes used for Eigen data structures. Set to 32 for \
-compatibility with AVX user-compiled code and 64 for AVX-512 user-compiled \
-code. Set to 0 for ideal alignment according to -march. Note that if an architecture \
-flag (e.g. \"-march=skylake-avx512\") is set for DOLFIN, Eigen will use the \
-appropriate ideal alignment instead if it is stricter. Otherwise, the value \
-of this variable will be used by Eigen for the alignment of all data structures.\\
-")
-
-target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${EIGEN3_INCLUDE_DIR})
-target_compile_definitions(dolfinx_mpc PUBLIC "EIGEN_MAX_ALIGN_BYTES=${DOLFINX_EIGEN_MAX_ALIGN_BYTES}")
-
-# MPI
-target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
-
-# petsc
-target_link_libraries(dolfinx_mpc PUBLIC PETSC::petsc)
-target_link_libraries(dolfinx_mpc PRIVATE PETSC::petsc_static)
 
 #------------------------------------------------------------------------------
 # Install dolfinx library and header files

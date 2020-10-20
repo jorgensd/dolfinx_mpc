@@ -29,14 +29,14 @@ def test_pipeline(master_point):
     d = dolfinx.Constant(mesh, 1.5)
     c = dolfinx.Constant(mesh, 2)
     x = ufl.SpatialCoordinate(mesh)
-    f = c*ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
+    f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     g = dolfinx.Function(V)
-    g.interpolate(lambda x: np.sin(x[0])*x[1])
+    g.interpolate(lambda x: np.sin(x[0]) * x[1])
     h = dolfinx.Function(V)
-    h.interpolate(lambda x: 2+x[1]*x[0])
+    h.interpolate(lambda x: 2 + x[1] * x[0])
 
-    a = d*g*ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
-    rhs = h*ufl.inner(f, v)*ufl.dx
+    a = d * g * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    rhs = h * ufl.inner(f, v) * ufl.dx
     # Generate reference matrices
     A_org = dolfinx.fem.assemble_matrix(a)
     A_org.assemble()

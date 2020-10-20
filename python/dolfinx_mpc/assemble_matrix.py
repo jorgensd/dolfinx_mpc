@@ -37,30 +37,26 @@ def pack_facet_info(mesh, integrals, i):
     # FIXME: Should be moved to dolfinx C++ layer
     # Set up data required for exterior facet assembly
     tdim = mesh.topology.dim
-    fdim = mesh.topology.dim-1
+    fdim = mesh.topology.dim - 1
     # This connectivities has been computed by normal assembly
     c_to_f = mesh.topology.connectivity(tdim, fdim)
     f_to_c = mesh.topology.connectivity(fdim, tdim)
     active_facets = integrals.integral_domains(
         dolfinx.fem.IntegralType.exterior_facet, i)
-    facet_info = pack_facet_info_numba(active_facets,
-                                       (c_to_f.array, c_to_f.offsets),
-                                       (f_to_c.array, f_to_c.offsets))
+    facet_info = pack_facet_info_numba(active_facets, (c_to_f.array, c_to_f.offsets), (f_to_c.array, f_to_c.offsets))
     return facet_info
 
 
 @numba.njit(fastmath=True, cache=True)
 def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
-    facet_info = numpy.zeros((len(active_facets), 2),
-                             dtype=numpy.int64)
+    facet_info = numpy.zeros((len(active_facets), 2), dtype=numpy.int64)
     c_to_f_pos, c_to_f_offs = c_to_f
     f_to_c_pos, f_to_c_offs = f_to_c
 
     for j, facet in enumerate(active_facets):
-        cells = f_to_c_pos[f_to_c_offs[facet]:f_to_c_offs[facet+1]]
+        cells = f_to_c_pos[f_to_c_offs[facet]:f_to_c_offs[facet + 1]]
         assert(len(cells) == 1)
-        local_facets = c_to_f_pos[c_to_f_offs[cells[0]]:
-                                  c_to_f_offs[cells[0]+1]]
+        local_facets = c_to_f_pos[c_to_f_offs[cells[0]]: c_to_f_offs[cells[0] + 1]]
         # Should be wrapped in convenience numba function
         local_index = numpy.flatnonzero(facet == local_facets)[0]
         facet_info[j, :] = [cells[0], local_index]
@@ -68,8 +64,7 @@ def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
 
 
 def assemble_matrix_cpp(form, constraint, bcs=[]):
-    assert(form.arguments()[0].ufl_function_space() ==
-           form.arguments()[1].ufl_function_space())
+    assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
     V = form.arguments()[0].ufl_function_space()
 
     # Generate matrix with MPC sparsity pattern
@@ -82,13 +77,11 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
     slaves_local = constraint.slaves()
     local_slave_dofs_trimmed = slaves_local[:constraint.num_local_slaves()]
     V = form.arguments()[0].ufl_function_space()
-    bc_mpc = [dolfinx.DirichletBC(
-        dolfinx.Function(V), local_slave_dofs_trimmed)]
+    bc_mpc = [dolfinx.DirichletBC(dolfinx.Function(V), local_slave_dofs_trimmed)]
     if len(bcs) > 0:
         bc_mpc.extend(bcs)
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
-                                     bc_mpc, 1)
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1)
     A.assemble()
     return A
 
@@ -101,8 +94,7 @@ def assemble_matrix(form, constraint, bcs=[]):
     """
 
     # Get data from function space
-    assert(form.arguments()[0].ufl_function_space() ==
-           form.arguments()[1].ufl_function_space())
+    assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
     V = form.arguments()[0].ufl_function_space()
     dofmap = V.dofmap
     dofs = dofmap.list.array
@@ -118,15 +110,12 @@ def assemble_matrix(form, constraint, bcs=[]):
     num_local_slaves = constraint.num_local_slaves()
     masters_local = masters.array
     offsets = masters.offsets
-    mpc_data = (slaves_local, masters_local, coefficients, offsets,
-                slave_cells, cell_to_slave, c_to_s_off)
+    mpc_data = (slaves_local, masters_local, coefficients, offsets, slave_cells, cell_to_slave, c_to_s_off)
 
     # Gather BC data
     bc_array = numpy.array([])
     local_slave_dofs_trimmed = slaves_local[:num_local_slaves]
-    bc_mpc = [dolfinx.DirichletBC(
-        dolfinx.Function(V), local_slave_dofs_trimmed)]
-
+    bc_mpc = [dolfinx.DirichletBC(dolfinx.Function(V), local_slave_dofs_trimmed)]
     if len(bcs) > 0:
         bc_mpc.extend(bcs)
         for bc in bcs:
@@ -159,8 +148,7 @@ def assemble_matrix(form, constraint, bcs=[]):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
 
     # General assembly data
-    num_dofs_per_element = (dofmap.dof_layout.num_dofs *
-                            dofmap.dof_layout.block_size())
+    num_dofs_per_element = dofmap.dof_layout.num_dofs * dofmap.dof_layout.block_size()
 
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
@@ -186,17 +174,12 @@ def assemble_matrix(form, constraint, bcs=[]):
         slave_cell_indices = numpy.flatnonzero(
             numpy.isin(active_cells, slave_cells))
         with Timer("~MPC: Modify MPC cells (Python)"):
-            assemble_cells(A.handle, cell_kernel,
-                           active_cells[slave_cell_indices],
-                           (pos, x_dofs, x),
-                           gdim, form_coeffs, form_consts,
-                           permutation_info,
-                           dofs, num_dofs_per_element, mpc_data,
-                           bc_array)
+            assemble_cells(A.handle, cell_kernel, active_cells[slave_cell_indices], (pos, x_dofs, x),
+                           gdim, form_coeffs, form_consts, permutation_info, dofs, num_dofs_per_element,
+                           mpc_data, bc_array)
 
     # Assemble over exterior facets
-    subdomain_ids = formintegral.integral_ids(
-        dolfinx.fem.IntegralType.exterior_facet)
+    subdomain_ids = formintegral.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
 
     # Get cell orientation data
@@ -210,28 +193,23 @@ def assemble_matrix(form, constraint, bcs=[]):
         facet_info = pack_facet_info(V.mesh, formintegral, j)
 
         subdomain_id = subdomain_ids[j]
-        facet_kernel = ufc_form.create_exterior_facet_integral(
-            subdomain_id).tabulate_tensor
+        facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
         with Timer("~MPC: Assemble constrained ext. facets (Python))"):
-            assemble_exterior_facets(A.handle, facet_kernel,
-                                     (pos, x_dofs, x), gdim,
-                                     form_coeffs, form_consts,
-                                     perm, dofs, num_dofs_per_element,
-                                     facet_info, mpc_data,
-                                     bc_array)
+            assemble_exterior_facets(A.handle, facet_kernel, (pos, x_dofs, x), gdim,
+                                     form_coeffs, form_consts, perm, dofs, num_dofs_per_element,
+                                     facet_info, mpc_data, bc_array)
+
     # Add one on diagonal for diriclet bc and slave dofs
     # NOTE: In the future one could use a constant in the DirichletBC
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
-                                     bc_mpc, 1.0)
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1.0)
     A.assemble()
     return A
 
 
 @numba.njit
 def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
-                   permutation_info, dofmap,
-                   num_dofs_per_element, mpc, bcs):
+                   permutation_info, dofmap, num_dofs_per_element, mpc, bcs):
     """
     Assemble MPC contributions for cell integrals
     """
@@ -245,10 +223,9 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
     facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
     # NOTE: All cells are assumed to be of the same type
-    geometry = numpy.zeros((pos[1]-pos[0], gdim))
+    geometry = numpy.zeros((pos[1] - pos[0], gdim))
 
-    A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element),
-                          dtype=PETSc.ScalarType)
+    A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element), dtype=PETSc.ScalarType)
 
     # Loop over all cells
     for slave_cell_index, cell_index in enumerate(active_cells):
@@ -264,15 +241,11 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
 
         A_local.fill(0.0)
         # FIXME: Numba does not support edge reflections
-        kernel(ffi_fb(A_local), ffi_fb(coeffs[cell_index, :]),
-               ffi_fb(constants), ffi_fb(geometry),
-               ffi_fb(facet_index), ffi_fb(facet_perm),
-               permutation_info[cell_index])
+        kernel(ffi_fb(A_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
+               ffi_fb(facet_index), ffi_fb(facet_perm), permutation_info[cell_index])
 
         # Local dof position
-        local_pos = dofmap[num_dofs_per_element * cell_index:
-                           num_dofs_per_element * cell_index
-                           + num_dofs_per_element]
+        local_pos = dofmap[num_dofs_per_element * cell_index: num_dofs_per_element * cell_index + num_dofs_per_element]
         # Remove all contributions for dofs that are in the Dirichlet bcs
         if len(bcs) > 0:
             for k in range(len(local_pos)):
@@ -284,22 +257,19 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
         A_local_copy = A_local.copy()
 
         # Find local position of slaves
-        (slaves_local, masters_local, coefficients, offsets,
-            slave_cells, cell_to_slave, c_to_s_off) = mpc
-        slave_indices = cell_to_slave[c_to_s_off[slave_cell_index]:
-                                      c_to_s_off[slave_cell_index+1]]
+        (slaves_local, masters_local, coefficients, offsets, slave_cells, cell_to_slave, c_to_s_off) = mpc
+        slave_indices = cell_to_slave[c_to_s_off[slave_cell_index]: c_to_s_off[slave_cell_index + 1]]
         num_slaves = len(slave_indices)
         local_indices = numpy.full(num_slaves, -1, dtype=numpy.int32)
-        is_slave = numpy.full(num_dofs_per_element, False,  dtype=numpy.bool_)
+        is_slave = numpy.full(num_dofs_per_element, False, dtype=numpy.bool_)
         for i in range(num_slaves):
             for j in range(num_dofs_per_element):
                 if local_pos[j] == slaves_local[slave_indices[i]]:
                     local_indices[i] = j
                     is_slave[j] = True
-        mpc_cell = (slave_indices, masters_local, coefficients,
-                    offsets, local_indices, is_slave)
-        modify_mpc_cell_new(A, num_dofs_per_element, A_local,
-                            local_pos, mpc_cell)
+        mpc_cell = (slave_indices, masters_local, coefficients, offsets, local_indices, is_slave)
+        modify_mpc_cell_new(A, num_dofs_per_element, A_local, local_pos, mpc_cell)
+
         # If this slave contains a slave dof, modify local contribution
         # modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
         #                       local_pos, mpc, num_dofs_per_element)
@@ -307,8 +277,7 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
         A_contribution = A_local - A_local_copy
         # Insert local contribution
         ierr_loc = set_values_local(A, num_dofs_per_element, ffi_fb(local_pos),
-                                    num_dofs_per_element, ffi_fb(local_pos),
-                                    ffi_fb(A_contribution), mode)
+                                    num_dofs_per_element, ffi_fb(local_pos), ffi_fb(A_contribution), mode)
         assert(ierr_loc == 0)
 
     sink(A_contribution, local_pos)
@@ -317,20 +286,17 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
 @numba.njit
 def modify_mpc_cell_new(A, num_dofs, Ae, local_pos, mpc_cell):
 
-    (slave_indices, masters, coeffs, offsets,
-     local_indices, is_slave) = mpc_cell
+    (slave_indices, masters, coeffs, offsets, local_indices, is_slave) = mpc_cell
     # Flatten slave->master structure to 1D arrays
     flattened_masters = []
     flattened_slaves = []
     slaves_loc = []
     flattened_coeffs = []
     for i in range(len(slave_indices)):
-        local_masters = masters[offsets[slave_indices[i]]:
-                                offsets[slave_indices[i]+1]]
-        local_coeffs = coeffs[offsets[slave_indices[i]]:
-                              offsets[slave_indices[i]+1]]
-        slaves_loc.extend([i, ]*len(local_masters))
-        flattened_slaves.extend([local_indices[i], ]*len(local_masters))
+        local_masters = masters[offsets[slave_indices[i]]: offsets[slave_indices[i] + 1]]
+        local_coeffs = coeffs[offsets[slave_indices[i]]: offsets[slave_indices[i] + 1]]
+        slaves_loc.extend([i, ] * len(local_masters))
+        flattened_slaves.extend([local_indices[i], ] * len(local_masters))
         flattened_masters.extend(local_masters)
         flattened_coeffs.extend(local_coeffs)
     # Create element matrix stripped of slave entries
@@ -358,57 +324,45 @@ def modify_mpc_cell_new(A, num_dofs, Ae, local_pos, mpc_cell):
         Ae[:, local_index] = 0
         Ae[local_index, :] = 0
         m0[0] = master
-        Arow[:, 0] = coeff*Ae_stripped[:, local_index]
-        Acol[0, :] = coeff*Ae_stripped[local_index, :]
-        Am0m1[0, 0] = coeff**2*Ae_original[local_index, local_index]
+        Arow[:, 0] = coeff * Ae_stripped[:, local_index]
+        Acol[0, :] = coeff * Ae_stripped[local_index, :]
+        Am0m1[0, 0] = coeff**2 * Ae_original[local_index, local_index]
         mpc_dofs = numpy.copy(local_pos)
         mpc_dofs[local_index] = master
 
-        ierr_row = set_values_local(A, num_dofs,
-                                    ffi_fb(mpc_dofs),
-                                    1, ffi_fb(m0),
-                                    ffi_fb(Arow), mode)
+        ierr_row = set_values_local(A, num_dofs, ffi_fb(mpc_dofs), 1, ffi_fb(m0), ffi_fb(Arow), mode)
         assert(ierr_row == 0)
 
         # Add slave row to master row
-        ierr_col = set_values_local(A, 1, ffi_fb(m0),
-                                    num_dofs,
-                                    ffi_fb(mpc_dofs),
-                                    ffi_fb(Acol), mode)
+        ierr_col = set_values_local(A, 1, ffi_fb(m0), num_dofs, ffi_fb(mpc_dofs), ffi_fb(Acol), mode)
         assert(ierr_col == 0)
 
-        ierr_master = set_values_local(A, 1, ffi_fb(
-            m0), 1, ffi_fb(m0), ffi_fb(Am0m1), mode)
+        ierr_master = set_values_local(A, 1, ffi_fb(m0), 1, ffi_fb(m0), ffi_fb(Am0m1), mode)
         assert(ierr_master == 0)
 
         # Create[0, ...., N]\[i]
-        other_masters = numpy.arange(0, num_masters-1, dtype=numpy.int32)
+        other_masters = numpy.arange(0, num_masters - 1, dtype=numpy.int32)
         if i < num_masters - 1:
-            other_masters[i] = num_masters-1
+            other_masters[i] = num_masters - 1
         for j in other_masters:
             other_local_index = flattened_slaves[j]
             other_master = flattened_masters[j]
             other_coeff = flattened_coeffs[j]
             m1[0] = other_master
             if slaves_loc[i] != slaves_loc[j]:
-                Am0m1[0, 0] = coeff*other_coeff*Ae_original[
-                    local_index, other_local_index]
-                ierr_other_slave = set_values_local(A, 1, ffi_fb(
-                    m0), 1, ffi_fb(m1), ffi_fb(Am0m1), mode)
+                Am0m1[0, 0] = coeff * other_coeff * Ae_original[local_index, other_local_index]
+                ierr_other_slave = set_values_local(A, 1, ffi_fb(m0), 1, ffi_fb(m1), ffi_fb(Am0m1), mode)
                 assert(ierr_other_slave == 0)
             else:
-                Am0m1[0, 0] = coeff*other_coeff*Ae_original[
-                    local_index, local_index]
-                ierr_same_slave = set_values_local(A, 1, ffi_fb(
-                    m0), 1, ffi_fb(m1), ffi_fb(Am0m1), mode)
+                Am0m1[0, 0] = coeff * other_coeff * Ae_original[local_index, local_index]
+                ierr_same_slave = set_values_local(A, 1, ffi_fb(m0), 1, ffi_fb(m1), ffi_fb(Am0m1), mode)
                 assert(ierr_same_slave == 0)
-    sink(Arow, Acol, Am0m1, m0, m1,  mpc_dofs)
+    sink(Arow, Acol, Am0m1, m0, m1, mpc_dofs)
 
 
 @numba.njit
 def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
-                             dofmap, num_dofs_per_element, facet_info,
-                             mpc, bcs):
+                             dofmap, num_dofs_per_element, facet_info, mpc, bcs):
     """Assemble MPC contributions over exterior facet integrals"""
 
     slave_cells = mpc[4]  # Note: packing order for MPC really important
@@ -423,8 +377,7 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
     # NOTE: All cells are assumed to be of the same type
     geometry = numpy.zeros((pos[1] - pos[0], gdim))
 
-    A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element),
-                          dtype=PETSc.ScalarType)
+    A_local = numpy.zeros((num_dofs_per_element, num_dofs_per_element), dtype=PETSc.ScalarType)
 
     # Permutation info
     cell_perms, facet_perms = perm
@@ -448,17 +401,11 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
 
         A_local.fill(0.0)
         facet_perm[0] = facet_perms[local_facet, cell_index]
-        kernel(ffi.from_buffer(A_local),
-               ffi.from_buffer(coeffs[cell_index, :]),
-               ffi.from_buffer(consts),
-               ffi.from_buffer(geometry),
-               ffi.from_buffer(facet_index),
-               ffi.from_buffer(facet_perm),
+        kernel(ffi.from_buffer(A_local), ffi.from_buffer(coeffs[cell_index, :]), ffi.from_buffer(consts),
+               ffi.from_buffer(geometry), ffi.from_buffer(facet_index), ffi.from_buffer(facet_perm),
                cell_perms[cell_index])
 
-        local_pos = dofmap[num_dofs_per_element * cell_index:
-                           num_dofs_per_element * cell_index
-                           + num_dofs_per_element]
+        local_pos = dofmap[num_dofs_per_element * cell_index: num_dofs_per_element * cell_index + num_dofs_per_element]
 
         # Remove all contributions for dofs that are in the Dirichlet bcs
         if len(bcs) > 0:
@@ -470,18 +417,14 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
 
         A_local_copy = A_local.copy()
         # If this slave contains a slave dof, modify local contribution
-        modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
-                              local_pos, mpc, num_dofs_per_element)
+        modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy, local_pos, mpc, num_dofs_per_element)
 
         # Remove already assembled contribution to matrix
         A_contribution = A_local - A_local_copy
 
         # Insert local contribution
-        ierr_loc = set_values_local(A,
-                                    num_dofs_per_element, ffi.from_buffer(
-                                        local_pos),
-                                    num_dofs_per_element, ffi.from_buffer(
-                                        local_pos),
+        ierr_loc = set_values_local(A, num_dofs_per_element, ffi.from_buffer(local_pos),
+                                    num_dofs_per_element, ffi.from_buffer(local_pos),
                                     ffi.from_buffer(A_contribution), mode)
         assert(ierr_loc == 0)
 
@@ -489,8 +432,7 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
 
 
 @numba.njit
-def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
-                          local_pos, mpc, num_dofs_per_element):
+def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy, local_pos, mpc, num_dofs_per_element):
     """
     Modifies A_local as it contains slave degrees of freedom.
     Adds contributions to corresponding master degrees of freedom in A.
@@ -498,8 +440,7 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
     ffi_fb = ffi.from_buffer
 
     # Unpack MPC data
-    (slaves, masters_local, coefficients, offsets, slave_cells,
-     cell_to_slave, cell_to_slave_offsets) = mpc
+    (slaves, masters_local, coefficients, offsets, slave_cells, cell_to_slave, cell_to_slave_offsets) = mpc
 
     # Rows taken over by master
     A_row = numpy.zeros((num_dofs_per_element, 1), dtype=PETSc.ScalarType)
@@ -517,8 +458,7 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
     m0_index = numpy.zeros(1, dtype=numpy.int32)
     m1_index = numpy.zeros(1, dtype=numpy.int32)
 
-    cell_slaves = cell_to_slave[cell_to_slave_offsets[slave_cell_index]:
-                                cell_to_slave_offsets[slave_cell_index+1]]
+    cell_slaves = cell_to_slave[cell_to_slave_offsets[slave_cell_index]: cell_to_slave_offsets[slave_cell_index + 1]]
     # Find local indices for each slave
     slave_indices = numpy.zeros(len(cell_slaves), dtype=numpy.int32)
     for i, slave_index in enumerate(cell_slaves):
@@ -528,10 +468,8 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
                 break
 
     for i, slave_index in enumerate(cell_slaves):
-        cell_masters = masters_local[offsets[slave_index]:
-                                     offsets[slave_index+1]]
-        cell_coeffs = coefficients[offsets[slave_index]:
-                                   offsets[slave_index+1]]
+        cell_masters = masters_local[offsets[slave_index]: offsets[slave_index + 1]]
+        cell_coeffs = coefficients[offsets[slave_index]: offsets[slave_index + 1]]
         local_idx = slave_indices[i]
         # Loop through each master dof to take individual contributions
         for i_0, (master, coeff) in enumerate(zip(cell_masters, cell_coeffs)):
@@ -539,9 +477,9 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
             A_row.fill(0.0)
             A_col.fill(0.0)
             # Move local contributions with correct coefficients
-            A_row[:, 0] = coeff*A_local_copy[:, local_idx]
-            A_col[0, :] = coeff*A_local_copy[local_idx, :]
-            A_master[0, 0] = coeff*A_row[local_idx, 0]
+            A_row[:, 0] = coeff * A_local_copy[:, local_idx]
+            A_col[0, :] = coeff * A_local_copy[local_idx, :]
+            A_master[0, 0] = coeff * A_row[local_idx, 0]
 
             # Remove row contribution going to central addition
             A_col[0, local_idx] = 0
@@ -561,30 +499,21 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
                 A_col[0, o_local_idx] = 0
 
                 # Masters for other cell
-                other_cell_masters = masters_local[offsets[other_slave]:
-                                                   offsets[other_slave+1]]
-                other_coeffs = coefficients[offsets[other_slave]:
-                                            offsets[other_slave+1]]
+                other_cell_masters = masters_local[offsets[other_slave]: offsets[other_slave + 1]]
+                other_coeffs = coefficients[offsets[other_slave]: offsets[other_slave + 1]]
                 # Add cross terms for masters
-                for (other_master, other_coeff) in zip(other_cell_masters,
-                                                       other_coeffs):
+                for (other_master, other_coeff) in zip(other_cell_masters, other_coeffs):
                     A_m0m1.fill(0)
                     A_m1m0.fill(0)
-                    A_m0m1[0, 0] = coeff*other_coeff*A_local_copy[local_idx,
-                                                                  o_local_idx]
-                    A_m1m0[0, 0] = coeff*other_coeff*A_local_copy[o_local_idx,
-                                                                  local_idx]
+                    A_m0m1[0, 0] = coeff * other_coeff * A_local_copy[local_idx, o_local_idx]
+                    A_m1m0[0, 0] = coeff * other_coeff * A_local_copy[o_local_idx, local_idx]
                     m0_index[0] = master
                     m1_index[0] = other_master
                     # Insert only once per slave pair on each cell
                     if j > i:
-                        ierr_m0m1 = set_values_local(A, 1, ffi_fb(m0_index),
-                                                     1, ffi_fb(m1_index),
-                                                     ffi_fb(A_m0m1), mode)
+                        ierr_m0m1 = set_values_local(A, 1, ffi_fb(m0_index), 1, ffi_fb(m1_index), ffi_fb(A_m0m1), mode)
                         assert(ierr_m0m1 == 0)
-                        ierr_m1m0 = set_values_local(A, 1, ffi_fb(m1_index),
-                                                     1, ffi_fb(m0_index),
-                                                     ffi_fb(A_m1m0), mode)
+                        ierr_m1m0 = set_values_local(A, 1, ffi_fb(m1_index), 1, ffi_fb(m0_index), ffi_fb(A_m1m0), mode)
                         assert(ierr_m1m0 == 0)
 
             # Add slave column to master column
@@ -592,49 +521,32 @@ def modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy,
             mpc_pos[local_idx] = master
             m0_index[0] = master
 
-            ierr_row = set_values_local(A, num_dofs_per_element,
-                                        ffi_fb(mpc_pos),
-                                        1, ffi_fb(m0_index),
-                                        ffi_fb(A_row), mode)
+            ierr_row = set_values_local(A, num_dofs_per_element, ffi_fb(mpc_pos),
+                                        1, ffi_fb(m0_index), ffi_fb(A_row), mode)
             assert(ierr_row == 0)
 
             # Add slave row to master row
-            ierr_col = set_values_local(A,
-                                        1, ffi_fb(m0_index),
-                                        num_dofs_per_element,
-                                        ffi_fb(mpc_pos),
-                                        ffi_fb(A_col), mode)
+            ierr_col = set_values_local(A, 1, ffi_fb(m0_index), num_dofs_per_element,
+                                        ffi_fb(mpc_pos), ffi_fb(A_col), mode)
             assert(ierr_col == 0)
             # Add slave contributions to A_(master, master)
-            ierr_m0m0 = set_values_local(A,
-                                         1, ffi_fb(m0_index),
-                                         1, ffi_fb(m0_index),
-                                         ffi_fb(A_master), mode)
+            ierr_m0m0 = set_values_local(A, 1, ffi_fb(m0_index), 1, ffi_fb(m0_index), ffi_fb(A_master), mode)
 
             assert(ierr_m0m0 == 0)
 
             # Add contributions for different masters on the same cell
-            for i_1 in range(i_0+1, len(cell_masters)):
+            for i_1 in range(i_0 + 1, len(cell_masters)):
                 A_c0.fill(0.0)
                 c1 = cell_coeffs[i_1]
-                A_c0[0, 0] += coeff*c1 * \
-                    A_local_copy[local_idx, local_idx]
+                A_c0[0, 0] += coeff * c1 * A_local_copy[local_idx, local_idx]
                 m0_index[0] = master
                 m1_index[0] = cell_masters[i_1]
-                ierr_c0 = set_values_local(A,
-                                           1, ffi_fb(m0_index),
-                                           1, ffi_fb(m1_index),
-                                           ffi_fb(A_c0), mode)
+                ierr_c0 = set_values_local(A, 1, ffi_fb(m0_index), 1, ffi_fb(m1_index), ffi_fb(A_c0), mode)
                 assert(ierr_c0 == 0)
                 A_c1.fill(0.0)
-                A_c1[0, 0] += coeff*c1 * \
-                    A_local_copy[local_idx, local_idx]
-                ierr_c1 = set_values_local(A,
-                                           1, ffi_fb(m1_index),
-                                           1, ffi_fb(m0_index),
-                                           ffi_fb(A_c1), mode)
+                A_c1[0, 0] += coeff * c1 * A_local_copy[local_idx, local_idx]
+                ierr_c1 = set_values_local(A, 1, ffi_fb(m1_index), 1, ffi_fb(m0_index), ffi_fb(A_c1), mode)
                 assert(ierr_c1 == 0)
-    sink(A_m0m1, A_m1m0, m1_index, A_row, A_col, m0_index, mpc_pos,
-         A_master, A_c0, A_c1)
+    sink(A_m0m1, A_m1m0, m1_index, A_row, A_col, m0_index, mpc_pos, A_master, A_c0, A_c1)
 
     return A_local

@@ -46,19 +46,27 @@ class MultiPointConstraint():
         local_owners, ghost_owners = owners
         local_offsets, ghost_offsets = offsets
         if len(local_slaves) > 0:
-            self.offsets.extend(offset+len(self.local_masters)
+            self.offsets.extend(offset + len(self.local_masters)
                                 for offset in local_offsets[1:])
             self.local_slaves.extend(local_slaves)
             self.local_masters.extend(local_masters)
             self.local_coeffs.extend(local_coeffs)
             self.local_owners.extend(local_owners)
         if len(ghost_slaves) > 0:
-            self.ghost_offsets.extend(offset+len(self.ghost_masters)
+            self.ghost_offsets.extend(offset + len(self.ghost_masters)
                                       for offset in ghost_offsets[1:])
             self.ghost_slaves.extend(ghost_slaves)
             self.ghost_masters.extend(ghost_masters)
             self.ghost_coeffs.extend(ghost_coeffs)
             self.ghost_owners.extend(ghost_owners)
+
+    def add_constraint_from_mpc_data(self, V, mpc_data):
+        if self.finalized:
+            raise RuntimeError(
+                "MultiPointConstraint has already been finalized")
+        self.add_constraint(V, mpc_data.get_slaves(), mpc_data.get_masters(),
+                            mpc_data.get_coeffs(), mpc_data.get_owners(),
+                            mpc_data.get_offsets())
 
     def finalize(self):
         """
@@ -236,7 +244,7 @@ def backsubstitution_numba(b, slaves, masters, coefficients, offsets):
     Insert mpc values into vector bc
     """
     for i, slave in enumerate(slaves):
-        masters_i = masters[offsets[i]:offsets[i+1]]
-        coeffs_i = coefficients[offsets[i]:offsets[i+1]]
+        masters_i = masters[offsets[i]:offsets[i + 1]]
+        coeffs_i = coefficients[offsets[i]:offsets[i + 1]]
         for master, coeff in zip(masters_i, coeffs_i):
-            b[slave] += coeff*b[master]
+            b[slave] += coeff * b[master]

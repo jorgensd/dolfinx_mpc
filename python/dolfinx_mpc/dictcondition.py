@@ -41,7 +41,7 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
     dfloat = np.float64
     comm = V.mesh.mpi_comm()
     bs = V.dofmap.index_map.block_size
-    local_size = V.dofmap.index_map.size_local*bs
+    local_size = V.dofmap.index_map.size_local * bs
     loc_to_glob = V.dofmap.index_map.global_indices(False)
     owned_entities = {}
     ghosted_entities = {}
@@ -85,8 +85,8 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
                     "local_index": []}
                 slave_status = 0
         elif len(slave_dofs) > 1:
-            raise RuntimeError("Multiple slaves found at same point. " +
-                               "You should use sub-space locators.")
+            raise RuntimeError("Multiple slaves found at same point. "
+                               + "You should use sub-space locators.")
         # Wrap as list to ensure order later
         master_points = list(slave_master_dict[slave_point].keys())
         master_points_nd = np.zeros((
@@ -98,12 +98,12 @@ def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
                 master_points_nd[k, j] = coord
             if subspace_master is None:
                 master_dofs = fem.locate_dofs_geometrical(
-                    V, close_to(master_points_nd[:, j:j+1]))[:, 0]
+                    V, close_to(master_points_nd[:, j:j + 1]))[:, 0]
             else:
                 Vsub = V.sub(subspace_master).collapse()
                 master_dofs = np.array(fem.locate_dofs_geometrical(
                     (V.sub(subspace_master), Vsub),
-                    close_to(master_points_nd[:, j:j+1]))[:, 0])
+                    close_to(master_points_nd[:, j:j + 1]))[:, 0])
 
             # Only add masters owned by this processor
             master_dofs = master_dofs[master_dofs < local_size]

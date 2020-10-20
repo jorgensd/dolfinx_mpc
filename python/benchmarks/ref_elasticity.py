@@ -45,7 +45,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
             mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
                                         dolfinx.cpp.mesh.CellType.hexahedron)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    N = degree*N
+    N = degree * N
     fdim = mesh.topology.dim - 1
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
 
@@ -78,20 +78,20 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     g = dolfinx.Constant(mesh, (0, 0, -1e2))
     x = ufl.SpatialCoordinate(mesh)
     f = dolfinx.Constant(mesh, 1e4) * \
-        ufl.as_vector((0, -(x[2]-0.5)**2, (x[1]-0.5)**2))
+        ufl.as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(g, v)*ufl.ds(domain=mesh,
-                                 subdomain_data=mt, subdomain_id=1)\
-        + ufl.inner(f, v)*ufl.dx
+    rhs = ufl.inner(g, v) * ufl.ds(domain=mesh,
+                                   subdomain_data=mt, subdomain_id=1)\
+        + ufl.inner(f, v) * ufl.dx
     if MPI.COMM_WORLD.rank == 0:
         print("Problem size {0:d} ".format(V.dim))
 
@@ -154,7 +154,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         d_set = out_hdf5.get("num_dofs")
         d_set[r_lvl] = V.dim
         d_set = out_hdf5.get("solve_time")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = end-start
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = end - start
 
     if MPI.COMM_WORLD.rank == 0:
         print("Refinement level {0:d}, Iterations {1:d}".format(r_lvl, it))
@@ -237,7 +237,7 @@ if __name__ == "__main__":
         ref_elasticity(tetra=tetra, r_lvl=i, out_hdf5=h5f,
                        xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
                        degree=degree)
-        if timings and i == N-1:
+        if timings and i == N - 1:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()

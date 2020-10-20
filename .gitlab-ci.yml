@@ -10,12 +10,13 @@ fast-complex:
     entrypoint: [""]
   variables:
     PETSC_ARCH: "linux-gnu-complex-32"
-    PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib"
+    PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
   before_script:
-    - export LD_LIBRARY_PATH="/usr/local/dolfinx-complex/lib:$LD_LIBRARY_PATH"
+    - flake8 .
+    - export PETSC_ARCH="linux-gnu-complex-32"
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-complex/bin:$PATH"
     - export PKG_CONFIG_PATH="/usr/local/dolfinx-complex/lib/pkgconfig:$PKG_CONFIG_PATH"
-    - flake8 .
     - mkdir -p build
     - cd build
     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
@@ -43,12 +44,12 @@ fast-real:
     entrypoint: [""]
   variables:
     PETSC_ARCH: "linux-gnu-real-32"
-    PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.5.6-Linux64-sdk/lib"
+    PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
   before_script:
-    - export LD_LIBRARY_PATH="/usr/local/dolfinx-real/lib:$LD_LIBRARY_PATH"
+    - flake8 .
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-real/bin:$PATH"
     - export PKG_CONFIG_PATH="/usr/local/dolfinx-real/lib/pkgconfig:$PKG_CONFIG_PATH"
-    - flake8 .
     - mkdir -p build
     - cd build
     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
@@ -80,6 +81,11 @@ nightly-complex:
     PETSC_ARCH: "linux-gnu-complex-32"
   before_script:
     - flake8 .
+    - export PETSC_ARCH="linux-gnu-complex-32"
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:$LD_LIBRARY_PATH"
+    - export HDF5_MPI="ON"
+    - export CC=mpicc
+    - pip3 install --no-cache-dir --no-binary=h5py h5py
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
@@ -122,10 +128,10 @@ nightly-complex:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - python3 demo_contact_2D.py
-    - mpirun -n 4 python3 demo_contact_2D.py
-    - python3 demo_contact_3D.py
-    - mpirun -n 4 python3 demo_contact_3D.py
+    - python3 demo_contact_2D.py --timing
+    - mpirun -n 4 python3 demo_contact_2D.py --timing
+    - python3 demo_contact_3D.py --timing
+    - mpirun -n 4 python3 demo_contact_3D.py --timing
 
 
 nightly-real:
@@ -144,6 +150,10 @@ nightly-real:
     PETSC_ARCH: "linux-gnu-real-32"
   before_script:
     - flake8 .
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:$LD_LIBRARY_PATH"
+    - export HDF5_MPI="ON"
+    - export CC=mpicc
+    - pip3 install --no-cache-dir --no-binary=h5py h5py
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
@@ -186,7 +196,7 @@ nightly-real:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - python3 demo_contact_2D.py
-    - mpirun -n 4 python3 demo_contact_2D.py
-    - python3 demo_contact_3D.py
-    - mpirun -n 4 python3 demo_contact_3D.py
+    - python3 demo_contact_2D.py --timing
+    - mpirun -n 4 python3 demo_contact_2D.py --timing
+    - python3 demo_contact_3D.py --timing
+    - mpirun -n 4 python3 demo_contact_3D.py --timing

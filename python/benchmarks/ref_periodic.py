@@ -75,14 +75,14 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v))*ufl.dx
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     x = ufl.SpatialCoordinate(mesh)
     dx = x[0] - 0.9
     dy = x[1] - 0.5
     dz = x[2] - 0.1
-    f = x[0]*ufl.sin(5.0*ufl.pi*x[1]) \
-        + 1.0*ufl.exp(-(dx*dx + dy*dy + dz*dz)/0.02)
-    rhs = ufl.inner(f, v)*ufl.dx
+    f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) \
+        + 1.0 * ufl.exp(-(dx * dx + dy * dy + dz * dz) / 0.02)
+    rhs = ufl.inner(f, v) * ufl.dx
 
     # Assemble rhs, RHS and apply lifting
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
@@ -143,7 +143,7 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         d_set = out_hdf5.get("num_dofs")
         d_set[r_lvl] = V.dim
         d_set = out_hdf5.get("solve_time")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = end-start
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = end - start
 
     if MPI.COMM_WORLD.rank == 0:
         print("Rlvl {0:d}, Iterations {1:d}".format(r_lvl, it))
@@ -227,7 +227,7 @@ if __name__ == "__main__":
                            xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
                            degree=int(degree))
 
-        if timings and i == N-1:
+        if timings and i == N - 1:
             dolfinx.common.list_timings(
                 MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()

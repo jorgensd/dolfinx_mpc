@@ -79,10 +79,10 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                                 owners_.append(comm.rank)
                             else:
                                 owners_.append(
-                                    ghost_owners[dof//bs-local_size//bs])
+                                    ghost_owners[dof // bs - local_size // bs])
                             masters_.append(loc_to_glob[dof])
                             coeffs_.append(
-                                scale*basis_values[local_idx, block_idx])
+                                scale * basis_values[local_idx, block_idx])
             if len(masters_) > 0:
                 constraint_data[slave_dof]["masters"] = masters_
                 constraint_data[slave_dof]["coeffs"] = coeffs_
@@ -144,7 +144,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                                         o_.append(comm.rank)
                                     else:
                                         o_.append(ghost_owners[
-                                            dof//bs-local_size//bs])
+                                            dof // bs - local_size // bs])
                                     m_.append(loc_to_glob[dof])
                                     c_.append(
                                         scale * basis_values[idx, block_idx])
@@ -169,11 +169,11 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     send_ghost_masters = {}
     shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
     shared_blocks = np.array(list(shared_indices.keys()))
-    local_shared_blocks = shared_blocks[shared_blocks <
-                                        V.dofmap.index_map.size_local]
+    local_shared_blocks = shared_blocks[shared_blocks
+                                        < V.dofmap.index_map.size_local]
     del shared_blocks
     for (i, dof) in enumerate(slave_dofs[:num_local_dofs]):
-        block = dof//bs
+        block = dof // bs
         if block in local_shared_blocks:
             for proc in shared_indices[block]:
                 if proc in send_ghost_masters.keys():
@@ -193,7 +193,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     ghost_recv = []
     local_blocks_size = V.dofmap.index_map.size_local
     for dof in slave_dofs[num_local_dofs:]:
-        g_block = dof//bs - local_blocks_size
+        g_block = dof // bs - local_blocks_size
         owner = ghost_owners[g_block]
         ghost_recv.append(owner)
         del owner, g_block

@@ -50,12 +50,12 @@ def test_cell_domains():
     c2 = dolfinx.Constant(mesh, 10)
 
     dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
-    a = c1*ufl.inner(ufl.grad(u), ufl.grad(v))*dx(1) +\
+    a = c1 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(1) +\
         c2 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(2)\
-        + 0.01*ufl.inner(u, v)*dx(1)
+        + 0.01 * ufl.inner(u, v) * dx(1)
 
-    rhs = ufl.inner(x[1], v)*dx(1) + \
-        ufl.inner(dolfinx.Constant(mesh, 1), v)*dx(2)
+    rhs = ufl.inner(x[1], v) * dx(1) + \
+        ufl.inner(dolfinx.Constant(mesh, 1), v) * dx(2)
 
     # Generate reference matrices
     A_org = dolfinx.fem.assemble_matrix(a)
@@ -68,8 +68,8 @@ def test_cell_domains():
         return np.array(li, dtype=np.float64).tobytes()
 
     s_m_c = {}
-    for i in range(0, N+1):
-        s_m_c[l2b([1, i/N])] = {l2b([0, i/N]): 1}
+    for i in range(0, N + 1):
+        s_m_c[l2b([1, i / N])] = {l2b([0, i / N]): 1}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()

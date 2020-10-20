@@ -9,79 +9,60 @@
 
 import argparse
 
+import dolfinx.fem as fem
+import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
-import pygmsh
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
-import dolfinx
-import dolfinx.fem as fem
-import dolfinx.io
-import dolfinx.la
-from create_and_export_mesh import mesh_3D_dolfin, mesh_3D_rot
+from create_and_export_mesh import mesh_3D_dolfin, gmsh_3D_stacked
 
 comm = MPI.COMM_WORLD
 
 
-def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
+def demo_stacked_cubes(outfile, theta, gmsh=False,
                        ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True):
     if ct == dolfinx.cpp.mesh.CellType.hexahedron:
-        ext = "hexahedron"
+        celltype = "hexahedron"
     else:
-        ext = "tetrahedron"
-    if comm.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run theta:{0:.2f}, Cell: {1:s}, Dolfin-mesh {2:b}"
-                        .format(theta, ext, dolfin_mesh))
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+        celltype = "tetrahedron"
+    dolfinx_mpc.utils.log_info(
+        "Run theta:{0:.2f}, Cell: {1:s}, GMSH {2:b}"
+        .format(theta, celltype, gmsh))
     # Create rotated mesh
-    if comm.size == 1:
-        if dolfin_mesh:
-            mesh_3D_dolfin(theta, ct, ext)
-        else:
-            mesh_3D_rot(theta, ext)
+    if comm.size == 1 and not gmsh:
+        mesh_3D_dolfin(theta, ct, celltype)
+
     # Read in mesh
-    if dolfin_mesh:
+    if gmsh:
+        mesh, mt = gmsh_3D_stacked(celltype, theta)
+        mesh.name = "mesh_{0:s}_{1:.2f}_gmsh".format(celltype, theta)
+        tdim = mesh.topology.dim
+        fdim = tdim - 1
+        mesh.topology.create_connectivity(tdim, tdim)
+        mesh.topology.create_connectivity(fdim, tdim)
+    else:
         with dolfinx.io.XDMFFile(comm,
                                  "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(
-                                     ext, theta),
+                                     celltype, theta),
                                  "r") as xdmf:
             mesh = xdmf.read_mesh(name="mesh")
-            mesh.name = "mesh_{0:s}_{1:.2f}".format(ext, theta)
+            mesh.name = "mesh_{0:s}_{1:.2f}".format(celltype, theta)
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
             mesh.topology.create_connectivity(fdim, tdim)
-            ct = xdmf.read_meshtags(mesh, "mesh_tags")
             mt = xdmf.read_meshtags(mesh, "facet_tags")
-    else:
-        with dolfinx.io.XDMFFile(comm,
-                                 "meshes/mesh_{0:s}_{1:.2f}_gmsh.xdmf"
-                                 .format(ext, theta), "r") as xdmf:
-            mesh = xdmf.read_mesh(name="Grid")
-            mesh.name = "mesh_{0:s}_{1:.2f}".format(ext, theta)
-            tdim = mesh.topology.dim
-            fdim = tdim - 1
-            mesh.topology.create_connectivity(tdim, tdim)
-            mesh.topology.create_connectivity(fdim, tdim)
-
-            ct = xdmf.read_meshtags(mesh, "Grid")
-
-        with dolfinx.io.XDMFFile(comm,
-                                 "meshes/facet_{0:s}_{1:.2f}_gmsh.xdmf"
-                                 .format(ext, theta), "r") as xdmf:
-            mt = xdmf.read_meshtags(mesh, "Grid")
 
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Helper for orienting traction
-    r_matrix = pygmsh.helpers.rotation_matrix(
-        [1/np.sqrt(2), 1/np.sqrt(2), 0], -theta)
+    r_matrix = dolfinx_mpc.utils.rotation_matrix(
+        [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
     g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
     g = dolfinx.Constant(mesh, g_vec)
@@ -123,8 +104,8 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -133,13 +114,16 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     # NOTE: Traction deactivated until we have a way of fixing nullspace
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
                      subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v)*ufl.dx\
-        + ufl.inner(g, v)*ds
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx\
+        + ufl.inner(g, v) * ds
 
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
     with dolfinx.common.Timer("~Contact: Create contact constraint"):
-        mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_contact_constraint(mt, 4, 9)
-        mpc.finalize()
+        nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
+            V._cpp_object, mt, 4, 9, nh._cpp_object)
+        mpc.add_constraint_from_mpc_data(V, mpc_data)
+    mpc.finalize()
 
     with dolfinx.common.Timer("~Contact: Assembly"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
@@ -191,7 +175,7 @@ def demo_stacked_cubes(outfile, theta, dolfin_mesh=False,
     # Write solution to file
     u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_{0:s}_{1:.2f}".format(ext, theta)
+    u_h.name = "u_{0:s}_{1:.2f}".format(celltype, theta)
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0,
                            "Xdmf/Domain/"
@@ -236,30 +220,33 @@ if __name__ == "__main__":
     comp = parser.add_mutually_exclusive_group(required=False)
     comp.add_argument('--compare', dest='compare', action='store_true',
                       help="Compare with global solution", default=False)
+    time = parser.add_mutually_exclusive_group(required=False)
+    time.add_argument('--timing', dest='timing', action='store_true',
+                      help="List timings", default=False)
+
     compare = parser.parse_args().compare
+    timing = parser.parse_args().timing
 
     outfile = dolfinx.io.XDMFFile(comm,
                                   "results/demo_contact_3D.xdmf", "w")
     cts = [dolfinx.cpp.mesh.CellType.hexahedron,
            dolfinx.cpp.mesh.CellType.tetrahedron]
-
     for ct in cts:
         demo_stacked_cubes(
-            outfile, theta=0, dolfin_mesh=True, ct=ct, compare=compare)
+            outfile, theta=0, gmsh=False, ct=ct, compare=compare)
         demo_stacked_cubes(
-            outfile, theta=np.pi/3, dolfin_mesh=True, ct=ct, compare=compare)
+            outfile, theta=np.pi / 3, gmsh=False, ct=ct, compare=compare)
+
     # NOTE: Unstructured solution experience slight unphysical deformation
     demo_stacked_cubes(
-        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
+        outfile, theta=np.pi / 5, gmsh=True, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         compare=compare)
-    demo_stacked_cubes(
-        outfile, theta=np.pi/5, ct=dolfinx.cpp.mesh.CellType.hexahedron,
-        compare=compare)
-    if comm.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Finished")
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-    dolfinx.common.list_timings(
-        comm, [dolfinx.common.TimingType.wall])
+    # demo_stacked_cubes(
+    #     outfile, theta=np.pi / 5,gmsh=True, ct=dolfinx.cpp.mesh.CellType.hexahedron,
+    #     compare=compare)
     outfile.close()
+
+    dolfinx_mpc.utils.log_info("Simulation finished")
+    if timing:
+        dolfinx.common.list_timings(
+            comm, [dolfinx.common.TimingType.wall])

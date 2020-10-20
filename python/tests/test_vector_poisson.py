@@ -41,10 +41,10 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
-    f = ufl.as_vector((-5*x[1], 7*x[0]))
+    f = ufl.as_vector((-5 * x[1], 7 * x[0]))
 
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(f, v)*ufl.dx
+    rhs = ufl.inner(f, v) * ufl.dx
 
     # Setup LU solver
     solver = PETSc.KSP().create(MPI.COMM_WORLD)

@@ -27,8 +27,8 @@ def test_mpc_assembly(master_point, degree, celltype):
     # Generate reference vector
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
-    f = ufl.sin(2*ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
-    rhs = ufl.inner(f, v)*ufl.dx
+    f = ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+    rhs = ufl.inner(f, v) * ufl.dx
 
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()

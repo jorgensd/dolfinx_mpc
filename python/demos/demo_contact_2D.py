@@ -14,20 +14,19 @@
 
 import argparse
 
-import dolfinx_mpc
-import dolfinx_mpc.utils
-import numpy as np
-import pygmsh
-import ufl
-from mpi4py import MPI
-from petsc4py import PETSc
-
 import dolfinx
 import dolfinx.fem as fem
 import dolfinx.io
 import dolfinx.la
 import dolfinx.log
-from create_and_export_mesh import mesh_2D_dolfin, mesh_2D_gmsh
+import dolfinx_mpc
+import dolfinx_mpc.utils
+import numpy as np
+import ufl
+from mpi4py import MPI
+from petsc4py import PETSc
+
+from create_and_export_mesh import mesh_2D_dolfin, gmsh_2D_stacked
 
 dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
@@ -37,50 +36,28 @@ comm = MPI.COMM_WORLD
 
 def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
                        compare=False):
-    if MPI.COMM_WORLD.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}"
-                        .format(theta, triangle, gmsh))
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+    dolfinx_mpc.utils.log_info(
+        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}"
+        .format(theta, triangle, gmsh))
 
-    if gmsh:
-        if triangle:
-            celltype = "triangle"
-        else:
-            celltype = "quad"
-        mesh_name = "Grid"
-        if MPI.COMM_WORLD.size == 1:
-            mesh_2D_gmsh(theta, celltype)
-        filename = "meshes/mesh_{0:s}_{1:.2f}_gmsh.xdmf".format(
-            celltype, theta)
-        facet_file = "meshes/facet_{0:s}_{1:.2f}_rot.xdmf".format(
-            celltype, theta)
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                 filename, "r") as xdmf:
-            mesh = xdmf.read_mesh(name=mesh_name)
-            mesh.name = "mesh_{0:s}_{1:.2f}_gmsh".format(celltype, theta)
-            tdim = mesh.topology.dim
-            fdim = tdim - 1
-            mesh.topology.create_connectivity(tdim, tdim)
-            mesh.topology.create_connectivity(fdim, tdim)
-
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                 facet_file, "r") as xdmf:
-            mt = xdmf.read_meshtags(mesh, name="Grid")
+    if triangle:
+        celltype = "triangle"
     else:
-        if triangle:
-            celltype = "triangle"
-        else:
-            celltype = "quadrilateral"
+        celltype = "quadrilateral"
+    if gmsh:
+        mesh, mt = gmsh_2D_stacked(celltype, theta)
+        mesh.name = "mesh_{0:s}_{1:.2f}_gmsh".format(celltype, theta)
+
+    else:
         mesh_name = "mesh"
         filename = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta)
-        if triangle:
-            if MPI.COMM_WORLD.size == 1:
+
+        if MPI.COMM_WORLD.size == 1:
+            if triangle:
                 mesh_2D_dolfin(celltype, theta)
-        else:
-            if MPI.COMM_WORLD.size == 1:
+            else:
                 mesh_2D_dolfin(celltype, theta)
+
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                  filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
@@ -89,13 +66,16 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
             mesh.topology.create_connectivity(fdim, tdim)
-            mt = xdmf.read_meshtags(mesh, name="facet_tags")
 
-    # dolfinx.io.VTKFile("results/mesh.pvd").write(mesh)
+            mt = xdmf.read_meshtags(mesh, name="facet_tags")
+    if gmsh:
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "test.xdmf", "w") as xdmf:
+            xdmf.write_mesh(mesh)
+
     # Helper until MeshTags can be read in from xdmf
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-    r_matrix = pygmsh.helpers.rotation_matrix([0, 0, 1], theta)
+    r_matrix = dolfinx_mpc.utils.rotation_matrix([0, 0, 1], theta)
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
     g = dolfinx.Constant(mesh, g_vec[:2])
 
@@ -117,8 +97,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) +
-                lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v))
+                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
@@ -126,17 +106,19 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
                      subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v)*ufl.dx\
-        + ufl.inner(g, v)*ds
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * ufl.dx\
+        + ufl.inner(g, v) * ds
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
 
-    with dolfinx.common.Timer(
-            "~Contact: Add contact constraint at interface"):
-        mpc.create_contact_constraint(mt, 4, 9)
+    with dolfinx.common.Timer("~Contact: Create contact constraint"):
+        nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
+            V._cpp_object, mt, 4, 9, nh._cpp_object)
+        mpc.add_constraint_from_mpc_data(V, mpc_data)
 
     with dolfinx.common.Timer(
             "~Contact: Add non-slip condition at bottom interface"):
@@ -205,6 +187,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
     # Write solution to file
     ext = "gmsh" if gmsh else ""
+
     u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
@@ -260,7 +243,12 @@ if __name__ == "__main__":
     comp = parser.add_mutually_exclusive_group(required=False)
     comp.add_argument('--compare', dest='compare', action='store_true',
                       help="Compare with global solution", default=False)
+    time = parser.add_mutually_exclusive_group(required=False)
+    time.add_argument('--timing', dest='timing', action='store_true',
+                      help="List timings", default=False)
+
     compare = parser.parse_args().compare
+    timing = parser.parse_args().timing
 
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/demo_contact_2D.xdmf", "w")
@@ -270,21 +258,21 @@ if __name__ == "__main__":
     demo_stacked_cubes(outfile, theta=0, gmsh=False,
                        triangle=False, compare=compare)
     # Built in meshes non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False,
+    demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False,
                        triangle=True, compare=compare)
-    demo_stacked_cubes(outfile, theta=np.pi/3, gmsh=False,
+    demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False,
                        triangle=False, compare=compare)
     # Gmsh aligned
     demo_stacked_cubes(outfile, theta=0, gmsh=True,
-                       triangle=False, compare=compare)
-    demo_stacked_cubes(outfile, theta=0, gmsh=True,
                        triangle=True, compare=compare)
     # Gmsh non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True,
+    demo_stacked_cubes(outfile, theta=np.pi / 5, gmsh=True,
                        triangle=False, compare=compare)
-    demo_stacked_cubes(outfile, theta=np.pi/5, gmsh=True,
+
+    demo_stacked_cubes(outfile, theta=np.pi / 5, gmsh=True,
                        triangle=True, compare=compare)
 
     outfile.close()
-    # dolfinx.common.list_timings(
-    #     MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    if timing:
+        dolfinx.common.list_timings(
+            MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
