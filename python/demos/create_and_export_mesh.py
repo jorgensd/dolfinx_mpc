@@ -39,8 +39,8 @@ def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.option.setNumber("General.Terminal", 0)
         # Added tolerance to ensure that gmsh separates boxes
         tol = 1e-12
-        bottom = gmsh.model.occ.addBox(x0, y0, z0, x1 - x0, y1 - y0, z1 - z0)
-        top = gmsh.model.occ.addBox(x0, y0, z1 + tol, x1 - x0, y1 - y0, z2 - z1)
+        gmsh.model.occ.addBox(x0, y0, z0, x1 - x0, y1 - y0, z1 - z0)
+        gmsh.model.occ.addBox(x0, y0, z1 + tol, x1 - x0, y1 - y0, z2 - z1)
 
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
