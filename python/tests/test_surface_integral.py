@@ -79,10 +79,15 @@ def test_surface_integrals():
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, 1, 1)
     mpc.finalize()
-    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+    with dolfinx.common.Timer("~TEST: Assemble matrix old"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
+        Anew = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
+
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -94,6 +99,13 @@ def test_surface_integrals():
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
+
+    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    A_new_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Anew)
+    assert np.allclose(A_mpc_np, A_new_np)
+    dolfinx.common.list_timings(
+        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
@@ -179,15 +191,24 @@ def test_surface_integral_dependency():
     mpc.create_general_constraint(s_m_c, 1, 1)
     mpc.finalize()
 
-    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+    with dolfinx.common.Timer("~TEST: Assemble matrix old"):
         A = dolfinx_mpc.assemble_matrix(a, mpc)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
+        Anew = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
+
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
 
-    # Transfer data from the MPC problem to numpy arrays for comparison
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    A_new_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Anew)
+    assert np.allclose(A_np, A_new_np)
+    dolfinx.common.list_timings(
+        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    # Transfer data from the MPC problem to numpy arrays for comparison
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
 
     # Solve the MPC problem using a global transformation matrix

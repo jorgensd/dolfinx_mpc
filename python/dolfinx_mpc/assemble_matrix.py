@@ -189,12 +189,12 @@ def assemble_matrix(form, constraint, bcs=[]):
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         perm = (permutation_info, facet_permutation_info)
-    for j in range(num_exterior_integrals):
-        facet_info = pack_facet_info(V.mesh, formintegral, j)
+    with Timer("~MPC: Assemble constrained ext. facets (Python))"):
+        for j in range(num_exterior_integrals):
+            facet_info = pack_facet_info(V.mesh, formintegral, j)
 
-        subdomain_id = subdomain_ids[j]
-        facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
-        with Timer("~MPC: Assemble constrained ext. facets (Python))"):
+            subdomain_id = subdomain_ids[j]
+            facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
             assemble_exterior_facets(A.handle, facet_kernel, (pos, x_dofs, x), gdim,
                                      form_coeffs, form_consts, perm, dofs, num_dofs_per_element,
                                      facet_info, mpc_data, bc_array)

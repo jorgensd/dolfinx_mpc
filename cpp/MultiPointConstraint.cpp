@@ -268,7 +268,7 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";
-  dolfinx::common::Timer timer("~MPC: Create sparsity pattern (MPC) (NEW!)");
+  dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
   if (a.rank() != 2)
   {
     throw std::runtime_error(
