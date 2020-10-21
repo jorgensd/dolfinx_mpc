@@ -19,7 +19,7 @@ def gmsh_3D_stacked(celltype, theta, res=0.1):
                                       facet_markers=[[11, 5, 12, 13, 4, 14],
                                                      [21, 9, 22, 23, 3, 24]],
                                       volume_markers=[1, 2])
-    # NOTE: Hex mesh must be rotated after generation due to gmsh API
+
     r_matrix = dolfinx_mpc.utils.rotation_matrix([1, 1, 0], -theta)
     mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
     return mesh, ft

@@ -86,12 +86,15 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
     return A
 
 
-def assemble_matrix(form, constraint, bcs=[]):
+def assemble_matrix(form, constraint, bcs=[], A=None):
     """
     Assembles a ufl form given a multi point constraint and possible
     Dirichlet boundary conditions.
     NOTE: Dirichlet conditions cant be on master dofs.
     """
+
+    timer_matrix = Timer("~MPC: Assemble matrix")
+    timer_matrix_b = Timer("~MPC: Assemble matrix (pre assembly")
 
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
@@ -131,17 +134,20 @@ def assemble_matrix(form, constraint, bcs=[]):
     ufc_form = dolfinx.jit.ffcx_jit(form)
     cpp_form = dolfinx.Form(form)._cpp_object
 
-    # Generate matrix with MPC sparsity pattern
-    pattern = constraint.create_sparsity_pattern(cpp_form)
-    pattern.assemble()
-
     # Pack constants and coefficients
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     # Create sparsity pattern
-    A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
+    if A is None:
+        with Timer("~MPC: Create and assemble sparsity pattern"):
+            pattern = constraint.create_sparsity_pattern(cpp_form)
+            pattern.assemble()
+        with Timer("~MPC: Assemble matrix (Create matrix)"):
+            A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
+    timer_matrix_b.stop()
+    timer_matrix_a = Timer("~MPC: Assemble matrix (actual_assembly)")
 
     # Assemble the matrix with all entries
     with Timer("~MPC: Assemble unconstrained matrix"):
@@ -189,6 +195,7 @@ def assemble_matrix(form, constraint, bcs=[]):
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         perm = (permutation_info, facet_permutation_info)
+
     with Timer("~MPC: Assemble constrained ext. facets (Python))"):
         for j in range(num_exterior_integrals):
             facet_info = pack_facet_info(V.mesh, formintegral, j)
@@ -204,6 +211,8 @@ def assemble_matrix(form, constraint, bcs=[]):
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1.0)
     A.assemble()
+    timer_matrix_a.stop()
+    timer_matrix.stop()
     return A
 
 

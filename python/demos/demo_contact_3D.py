@@ -24,7 +24,7 @@ comm = MPI.COMM_WORLD
 
 
 def demo_stacked_cubes(outfile, theta, gmsh=False,
-                       ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True):
+                       ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True, res=0.1):
     if ct == dolfinx.cpp.mesh.CellType.hexahedron:
         celltype = "hexahedron"
     else:
@@ -38,7 +38,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
     # Read in mesh
     if gmsh:
-        mesh, mt = gmsh_3D_stacked(celltype, theta)
+        mesh, mt = gmsh_3D_stacked(celltype, theta, res)
         mesh.name = "mesh_{0:s}_{1:.2f}_gmsh".format(celltype, theta)
         tdim = mesh.topology.dim
         fdim = tdim - 1
@@ -118,16 +118,20 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         + ufl.inner(g, v) * ds
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
+    nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
     with dolfinx.common.Timer("~Contact: Create contact constraint"):
-        nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
             V._cpp_object, mt, 4, 9, nh._cpp_object)
         mpc.add_constraint_from_mpc_data(V, mpc_data)
-    mpc.finalize()
+    with dolfinx.common.Timer("~Contact: Finalize MPC"):
+        mpc.finalize()
 
-    with dolfinx.common.Timer("~Contact: Assembly"):
+    with dolfinx.common.Timer("~Contact: Assembly ({0:d})".format(V.dim)):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
+    with dolfinx.common.Timer("~Contact: Assembly (cached) ({0:d})".format(V.dim)):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs, A=A)
+
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -223,27 +227,30 @@ if __name__ == "__main__":
     time = parser.add_mutually_exclusive_group(required=False)
     time.add_argument('--timing', dest='timing', action='store_true',
                       help="List timings", default=False)
+    parser.add_argument("--res", default=0.1, type=np.float64, dest="res",
+                        help="Resolution of Mesh")
 
     compare = parser.parse_args().compare
     timing = parser.parse_args().timing
+    res = parser.parse_args().res
 
     outfile = dolfinx.io.XDMFFile(comm,
                                   "results/demo_contact_3D.xdmf", "w")
-    cts = [dolfinx.cpp.mesh.CellType.hexahedron,
-           dolfinx.cpp.mesh.CellType.tetrahedron]
-    for ct in cts:
-        demo_stacked_cubes(
-            outfile, theta=0, gmsh=False, ct=ct, compare=compare)
-        demo_stacked_cubes(
-            outfile, theta=np.pi / 3, gmsh=False, ct=ct, compare=compare)
+    # cts = [dolfinx.cpp.mesh.CellType.hexahedron,
+    #        dolfinx.cpp.mesh.CellType.tetrahedron]
+    # for ct in cts:
+    #     demo_stacked_cubes(
+    #         outfile, theta=0, gmsh=False, ct=ct, compare=compare)
+    #     demo_stacked_cubes(
+    #         outfile, theta=np.pi / 3, gmsh=False, ct=ct, compare=compare)
 
     # NOTE: Unstructured solution experience slight unphysical deformation
     demo_stacked_cubes(
         outfile, theta=np.pi / 5, gmsh=True, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
-        compare=compare)
-    demo_stacked_cubes(
-        outfile, theta=np.pi / 5, gmsh=True, ct=dolfinx.cpp.mesh.CellType.hexahedron,
-        compare=compare)
+        compare=compare, res=res)
+    # demo_stacked_cubes(
+    #     outfile, theta=np.pi / 5,gmsh=True, ct=dolfinx.cpp.mesh.CellType.hexahedron,
+    #     compare=compare)
     outfile.close()
 
     dolfinx_mpc.utils.log_info("Simulation finished")
