@@ -52,8 +52,6 @@ void mpc(py::module& m)
       .def("masters_local", &dolfinx_mpc::MultiPointConstraint::masters_local)
       .def("coefficients", &dolfinx_mpc::MultiPointConstraint::coefficients)
       .def("create_sparsity_pattern",
-           &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern_new)
-      .def("create_sparsity_pattern_old",
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
       .def("num_local_slaves",
            &dolfinx_mpc::MultiPointConstraint::num_local_slaves)

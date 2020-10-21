@@ -127,13 +127,6 @@ public:
   dolfinx::la::SparsityPattern
   create_sparsity_pattern(const dolfinx::fem::Form<PetscScalar>& a);
 
-  /// Add sparsity pattern for multi-point constraints to existing
-  /// sparsity pattern
-  /// @param[in] a bi-linear form for the current variational problem
-  /// (The one used to generate input sparsity-pattern).
-  dolfinx::la::SparsityPattern
-  create_sparsity_pattern_new(const dolfinx::fem::Form<PetscScalar>& a);
-
   std::shared_ptr<dolfinx::fem::DofMap> dofmap() { return _dofmap; }
 
 private:

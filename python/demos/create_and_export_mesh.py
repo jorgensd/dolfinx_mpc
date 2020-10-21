@@ -9,7 +9,6 @@ import gmsh
 
 
 def gmsh_3D_stacked(celltype, theta, res=0.1):
-    res = 0.02
     if celltype == "tetrahedron":
         mesh, ft = generate_tet_boxes(0, 0, 0, 1, 1, 1, 2, res,
                                       facet_markers=[[11, 5, 12, 13, 4, 14],

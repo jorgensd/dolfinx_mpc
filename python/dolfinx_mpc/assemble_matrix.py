@@ -132,15 +132,7 @@ def assemble_matrix(form, constraint, bcs=[]):
     cpp_form = dolfinx.Form(form)._cpp_object
 
     # Generate matrix with MPC sparsity pattern
-    with dolfinx.common.Timer("~AA: New sparsity") as timer:
-        pattern = constraint.create_sparsity_pattern(cpp_form)
-        time = timer.elapsed()
-    with dolfinx.common.Timer("~AA: Old sparsity") as timer:
-        constraint._cpp_object.create_sparsity_pattern_old(cpp_form)
-        time_old = timer.elapsed()
-    print("New: {0:.2e}, Old: {1:.2e}".format(time[0], time_old[0]))
-    if time[0] > 5e-3:
-        assert(time < time_old)
+    pattern = constraint.create_sparsity_pattern(cpp_form)
     pattern.assemble()
 
     # Pack constants and coefficients
