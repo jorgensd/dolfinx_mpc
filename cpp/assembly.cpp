@@ -5,7 +5,6 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "assembly.h"
-#include <dolfinx/fem/FormIntegrals.h>
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/function/Constant.h>
 #include <iostream>
@@ -412,17 +411,15 @@ void assemble_matrix_impl(
 
   // Get dofmap data
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap0
-      = a.function_space(0)->dofmap();
+      = a.function_spaces().at(0)->dofmap();
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap1
-      = a.function_space(1)->dofmap();
+      = a.function_spaces().at(1)->dofmap();
   assert(dofmap0);
   assert(dofmap1);
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs0 = dofmap0->list();
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs1 = dofmap1->list();
 
   // Prepare constants
-  if (!a.all_constants_set())
-    throw std::runtime_error("Unset constant in Form");
   const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> constants
       = pack_constants(a);
 
@@ -431,8 +428,7 @@ void assemble_matrix_impl(
                      Eigen::RowMajor>
       coeffs = dolfinx::fem::pack_coefficients(a);
 
-  const dolfinx::fem::FormIntegrals<PetscScalar>& integrals = a.integrals();
-  const bool needs_permutation_data = integrals.needs_permutation_data();
+  const bool needs_permutation_data = a.needs_permutation_data();
   if (needs_permutation_data)
     mesh->topology_mutable().create_entity_permutations();
   const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_info
@@ -440,21 +436,18 @@ void assemble_matrix_impl(
             ? mesh->topology().get_cell_permutation_info()
             : Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>(num_cells);
 
-  for (int i = 0; i < integrals.num_integrals(dolfinx::fem::IntegralType::cell);
-       ++i)
+  for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
   {
-    const auto& fn
-        = integrals.get_tabulate_tensor(dolfinx::fem::IntegralType::cell, i);
+    const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i);
     const std::vector<std::int32_t>& active_cells
-        = integrals.integral_domains(dolfinx::fem::IntegralType::cell, i);
+        = a.domains(dolfinx::fem::IntegralType::cell, i);
     assemble_cells_impl(mat_set_values, mesh->geometry(), active_cells, dofs0,
                         dofs1, bc0, bc1, fn, coeffs, constants, cell_info,
                         slaves, masters, coefficients, slave_cells,
                         cell_to_slaves);
   }
-  if (integrals.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
-      or integrals.num_integrals(dolfinx::fem::IntegralType::interior_facet)
-             > 0)
+  if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
+      or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   {
     // FIXME: cleanup these calls? Some of the happen internally again.
     mesh->topology_mutable().create_entities(tdim - 1);
@@ -468,31 +461,23 @@ void assemble_matrix_impl(
               : Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>(
                   facets_per_cell, num_cells);
 
-    for (int i = 0; i < integrals.num_integrals(
-                        dolfinx::fem::IntegralType::exterior_facet);
-         ++i)
+    for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
     {
-      const auto& fn = integrals.get_tabulate_tensor(
-          dolfinx::fem::IntegralType::exterior_facet, i);
+      const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
       const std::vector<std::int32_t>& active_facets
-          = integrals.integral_domains(
-              dolfinx::fem::IntegralType::exterior_facet, i);
+          = a.domains(dolfinx::fem::IntegralType::exterior_facet, i);
       assemble_exterior_facets(mat_set_values, *mesh, active_facets, dofs0,
                                dofs1, bc0, bc1, fn, coeffs, constants,
                                cell_info, perms, slaves, masters, coefficients,
                                slave_cells, cell_to_slaves);
     }
 
-    const std::vector<int> c_offsets = a.coefficients().offsets();
-    for (int i = 0; i < integrals.num_integrals(
-                        dolfinx::fem::IntegralType::interior_facet);
-         ++i)
+    const std::vector<int> c_offsets = a.coefficient_offsets();
+    for (int i : a.integral_ids(dolfinx::fem::IntegralType::interior_facet))
     {
-      const auto& fn = integrals.get_tabulate_tensor(
-          dolfinx::fem::IntegralType::interior_facet, i);
+      const auto& fn = a.kernel(dolfinx::fem::IntegralType::interior_facet, i);
       const std::vector<std::int32_t>& active_facets
-          = integrals.integral_domains(
-              dolfinx::fem::IntegralType::interior_facet, i);
+          = a.domains(dolfinx::fem::IntegralType::interior_facet, i);
       throw std::runtime_error("Not implemented yet");
 
       //   impl::assemble_interior_facets<T>(
@@ -515,8 +500,8 @@ void dolfinx_mpc::assemble_matrix(
   dolfinx::common::Timer timer_s("~MPC: Assembly (C++)");
 
   // Index maps for dof ranges
-  auto map0 = a.function_space(0)->dofmap()->index_map;
-  auto map1 = a.function_space(1)->dofmap()->index_map;
+  auto map0 = a.function_spaces().at(0)->dofmap()->index_map;
+  auto map1 = a.function_spaces().at(1)->dofmap()->index_map;
 
   // Build dof markers
   std::vector<bool> dof_marker0, dof_marker1;
@@ -528,12 +513,12 @@ void dolfinx_mpc::assemble_matrix(
   {
     assert(bcs[k]);
     assert(bcs[k]->function_space());
-    if (a.function_space(0)->contains(*bcs[k]->function_space()))
+    if (a.function_spaces().at(0)->contains(*bcs[k]->function_space()))
     {
       dof_marker0.resize(dim0, false);
       bcs[k]->mark_dofs(dof_marker0);
     }
-    if (a.function_space(1)->contains(*bcs[k]->function_space()))
+    if (a.function_spaces().at(1)->contains(*bcs[k]->function_space()))
     {
       dof_marker1.resize(dim1, false);
       bcs[k]->mark_dofs(dof_marker1);

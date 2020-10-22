@@ -51,7 +51,6 @@ def assemble_vector(form, constraint,
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
-    formintegral = cpp_form.integrals
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
     num_dofs_per_element = (V.dofmap.dof_layout.num_dofs
@@ -60,56 +59,43 @@ def assemble_vector(form, constraint,
     # Assemble vector with all entries
     dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form)
     # Assemble over cells
-    subdomain_ids = formintegral.integral_ids(
-        dolfinx.fem.IntegralType.cell)
+    subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
         permutation_info = V.mesh.topology.get_cell_permutation_info()
 
-    for i in range(num_cell_integrals):
-        subdomain_id = subdomain_ids[i]
+    for subdomain_id in subdomain_ids:
         with Timer("*MPC: Assemble vector (cell kernel)"):
             cell_kernel = ufc_form.create_cell_integral(
                 subdomain_id).tabulate_tensor
-        active_cells = numpy.array(formintegral.integral_domains(
-            dolfinx.fem.IntegralType.cell, i), dtype=numpy.int64)
-        slave_cell_indices = numpy.flatnonzero(
-            numpy.isin(active_cells, slave_cells))
+        active_cells = numpy.array(cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id),
+                                   dtype=numpy.int64)
+        slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
         with Timer("*MPC: Assemble vector (cell numba)"):
             with vector.localForm() as b:
-                assemble_cells(numpy.asarray(b), cell_kernel,
-                               active_cells[slave_cell_indices],
-                               (pos, x_dofs, x), gdim,
-                               form_coeffs, form_consts,
-                               permutation_info,
-                               dofs, num_dofs_per_element, mpc_data,
-                               (bc_dofs, bc_values))
+                assemble_cells(numpy.asarray(b), cell_kernel, active_cells[slave_cell_indices],
+                               (pos, x_dofs, x), gdim, form_coeffs, form_consts,
+                               permutation_info, dofs, num_dofs_per_element, mpc_data, (bc_dofs, bc_values))
 
     # Assemble exterior facet integrals
-    subdomain_ids = formintegral.integral_ids(
-        dolfinx.fem.IntegralType.exterior_facet)
+    subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
-    for i in range(num_exterior_integrals):
-        facet_info = pack_facet_info(V.mesh, formintegral, i)
-        subdomain_id = subdomain_ids[i]
-        facet_kernel = ufc_form.create_exterior_facet_integral(
-            subdomain_id).tabulate_tensor
+    for subdomain_id in subdomain_ids:
+        active_facets = numpy.array(cpp_form.domains(
+            dolfinx.fem.IntegralType.exterior_facet, subdomain_id), dtype=numpy.int64)
+        facet_info = pack_facet_info(V.mesh, active_facets)
+        facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
         with Timer("*MPC: Assemble vector (facet numba)"):
             with vector.localForm() as b:
-                assemble_exterior_facets(numpy.asarray(b), facet_kernel,
-                                         facet_info,
-                                         (pos, x_dofs, x),
-                                         gdim, form_coeffs, form_consts,
-                                         (permutation_info,
-                                             facet_permutation_info), dofs,
-                                         num_dofs_per_element,
-                                         mpc_data, (bc_dofs, bc_values))
+                assemble_exterior_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x), gdim,
+                                         form_coeffs, form_consts, (permutation_info, facet_permutation_info), dofs,
+                                         num_dofs_per_element, mpc_data, (bc_dofs, bc_values))
     timer_vector.stop()
     return vector
 
