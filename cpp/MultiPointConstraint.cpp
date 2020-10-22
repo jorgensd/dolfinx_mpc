@@ -275,8 +275,8 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
   }
   /// Check that we are using the correct function-space in the bilinear
   /// form otherwise the index map will be wrong
-  assert(a.function_space(0) == _V);
-  assert(a.function_space(1) == _V);
+  assert(a.function_spaces().at(0) == _V);
+  assert(a.function_spaces().at(1) == _V);
 
   const dolfinx::mesh::Mesh& mesh = *(a.mesh());
 
