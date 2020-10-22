@@ -82,7 +82,8 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
         bc_mpc.extend(bcs)
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1)
-    A.assemble()
+    with dolfinx.common.Timer("~MPC: assemble matrix"):
+        A.assemble()
     return A
 
 
@@ -140,8 +141,8 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
 
     # Create sparsity pattern
     if A is None:
-        with Timer("~MPC: Create and assemble sparsity pattern"):
-            pattern = constraint.create_sparsity_pattern(cpp_form)
+        pattern = constraint.create_sparsity_pattern(cpp_form)
+        with Timer("~MPC: Assemble sparsity pattern"):
             pattern.assemble()
         with Timer("~MPC: Assemble matrix (Create matrix)"):
             A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)

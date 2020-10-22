@@ -26,7 +26,6 @@ void modify_mpc_cell(
     const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& local_indices,
     const std::vector<bool>& is_slave)
 {
-  dolfinx::common::Timer timer("~MPC: Modify MPC cell (C++)");
 
   // Arrays for flattened master slave data
   std::vector<std::int32_t> flattened_masters;
@@ -513,6 +512,7 @@ void dolfinx_mpc::assemble_matrix(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs)
 {
+  dolfinx::common::Timer timer_s("~MPC: Assembly (C++)");
 
   // Index maps for dof ranges
   auto map0 = a.function_space(0)->dofmap()->index_map;
