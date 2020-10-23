@@ -57,12 +57,12 @@
 #     - cd ../python
 #     - pip3 install -e . --upgrade
 
-  script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
+#   script:
+#     - cd tests
+#     - python3 -m pytest .
+#     - mpirun -n 2 python3 -m pytest .
+#     - mpirun -n 3 python3 -m pytest .
+#     - mpirun -n 4 python3 -m pytest .
 
 
 nightly-complex:
