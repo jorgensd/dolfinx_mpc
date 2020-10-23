@@ -1,61 +1,61 @@
-fast-complex:
-  stage: test
-  tags:
-    - docker
-  except:
-    - master
-    - schedules
-  image:
-    name: dolfinx/dolfinx
-    entrypoint: [""]
-  variables:
-    PETSC_ARCH: "linux-gnu-complex-32"
-    PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
-  before_script:
-    - flake8 .
-    - export PETSC_ARCH="linux-gnu-complex-32"
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:$LD_LIBRARY_PATH"
-    - export PATH="/usr/local/dolfinx-complex/bin:$PATH"
-    - export PKG_CONFIG_PATH="/usr/local/dolfinx-complex/lib/pkgconfig:$PKG_CONFIG_PATH"
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
+# fast-complex:
+#   stage: test
+#   tags:
+#     - docker
+#   except:
+#     - master
+#     - schedules
+#   image:
+#     name: dolfinx/dolfinx
+#     entrypoint: [""]
+#   variables:
+#     PETSC_ARCH: "linux-gnu-complex-32"
+#     PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
+#   before_script:
+#     - flake8 .
+#     - export PETSC_ARCH="linux-gnu-complex-32"
+#     - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:$LD_LIBRARY_PATH"
+#     - export PATH="/usr/local/dolfinx-complex/bin:$PATH"
+#     - export PKG_CONFIG_PATH="/usr/local/dolfinx-complex/lib/pkgconfig:$PKG_CONFIG_PATH"
+#     - mkdir -p build
+#     - cd build
+#     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+#     - ninja -j3 install
+#     - cd ../python
+#     - pip3 install -e . --upgrade
 
-  script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
+#   script:
+#     - cd tests
+#     - python3 -m pytest .
+#     - mpirun -n 2 python3 -m pytest .
+#     - mpirun -n 3 python3 -m pytest .
+#     - mpirun -n 4 python3 -m pytest .
 
 
-fast-real:
-  stage: test
-  tags:
-    - docker
-  except:
-    - master
-    - schedules
-  image:
-    name: dolfinx/dolfinx
-    entrypoint: [""]
-  variables:
-    PETSC_ARCH: "linux-gnu-real-32"
-    PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
-  before_script:
-    - flake8 .
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:$LD_LIBRARY_PATH"
-    - export PATH="/usr/local/dolfinx-real/bin:$PATH"
-    - export PKG_CONFIG_PATH="/usr/local/dolfinx-real/lib/pkgconfig:$PKG_CONFIG_PATH"
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
+# fast-real:
+#   stage: test
+#   tags:
+#     - docker
+#   except:
+#     - master
+#     - schedules
+#   image:
+#     name: dolfinx/dolfinx
+#     entrypoint: [""]
+#   variables:
+#     PETSC_ARCH: "linux-gnu-real-32"
+#     PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
+#   before_script:
+#     - flake8 .
+#     - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:$LD_LIBRARY_PATH"
+#     - export PATH="/usr/local/dolfinx-real/bin:$PATH"
+#     - export PKG_CONFIG_PATH="/usr/local/dolfinx-real/lib/pkgconfig:$PKG_CONFIG_PATH"
+#     - mkdir -p build
+#     - cd build
+#     - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
+#     - ninja -j3 install
+#     - cd ../python
+#     - pip3 install -e . --upgrade
 
   script:
     - cd tests
