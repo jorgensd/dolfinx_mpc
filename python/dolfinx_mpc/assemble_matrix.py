@@ -214,16 +214,6 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     with Timer("~MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()
 
-    with Timer("~MPC: Assemble constrained ext. facets (Python))"):
-        for j in range(num_exterior_integrals):
-            facet_info = pack_facet_info(V.mesh, formintegral, j)
-
-            subdomain_id = subdomain_ids[j]
-            facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
-            assemble_exterior_facets(A.handle, facet_kernel, (pos, x_dofs, x), gdim,
-                                     form_coeffs, form_consts, perm, dofs, num_dofs_per_element,
-                                     facet_info, mpc_data, bc_array)
-
     # Add one on diagonal for diriclet bc and slave dofs
     # NOTE: In the future one could use a constant in the DirichletBC
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
