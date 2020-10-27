@@ -116,7 +116,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
     with dolfinx.common.Timer("~Contact: Create contact constraint"):
         nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
             V._cpp_object, mt, 4, 9, nh._cpp_object)
         mpc.add_constraint_from_mpc_data(V, mpc_data)
 

@@ -13,6 +13,7 @@
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/la/PETScMatrix.h>
+#include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/assembly.h>
 #include <dolfinx_mpc/utils.h>
@@ -93,6 +94,9 @@ void mpc(py::module& m)
       },
       py::return_value_policy::take_ownership,
       "Create a PETSc Mat for bilinear form.");
-  m.def("create_contact_condition", &dolfinx_mpc::create_contact_condition);
+  m.def("create_contact_slip_condition",
+        &dolfinx_mpc::create_contact_slip_condition);
+  m.def("create_contact_inelastic_condition",
+        &dolfinx_mpc::create_contact_inelastic_condition);
 }
 } // namespace dolfinx_mpc_wrappers

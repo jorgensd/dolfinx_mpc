@@ -75,9 +75,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     r_matrix = dolfinx_mpc.utils.rotation_matrix(
         [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
-    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
-    g = dolfinx.Constant(mesh, g_vec)
-
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
     u_bc = dolfinx.function.Function(V)
@@ -89,7 +86,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
     # Top boundary has a given deformation normal to the interface
-    g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
+    # g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
+    g_vec = [0, 0, -4.25e-1]
     g = dolfinx.Constant(mesh, g_vec)
 
     def top_v(x):
@@ -130,11 +128,16 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
-    with dolfinx.common.Timer("~Contact: Create contact constraint"):
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
-            V._cpp_object, mt, 4, 9, nh._cpp_object)
+    # with dolfinx.common.Timer("~Contact: Create contact constraint"):
+    #     mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
+    #         V._cpp_object, mt, 4, 9, nh._cpp_object)
+    with dolfinx.common.Timer("~Contact: Create non-elastic constraint"):
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
+            V._cpp_object, mt, 4, 9)
+    exit(1)
     with dolfinx.common.Timer("~Contact: Add data to MPC"):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
+
     with dolfinx.common.Timer("~Contact: Finalize MPC"):
         mpc.finalize()
 
