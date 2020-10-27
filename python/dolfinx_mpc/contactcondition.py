@@ -3,6 +3,7 @@ import dolfinx.fem as fem
 import dolfinx.geometry as geometry
 import dolfinx_mpc.cpp as cpp
 import dolfinx.cpp as dcpp
+import dolfinx.log as log
 import numpy as np
 
 
@@ -69,6 +70,29 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
     local_master_cells = np.unique(local_master_cells)
 
+    # Send info about having masters or slaves to other processors to simplify
+    # comms later on
+    other_procs = np.arange(comm.size)
+    other_procs = other_procs[other_procs != comm.rank]
+    for proc in other_procs:
+        if len(local_master_cells) > 0:
+            comm.send(True, dest=proc, tag=123)
+        else:
+            comm.send(False, dest=proc, tag=123)
+        if num_owned_slaves > 0:
+            comm.send(True, dest=proc, tag=321)
+        else:
+            comm.send(False, dest=proc, tag=321)
+    slave_procs = []
+    master_procs = []
+    for proc in other_procs:
+        has_master = comm.recv(source=proc, tag=123)
+        has_slave = comm.recv(source=proc, tag=321)
+        if has_master:
+            master_procs.append(proc)
+        if has_slave:
+            slave_procs.append(proc)
+
     # Find masters that is owned by this processor
     tree = geometry.BoundingBoxTree(V.mesh, tdim)
     cell_map = V.mesh.topology.index_map(tdim)
@@ -104,7 +128,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     # Loop through the slave dofs with masters on other interface and
     # compute corresponding coefficients
     masters_local = {}
-    ghost_owners = V.dofmap.index_map.ghost_owner_rank()
+    ghost_block_owners = V.dofmap.index_map.ghost_owner_rank()
     for slave in slave_to_master_cell.keys():
         # Find normal vector for local slave (through blocks)
         b_off = slave % bs
@@ -127,7 +151,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                     if dof < local_size:
                         owners.append(comm.rank)
                     else:
-                        owners.append(ghost_owners[dof // bs - local_size // bs])
+                        owners.append(ghost_block_owners[dof // bs - local_size // bs])
                     masters.append(dof)
                     coeffs.append(coeff)
                 del coeff
@@ -156,7 +180,8 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     # (according to the bounding boxes). Send the slaves global dof number,
     # physical coordinate and corresponding normal vector to those procs.
     slaves_to_send = {}
-    facettree = geometry.BoundingBoxTree(V.mesh, dim=fdim)
+    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
+                           dtype=np.int64)
     for (dof, coord) in zip(slaves[:num_owned_slaves],
                             slave_coordinates[:num_owned_slaves]):
         # Find normal vector for local slave (through blocks)
@@ -166,7 +191,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
         # Get processors where boundingbox collides with point
         procs = np.array(cpp.mpc.compute_process_collisions(
-            facettree._cpp_object, coord.T), dtype=np.int32)
+            tree._cpp_object, coord.T), dtype=np.int32)
         procs = procs[procs != comm.rank]
         for proc in procs:
             if proc in slaves_to_send.keys():
@@ -179,23 +204,22 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                                         "normals": [n]}
         del b_off, block_dofs, n, procs
 
-    # Send information about collisions between slave and bounding
-    #  box to the other processors
-    bb_collision_recv = list(slaves_to_send.keys())
-    for proc in range(comm.size):
-        if proc in slaves_to_send.keys():
+    log.set_log_level(log.LogLevel.INFO)
+    if num_owned_slaves > 0:
+        for proc in master_procs:
+            log.log(log.LogLevel.INFO,
+                    "Send: {1:d}->{0:d}, ({2:d})".
+                    format(proc, comm.rank,
+                           len(slaves_to_send[proc]["slaves"])))
             comm.send(slaves_to_send[proc], dest=proc, tag=1)
-        elif proc != comm.rank:
-            comm.send(None, dest=proc, tag=1)
-    del slaves_to_send
-
     # Receive information about slaves from other processors
     recv_slaves, recv_owners, recv_coords, recv_normals = [], [], [], []
-    other_procs = np.arange(comm.size)
-    other_procs = other_procs[other_procs != comm.rank]
-    for proc in other_procs:
-        slaves_to_recv = comm.recv(source=proc, tag=1)
-        if slaves_to_recv is not None:
+
+    if len(local_master_cells) > 0:
+        for proc in slave_procs:
+            log.log(log.LogLevel.INFO,
+                    "Recv: {0:d}->{1:d}".format(proc, comm.rank))
+            slaves_to_recv = comm.recv(source=proc, tag=1)
             recv_slaves.extend(slaves_to_recv["slaves"])
             recv_owners.extend([proc] * len(slaves_to_recv["slaves"]))
             recv_coords.extend(slaves_to_recv["coords"])
@@ -244,7 +268,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
                         if dof < local_size:
                             owners.append(comm.rank)
                         else:
-                            owners.append(ghost_owners[dof // bs - local_size // bs])
+                            owners.append(ghost_block_owners[dof // bs - local_size // bs])
                         masters.append(loc_to_glob[dof])
                         coeffs.append(coeff)
                     del coeff
@@ -261,31 +285,46 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
     # Send masters back to owning processor
     # master_send_procs = list(masters_for_recv_slaves.keys())
-    for proc in set(recv_owners):
-        if proc in masters_for_recv_slaves.keys():
-            comm.send(masters_for_recv_slaves[proc], dest=proc, tag=2)
-        else:
-            comm.send(None, dest=proc, tag=2)
+    if len(local_master_cells) > 0:
+        for proc in slave_procs:
+            if (proc in slaves_to_send.keys()
+                    and proc in masters_for_recv_slaves.keys()):
+                log.log(log.LogLevel.INFO,
+                        "Send back: {1:d}->{0:d}, ({2:d})".
+                        format(proc, comm.rank,
+                               len(slaves_to_send[proc]["slaves"])))
+
+                comm.send(masters_for_recv_slaves[proc], dest=proc, tag=2)
+            else:
+                log.log(log.LogLevel.INFO,
+                        "Send back: {1:d}->{0:d}, ({2:d})".
+                        format(proc, comm.rank, 0))
+                comm.send(None, dest=proc, tag=2)
     # Receive masters from other processors and sort them by slave.
     # If duplicates, add both of them. One will be randomly selected later
     recv_masters = {}
     recv_masters_procs = []
-    for proc in bb_collision_recv:
-        recv_master_from_proc = comm.recv(source=proc, tag=2)
-        if recv_master_from_proc is not None:
-            recv_masters_procs.append(proc)
-            for global_slave in recv_master_from_proc.keys():
-                # NOTE: Could be done faster if the global_to_local
-                # function in indexmap was exposed to the python
-                # layer
-                idx = np.where(global_slave == loc_to_glob[slaves[:num_owned_slaves]])[0][0]
-                if slaves[idx] in recv_masters.keys():
-                    recv_masters[slaves[idx]][proc] = (
-                        recv_master_from_proc[global_slave])
-                else:
-                    recv_masters[slaves[idx]] = {
-                        proc: recv_master_from_proc[global_slave]}
-        del recv_master_from_proc
+    if num_owned_slaves > 0:
+        for proc in master_procs:
+            log.log(log.LogLevel.INFO,
+                    "Recv back: {0:d}->{1:d}".format(proc, comm.rank))
+            recv_master_from_proc = comm.recv(source=proc, tag=2)
+            if recv_master_from_proc is not None:
+                recv_masters_procs.append(proc)
+                for global_slave in recv_master_from_proc.keys():
+                    # NOTE: Could be done faster if the global_to_local
+                    # function in indexmap was exposed to the python
+                    # layer
+                    idx = np.where(global_slave
+                                   == loc_to_glob[
+                                       slaves[:num_owned_slaves]])[0][0]
+                    if slaves[idx] in recv_masters.keys():
+                        recv_masters[slaves[idx]][proc] = (
+                            recv_master_from_proc[global_slave])
+                    else:
+                        recv_masters[slaves[idx]] = {
+                            proc: recv_master_from_proc[global_slave]}
+            del recv_master_from_proc
 
     # Remove duplicates by random selection
     recv_masters_unique = {}
@@ -342,7 +381,11 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
 
     # Send masters for ghosted slaves to respective procs
     for proc in send_ghost_masters.keys():
-        comm.send(send_ghost_masters[proc], dest=proc, tag=3)
+        log.log(log.LogLevel.INFO,
+                "Send (Ghost): {1:d}->{0:d}, ({2:d})".
+                format(proc, comm.rank,
+                       len(send_ghost_masters[proc].keys())))
+        comm.send(send_ghost_masters[proc], dest=proc, tag=333)
     del send_ghost_masters
 
     # For ghosted slaves, find their respective owner
@@ -350,7 +393,7 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     ghost_recv = []
     for slave in slaves[num_owned_slaves:]:
         block = slave // bs - local_blocks_size
-        owner = ghost_owners[block]
+        owner = ghost_block_owners[block]
         ghost_recv.append(owner)
         del block, owner
     ghost_recv = set(ghost_recv)
@@ -358,7 +401,9 @@ def create_contact_condition(V, meshtag, slave_marker, master_marker):
     # Receive masters for ghosted slaves
     recv_ghost_masters = {}
     for owner in ghost_recv:
-        proc_masters = comm.recv(source=owner, tag=3)
+        log.log(log.LogLevel.INFO,
+                "Recv (Ghost): {0:d}->{1:d}".format(owner, comm.rank))
+        proc_masters = comm.recv(source=owner, tag=333)
         recv_ghost_masters.update(proc_masters)
 
     # Add ghost masters to array

@@ -170,15 +170,10 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
         # Name formatting of functions
         u_.name = "u_unconstrained"
-
         fname = "results/ref_elasticity_{0:d}.xdmf".format(r_lvl)
-        out_xdmf = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
-        out_xdmf.write_mesh(mesh)
-        out_xdmf.write_function(u_, 0.0,
-                                "Xdmf/Domain/"
-                                + "Grid[@Name='{0:s}'][1]"
-                                .format(mesh.name))
-        out_xdmf.close()
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
+            out_xdmf.write_mesh(mesh)
+            out_xdmf.write_function(u_, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
 
 
 if __name__ == "__main__":
@@ -219,8 +214,7 @@ if __name__ == "__main__":
     h5f = h5py.File(hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
-    sd = h5f.create_dataset(
-        "solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
+    sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if boomeramg else "GAMG"
     ct = "Tet" if tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)

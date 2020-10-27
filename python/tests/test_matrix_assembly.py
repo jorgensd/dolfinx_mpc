@@ -39,11 +39,17 @@ def test_mpc_assembly(master_point, degree, celltype):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
-
-    with dolfinx.common.Timer("~Test: Assemble new"):
+    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
         A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
 
+    with dolfinx.common.Timer("~TEST: Assemble matrix C++"):
+        A2 = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
+
+    A_new = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A2)
     A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
+    assert np.allclose(A_new, A_mpc_np)
 
     # Create globally reduced system with numpy
     K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
@@ -83,9 +89,17 @@ def test_slave_on_same_cell(master_point, degree, celltype):
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
         A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
-    with dolfinx.common.Timer("~TEST: Compare with numpy"):
+    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
+        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
 
+    with dolfinx.common.Timer("~TEST: Assemble matrix C++"):
+        A2 = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
+
+    with dolfinx.common.Timer("~TEST: Compare with numpy"):
         A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
+        A_new = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A2)
+        assert np.allclose(A_new, A_mpc_np)
+
         # Create globally reduced system with numpy
         K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
 

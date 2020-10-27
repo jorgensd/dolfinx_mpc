@@ -192,13 +192,10 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         u_h = dolfinx.Function(mpc.function_space())
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
-
         fname = "results/bench_elasticity_edge_{0:d}.xdmf".format(r_lvl)
-        outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                      fname, "w")
-        outfile.write_mesh(mesh)
-        outfile.write_function(u_h)
-        outfile.close()
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
+            outfile.write_mesh(mesh)
+            outfile.write_function(u_h)
 
 
 if __name__ == "__main__":

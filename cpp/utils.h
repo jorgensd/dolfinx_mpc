@@ -6,11 +6,13 @@
 
 #pragma once
 
+#include "MultiPointConstraint.h"
 #include <Eigen/Dense>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/function/Function.h>
 #include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
+#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
 
 namespace dolfinx_mpc
@@ -90,6 +92,9 @@ void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
                           Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
                           std::int32_t block_size);
 
+dolfinx::la::PETScMatrix
+create_matrix(const dolfinx::fem::Form<PetscScalar>& a,
+              const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc);
 /// Create neighborhood communicators from every processor with a slave dof on
 /// it, to the processors with a set of master facets.
 /// @param[in] meshtags The meshtag
