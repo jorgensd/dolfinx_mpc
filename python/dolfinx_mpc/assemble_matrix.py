@@ -213,12 +213,6 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
                                          bc_mpc, 1.0)
     with Timer("~MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()
-
-    # Add one on diagonal for diriclet bc and slave dofs
-    # NOTE: In the future one could use a constant in the DirichletBC
-    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1.0)
-    A.assemble()
     timer_matrix_a.stop()
     timer_matrix.stop()
     return A
