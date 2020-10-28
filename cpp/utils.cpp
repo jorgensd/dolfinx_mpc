@@ -274,7 +274,7 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
 MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
     std::vector<std::int32_t>& local_dofs,
     std::vector<std::int32_t>& ghost_dofs,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map)
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map, bool blocked)
 {
   // Get data from IndexMap
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
@@ -295,14 +295,22 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 
   for (auto dof : local_dofs)
   {
-    const std::set<int> procs = shared_indices[dof / block_size];
+    std::int32_t block = dof;
+    if (!blocked)
+      block /= block_size;
+
+    const std::set<int> procs = shared_indices[block];
     for (auto proc : procs)
       dst_edges.insert(proc);
   }
 
   for (auto dof : ghost_dofs)
   {
-    const std::int32_t proc = ghost_owners[dof / block_size - size_local];
+    std::int32_t block = dof;
+    if (!blocked)
+      block /= block_size;
+
+    const std::int32_t proc = ghost_owners[block - size_local];
     src_edges.insert(proc);
   }
   MPI_Comm comm_loc = MPI_COMM_NULL;

@@ -64,9 +64,11 @@ create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
 /// @param[in] local_dofs Vector of local dofs
 /// @param[in] local_dofs Vector of ghost dofs
 /// @param[in] index_map The index map relating procs and ghosts
+/// @param[in] blocked If true work with blocked indices
 MPI_Comm create_owner_to_ghost_comm(
     std::vector<std::int32_t>& local_dofs,
     std::vector<std::int32_t>& ghost_dofs,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map);
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map,
+    bool blocked = false);
 
 } // namespace dolfinx_mpc
