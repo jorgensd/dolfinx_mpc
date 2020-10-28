@@ -72,8 +72,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Helper for orienting traction
-    r_matrix = dolfinx_mpc.utils.rotation_matrix(
-        [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+    # r_matrix = dolfinx_mpc.utils.rotation_matrix(
+    #     [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
@@ -127,14 +127,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     + ufl.inner(g, v) * ds
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+    # nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
     # with dolfinx.common.Timer("~Contact: Create contact constraint"):
     #     mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
     #         V._cpp_object, mt, 4, 9, nh._cpp_object)
     with dolfinx.common.Timer("~Contact: Create non-elastic constraint"):
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
             V._cpp_object, mt, 4, 9)
-    exit(1)
     with dolfinx.common.Timer("~Contact: Add data to MPC"):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
 
