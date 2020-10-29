@@ -1,7 +1,6 @@
 import warnings
 
 import dolfinx_mpc.cpp
-import numba
 from petsc4py import PETSc
 
 import dolfinx
