@@ -8,17 +8,17 @@ import dolfinx.io
 import gmsh
 
 
-def gmsh_3D_stacked(celltype, theta, res=0.1):
+def gmsh_3D_stacked(celltype, theta, res=0.1, verbose=False):
     if celltype == "tetrahedron":
         mesh, ft = generate_tet_boxes(0, 0, 0, 1, 1, 1, 2, res,
                                       facet_markers=[[11, 5, 12, 13, 4, 14],
                                                      [21, 9, 22, 23, 3, 24]],
-                                      volume_markers=[1, 2])
+                                      volume_markers=[1, 2], verbose=verbose)
     else:
         mesh, ft = generate_hex_boxes(0, 0, 0, 1, 1, 1, 2, res,
                                       facet_markers=[[11, 5, 12, 13, 4, 14],
                                                      [21, 9, 22, 23, 3, 24]],
-                                      volume_markers=[1, 2])
+                                      volume_markers=[1, 2], verbose=verbose)
 
     r_matrix = dolfinx_mpc.utils.rotation_matrix([1, 1, 0], -theta)
     mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
@@ -26,7 +26,7 @@ def gmsh_3D_stacked(celltype, theta, res=0.1):
 
 
 def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
-                       volume_markers):
+                       volume_markers, verbose=False):
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
@@ -39,8 +39,17 @@ def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.model.getCurrent()
     except ValueError:
         gmsh.initialize()
-    if MPI.COMM_WORLD.rank == 0:
+    if verbose:
         gmsh.option.setNumber("General.Terminal", 1)
+    else:
+        gmsh.option.setNumber("General.Terminal", 0)
+    if MPI.COMM_WORLD.rank == 0:
+        gmsh.clear()
+        # NOTE: Have to reset this until:
+        # https://gitlab.onelab.info/gmsh/gmsh/-/issues/1001
+        # is in master
+        gmsh.option.setNumber("Mesh.RecombineAll", 0)
+
         # Added tolerance to ensure that gmsh separates boxes
         tol = 1e-12
         gmsh.model.occ.addBox(x0, y0, z0, x1 - x0, y1 - y0, z1 - z0)
@@ -155,7 +164,7 @@ def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
 
 
 def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
-                       volume_markers):
+                       volume_markers, verbose=False):
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
@@ -168,10 +177,15 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.model.getCurrent()
     except ValueError:
         gmsh.initialize()
+    if verbose:
+        gmsh.option.setNumber("General.Terminal", 1)
+    else:
+        gmsh.option.setNumber("General.Terminal", 0)
+
     if MPI.COMM_WORLD.rank == 0:
+        gmsh.clear()
         gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
         gmsh.option.setNumber("Mesh.RecombineAll", 2)
-        gmsh.option.setNumber("General.Terminal", 1)
         bottom = gmsh.model.occ.addRectangle(x0, y0, z0, x1 - x0, y1 - y0)
         top = gmsh.model.occ.addRectangle(x0, y0, z2, x1 - x0, y1 - y0)
 
@@ -282,7 +296,9 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
     mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
+    gmsh.clear()
     gmsh.finalize()
+    MPI.COMM_WORLD.barrier()
     return mesh, ft
 
 
@@ -600,11 +616,9 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         return lambda x: n[0] * x[0] + n[1] * x[1] + D > -n[2] * x[2]
 
     N = int(1 / res)
-    # Current workaround due to
-    # https://github.com/FEniCS/dolfinx/issues/1170
-    mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, N, N, N, ct)
-    mesh1 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, 2 * N, 2 * N, 2 * N, ct)
     if MPI.COMM_WORLD.rank == 0:
+        mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, N, N, N, ct)
+        mesh1 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, 2 * N, 2 * N, 2 * N, ct)
         mesh0.geometry.x[:, 2] += 1
 
         # Stack the two meshes in one mesh
@@ -627,12 +641,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         cells = np.vstack([cells0, cells1])
         cell = ufl.Cell(ext, geometric_dimension=points.shape[1])
         domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
-    if MPI.COMM_WORLD.rank != 0:
-        cells = np.array([[0, 1]], dtype=np.int32)
-        domain = ufl.Mesh(ufl.VectorElement("Lagrange", ufl.Cell("interval"), 1))
-        points = np.array([[0], [1]], dtype=np.float64)
-    mesh = dolfinx.mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
-    if MPI.COMM_WORLD.rank == 0:
+        mesh = dolfinx.mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
         # Find information about facets to be used in MeshTags
@@ -707,16 +716,11 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         mt = dolfinx.mesh.MeshTags(mesh, fdim,
                                    indices, values)
         mt.name = "facet_tags"
-    if MPI.COMM_WORLD.rank == 0:
         fname = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(ext, theta)
-    else:
-        fname = "meshes/tmp_mesh{0:d}.xdmf".format(MPI.COMM_WORLD.rank)
 
-    o_f = dolfinx.io.XDMFFile(MPI.COMM_SELF, fname, "w")
-    if MPI.COMM_WORLD.rank == 0:
-        o_f.write_mesh(mesh)
-        o_f.write_meshtags(ct)
-        o_f.write_meshtags(mt)
-    o_f.close()
+        with dolfinx.io.XDMFFile(MPI.COMM_SELF, fname, "w") as o_f:
+            o_f.write_mesh(mesh)
+            o_f.write_meshtags(ct)
+            o_f.write_meshtags(mt)
     MPI.COMM_WORLD.barrier()
     timer.stop()

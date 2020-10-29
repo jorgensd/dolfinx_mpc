@@ -491,14 +491,6 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   auto timer_end = std::chrono::system_clock::now();
   std::chrono::duration<double> dt = (timer_end - timer_start);
 
-  ss << " " << rank << " Loc slaves" << local_slaves.size() << " Collisions "
-     << std::accumulate(num_collision_slaves.begin(),
-                        num_collision_slaves.end(), 0)
-     << " "
-     << "Remote collision. " << dt2.count() << "GJK " << dt_select.count()
-     << " MAster cells " << master_cells.size() << " Found local "
-     << local_masters.size() << " Comm. " << dt.count() << "\n";
-  std::cout << ss.str() << "\n";
   tm.stop();
   dolfinx::common::Timer tz("~DEBUG: 5. Flatten data");
   std::vector<std::int32_t> num_collision_masters(indegree);
@@ -1029,7 +1021,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   std::vector<std::int32_t> candidates;
   for (auto cell : master_cells)
     candidates.push_back(cell);
-
   for (std::int32_t i = 0; i < local_block.size(); ++i)
   {
     // Get coordinate and coeff for slave and save in send array
@@ -1261,8 +1252,10 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
               if (cell_dofs[k] < size_local * block_size)
                 l_owner[j].push_back(rank);
               else
+              {
                 l_owner[j].push_back(
                     ghost_owners[cell_dofs[k] / block_size - size_local]);
+              }
             }
           }
         }
@@ -1297,11 +1290,10 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       }
     }
   }
-
   // Flatten data structures before send/recv
-  std::vector<std::int32_t> num_found_slaves(indegree);
+  std::vector<std::int32_t> num_found_slave_blocks(indegree);
   for (std::int32_t i = 0; i < indegree; ++i)
-    num_found_slaves[i] = collision_slaves[i].size();
+    num_found_slave_blocks[i] = collision_slaves[i].size();
 
   // Get info about reverse communicator (masters->slaves)
   int indegree_rev(-1), outdegree_rev(-2), weighted_rev(-1);
@@ -1311,9 +1303,9 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       = dolfinx::MPI::neighbors(neighborhood_comms[1]);
 
   // Communicate number of incoming slaves and masters after coll detection
-  std::vector<int> inc_num_found_slaves(indegree_rev);
-  MPI_Neighbor_alltoall(num_found_slaves.data(), 1, MPI_INT,
-                        inc_num_found_slaves.data(), 1, MPI_INT,
+  std::vector<int> inc_num_found_slave_blocks(indegree_rev);
+  MPI_Neighbor_alltoall(num_found_slave_blocks.data(), 1, MPI_INT,
+                        inc_num_found_slave_blocks.data(), 1, MPI_INT,
                         neighborhood_comms[1]);
 
   std::vector<std::int32_t> num_collision_masters(indegree);
@@ -1358,7 +1350,8 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
 
   // Create displacement vector for slaves and masters
   std::vector<int> disp_inc_slave_blocks(indegree_rev + 1, 0);
-  std::partial_sum(inc_num_found_slaves.begin(), inc_num_found_slaves.end(),
+  std::partial_sum(inc_num_found_slave_blocks.begin(),
+                   inc_num_found_slave_blocks.end(),
                    disp_inc_slave_blocks.begin() + 1);
   std::vector<int> disp_inc_masters(indegree_rev + 1, 0);
   std::partial_sum(num_inc_masters.begin(), num_inc_masters.end(),
@@ -1366,7 +1359,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
 
   // Compute send offsets
   std::vector<int> send_disp_slave_blocks(indegree + 1, 0);
-  std::partial_sum(num_found_slaves.begin(), num_found_slaves.end(),
+  std::partial_sum(num_found_slave_blocks.begin(), num_found_slave_blocks.end(),
                    send_disp_slave_blocks.begin() + 1);
   std::vector<int> send_disp_masters(indegree + 1, 0);
   std::partial_sum(num_collision_masters.begin(), num_collision_masters.end(),
@@ -1376,9 +1369,9 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   std::vector<std::int64_t> remote_colliding_blocks(
       disp_inc_slave_blocks.back());
   MPI_Neighbor_alltoallv(
-      found_slave_blocks.data(), num_found_slaves.data(),
+      found_slave_blocks.data(), num_found_slave_blocks.data(),
       send_disp_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
-      remote_colliding_blocks.data(), inc_num_found_slaves.data(),
+      remote_colliding_blocks.data(), inc_num_found_slave_blocks.data(),
       disp_inc_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
       neighborhood_comms[1]);
   auto recv_blocks_as_local
@@ -1387,9 +1380,9 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   std::vector<std::int32_t> remote_colliding_offsets(
       disp_inc_slave_blocks.back());
   MPI_Neighbor_alltoallv(
-      offset_for_blocks.data(), num_found_slaves.data(),
+      offset_for_blocks.data(), num_found_slave_blocks.data(),
       send_disp_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
-      remote_colliding_offsets.data(), inc_num_found_slaves.data(),
+      remote_colliding_offsets.data(), inc_num_found_slave_blocks.data(),
       disp_inc_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
       neighborhood_comms[1]);
   // Receive colliding masters and relevant data from other processor
@@ -1415,22 +1408,28 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
       neighborhood_comms[1]);
 
-  // Multiply recv size by tdim to accommodate block size
-  std::vector<std::int32_t> num_found_blocks(indegree_rev);
-  for (std::int32_t i = 0; i < num_found_blocks.size(); ++i)
-    num_found_blocks[i] = inc_num_found_slaves[i] * tdim;
-  std::vector<int> disp_tdim(indegree_rev + 1, 0);
+  // Create receive displacement of data per slave block
+  std::vector<std::int32_t> recv_num_found_blocks(indegree_rev);
+  for (std::int32_t i = 0; i < recv_num_found_blocks.size(); ++i)
+    recv_num_found_blocks[i] = inc_num_found_slave_blocks[i] * tdim;
+  std::vector<int> inc_block_disp(indegree_rev + 1, 0);
+  std::partial_sum(recv_num_found_blocks.begin(), recv_num_found_blocks.end(),
+                   inc_block_disp.begin() + 1);
+  // Create send displacement of data per slave block
+  std::vector<std::int32_t> num_found_blocks(indegree);
+  for (std::int32_t i = 0; i < indegree; ++i)
+    num_found_blocks[i] = tdim * num_found_slave_blocks[i];
+  std::vector<int> send_block_disp(indegree + 1, 0);
   std::partial_sum(num_found_blocks.begin(), num_found_blocks.end(),
-                   disp_tdim.begin() + 1);
-
+                   send_block_disp.begin() + 1);
   // Send the block information to slave processor
-  std::vector<std::int32_t> block_dofs_recv(disp_tdim.back());
-  MPI_Neighbor_allgatherv(
-      offsets_in_blocks.data(), offsets_in_blocks.size(),
+  std::vector<std::int32_t> block_dofs_recv(inc_block_disp.back());
+  MPI_Neighbor_alltoallv(
+      offsets_in_blocks.data(), num_found_blocks.data(), send_block_disp.data(),
       dolfinx::MPI::mpi_type<std::int32_t>(), block_dofs_recv.data(),
-      num_found_blocks.data(), disp_tdim.data(),
+      recv_num_found_blocks.data(), inc_block_disp.data(),
       dolfinx::MPI::mpi_type<std::int32_t>(), neighborhood_comms[1]);
-  std::stringstream cc;
+
   // Iterate through the processors
   for (std::int32_t i = 0; i < src_ranks_rev.size(); ++i)
   {
@@ -1443,10 +1442,11 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
                           remote_colliding_offsets.begin() + max);
 
     // Extract the number of masters per topological dimensions
-    const std::int32_t min_dim = disp_tdim[i];
-    const std::int32_t max_dim = disp_tdim[i + 1];
+    const std::int32_t min_dim = inc_block_disp[i];
+    const std::int32_t max_dim = inc_block_disp[i + 1];
     const std::vector<std::int32_t> num_dofs_per_block(
         block_dofs_recv.begin() + min_dim, block_dofs_recv.begin() + max_dim);
+
     // Loop through slaves and add them if they havent already been added
     for (std::int32_t j = 0; j < master_offsets.size() - 1; ++j)
     {
