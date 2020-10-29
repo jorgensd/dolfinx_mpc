@@ -57,7 +57,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
             mesh.topology.create_connectivity(fdim, tdim)
             mt = xdmf.read_meshtags(mesh, "facet_tags")
     mesh.name = "mesh_{0:s}_{1:.2f}{3:s}{2:s}".format(celltype, theta, type_ext, mesh_ext)
-
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -164,8 +163,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     opts["pc_gamg_threshold"] = 0.02
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
-
     # Create functionspace and build near nullspace
+
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(
         mpc.function_space())
     A.setNearNullSpace(null_space)
@@ -174,6 +173,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     solver.setFromOptions()
     uh = b.copy()
     uh.set(0)
+
     with dolfinx.common.Timer("~Contact: Solve old"):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
@@ -187,7 +187,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     unorm = uh.norm()
     if comm.rank == 0:
         print("Norm of u {0:.5e}".format(unorm))
-
     # Write solution to file
     u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
@@ -270,11 +269,23 @@ if __name__ == "__main__":
     if demos:
 
         cts = [dolfinx.cpp.mesh.CellType.hexahedron, dolfinx.cpp.mesh.CellType.tetrahedron]
-        for ct in cts:
-            demo_stacked_cubes(outfile, theta=0, gmsh=False, ct=ct, compare=compare)
-            for gmsh in [True, False]:
-                for noslip in [True, False]:
-                    demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=gmsh, ct=ct, compare=compare, noslip=noslip)
+        # for ct in cts:
+        #     demo_stacked_cubes(outfile, theta=0, gmsh=False, ct=ct, compare=compare)
+
+        # for gmsh in [True]:
+        #     for ct in cts:
+        #         for noslip in [True, False]:
+        #             demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=gmsh, ct=ct, compare=compare, noslip=noslip)
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False, ct=cts[0], compare=compare, noslip=False, res=res)
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False, ct=cts[1], compare=compare, noslip=False, res=res)
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=True, ct=cts[0], compare=compare, noslip=False, res=res)
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=True, ct=cts[1], compare=compare, noslip=False, res=res)
+
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False, ct=cts[0], compare=compare, noslip=True, res=res)
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False, ct=cts[1], compare=compare, noslip=True, res=res)
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=True, ct=cts[0], compare=compare, noslip=True, res=res)
+        demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=True, ct=cts[1], compare=compare, noslip=True, res=res)
+
     else:
         if hex:
             ct = dolfinx.cpp.mesh.CellType.tetrahedron

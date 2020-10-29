@@ -298,7 +298,6 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
     mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
     gmsh.clear()
     gmsh.finalize()
-    MPI.COMM_WORLD.barrier()
     return mesh, ft
 
 
@@ -722,5 +721,4 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
             o_f.write_mesh(mesh)
             o_f.write_meshtags(ct)
             o_f.write_meshtags(mt)
-    MPI.COMM_WORLD.barrier()
     timer.stop()

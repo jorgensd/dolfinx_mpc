@@ -14,6 +14,7 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <petscsys.h>
+#include <petscvec.h>
 
 namespace dolfinx_mpc
 {
@@ -128,6 +129,10 @@ public:
   create_sparsity_pattern(const dolfinx::fem::Form<PetscScalar>& a);
 
   std::shared_ptr<dolfinx::fem::DofMap> dofmap() { return _dofmap; }
+
+  /// Backsubstitute slave/master constraint for a given function
+  void backsubstitution(
+      Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector);
 
 private:
   // Original function space

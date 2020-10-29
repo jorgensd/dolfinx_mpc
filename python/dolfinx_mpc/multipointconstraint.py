@@ -228,23 +228,8 @@ class MultiPointConstraint():
     def backsubstitution(self, vector):
 
         # Unravel data from constraint
-        coefficients = self._cpp_object.coefficients()
-        masters = self._cpp_object.masters_local().array
-        offsets = self._cpp_object.masters_local().offsets
-        slaves = self._cpp_object.slaves()
-        backsubstitution_numba(vector, slaves, masters, coefficients, offsets)
+        with vector.localForm() as vector_local:
+            self._cpp_object.backsubstitution(vector_local.array_w)
+
         vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                            mode=PETSc.ScatterMode.FORWARD)
-        return vector
-
-
-@numba.njit(cache=True)
-def backsubstitution_numba(b, slaves, masters, coefficients, offsets):
-    """
-    Insert mpc values into vector bc
-    """
-    for i, slave in enumerate(slaves):
-        masters_i = masters[offsets[i]:offsets[i + 1]]
-        coeffs_i = coefficients[offsets[i]:offsets[i + 1]]
-        for master, coeff in zip(masters_i, coeffs_i):
-            b[slave] += coeff * b[master]

@@ -19,6 +19,7 @@
 #include <dolfinx_mpc/utils.h>
 #include <memory>
 #include <petscmat.h>
+#include <petscvec.h>
 #include <pybind11/eigen.h>
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
@@ -58,7 +59,9 @@ void mpc(py::module& m)
            &dolfinx_mpc::MultiPointConstraint::num_local_slaves)
       .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
       .def("dofmap", &dolfinx_mpc::MultiPointConstraint::dofmap)
-      .def("owners", &dolfinx_mpc::MultiPointConstraint::owners);
+      .def("owners", &dolfinx_mpc::MultiPointConstraint::owners)
+      .def("backsubstitution",
+           &dolfinx_mpc::MultiPointConstraint::backsubstitution);
 
   py::class_<dolfinx_mpc::mpc_data, std::shared_ptr<dolfinx_mpc::mpc_data>>
       mpc_data(m, "mpc_data", "Object with data arrays for mpc");
