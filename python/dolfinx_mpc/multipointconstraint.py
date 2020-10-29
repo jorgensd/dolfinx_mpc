@@ -225,7 +225,11 @@ class MultiPointConstraint():
             return self.V_mpc
 
     def backsubstitution(self, vector):
-
+        """
+        For a given vector, empose the multi-point constraint by backsubstiution.
+        I.e.
+        u[slave] += sum(coeff*u[master] for (coeff, master) in zip(slave.coeffs, slave.masters)
+        """
         # Unravel data from constraint
         with vector.localForm() as vector_local:
             self._cpp_object.backsubstitution(vector_local.array_w)
