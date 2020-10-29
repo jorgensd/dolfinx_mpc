@@ -7,17 +7,17 @@
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
 
-import dolfinx_mpc
-import dolfinx_mpc.utils
-import numpy as np
-import ufl
-from mpi4py import MPI
-from petsc4py import PETSc
-
 import dolfinx
 # import dolfinx.io as io
 import dolfinx.fem as fem
+import dolfinx_mpc
+import dolfinx_mpc.utils
 import gmsh
+import numpy as np
+import pytest
+import ufl
+from mpi4py import MPI
+from petsc4py import PETSc
 
 
 def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
@@ -30,14 +30,11 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
     volume_markers a list of marker per volume
     """
     # Check if GMSH is initialized
-    try:
-        gmsh.model.getCurrent()
-    except ValueError:
-        gmsh.initialize()
+    gmsh.initialize()
     if MPI.COMM_WORLD.rank == 0:
         gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
         gmsh.option.setNumber("Mesh.RecombineAll", 2)
-        gmsh.option.setNumber("General.Terminal", 1)
+        gmsh.option.setNumber("General.Terminal", 0)
         bottom = gmsh.model.occ.addRectangle(x0, y0, z0, x1 - x0, y1 - y0)
         top = gmsh.model.occ.addRectangle(x0, y0, z2, x1 - x0, y1 - y0)
 
@@ -153,7 +150,8 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
     return mesh, ft
 
 
-def test_cube_contact():
+@pytest.mark.parametrize("nonslip", [True, False])
+def test_cube_contact(nonslip):
     comm = MPI.COMM_WORLD
 
     # Generate mesh
@@ -165,7 +163,6 @@ def test_cube_contact():
                                                      [21, 9, 22, 23, 3, 24]],
                                       volume_markers=[1, 2])
         r_matrix = dolfinx_mpc.utils.rotation_matrix([1, 1, 0], -theta)
-
         # NOTE: Hex mesh must be rotated after generation due to gmsh API
         mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
     fdim = mesh.topology.dim - 1
@@ -174,7 +171,6 @@ def test_cube_contact():
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Helper for orienting traction
-    g_vec = np.dot(r_matrix, [0, 0, -4e-1])
 
     # Bottom boundary is fixed in all directions
     u_bc = dolfinx.function.Function(V)
@@ -184,6 +180,15 @@ def test_cube_contact():
     bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
+
+    g_vec = [0, 0, -4.25e-1]
+    if not nonslip:
+        # Helper for orienting traction
+        r_matrix = dolfinx_mpc.utils.rotation_matrix(
+            [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+
+        # Top boundary has a given deformation normal to the interface
+        g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
 
     # Top boundary has a given deformation normal to the interface
     def top_v(x):
@@ -226,16 +231,19 @@ def test_cube_contact():
 
     # Create MPC contact condition and assemble matrices
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    with dolfinx.common.Timer("~Contact: Create contact constraint"):
-        nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-            V._cpp_object, mt, 4, 9, nh._cpp_object)
-        mpc.add_constraint_from_mpc_data(V, mpc_data)
+    if nonslip:
+        with dolfinx.common.Timer("~Contact: Create non-elastic constraint"):
+            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
+                V._cpp_object, mt, 4, 9)
+    else:
+        with dolfinx.common.Timer("~Contact: Create contact constraint"):
+            nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
+                V._cpp_object, mt, 4, 9, nh._cpp_object)
+    mpc.add_constraint_from_mpc_data(V, mpc_data)
     mpc.finalize()
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (old)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    dolfinx.common.list_timings(
-        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (cached)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (C++)"):
@@ -243,8 +251,6 @@ def test_cube_contact():
     with dolfinx.common.Timer("~TEST: Assemble bilnear form (unconstrained)"):
         A_org = fem.assemble_matrix(a, bcs)
         A_org.assemble()
-    dolfinx.common.list_timings(
-        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
