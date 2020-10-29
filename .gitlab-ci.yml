@@ -130,8 +130,8 @@ nightly-complex:
     - mpirun -n 4 python3 demo_periodic3d.py
     - python3 demo_contact_2D.py --timing
     - mpirun -n 4 python3 demo_contact_2D.py --timing
-    - python3 demo_contact_3D.py --timing  --demos
-    - mpirun -n 4 python3 demo_contact_3D.py --timing --demos
+    - make demos3D-serial
+    - make demos3D-parallel
 
 
 nightly-real:
@@ -198,5 +198,5 @@ nightly-real:
     - mpirun -n 4 python3 demo_periodic3d.py
     - python3 demo_contact_2D.py --timing
     - mpirun -n 4 python3 demo_contact_2D.py --timing
-    - python3 demo_contact_3D.py --timing --demos
-    - mpirun -n 4 python3 demo_contact_3D.py --timing --demos
+    - make demos3D-serial
+    - make demos3D-parallel

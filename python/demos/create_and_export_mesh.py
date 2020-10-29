@@ -34,11 +34,7 @@ def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
     array of markers for [back, bottom, right, left, top, front] per box
     volume_markers a list of marker per volume
     """
-    # Check if GMSH is initialized
-    try:
-        gmsh.model.getCurrent()
-    except ValueError:
-        gmsh.initialize()
+    gmsh.initialize()
     if verbose:
         gmsh.option.setNumber("General.Terminal", 1)
     else:
@@ -172,11 +168,7 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
     array of markers for [back, bottom, right, left, top, front] per box
     volume_markers a list of marker per volume
     """
-    # Check if GMSH is initialized
-    try:
-        gmsh.model.getCurrent()
-    except ValueError:
-        gmsh.initialize()
+    gmsh.initialize()
     if verbose:
         gmsh.option.setNumber("General.Terminal", 1)
     else:
@@ -298,6 +290,7 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
     mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
     gmsh.clear()
     gmsh.finalize()
+    MPI.COMM_WORLD.barrier()
     return mesh, ft
 
 
@@ -426,6 +419,7 @@ def gmsh_2D_stacked(celltype, theta):
     # NOTE: Hex mesh must be rotated after generation due to gmsh API
     mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
     gmsh.finalize()
+    MPI.COMM_WORLD.barrier()
     return mesh, ft
 
 
