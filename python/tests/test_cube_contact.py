@@ -19,9 +19,11 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
+theta = np.pi / 5
 
-def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
-                       volume_markers):
+
+@pytest.fixture
+def generate_hex_boxes():
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
@@ -29,8 +31,16 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
     array of markers for [back, bottom, right, left, top, front] per box
     volume_markers a list of marker per volume
     """
+
+    res = 0.2
+    x0, y0, z0, x1, y1, z1, z2 = 0, 0, 0, 1, 1, 1, 2
+    facet_markers = [[11, 5, 12, 13, 4, 14], [21, 9, 22, 23, 3, 24]]
+    volume_markers = [1, 2]
+    r_matrix = dolfinx_mpc.utils.rotation_matrix([1, 1, 0], -theta)
+
     # Check if GMSH is initialized
     gmsh.initialize()
+    gmsh.clear()
     if MPI.COMM_WORLD.rank == 0:
         gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
         gmsh.option.setNumber("Mesh.RecombineAll", 2)
@@ -146,27 +156,20 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.model.mesh.setOrder(1)
     mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
                                                     facet_data=True)
+    gmsh.clear()
     gmsh.finalize()
-    return mesh, ft
+    # NOTE: Hex mesh must be rotated after generation due to gmsh API
+    mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
+    return (mesh, ft)
 
 
 @pytest.mark.parametrize("nonslip", [True, False])
-def test_cube_contact(nonslip):
+def test_cube_contact(generate_hex_boxes, nonslip):
     comm = MPI.COMM_WORLD
-
     # Generate mesh
-    theta = np.pi / 5
-    res = 0.2
-    with dolfinx.common.Timer("~Contact: Create mesh"):
-        mesh, mt = generate_hex_boxes(0, 0, 0, 1, 1, 1, 2, res,
-                                      facet_markers=[[11, 5, 12, 13, 4, 14],
-                                                     [21, 9, 22, 23, 3, 24]],
-                                      volume_markers=[1, 2])
-        r_matrix = dolfinx_mpc.utils.rotation_matrix([1, 1, 0], -theta)
-        # NOTE: Hex mesh must be rotated after generation due to gmsh API
-        mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
+    mesh_data = generate_hex_boxes
+    mesh, mt = mesh_data
     fdim = mesh.topology.dim - 1
-
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
