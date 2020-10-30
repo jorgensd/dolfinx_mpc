@@ -13,11 +13,13 @@
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/la/PETScMatrix.h>
+#include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/assembly.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>
 #include <petscmat.h>
+#include <petscvec.h>
 #include <pybind11/eigen.h>
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
@@ -57,7 +59,9 @@ void mpc(py::module& m)
            &dolfinx_mpc::MultiPointConstraint::num_local_slaves)
       .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
       .def("dofmap", &dolfinx_mpc::MultiPointConstraint::dofmap)
-      .def("owners", &dolfinx_mpc::MultiPointConstraint::owners);
+      .def("owners", &dolfinx_mpc::MultiPointConstraint::owners)
+      .def("backsubstitution",
+           &dolfinx_mpc::MultiPointConstraint::backsubstitution);
 
   py::class_<dolfinx_mpc::mpc_data, std::shared_ptr<dolfinx_mpc::mpc_data>>
       mpc_data(m, "mpc_data", "Object with data arrays for mpc");
@@ -93,6 +97,9 @@ void mpc(py::module& m)
       },
       py::return_value_policy::take_ownership,
       "Create a PETSc Mat for bilinear form.");
-  m.def("create_contact_condition", &dolfinx_mpc::create_contact_condition);
+  m.def("create_contact_slip_condition",
+        &dolfinx_mpc::create_contact_slip_condition);
+  m.def("create_contact_inelastic_condition",
+        &dolfinx_mpc::create_contact_inelastic_condition);
 }
 } // namespace dolfinx_mpc_wrappers

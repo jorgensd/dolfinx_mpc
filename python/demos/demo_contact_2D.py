@@ -34,16 +34,14 @@ dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 comm = MPI.COMM_WORLD
 
 
-def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
-                       compare=False):
-    dolfinx_mpc.utils.log_info(
-        "Run theta:{0:.2f}, Triangle: {1:b}, Gmsh {2:b}"
-        .format(theta, triangle, gmsh))
+def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res=0.1):
+    dolfinx_mpc.utils.log_info("Run theta:{0:.2f}, Quad: {1:b}, Gmsh {2:b}, Res {3:.2e}"
+                               .format(theta, quad, gmsh, res))
 
-    if triangle:
-        celltype = "triangle"
-    else:
+    if quad:
         celltype = "quadrilateral"
+    else:
+        celltype = "triangle"
     if gmsh:
         mesh, mt = gmsh_2D_stacked(celltype, theta)
         mesh.name = "mesh_{0:s}_{1:.2f}_gmsh".format(celltype, theta)
@@ -52,25 +50,15 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
         mesh_name = "mesh"
         filename = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta)
 
-        if MPI.COMM_WORLD.size == 1:
-            if triangle:
-                mesh_2D_dolfin(celltype, theta)
-            else:
-                mesh_2D_dolfin(celltype, theta)
-
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                 filename, "r") as xdmf:
+        mesh_2D_dolfin(celltype, theta)
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
             mesh.name = "mesh_{0:s}_{1:.2f}".format(celltype, theta)
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
             mesh.topology.create_connectivity(fdim, tdim)
-
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
-    if gmsh:
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "test.xdmf", "w") as xdmf:
-            xdmf.write_mesh(mesh)
 
     # Helper until MeshTags can be read in from xdmf
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
@@ -116,7 +104,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
     with dolfinx.common.Timer("~Contact: Create contact constraint"):
         nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_condition(
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
             V._cpp_object, mt, 4, 9, nh._cpp_object)
         mpc.add_constraint_from_mpc_data(V, mpc_data)
 
@@ -240,6 +228,16 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, triangle=True,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--res", default=0.1, type=np.float64, dest="res",
+                        help="Resolution of Mesh")
+    parser.add_argument("--theta", default=np.pi / 3, type=np.float64, dest="theta",
+                        help="Rotation angle around axis [1, 1, 0]")
+    quad = parser.add_mutually_exclusive_group(required=False)
+    quad.add_argument('--quad', dest='quad', action='store_true',
+                      help="Use quadrilateral mesh", default=False)
+    gmsh = parser.add_mutually_exclusive_group(required=False)
+    gmsh.add_argument('--gmsh', dest='gmsh', action='store_true',
+                      help="Gmsh mesh instead of built-in grid", default=False)
     comp = parser.add_mutually_exclusive_group(required=False)
     comp.add_argument('--compare', dest='compare', action='store_true',
                       help="Compare with global solution", default=False)
@@ -247,30 +245,20 @@ if __name__ == "__main__":
     time.add_argument('--timing', dest='timing', action='store_true',
                       help="List timings", default=False)
 
-    compare = parser.parse_args().compare
-    timing = parser.parse_args().timing
+    args = parser.parse_args()
+    compare = args.compare
+    timing = args.timing
+    res = args.res
+    gmsh = args.gmsh
+    theta = args.theta
+    quad = args.quad
 
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                   "results/demo_contact_2D.xdmf", "w")
     # Built in meshes aligned with coordinate system
-    demo_stacked_cubes(outfile, theta=0, gmsh=False,
-                       triangle=True, compare=compare)
-    demo_stacked_cubes(outfile, theta=0, gmsh=False,
-                       triangle=False, compare=compare)
-    # Built in meshes non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False,
-                       triangle=True, compare=compare)
-    demo_stacked_cubes(outfile, theta=np.pi / 3, gmsh=False,
-                       triangle=False, compare=compare)
-    # Gmsh aligned
-    demo_stacked_cubes(outfile, theta=0, gmsh=True,
-                       triangle=True, compare=compare)
-    # Gmsh non-aligned
-    demo_stacked_cubes(outfile, theta=np.pi / 5, gmsh=True,
-                       triangle=False, compare=compare)
 
-    demo_stacked_cubes(outfile, theta=np.pi / 5, gmsh=True,
-                       triangle=True, compare=compare)
+    demo_stacked_cubes(outfile, theta=theta, gmsh=gmsh,
+                       quad=quad, compare=compare, res=res)
 
     outfile.close()
     if timing:

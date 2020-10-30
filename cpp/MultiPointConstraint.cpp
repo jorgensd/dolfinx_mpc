@@ -339,3 +339,17 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
   }
   return pattern;
 };
+//-----------------------------------------------------------------------------
+void MultiPointConstraint::backsubstitution(
+    Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector)
+{
+  auto slaves = *_slaves;
+  for (std::int32_t i = 0; i < slaves.size(); ++i)
+  {
+    auto masters = _master_local_map->links(i);
+    auto coeffs = _coeff_map->links(i);
+    assert(masters.size() == coeffs.size());
+    for (std::int32_t k = 0; k < masters.size(); ++k)
+      vector[slaves[i]] += coeffs[k] * vector[masters[k]];
+  }
+};

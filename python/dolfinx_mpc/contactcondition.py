@@ -7,7 +7,7 @@ import dolfinx.log as log
 import numpy as np
 
 
-def create_contact_condition(V, meshtag, slave_marker, master_marker):
+def create_contact_slip_condition(V, meshtag, slave_marker, master_marker):
     # Extract information from functionspace and mesh
     tdim = V.mesh.topology.dim
     fdim = tdim - 1

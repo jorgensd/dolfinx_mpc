@@ -128,10 +128,10 @@ nightly-complex:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - python3 demo_contact_2D.py --timing
-    - mpirun -n 4 python3 demo_contact_2D.py --timing
-    - python3 demo_contact_3D.py --timing
-    - mpirun -n 4 python3 demo_contact_3D.py --timing
+    - make contact2D-serial
+    - make contact2D-parallel
+    - make contact3D-serial
+    - make contact3D-parallel
 
 
 nightly-real:
@@ -196,7 +196,7 @@ nightly-real:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
-    - python3 demo_contact_2D.py --timing
-    - mpirun -n 4 python3 demo_contact_2D.py --timing
-    - python3 demo_contact_3D.py --timing
-    - mpirun -n 4 python3 demo_contact_3D.py --timing
+    - make contact2D-serial
+    - make contact2D-parallel
+    - make contact3D-serial
+    - make contact3D-parallel
