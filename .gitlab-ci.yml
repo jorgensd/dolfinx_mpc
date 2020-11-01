@@ -14,7 +14,7 @@ fast-complex:
   before_script:
     - flake8 .
     - export PETSC_ARCH="linux-gnu-complex-32"
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:$LD_LIBRARY_PATH"
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-complex/bin:$PATH"
     - export PKG_CONFIG_PATH="/usr/local/dolfinx-complex/lib/pkgconfig:$PKG_CONFIG_PATH"
     - mkdir -p build
@@ -47,7 +47,7 @@ fast-real:
     PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/gmsh-4.6.0-Linux64-sdk/lib"
   before_script:
     - flake8 .
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:$LD_LIBRARY_PATH"
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
     - export PATH="/usr/local/dolfinx-real/bin:$PATH"
     - export PKG_CONFIG_PATH="/usr/local/dolfinx-real/lib/pkgconfig:$PKG_CONFIG_PATH"
     - mkdir -p build
@@ -82,7 +82,7 @@ nightly-complex:
   before_script:
     - flake8 .
     - export PETSC_ARCH="linux-gnu-complex-32"
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:$LD_LIBRARY_PATH"
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
     - export HDF5_MPI="ON"
     - export CC=mpicc
     - pip3 install --no-cache-dir --no-binary=h5py h5py
@@ -150,7 +150,7 @@ nightly-real:
     PETSC_ARCH: "linux-gnu-real-32"
   before_script:
     - flake8 .
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:$LD_LIBRARY_PATH"
+    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
     - export HDF5_MPI="ON"
     - export CC=mpicc
     - pip3 install --no-cache-dir --no-binary=h5py h5py
