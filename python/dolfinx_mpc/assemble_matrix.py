@@ -82,7 +82,7 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
         bc_mpc.extend(bcs)
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1)
-    with dolfinx.common.Timer("~MPC: assemble matrix"):
+    with dolfinx.common.Timer("~MPC: A.assemble()"):
         A.assemble()
     return A
 
@@ -95,7 +95,6 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     """
 
     timer_matrix = Timer("~MPC: Assemble matrix")
-    timer_matrix_b = Timer("~MPC: Assemble matrix (pre assembly")
 
     # Get data from function space
     assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
@@ -150,9 +149,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
         with Timer("~MPC: Assemble matrix (Create matrix)"):
             A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
-    timer_matrix_b.stop()
-    timer_matrix_a = Timer("~MPC: Assemble matrix (actual_assembly)")
-
+ 
     # Assemble the matrix with all entries
     with Timer("~MPC: Assemble unconstrained matrix"):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
