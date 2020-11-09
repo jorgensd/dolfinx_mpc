@@ -9,6 +9,7 @@
 #include "utils.h"
 #include <chrono>
 #include <dolfinx/fem/DirichletBC.h>
+#include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 
 using namespace dolfinx_mpc;
@@ -186,6 +187,9 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   // Map to get coordinates and normals of slaves that should be distributed
   std::vector<std::int32_t> collision_to_local;
+  std::vector<int> master_cells_vec(master_cells.begin(), master_cells.end());
+  dolfinx::geometry::BoundingBoxTree bb_tree(*V->mesh(), tdim, master_cells_vec,
+                                             1e-12);
 
   for (std::int32_t i = 0; i < local_slaves.size(); ++i)
   {
@@ -208,12 +212,14 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
     // Use collision detection algorithm (GJK) to check distance from  cell
     // to point and select one within 1e-10
-    std::vector<std::int32_t> candidates;
-    for (auto cell : master_cells)
-      candidates.push_back(cell);
+
+    dolfinx::common::Timer t3("~DEBUG: New reduced collision");
+    std::vector<int> bbox_collisions
+        = dolfinx::geometry::compute_collisions(bb_tree, coord);
     std::vector<std::int32_t> verified_candidates
-        = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
+        = dolfinx::geometry::select_colliding_cells(*V->mesh(), bbox_collisions,
                                                     coord, 1);
+    t3.stop();
     if (verified_candidates.size() == 1)
     {
       // Compute local contribution of slave on master facet
@@ -415,18 +421,13 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
       // Find index of slave coord by using block size remainder
       std::int32_t local_index = slaves_recv[j] % block_size;
 
-      std::vector<std::int32_t> candidates(master_cells.begin(),
-                                           master_cells.end());
-
       // Use collision detection algorithm (GJK) to check distance from
       // cell to point and select one within 1e-10
-      auto timer_start_select = std::chrono::system_clock::now();
-
+      std::vector<int> bbox_collisions
+          = dolfinx::geometry::compute_collisions(bb_tree, slave_coord);
       std::vector<std::int32_t> verified_candidates
-          = dolfinx::geometry::select_colliding_cells(*V->mesh(), candidates,
-                                                      slave_coord, 1);
-      auto timer_end_select = std::chrono::system_clock::now();
-      dt_select += (timer_end_select - timer_start_select);
+          = dolfinx::geometry::select_colliding_cells(
+              *V->mesh(), bbox_collisions, slave_coord, 1);
       if (verified_candidates.size() == 1)
       {
         // Compute local contribution of slave on master facet

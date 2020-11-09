@@ -26,14 +26,13 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     # Filter out Dirichlet BC dofs
     slave_dofs = slave_dofs[np.isin(
         slave_dofs, bc_dofs, invert=True)]
-    num_local_dofs = len(slave_dofs[slave_dofs
-                                    < local_size])
+    num_local_dofs = len(slave_dofs[slave_dofs < local_size])
     # Compute coordinates where each slave has to evaluate its masters
     tree = dolfinx.geometry.BoundingBoxTree(V.mesh, dim=tdim)
+    global_tree = tree.compute_global_tree(comm)
     cell_map = V.mesh.topology.index_map(tdim)
     [cmin, cmax] = cell_map.local_range
-    loc2glob_cell = np.array(cell_map.global_indices(False),
-                             dtype=np.int64)
+    loc2glob_cell = np.array(cell_map.global_indices(False), dtype=np.int64)
     del cell_map
     master_coordinates = relation(x[slave_dofs].T).T
 
@@ -47,9 +46,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
         block_idx = slave_dof % bs
         procs = [0]
         if comm.size > 1:
-            procs = np.array(
-                dolfinx_mpc.cpp.mpc.compute_process_collisions(
-                    tree._cpp_object, master_coordinate), dtype=np.int32)
+            procs = np.array(dolfinx.geometry.compute_collisions_point(global_tree, master_coordinate), dtype=np.int32)
         # Check if masters can be local
         search_globally = True
         masters_, coeffs_, owners_ = [], [], []
