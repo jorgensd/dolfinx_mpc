@@ -191,37 +191,50 @@ def determine_closest_dofs(point):
 mpc = dolfinx_mpc.MultiPointConstraint(V)
 
 
-def create_point_to_point_constraint(slave_point, master_point):
+def create_point_to_point_constraint(V, slave_point, master_point):
+    # Determine which processor owns the dof closest to the slave and master point
     slave_proc, slave_dofs = determine_closest_dofs(slave_point)
     master_proc, master_dofs = determine_closest_dofs(master_point)
+
+    # Create local to global mapping and map masters
     loc_to_glob = np.array(V.dofmap.index_map.global_indices(False), dtype=np.int64)
     global_masters = loc_to_glob[master_dofs]
-    if MPI.COMM_WORLD.rank == master_proc:
-        MPI.COMM_WORLD.send(global_masters, dest=slave_proc, tag=10)
-
-    if MPI.COMM_WORLD.rank == slave_proc:
-        global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
-    shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
-    imap = V.dofmap.index_map
-    # Create empty output arrays
     local_slaves, ghost_slaves = [], []
     local_masters, ghost_masters = [], []
     local_coeffs, ghost_coeffs = [], []
     local_owners, ghost_owners = [], []
     local_offsets, ghost_offsets = [], []
 
+    if slave_proc == master_proc:
+        if MPI.COMM_WORLD.rank == slave_proc:
+            local_masters = slave_dofs
+            local_masters = master_dofs
+            local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
+            local_coeffs = np.ones(len(local_masters), dtype=np.int32)
+            local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
+    else:
+        if MPI.COMM_WORLD.rank == master_proc:
+            MPI.COMM_WORLD.send(global_masters, dest=slave_proc, tag=10)
+
+        if MPI.COMM_WORLD.rank == slave_proc:
+            global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
+
+    shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
+    imap = V.dofmap.index_map
+    ghost_processors = []
     if MPI.COMM_WORLD.rank == slave_proc:
         local_slaves = np.array(slave_dofs, dtype=np.int32)
         global_slaves = loc_to_glob[local_slaves]
         local_masters = global_masters
-        local_owners = np.full(len(global_masters), master_proc, dtype=np.int32)
-        local_coeffs = np.ones(len(global_masters), dtype=np.int32)
-        local_offsets = np.arange(0, len(local_slaves) + 1, dtype=np.int32)
-        ghost_processors = list(shared_indices[slave_dofs[0] / imap.block_size])
-        g_m, g_o, g_c, g_off = [], [], [], [0]
-    else:
-        ghost_processors = None
+        local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
+        local_coeffs = np.ones(len(local_masters), dtype=np.int32)
+        local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
+        if slave_dofs[0] / imap.block_size in shared_indices.keys():
+            ghost_processors = list(shared_indices[slave_dofs[0] / imap.block_size])
+
+    # Broadcast processors containg slave
     ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)
+
     if MPI.COMM_WORLD.rank == slave_proc:
         for proc in ghost_processors:
             MPI.COMM_WORLD.send(global_slaves, dest=proc, tag=20 + proc)
@@ -230,6 +243,7 @@ def create_point_to_point_constraint(slave_point, master_point):
             MPI.COMM_WORLD.send(local_masters, dest=proc, tag=50 + proc)
             MPI.COMM_WORLD.send(local_offsets, dest=proc, tag=60 + proc)
 
+    # Receive data for ghost slaves
     if np.isin(MPI.COMM_WORLD.rank, ghost_processors):
         # Convert recieved slaves to the corresponding ghost index
         recv_slaves = MPI.COMM_WORLD.recv(source=slave_proc, tag=20 + MPI.COMM_WORLD.rank)
@@ -251,13 +265,22 @@ r0_point = np.array([r0, 0, 0])
 r1_point = np.array([r1, 0, 0])
 
 with dolfinx.common.Timer("~Contact: Create node-node constraint"):
-    sl, ms, co, ow, off = create_point_to_point_constraint(r0_point, r1_point)
+    sl, ms, co, ow, off = create_point_to_point_constraint(V, r0_point, r1_point)
+
+with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
+    mpc.add_constraint(V, sl, ms, co, ow, off)
+
+r0_point = np.array([-r0, 0, 0])
+r1_point = np.array([-r1, 0, 0])
+
+with dolfinx.common.Timer("~Contact: Create node-node constraint"):
+    sl, ms, co, ow, off = create_point_to_point_constraint(V, r0_point, r1_point)
 
 with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
     mpc.add_constraint(V, sl, ms, co, ow, off)
 print(MPI.COMM_WORLD.rank, sl, ms, co, ow, off)
 mpc.finalize()
-exit(1)
+
 
 null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
