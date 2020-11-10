@@ -67,7 +67,7 @@ if MPI.COMM_WORLD.rank == 0:
 
     # Set mesh resolution
     res_inner = r0 / 5
-    res_outer = (r1 + r2) / 5
+    res_outer = (r1 + r2) / 10
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.field.add("Distance", 1)
     gmsh.model.mesh.field.setNumbers(1, "NodesList", [p0])
@@ -100,7 +100,9 @@ V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
 
 def outer_displacement(x):
-    return x
+    values = np.zeros(x.shape)
+    values[0] = 0.1 * x[0]**2
+    return values
 
 
 u_bc = dolfinx.function.Function(V)
