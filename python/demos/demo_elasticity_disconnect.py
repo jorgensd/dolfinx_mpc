@@ -150,79 +150,7 @@ rhs += ufl.inner(dolfinx.Constant(mesh, (0, 0, -9.81e-2)), v) * dx(outer_tag)
 rhs += ufl.inner(ufl.as_vector((0, 0.5 * ufl.cos(x[0]), 0)), v) * dx(inner_tag)
 
 
-def determine_closest_dofs(point):
-    """
-    Determine the closest dofs (in a single block) to a point and the distance
-    """
-    bb_tree = geometry.BoundingBoxTree(mesh, tdim)
-    midpoint_tree = bb_tree.create_midpoint_tree(mesh)
-    # Find facet closest
-    closest_cell_data = geometry.compute_closest_entity(bb_tree, midpoint_tree, mesh, point)
-    closest_cell, min_distance = closest_cell_data[0][0], closest_cell_data[1][0]
-    cell_imap = mesh.topology.index_map(tdim)
-    # Set distance high if cell is not owned
-    if cell_imap.size_local * cell_imap.block_size <= closest_cell:
-        min_distance = 1e5
-    # Find processor with cell closest to point
-    global_distances = MPI.COMM_WORLD.allgather(min_distance)
-    owning_processor = np.argmin(global_distances)
-
-    dofmap = V.dofmap
-    imap = dofmap.index_map
-    ghost_owner = imap.ghost_owner_rank()
-    block_size = imap.block_size
-    local_max = imap.size_local * block_size
-    # Determine which block of dofs is closest
-    min_distance = max(min_distance, 1e5)
-    minimal_distance_block = None
-    min_dof_owner = owning_processor
-    if MPI.COMM_WORLD.rank == owning_processor:
-        x = V.tabulate_dof_coordinates()
-        cell_dofs = dofmap.cell_dofs(closest_cell)
-        for dof in cell_dofs:
-            # Only do distance computation for one node per block
-            if dof % block_size == 0:
-                block = dof // block_size
-                distance = np.linalg.norm(cpp.geometry.compute_distance_gjk(point, x[dof]))
-                if distance < min_distance:
-                    # If cell owned by processor, but not the closest dof
-                    if dof < local_max:
-                        minimal_distance_block = block
-                        min_dof_owner = MPI.COMM_WORLD.rank
-                    else:
-                        min_dof_owner = ghost_owner[block - imap.size_local]
-                        minimal_distance_block = block
-                    min_distance = distance
-    min_dof_owner = MPI.COMM_WORLD.bcast(min_dof_owner, root=owning_processor)
-    # If dofs not owned by cell
-    if owning_processor != min_dof_owner:
-        owning_processor = min_dof_owner
-
-    if MPI.COMM_WORLD.rank == min_dof_owner:
-        # Re-search using the closest cell
-        x = V.tabulate_dof_coordinates()
-        cell_dofs = dofmap.cell_dofs(closest_cell)
-        for dof in cell_dofs:
-            # Only do distance computation for one node per block
-            if dof % block_size == 0:
-                block = dof // block_size
-                distance = np.linalg.norm(cpp.geometry.compute_distance_gjk(point, x[dof]))
-                if distance < min_distance:
-                    # If cell owned by processor, but not the closest dof
-                    if dof < local_max:
-                        minimal_distance_block = block
-                        min_dof_owner = MPI.COMM_WORLD.rank
-                    else:
-                        min_dof_owner = ghost_owner[block - imap.size_local]
-                        minimal_distance_block = block
-                    min_distance = distance
-        assert(min_dof_owner == owning_processor)
-        return owning_processor, [minimal_distance_block * block_size + i for i in range(block_size)]
-    else:
-        return owning_processor, None
-
-
-owning_processor, bc_dofs = determine_closest_dofs(-np.array([-r2, 0, 0]))
+owning_processor, bc_dofs = dolfinx_mpc.utils.determine_closest_dofs(V, -np.array([-r2, 0, 0]))
 u_fixed = dolfinx.Function(V)
 u_fixed.vector.set(0)
 u_fixed.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
@@ -230,86 +158,11 @@ u_fixed.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
 
 if bc_dofs is None:
     bc_dofs = []
-dof_coord = None
-# if MPI.COMM_WORLD.rank == owning_processor:
-#     x_coord = V.tabulate_dof_coordinates()
-#     dof_coord = x_coord[bc_dofs[0]]
-# dof_coord = MPI.COMM_WORLD.bcast(dof_coord, root=owning_processor)
-# local_dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x.T, dof_coord).all(axis=1))
-# bc_fixed = dolfinx.DirichletBC(u_fixed, local_dofs)
+
 bc_fixed = dolfinx.DirichletBC(u_fixed, bc_dofs)
 bcs = [bc_fixed]
 
 mpc = dolfinx_mpc.MultiPointConstraint(V)
-
-
-def create_point_to_point_constraint(V, slave_point, master_point):
-    # Determine which processor owns the dof closest to the slave and master point
-    slave_proc, slave_dofs = determine_closest_dofs(slave_point)
-    master_proc, master_dofs = determine_closest_dofs(master_point)
-
-    # Create local to global mapping and map masters
-    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False), dtype=np.int64)
-    global_masters = loc_to_glob[master_dofs]
-    local_slaves, ghost_slaves = [], []
-    local_masters, ghost_masters = [], []
-    local_coeffs, ghost_coeffs = [], []
-    local_owners, ghost_owners = [], []
-    local_offsets, ghost_offsets = [], []
-    if slave_proc == master_proc:
-        if MPI.COMM_WORLD.rank == slave_proc:
-            local_masters = slave_dofs
-            local_masters = master_dofs
-            local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
-            local_coeffs = np.ones(len(local_masters), dtype=np.int32)
-            local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
-    else:
-        if MPI.COMM_WORLD.rank == master_proc:
-            MPI.COMM_WORLD.send(global_masters, dest=slave_proc, tag=10)
-
-        if MPI.COMM_WORLD.rank == slave_proc:
-            global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
-
-    shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
-    imap = V.dofmap.index_map
-    ghost_processors = []
-    if MPI.COMM_WORLD.rank == slave_proc:
-        local_slaves = np.array(slave_dofs, dtype=np.int32)
-        global_slaves = loc_to_glob[local_slaves]
-        local_masters = global_masters
-        local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
-        local_coeffs = np.ones(len(local_masters), dtype=np.int32)
-        local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
-        if slave_dofs[0] / imap.block_size in shared_indices.keys():
-            ghost_processors = list(shared_indices[slave_dofs[0] / imap.block_size])
-
-    # Broadcast processors containg slave
-    ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)
-
-    if MPI.COMM_WORLD.rank == slave_proc:
-        for proc in ghost_processors:
-            MPI.COMM_WORLD.send(global_slaves, dest=proc, tag=20 + proc)
-            MPI.COMM_WORLD.send(local_coeffs, dest=proc, tag=30 + proc)
-            MPI.COMM_WORLD.send(local_owners, dest=proc, tag=40 + proc)
-            MPI.COMM_WORLD.send(local_masters, dest=proc, tag=50 + proc)
-            MPI.COMM_WORLD.send(local_offsets, dest=proc, tag=60 + proc)
-
-    # Receive data for ghost slaves
-    if np.isin(MPI.COMM_WORLD.rank, ghost_processors):
-        # Convert recieved slaves to the corresponding ghost index
-        recv_slaves = MPI.COMM_WORLD.recv(source=slave_proc, tag=20 + MPI.COMM_WORLD.rank)
-        ghost_coeffs = MPI.COMM_WORLD.recv(source=slave_proc, tag=30 + MPI.COMM_WORLD.rank)
-        ghost_owners = MPI.COMM_WORLD.recv(source=slave_proc, tag=40 + MPI.COMM_WORLD.rank)
-        ghost_masters = MPI.COMM_WORLD.recv(source=slave_proc, tag=50 + MPI.COMM_WORLD.rank)
-        ghost_offsets = MPI.COMM_WORLD.recv(source=slave_proc, tag=60 + MPI.COMM_WORLD.rank)
-
-        ghosts = imap.indices(True)[imap.size_local * imap.block_size:]
-        ghost_slaves = np.zeros(len(recv_slaves), dtype=np.int32)
-        for i, slave in enumerate(recv_slaves):
-            idx = np.argwhere(ghosts == slave)
-            ghost_slaves[i] = imap.size_local * imap.block_size + idx
-    return (local_slaves, ghost_slaves), (local_masters, ghost_masters), (local_coeffs, ghost_coeffs),\
-        (local_owners, ghost_owners), (local_offsets, ghost_offsets)
 
 
 signs = [-1]
@@ -322,7 +175,7 @@ for i in axis:
         r1_point[i] = s * r1
 
         with dolfinx.common.Timer("~Contact: Create node-node constraint"):
-            sl, ms, co, ow, off = create_point_to_point_constraint(V, r1_point, r0_point)
+            sl, ms, co, ow, off = dolfinx_mpc.utils.create_point_to_point_constraint(V, r1_point, r0_point)
         with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
             mpc.add_constraint(V, sl, ms, co, ow, off)
 
