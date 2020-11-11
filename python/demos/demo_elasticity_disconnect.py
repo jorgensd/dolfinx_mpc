@@ -6,8 +6,7 @@
 #
 # Create constraint between two bodies that are not in contact
 
-import dolfinx.cpp as cpp
-import dolfinx.geometry as geometry
+
 from petsc4py import PETSc
 import dolfinx.fem as fem
 import ufl
