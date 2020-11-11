@@ -102,11 +102,6 @@ MPI.COMM_WORLD.barrier()
 
 V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-
-def outer_displacement(x):
-    return (x[0] > 0) * 0.1 * x[0]**2
-
-
 tdim = mesh.topology.dim
 fdim = tdim - 1
 

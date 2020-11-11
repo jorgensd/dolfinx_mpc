@@ -403,29 +403,58 @@ def determine_closest_dofs(V, point):
         return owning_processor, None
 
 
-def create_point_to_point_constraint(V, slave_point, master_point):
+def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     # Determine which processor owns the dof closest to the slave and master point
     slave_proc, slave_dofs = determine_closest_dofs(V, slave_point)
     master_proc, master_dofs = determine_closest_dofs(V, master_point)
 
     # Create local to global mapping and map masters
     loc_to_glob = np.array(V.dofmap.index_map.global_indices(False), dtype=np.int64)
-    global_masters = loc_to_glob[master_dofs]
+    # Output structures
     local_slaves, ghost_slaves = [], []
     local_masters, ghost_masters = [], []
     local_coeffs, ghost_coeffs = [], []
     local_owners, ghost_owners = [], []
     local_offsets, ghost_offsets = [], []
-    if slave_proc == master_proc:
-        if MPI.COMM_WORLD.rank == slave_proc:
-            local_masters = slave_dofs
-            local_masters = master_dofs
+    # Information required to handle vector as input
+    zero_indices, slave_index = None, None
+    if vector is not None:
+        zero_indices = np.argwhere(np.isclose(vector, 0)).T[0]
+        slave_index = np.argmax(np.abs(vector))
+    if MPI.COMM_WORLD.rank == slave_proc:
+        if vector is None:
+            local_slaves = slave_dofs
+        else:
+            assert(len(vector) == len(slave_dofs))
+            # Check for input vector (Should be of same length as number of slaves)
+            # All entries should not be zero
+            assert(not np.isin(slave_index, zero_indices))
+            # Check vector for zero contributions
+            local_slaves = [slave_dofs[slave_index]]
+            for i, slave in enumerate(slave_dofs):
+                if i != slave_index and not np.isin(i, zero_indices):
+                    local_masters.append(loc_to_glob[slave])
+                    local_owners.append(slave_proc)
+                    local_coeffs.append(-vector[i] / vector[slave_index])
+
+    if MPI.COMM_WORLD.rank == slave_proc and slave_proc == master_proc:
+        # If slaves and masters are on the same processor finalize local work
+        if vector is None:
+            local_masters = loc_to_glob[master_dofs]
             local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
-            local_coeffs = np.ones(len(local_masters), dtype=np.int32)
+            local_coeffs = np.ones(len(local_masters), dtype=PETSc.ScalarType)
             local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
+        else:
+            for i, master in enumerate(master_dofs):
+                if not np.isin(i, zero_indices):
+                    local_masters.append(loc_to_glob[master])
+                    local_owners.append(master_proc)
+                    local_coeffs.append(vector[i] / vector[slave_index])
+            local_offsets = [0, len(local_masters)]
     else:
+        # Send/Recv masters from other processor
         if MPI.COMM_WORLD.rank == master_proc:
-            MPI.COMM_WORLD.send(global_masters, dest=slave_proc, tag=10)
+            MPI.COMM_WORLD.send(loc_to_glob[master_dofs], dest=slave_proc, tag=10)
 
         if MPI.COMM_WORLD.rank == slave_proc:
             global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
@@ -433,13 +462,19 @@ def create_point_to_point_constraint(V, slave_point, master_point):
     shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
     imap = V.dofmap.index_map
     ghost_processors = []
-    if MPI.COMM_WORLD.rank == slave_proc:
-        local_slaves = np.array(slave_dofs, dtype=np.int32)
-        global_slaves = loc_to_glob[local_slaves]
-        local_masters = global_masters
-        local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
-        local_coeffs = np.ones(len(local_masters), dtype=np.int32)
-        local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
+    if MPI.COMM_WORLD.rank == slave_proc and slave_proc != master_proc:
+        for i, master in enumerate(global_masters):
+            if not np.isin(i, zero_indices):
+                local_masters.append(master)
+                local_owners.append(master_proc)
+                if vector is None:
+                    local_coeffs.append(1)
+                else:
+                    local_coeffs.append(vector[i] / vector[slave_index])
+        if vector is None:
+            local_offsets = np.arange(0, len(local_slaves) + 1, dtype=np.int32)
+        else:
+            local_offsets = np.array([0, len(local_masters)], dtype=np.int32)
         if slave_dofs[0] / imap.block_size in shared_indices.keys():
             ghost_processors = list(shared_indices[slave_dofs[0] / imap.block_size])
 
@@ -448,7 +483,7 @@ def create_point_to_point_constraint(V, slave_point, master_point):
 
     if MPI.COMM_WORLD.rank == slave_proc:
         for proc in ghost_processors:
-            MPI.COMM_WORLD.send(global_slaves, dest=proc, tag=20 + proc)
+            MPI.COMM_WORLD.send(loc_to_glob[local_slaves], dest=proc, tag=20 + proc)
             MPI.COMM_WORLD.send(local_coeffs, dest=proc, tag=30 + proc)
             MPI.COMM_WORLD.send(local_owners, dest=proc, tag=40 + proc)
             MPI.COMM_WORLD.send(local_masters, dest=proc, tag=50 + proc)
@@ -466,7 +501,9 @@ def create_point_to_point_constraint(V, slave_point, master_point):
         ghosts = imap.indices(True)[imap.size_local * imap.block_size:]
         ghost_slaves = np.zeros(len(recv_slaves), dtype=np.int32)
         for i, slave in enumerate(recv_slaves):
-            idx = np.argwhere(ghosts == slave)
+            idx = np.argwhere(ghosts == slave)[0, 0]
+
             ghost_slaves[i] = imap.size_local * imap.block_size + idx
+
     return (local_slaves, ghost_slaves), (local_masters, ghost_masters), (local_coeffs, ghost_coeffs),\
         (local_owners, ghost_owners), (local_offsets, ghost_offsets)
