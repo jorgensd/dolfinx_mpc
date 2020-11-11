@@ -8,7 +8,6 @@
 
 import dolfinx.cpp as cpp
 import dolfinx.geometry as geometry
-from IPython import embed
 from petsc4py import PETSc
 import dolfinx.fem as fem
 import ufl
@@ -25,6 +24,8 @@ from mpi4py import MPI
 r0, r0_tag = 0.4, 1
 r1, r1_tag = 0.5, 2
 r2, r2_tag = 0.8, 3
+outer_tag = 1
+inner_tag = 2
 assert(r0 < r1 and r1 < r2)
 
 
@@ -43,9 +44,9 @@ if MPI.COMM_WORLD.rank == 0:
     gmsh.model.occ.synchronize()
 
     # Add physical tags for volumes
-    gmsh.model.addPhysicalGroup(hollow_sphere[0][0][0], [hollow_sphere[0][0][1]], tag=1)
+    gmsh.model.addPhysicalGroup(hollow_sphere[0][0][0], [hollow_sphere[0][0][1]], tag=outer_tag)
     gmsh.model.setPhysicalName(hollow_sphere[0][0][0], 1, "Hollow sphere")
-    gmsh.model.addPhysicalGroup(3, [inner_sphere], tag=2)
+    gmsh.model.addPhysicalGroup(3, [inner_sphere], tag=inner_tag)
     gmsh.model.setPhysicalName(3, 2, "Inner sphere")
 
     # Add physical tags for surfaces
@@ -67,7 +68,7 @@ if MPI.COMM_WORLD.rank == 0:
 
     # Set mesh resolution
     res_inner = r0 / 5
-    res_outer = (r1 + r2) / 10
+    res_outer = (r1 + r2) / 5
     gmsh.model.occ.synchronize()
     gmsh.model.mesh.field.add("Distance", 1)
     gmsh.model.mesh.field.setNumbers(1, "NodesList", [p0])
@@ -88,41 +89,47 @@ if MPI.COMM_WORLD.rank == 0:
     gmsh.model.mesh.field.setAsBackgroundMesh(4)
     # Generate mesh
     gmsh.model.mesh.generate(3)
+    gmsh.option.setNumber("General.Terminal", 1)
+    gmsh.model.mesh.optimize("Netgen")
+    gmsh.model.mesh.setOrder(2)
+
 
 mesh, ct, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True, cell_data=True)
+
 gmsh.clear()
 gmsh.finalize()
 MPI.COMM_WORLD.barrier()
 
 V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
-# Define boundary conditions
-
 
 def outer_displacement(x):
-    values = np.zeros(x.shape)
-    values[0] = 0.1 * x[0]**2
-    return values
+    return (x[0] > 0) * 0.1 * x[0]**2
 
-
-u_bc = dolfinx.function.Function(V)
-u_bc.interpolate(outer_displacement)
-u_bc.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                        mode=PETSc.ScatterMode.FORWARD)
 
 tdim = mesh.topology.dim
 fdim = tdim - 1
-outer_facets = ft.indices[np.flatnonzero(ft.values == r2_tag)]
-bottom_dofs = fem.locate_dofs_topological(V, fdim, outer_facets)
-bc_outer = fem.DirichletBC(u_bc, bottom_dofs)
 
-bcs = [bc_outer]
+DG0 = dolfinx.FunctionSpace(mesh, ("DG", 0))
+outer_cells = ct.indices[ct.values == outer_tag]
+inner_cells = ct.indices[ct.values == inner_tag]
+outer_dofs = fem.locate_dofs_topological(DG0, tdim, outer_cells)
+inner_dofs = fem.locate_dofs_topological(DG0, tdim, inner_cells)
 
 # Elasticity parameters
-E = 1.0e3
-nu = 0
-mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
-lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+E_outer = 1e3
+E_inner = 1e5
+nu_outer = 0.3
+nu_inner = 0.1
+mu = dolfinx.Function(DG0)
+lmbda = dolfinx.Function(DG0)
+with mu.vector.localForm() as local:
+    local.array[inner_dofs] = E_inner / (2 * (1 + nu_inner))
+    local.array[outer_dofs] = E_outer / (2 * (1 + nu_outer))
+with lmbda.vector.localForm() as local:
+    local.array[inner_dofs] = E_inner * nu_inner / ((1 + nu_inner) * (1 - 2 * nu_inner))
+    local.array[inner_dofs] = E_outer * nu_outer / ((1 + nu_outer) * (1 - 2 * nu_outer))
+
 
 # Stress computation
 
@@ -135,9 +142,12 @@ def sigma(v):
 # Define variational problem
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
-a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-# NOTE: Traction deactivated until we have a way of fixing nullspace
-rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx
+dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
+a = ufl.inner(sigma(u), ufl.grad(v)) * dx
+x = ufl.SpatialCoordinate(mesh)
+rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * dx
+rhs += ufl.inner(dolfinx.Constant(mesh, (0, 0, -9.81e-2)), v) * dx(outer_tag)
+rhs += ufl.inner(ufl.as_vector((0, 0.5 * ufl.cos(x[0]), 0)), v) * dx(inner_tag)
 
 
 def determine_closest_dofs(point):
@@ -178,17 +188,57 @@ def determine_closest_dofs(point):
                     # If cell owned by processor, but not the closest dof
                     if dof < local_max:
                         minimal_distance_block = block
+                        min_dof_owner = MPI.COMM_WORLD.rank
                     else:
                         min_dof_owner = ghost_owner[block - imap.size_local]
                         minimal_distance_block = block
                     min_distance = distance
-        return owning_processor, [minimal_distance_block * block_size + i for i in range(block_size)]
+    min_dof_owner = MPI.COMM_WORLD.bcast(min_dof_owner, root=owning_processor)
+    # If dofs not owned by cell
+    if owning_processor != min_dof_owner:
+        owning_processor = min_dof_owner
 
-    if min_dof_owner != owning_processor:
-        raise NotImplementedError("Not implemented as there is no test case for this")
+    if MPI.COMM_WORLD.rank == min_dof_owner:
+        # Re-search using the closest cell
+        x = V.tabulate_dof_coordinates()
+        cell_dofs = dofmap.cell_dofs(closest_cell)
+        for dof in cell_dofs:
+            # Only do distance computation for one node per block
+            if dof % block_size == 0:
+                block = dof // block_size
+                distance = np.linalg.norm(cpp.geometry.compute_distance_gjk(point, x[dof]))
+                if distance < min_distance:
+                    # If cell owned by processor, but not the closest dof
+                    if dof < local_max:
+                        minimal_distance_block = block
+                        min_dof_owner = MPI.COMM_WORLD.rank
+                    else:
+                        min_dof_owner = ghost_owner[block - imap.size_local]
+                        minimal_distance_block = block
+                    min_distance = distance
+        assert(min_dof_owner == owning_processor)
+        return owning_processor, [minimal_distance_block * block_size + i for i in range(block_size)]
     else:
         return owning_processor, None
 
+
+owning_processor, bc_dofs = determine_closest_dofs(-np.array([-r2, 0, 0]))
+u_fixed = dolfinx.Function(V)
+u_fixed.vector.set(0)
+u_fixed.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                           mode=PETSc.ScatterMode.FORWARD)
+
+if bc_dofs is None:
+    bc_dofs = []
+dof_coord = None
+# if MPI.COMM_WORLD.rank == owning_processor:
+#     x_coord = V.tabulate_dof_coordinates()
+#     dof_coord = x_coord[bc_dofs[0]]
+# dof_coord = MPI.COMM_WORLD.bcast(dof_coord, root=owning_processor)
+# local_dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x.T, dof_coord).all(axis=1))
+# bc_fixed = dolfinx.DirichletBC(u_fixed, local_dofs)
+bc_fixed = dolfinx.DirichletBC(u_fixed, bc_dofs)
+bcs = [bc_fixed]
 
 mpc = dolfinx_mpc.MultiPointConstraint(V)
 
@@ -206,7 +256,6 @@ def create_point_to_point_constraint(V, slave_point, master_point):
     local_coeffs, ghost_coeffs = [], []
     local_owners, ghost_owners = [], []
     local_offsets, ghost_offsets = [], []
-
     if slave_proc == master_proc:
         if MPI.COMM_WORLD.rank == slave_proc:
             local_masters = slave_dofs
@@ -263,32 +312,26 @@ def create_point_to_point_constraint(V, slave_point, master_point):
         (local_owners, ghost_owners), (local_offsets, ghost_offsets)
 
 
-r0_point = np.array([r0, 0, 0])
-r1_point = np.array([r1, 0, 0])
+signs = [-1]
+axis = [0]
+for i in axis:
+    for s in signs:
+        r0_point = np.zeros(3)
+        r1_point = np.zeros(3)
+        r0_point[i] = s * r0
+        r1_point[i] = s * r1
 
-with dolfinx.common.Timer("~Contact: Create node-node constraint"):
-    sl, ms, co, ow, off = create_point_to_point_constraint(V, r0_point, r1_point)
+        with dolfinx.common.Timer("~Contact: Create node-node constraint"):
+            sl, ms, co, ow, off = create_point_to_point_constraint(V, r1_point, r0_point)
+        with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
+            mpc.add_constraint(V, sl, ms, co, ow, off)
 
-with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
-    mpc.add_constraint(V, sl, ms, co, ow, off)
-
-r0_point = np.array([-r0, 0, 0])
-r1_point = np.array([-r1, 0, 0])
-
-with dolfinx.common.Timer("~Contact: Create node-node constraint"):
-    sl, ms, co, ow, off = create_point_to_point_constraint(V, r0_point, r1_point)
-
-with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
-    mpc.add_constraint(V, sl, ms, co, ow, off)
-print(MPI.COMM_WORLD.rank, sl, ms, co, ow, off)
 mpc.finalize()
-
 
 null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
 with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(V.dim)):
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-
 with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(V.dim)):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
@@ -335,6 +378,8 @@ if MPI.COMM_WORLD.rank == 0:
 # Write solution to file
 u_h = dolfinx.Function(mpc.function_space())
 u_h.vector.setArray(uh.array)
+u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                       mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"
 
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect.xdmf", "w") as xdmf:
