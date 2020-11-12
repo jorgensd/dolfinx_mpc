@@ -19,7 +19,7 @@ def create_contact_slip_condition(V, meshtag, slave_marker, master_marker):
     # Compute approximate facet normal used in contact condition
     # over slave facets
 
-    nh = dolfinx_mpc.utils.facet_normal_approximation(V, meshtag, slave_marker)
+    nh = dolfinx_mpc.utils.create_normal_approximation(V, meshtag.indices[meshtag.values == slave_marker])
     n_vec = nh.vector.getArray()
 
     # Locate facets with slaves (both owned and ghosted slaves)

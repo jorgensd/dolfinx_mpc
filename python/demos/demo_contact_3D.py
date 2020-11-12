@@ -124,7 +124,9 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
                 V._cpp_object, mt, 4, 9)
     else:
-        nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+        with dolfinx.common.Timer("~Contact: Create facet normal approximation"):
+            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
+
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
                 V._cpp_object, mt, 4, 9, nh._cpp_object)
