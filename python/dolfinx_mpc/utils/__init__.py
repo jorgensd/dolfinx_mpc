@@ -12,6 +12,5 @@ from .utils import (PETScMatrix_to_global_numpy, PETScVector_to_global_numpy,
                     rigid_motions_nullspace, compare_matrices,
                     compare_vectors, create_transformation_matrix, log_info,
                     facet_normal_approximation, rotation_matrix,
-                    determine_closest_dofs, create_point_to_point_constraint,
-                    create_average_normal, create_dof_to_facet_map, create_normal_approximation)
+                    determine_closest_dofs, create_point_to_point_constraint)
 from .io import (read_from_msh, gmsh_model_to_mesh)
