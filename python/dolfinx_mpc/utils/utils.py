@@ -507,3 +507,64 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
 
     return (local_slaves, ghost_slaves), (local_masters, ghost_masters), (local_coeffs, ghost_coeffs),\
         (local_owners, ghost_owners), (local_offsets, ghost_offsets)
+
+
+def create_dof_to_facet_map(V, facets):
+    """
+    Create a map from a dof to the facets it belongs to (of the input facets)
+    """
+    dofmap = V.dofmap
+    block_size = V.dofmap.index_map.block_size
+    mesh = V.mesh
+    mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
+    mesh.topology.create_connectivity(mesh.topology.dim, mesh.topology.dim - 1)
+    f_to_c = mesh.topology.connectivity(mesh.topology.dim - 1, mesh.topology.dim)
+    c_to_f = mesh.topology.connectivity(mesh.topology.dim, mesh.topology.dim - 1)
+
+    dofs = dolfinx.fem.locate_dofs_topological(V, mesh.topology.dim - 1, facets).T[0]
+    dofs_to_facets = {dof: [] for dof in dofs}
+    for facet in facets:
+        cell = f_to_c.links(facet)
+        assert(len(cell) == 1)
+        cell_facets = c_to_f.links(cell[0])
+        local_index = np.argwhere(cell_facets == facet)[0, 0]
+        closure_blocks = dofmap.dof_layout.entity_closure_dofs(mesh.topology.dim - 1, local_index)
+        closure_dofs = []
+        for block in closure_blocks:
+            for i in range(block_size):
+                closure_dofs.append(block * block_size + i)
+        cell_dofs = dofmap.cell_dofs(cell)
+        facet_dofs = cell_dofs[closure_dofs]
+
+        for dof in facet_dofs:
+            dofs_to_facets[dof].append(facet)
+    return dofs_to_facets
+
+
+def create_average_normal(V, dof, dim, entities):
+    """
+    Create the normal for a dof averaged over its connecting entities of dimension dim
+    """
+    assert(1 <= len(entities))
+    normals = dolfinx.cpp.mesh.cell_normals(V.mesh, dim, entities)
+    normal = normals[0]
+    print("Python", normal)
+    for i in range(1, len(normals)):
+        sign = np.dot(normals[i], normal) / np.abs(np.dot(normals[i], normal))
+        normal += sign * normals[i]
+        print(sign, normals[i])
+    normal /= np.linalg.norm(normal)
+    return normal
+
+
+def create_normal_approximation(V, facets):
+    """
+    Creates a normal approximation for the dofs in the closure of the attached facets.
+    Where a dof is attached to multiple facets, an average is computed
+    """
+    n = dolfinx.Function(V)
+    with n.vector.localForm() as vector:
+        vector.set(0)
+        dolfinx_mpc.cpp.mpc.create_normal_approximation(V._cpp_object, facets, vector.array_w)
+    n.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    return n
