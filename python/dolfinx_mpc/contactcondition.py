@@ -182,6 +182,7 @@ def create_contact_slip_condition(V, meshtag, slave_marker, master_marker):
     slaves_to_send = {}
     loc_to_glob = np.array(V.dofmap.index_map.global_indices(False),
                            dtype=np.int64)
+    global_tree = tree.compute_global_tree(comm)
     for (dof, coord) in zip(slaves[:num_owned_slaves],
                             slave_coordinates[:num_owned_slaves]):
         # Find normal vector for local slave (through blocks)
@@ -190,8 +191,8 @@ def create_contact_slip_condition(V, meshtag, slave_marker, master_marker):
         n = list(n_vec[block_dofs])
 
         # Get processors where boundingbox collides with point
-        procs = np.array(cpp.mpc.compute_process_collisions(
-            tree._cpp_object, coord.T), dtype=np.int32)
+        procs = np.array(geometry.compute_collisions_point(
+            global_tree, coord.T), dtype=np.int32)
         procs = procs[procs != comm.rank]
         for proc in procs:
             if proc in slaves_to_send.keys():

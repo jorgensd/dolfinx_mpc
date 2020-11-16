@@ -73,10 +73,6 @@ void mpc(py::module& m)
 
   //   .def("ghost_masters", &dolfinx_mpc::mpc_data::ghost_masters);
 
-  m.def("compute_process_collisions",
-        py::overload_cast<const dolfinx::geometry::BoundingBoxTree&,
-                          const Eigen::Vector3d&>(
-            &dolfinx::geometry::compute_process_collisions));
   m.def("assemble_matrix",
         [](Mat A, const dolfinx::fem::Form<PetscScalar>& a,
            const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint>& mpc,

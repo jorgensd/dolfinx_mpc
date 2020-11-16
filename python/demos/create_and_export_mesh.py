@@ -547,7 +547,7 @@ def mesh_2D_dolfin(celltype, theta=0):
 
 def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
                    ext="tetrahedron", res=0.1):
-    timer = dolfinx.common.Timer("~Contact: Create mesh")
+    timer = dolfinx.common.Timer("~~Contact: Create mesh")
 
     def find_plane_function(p0, p1, p2):
         """
