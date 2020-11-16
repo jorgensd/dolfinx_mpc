@@ -120,7 +120,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     if noslip:
-        with dolfinx.common.Timer("~Contact: Create non-elastic constraint"):
+        with dolfinx.common.Timer("~~Contact: Create non-elastic constraint"):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
                 V._cpp_object, mt, 4, 9)
     else:
@@ -131,21 +131,16 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
                 V._cpp_object, mt, 4, 9, nh._cpp_object)
 
-    with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
+    with dolfinx.common.Timer("~~Contact: Add data and finialize MPC"):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
-    with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(V.dim)):
+    with dolfinx.common.Timer("~~Contact: Assemble matrix ({0:d})".format(V.dim)):
         A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
-    # with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(V.dim)):
-    #     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
-    with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(V.dim)):
+    with dolfinx.common.Timer("~~Contact: Assemble vector ({0:d})".format(V.dim)):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
-
-    # with dolfinx.common.Timer("~Contact: Assembly (cached) ({0:d})".format(V.dim)):
-    #     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs, A=A)
 
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
@@ -163,8 +158,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     opts["mg_levels_pc_type"] = "jacobi"
     opts["mg_levels_esteig_ksp_type"] = "cg"
     opts["matptap_via"] = "scalable"
-    opts["pc_gamg_square_graph"] = 2
-    opts["pc_gamg_threshold"] = 0.02
+    # opts["pc_gamg_square_graph"] = 2
+    # opts["pc_gamg_threshold"] = 1e-2
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
     # Create functionspace and build near nullspace
@@ -175,19 +170,22 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     solver.setFromOptions()
     uh = b.copy()
     uh.set(0)
-    with dolfinx.common.Timer("~Contact: Solve old"):
+    with dolfinx.common.Timer("~~Contact: Solve"):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
+    with dolfinx.common.Timer("~~Contact: Backsubstit"):
         mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
-    if MPI.COMM_WORLD.rank == 0:
-        print("Number of iterations: {0:d}".format(it))
-
     unorm = uh.norm()
+    num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)
     if comm.rank == 0:
+        print("Number of dofs: {0:d}".format(V.dim))
+        print("Number of slaves: {0:d}".format(num_slaves))
+        print("Number of iterations: {0:d}".format(it))
         print("Norm of u {0:.5e}".format(unorm))
+
     # Write solution to file
     u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
@@ -204,7 +202,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
     dolfinx_mpc.utils.log_info(
         "Solving reference problem with global matrix (using numpy)")
-    with dolfinx.common.Timer("~Contact: Reference problem"):
+    with dolfinx.common.Timer("~~Contact: Reference problem"):
         A_org = fem.assemble_matrix(a, bcs)
         A_org.assemble()
         L_org = fem.assemble_vector(rhs)
@@ -220,7 +218,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         d = np.linalg.solve(reduced_A, reduced_L)
         uh_numpy = np.dot(K, d)
 
-    with dolfinx.common.Timer("~Contact: Compare LHS, RHS and solution"):
+    with dolfinx.common.Timer("~~Contact: Compare LHS, RHS and solution"):
         A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
         b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
         dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)

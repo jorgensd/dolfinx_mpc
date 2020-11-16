@@ -46,8 +46,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
         block_idx = slave_dof % bs
         procs = [0]
         if comm.size > 1:
-            procs = np.array(dolfinx_mpc.cpp.mpc.compute_collisions_point(
-                global_tree, master_coordinate), dtype=np.int32)
+            procs = np.array(dolfinx.geometry.compute_collisions_point(global_tree, master_coordinate), dtype=np.int32)
         # Check if masters can be local
         search_globally = True
         masters_, coeffs_, owners_ = [], [], []
