@@ -156,8 +156,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     opts["mg_levels_pc_type"] = "jacobi"
     opts["mg_levels_esteig_ksp_type"] = "cg"
     opts["matptap_via"] = "scalable"
-    #opts["pc_gamg_square_graph"] = 2
-    #opts["pc_gamg_threshold"] = 1e-2
+    # opts["pc_gamg_square_graph"] = 2
+    # opts["pc_gamg_threshold"] = 1e-2
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
     # Create functionspace and build near nullspace

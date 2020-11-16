@@ -149,7 +149,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
         with Timer("~MPC: Assemble matrix (Create matrix)"):
             A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
- 
+
     # Assemble the matrix with all entries
     with Timer("~MPC: Assemble unconstrained matrix"):
         dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
@@ -210,7 +210,6 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
                                          bc_mpc, 1.0)
     with Timer("~MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()
-    timer_matrix_a.stop()
     timer_matrix.stop()
     return A
 
