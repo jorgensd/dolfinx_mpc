@@ -26,8 +26,6 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
-  V->mesh()->topology_mutable().create_entity_permutations();
-
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
@@ -36,6 +34,10 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   const int fdim = tdim - 1;
   const int block_size = V->dofmap()->index_map->block_size();
   std::int32_t size_local = V->dofmap()->index_map->size_local();
+
+  V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
+  V->mesh()->topology_mutable().create_connectivity(tdim, tdim);
+  V->mesh()->topology_mutable().create_entity_permutations();
 
   // Extract slave_facets
   std::vector<std::int32_t> _slave_facets;
@@ -149,7 +151,6 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
         ghosts_as_global, slave_ranks, block_size);
   }
 
-  V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
   auto facet_to_cell = V->mesh()->topology().connectivity(fdim, tdim);
   assert(facet_to_cell);
   // Find all cells connected to master facets for collision detection
@@ -264,6 +265,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
       collision_to_local.push_back(i);
     }
   }
+
   // Extract coordinates and normals to distribute
   Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>
       distribute_coordinates(slaves_wo_local_collision.size(), 3);
@@ -857,9 +859,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
-  // Create entity permutations needed in evaluate basis functions
-  V->mesh()->topology_mutable().create_entity_permutations();
-
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
@@ -868,6 +867,13 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   const int fdim = tdim - 1;
   const int block_size = V->dofmap()->index_map->block_size();
   std::int32_t size_local = V->dofmap()->index_map->size_local();
+
+  // Create entity permutations needed in evaluate_basis_functions
+  V->mesh()->topology_mutable().create_entity_permutations();
+  // Create connectivities needed for evaluate_basis_functions and
+  // select_colliding cells
+  V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
+  V->mesh()->topology_mutable().create_connectivity(tdim, tdim);
 
   // Extract slave_facets
   std::vector<std::int32_t> _slave_facets;
@@ -946,7 +952,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
         ghosts_as_global, slave_ranks, block_size);
   }
 
-  V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
   auto facet_to_cell = V->mesh()->topology().connectivity(fdim, tdim);
   assert(facet_to_cell);
   // Find all cells connected to master facets for collision detection
