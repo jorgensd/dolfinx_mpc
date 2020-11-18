@@ -240,7 +240,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
                 V._cpp_object, mt, 4, 9)
     else:
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
-            nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
                 V._cpp_object, mt, 4, 9, nh._cpp_object)
     mpc.add_constraint_from_mpc_data(V, mpc_data)

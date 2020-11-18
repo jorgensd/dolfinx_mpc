@@ -25,6 +25,8 @@
 #include <dolfinx/la/utils.h>
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
+#include <dolfinx/mesh/utils.h>
+
 using namespace dolfinx_mpc;
 
 //-----------------------------------------------------------------------------
@@ -327,4 +329,91 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
                                  MPI_INFO_NULL, false, &comm_loc);
 
   return comm_loc;
+};
+//-----------------------------------------------------------------------------
+std::map<std::int32_t, std::vector<std::int32_t>>
+dolfinx_mpc::create_dof_to_facet_map(
+    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> facets)
+{
+
+  const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
+  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
+  const std::int32_t block_size = dofmap->index_map->block_size();
+  const std::int32_t tdim = mesh->topology().dim();
+  // Locate all dofs for each facet
+  mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
+  mesh->topology_mutable().create_connectivity(tdim, tdim - 1);
+  auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
+  auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
+  Eigen::Array<std::int32_t, Eigen::Dynamic, Eigen::Dynamic> dofs
+      = dolfinx::fem::locate_dofs_topological({*V}, tdim - 1, facets);
+  // Initialize empty map for the dofs located topologically
+  std::map<std::int32_t, std::vector<std::int32_t>> dofs_to_facets;
+  for (std::int32_t i = 0; i < dofs.size(); ++i)
+    dofs_to_facets.insert({dofs.row(i)[0], {}});
+  // For each facet, find which dofs is on the given facet
+  for (std::int32_t i = 0; i < facets.size(); ++i)
+  {
+    auto cell = f_to_c->links(facets[i]);
+    assert(cell.size() == 1);
+    // Get local index of facet with respect to the cell
+    auto cell_facets = c_to_f->links(cell[0]);
+    const auto* it = std::find(
+        cell_facets.data(), cell_facets.data() + cell_facets.rows(), facets[i]);
+    assert(it != (cell_facets.data() + cell_facets.rows()));
+    const int local_facet = std::distance(cell_facets.data(), it);
+    auto cell_dofs = dofmap->cell_dofs(cell[0]);
+    auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
+        tdim - 1, local_facet);
+    for (std::int32_t j = 0; j < closure_blocks.size(); ++j)
+    {
+      for (std::int32_t k = 0; k < block_size; ++k)
+      {
+        auto dof = cell_dofs[block_size * closure_blocks[j] + k];
+        dofs_to_facets[dof].push_back(facets[i]);
+      }
+    }
+  }
+  return dofs_to_facets;
+};
+//-----------------------------------------------------------------------------
+Eigen::Vector3d dolfinx_mpc::create_average_normal(
+    std::shared_ptr<dolfinx::function::FunctionSpace> V, std::int32_t dof,
+    std::int32_t dim, Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities)
+{
+  assert(entities.size() > 0);
+  auto normals = dolfinx::mesh::cell_normals(*V->mesh(), dim, entities);
+  Eigen::Vector3d normal(normals.row(0));
+  for (std::int32_t i = 1; i < normals.rows(); ++i)
+  {
+    Eigen::Vector3d normal_i(normals.row(i));
+    double sign = normal.dot(normal_i) / std::abs(normal.dot(normal_i));
+    normal += sign * normal_i;
+  }
+  normal /= std::sqrt(normal.dot(normal));
+  return normal;
+};
+//-----------------------------------------------------------------------------
+void dolfinx_mpc::create_normal_approximation(
+    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities,
+    Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector)
+{
+  auto x = V->tabulate_dof_coordinates();
+  const std::int32_t tdim = V->mesh()->topology().dim();
+  const std::int32_t block_size = V->dofmap()->index_map->block_size();
+
+  std::map<std::int32_t, std::vector<std::int32_t>> facets_to_dofs
+      = create_dof_to_facet_map(V, entities);
+  for (auto const& pair : facets_to_dofs)
+  {
+    Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> facets(
+        pair.second.data(), pair.second.size());
+    Eigen::Vector3d normal
+        = create_average_normal(V, pair.first, tdim - 1, facets);
+    const std::div_t div = std::div(pair.first, block_size);
+    const int& block = div.rem;
+    vector[pair.first] = normal[block];
+  }
 };
