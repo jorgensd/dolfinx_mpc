@@ -97,5 +97,9 @@ void mpc(py::module& m)
         &dolfinx_mpc::create_contact_slip_condition);
   m.def("create_contact_inelastic_condition",
         &dolfinx_mpc::create_contact_inelastic_condition);
+  m.def("create_dof_to_facet_map", &dolfinx_mpc::create_dof_to_facet_map);
+  m.def("create_average_normal", &dolfinx_mpc::create_average_normal);
+  m.def("create_normal_approximation",
+        &dolfinx_mpc::create_normal_approximation);
 }
 } // namespace dolfinx_mpc_wrappers

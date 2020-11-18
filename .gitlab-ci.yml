@@ -129,6 +129,10 @@ nightly-complex:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
+    - python3 demo_elasticity_disconnect_2D.py
+    - mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
+    - python3 demo_elasticity_disconnect.py
+    - mpirun -n 4 python3 demo_elasticity_disconnect.py
     - make contact2D-serial
     - make contact2D-parallel
     - make contact3D-serial
@@ -198,6 +202,10 @@ nightly-real:
     - mpirun -n 4 python3 demo_stokes.py
     - python3 demo_periodic3d.py
     - mpirun -n 4 python3 demo_periodic3d.py
+    - python3 demo_elasticity_disconnect_2D.py
+    - mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
+    - python3 demo_elasticity_disconnect.py
+    - mpirun -n 4 python3 demo_elasticity_disconnect.py
     - make contact2D-serial
     - make contact2D-parallel
     - make contact3D-serial

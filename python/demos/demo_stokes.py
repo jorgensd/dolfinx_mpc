@@ -111,7 +111,7 @@ bc2 = dolfinx.DirichletBC(zero, dofs, W1)
 bcs = [bc1, bc2]
 
 # Create slip condition
-n = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 1)
+n = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 1])
 mpc = dolfinx_mpc.MultiPointConstraint(W)
 mpc.create_slip_constraint(W.sub(0), n, np.array(V_to_W), (mt, 1), bcs=bcs)
 mpc.finalize()
