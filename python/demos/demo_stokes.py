@@ -68,7 +68,7 @@ def create_mesh_gmsh():
     return mesh, ft
 
 
-# Create mesh
+# ------------------- Mesh and function space creation ------------------------
 mesh, mt = create_mesh_gmsh()
 
 fdim = mesh.topology.dim - 1
@@ -87,54 +87,69 @@ def inlet_velocity_expression(x):
                      5 * x[1] * np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2))))
 
 
+# ----------------------Defining boundary conditions----------------------
 # Inlet velocity Dirichlet BC
 inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
 W0 = W.sub(0)
-
 dofs = dolfinx.fem.locate_dofs_topological((W0, V), 1, inlet_facets)
 bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
 
-# Since for this problem the pressure is only determined up to a constant,
-# we pin the pressure at the point (0, 0)
+# Pressure condition at single dof to determine pressure
 zero = dolfinx.Function(Q)
 with zero.vector.localForm() as zero_local:
     zero_local.set(0.0)
 W1 = W.sub(1)
-dofs = dolfinx.fem.locate_dofs_geometrical((W1, Q),
-                                           lambda x: np.isclose(x.T, [0, 0, 0])
-                                           .all(axis=1))
+dofs = dolfinx.fem.locate_dofs_geometrical((W1, Q), lambda x: np.isclose(x.T, [0, 0, 0]).all(axis=1))
 bc2 = dolfinx.DirichletBC(zero, dofs, W1)
 
 # Collect Dirichlet boundary conditions
 bcs = [bc1, bc2]
 
-# Create slip condition
-n = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 1)
+# Slip conditions for walls
+n = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 1])
 mpc = dolfinx_mpc.MultiPointConstraint(W)
 mpc.create_slip_constraint(W.sub(0), n, np.array(V_to_W), (mt, 1), bcs=bcs)
 mpc.finalize()
-# Write cell partitioning to file
-tdim = mesh.topology.dim
-cell_map = mesh.topology.index_map(tdim)
-num_cells_local = cell_map.size_local
-indices = np.arange(num_cells_local)
-values = MPI.COMM_WORLD.rank * np.ones(num_cells_local, np.int32)
-ct = dolfinx.MeshTags(mesh, mesh.topology.dim, indices, values)
-ct.name = "cells"
-with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "cf.xdmf", "w") as xdmf:
-    xdmf.write_mesh(mesh)
-    xdmf.write_meshtags(ct)
 
 
-# Define variational problem
+def tangential_proj(u, n):
+    """
+    See for instance:
+    https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf
+    """
+    return (ufl.Identity(u.ufl_shape[0]) - ufl.outer(n, n)) * u
+
+
+def sym_grad(u):
+    return ufl.sym(ufl.grad(u))
+
+
+def T(u, p, mu):
+    return 2 * mu * sym_grad(u) - p * ufl.Identity(u.ufl_shape[0])
+
+
+# --------------------------Variational problem---------------------------
+# Traditional terms
+mu = 1
+f = dolfinx.Constant(mesh, ((0, 0)))
 (u, p) = ufl.TrialFunctions(W)
 (v, q) = ufl.TestFunctions(W)
-f = dolfinx.Function(V)
-a = (ufl.inner(ufl.grad(u), ufl.grad(v)) + ufl.inner(p, ufl.div(v))
-     + ufl.inner(ufl.div(u), q)) * ufl.dx
+a = (2 * mu * ufl.inner(sym_grad(u), sym_grad(v))
+     - ufl.inner(p, ufl.div(v))
+     - ufl.inner(ufl.div(u), q)) * ufl.dx
 L = ufl.inner(f, v) * ufl.dx
+
+# No prescribed shear stress
+n = ufl.FacetNormal(mesh)
+g_tau = tangential_proj(dolfinx.Constant(mesh, ((0, 0), (0, 0))) * n, n)
+ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
+
+# Terms due to slip condition
+# Explained in for instance: https://arxiv.org/pdf/2001.10639.pdf
+a -= ufl.inner(ufl.outer(n, n) * ufl.dot(T(u, p, mu), n), v) * ds
+L += ufl.inner(g_tau, v) * ds
 
 # Assemble LHS matrix and RHS vector
 with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
@@ -147,7 +162,7 @@ dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])
 b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.assemble.set_bc(b, bcs)
 
-# Solve problem
+# ---------------------- Solve variational problem -----------------------
 ksp = PETSc.KSP().create(mesh.mpi_comm())
 ksp.setOperators(A)
 ksp.setType("preonly")
@@ -155,51 +170,45 @@ ksp.getPC().setType("lu")
 ksp.getPC().setFactorSolverType("mumps")
 uh = b.copy()
 ksp.solve(b, uh)
-uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-               mode=PETSc.ScatterMode.FORWARD)
+uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+
+# Backsubstitute to update slave dofs in solution vector
 mpc.backsubstitution(uh)
 
-# Write solution to file
+# ------------------------------ Output ----------------------------------
 U = dolfinx.Function(mpc.function_space())
 U.vector.setArray(uh.array)
-
 u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 u.name = "u"
 p.name = "p"
+with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w") as outfile:
+    outfile.write_mesh(mesh)
+    outfile.write_meshtags(mt)
+    outfile.write_function(u)
+    outfile.write_function(p)
 
-outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w")
-outfile.write_mesh(mesh)
-outfile.write_meshtags(mt)
-outfile.write_function(u)
-outfile.write_function(p)
-outfile.close()
-
+# -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison
-A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix reduction"):
 
-# Solve the MPC problem using a global transformation matrix
-# and numpy solvers to get reference values
-# Generate reference matrices and unconstrained solution
-with dolfinx.common.Timer("~Stokes: Unconstrained assembly"):
+    # Solve the MPC problem using a global transformation matrix
+    # and numpy solvers to get reference values
+    # Generate reference matrices and unconstrained solution
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
-
     L_org = dolfinx.fem.assemble_vector(L)
 
-dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
-dolfinx.fem.set_bc(L_org, bcs)
-solver = PETSc.KSP().create(MPI.COMM_WORLD)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("mumps")
-solver.setOperators(A_org)
+    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(L_org, bcs)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    ksp.setType("preonly")
+    ksp.getPC().setType("lu")
+    ksp.getPC().setFactorSolverType("mumps")
+    solver.setOperators(A_org)
 
-# Create global transformation matrix
-with dolfinx.common.Timer("~Stokes: Solve using global matrix"):
+    # Create global transformation matrix
     K = dolfinx_mpc.utils.create_transformation_matrix(W, mpc)
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
@@ -208,9 +217,12 @@ with dolfinx.common.Timer("~Stokes: Solve using global matrix"):
     d = np.linalg.solve(reduced_A, reduced_L)
     uh_numpy = np.dot(K, d)
 
-with dolfinx.common.Timer("~Stokes: Compare global and local solution"):
     # Compare LHS, RHS and solution with reference values
+    A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
+    b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
     dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
     assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+
+# -------------------- List timings --------------------------
 dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
