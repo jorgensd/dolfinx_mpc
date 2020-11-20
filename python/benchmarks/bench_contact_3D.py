@@ -243,7 +243,7 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     else:
         with dolfinx.common.Timer("{0:d}: FacetNormal".format(V.dim)):
             nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
-        with dolfinx.common.Timer("{0:d}: Create constraint".format(V.dim)):
+        with dolfinx.common.Timer("{0:d}: Create-constraint".format(V.dim)):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
 
     with dolfinx.common.Timer("{0:d}: MPC".format(V.dim)):
@@ -254,10 +254,10 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     # with dolfinx.common.Timer("~{0:d}:  Assemble matrix ({0:d})".format(V.dim))):
     #     A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
     # MPI.COMM_WORLD.barrier()
-    with dolfinx.common.Timer("{0:d}: Assemble matrix".format(V.dim)):
+    with dolfinx.common.Timer("{0:d}: Assemble-matrix".format(V.dim)):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
-    with dolfinx.common.Timer("{0:d}: Assemble vector".format(V.dim)):
+    with dolfinx.common.Timer("{0:d}: Assemble-vector".format(V.dim)):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
         fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
@@ -311,9 +311,10 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
             print("#Dofs: {0:d}".format(V.dim), file=results_file)
             print("#Slaves: {0:d}".format(num_slaves), file=results_file)
             print("#Iterations: {0:d}".format(it), file=results_file)
-        operations = ["Create constraint", "FacetNormal", "Create constraint",
-                      "MPC", "Assemble matrix", "Assemble vector", "Solve", "Backsubstitution"]
-        print("Operation  #Calls Avg Min Max", file=results_file)
+        operations = ["Create-constraint", "FacetNormal",
+                      "MPC", "Assemble-matrix", "Assemble-vector", "Solve", "Backsubstitution"]
+        if comm.rank == 0:
+            print("Operation  #Calls Avg Min Max", file=results_file)
         for op in operations:
             op_timing = dolfinx.common.timing("{0:d}: ".format(V.dim) + op)
             num_calls = op_timing[0]
@@ -327,7 +328,6 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--res", default=0.1, type=np.float64, dest="res", help="Resolution of Mesh")
     parser.add_argument("--theta", default=np.pi / 3, type=np.float64,
                         dest="theta", help="Rotation angle around axis [1, 1, 0]")
     hex = parser.add_mutually_exclusive_group(required=False)
@@ -337,7 +337,6 @@ if __name__ == "__main__":
                       help="Use no-slip constraint", default=False)
 
     args = parser.parse_args()
-    res = args.res
     noslip = args.noslip
     theta = args.theta
     hex = args.hex
@@ -345,7 +344,7 @@ if __name__ == "__main__":
     ct = dolfinx.cpp.mesh.CellType.hexahedron if hex else dolfinx.cpp.mesh.CellType.tetrahedron
 
     # Create cache
-    if res < 0.5:
-        demo_stacked_cubes(theta=theta, ct=ct, res=0.5, noslip=noslip, timings=False)
-
-    demo_stacked_cubes(theta=theta, ct=ct, res=res, noslip=noslip, timings=True)
+    demo_stacked_cubes(theta=theta, ct=ct, res=0.5, noslip=noslip, timings=False)
+    # Run benchmark
+    for res in [0.1, 0.05, 0.025]:
+        demo_stacked_cubes(theta=theta, ct=ct, res=res, noslip=noslip, timings=True)
