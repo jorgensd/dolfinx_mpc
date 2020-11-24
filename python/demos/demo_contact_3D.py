@@ -260,9 +260,9 @@ if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(comm, "results/demo_contact_3D.xdmf", "w")
 
     if hex:
-        ct = dolfinx.cpp.mesh.CellType.tetrahedron
-    else:
         ct = dolfinx.cpp.mesh.CellType.hexahedron
+    else:
+        ct = dolfinx.cpp.mesh.CellType.tetrahedron
     demo_stacked_cubes(outfile, theta=theta, gmsh=gmsh, ct=ct, compare=compare, res=res, noslip=noslip)
 
     outfile.close()
