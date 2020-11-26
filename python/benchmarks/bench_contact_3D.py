@@ -214,7 +214,7 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     u_top = dolfinx.function.Function(V)
     u_top.interpolate(top_v)
 
-    top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
+    top_facets = mt.indices[mt.values == 3]
     top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
     bc_top = fem.DirichletBC(u_top, top_dofs)
 
@@ -242,7 +242,7 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt, 4, 9)
     else:
         with dolfinx.common.Timer("{0:d}: FacetNormal".format(V.dim)):
-            nh = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 4)
+            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
         with dolfinx.common.Timer("{0:d}: Contact-constraint".format(V.dim)):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
 
