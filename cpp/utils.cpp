@@ -347,7 +347,7 @@ dolfinx_mpc::create_dof_to_facet_map(
   auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
   auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
   Eigen::Array<std::int32_t, Eigen::Dynamic, Eigen::Dynamic> dofs
-      = dolfinx::fem::locate_dofs_topological({*V}, tdim - 1, facets);
+      = dolfinx::fem::locate_dofs_topological({*V}, tdim - 1, facets, false);
   // Initialize empty map for the dofs located topologically
   std::map<std::int32_t, std::vector<std::int32_t>> dofs_to_facets;
   for (std::int32_t i = 0; i < dofs.size(); ++i)

@@ -114,9 +114,9 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
       {
         std::vector<std::int64_t> m_glob
             = imap->local_to_global(masters_i, false);
-        masters.insert({slave_glob[0], m_glob});
-        coeffs.insert({slave_glob[0], coeffs_i});
-        owners.insert({slave_glob[0], owners_i});
+        masters[slave_glob[0]] = m_glob;
+        coeffs[slave_glob[0]] = coeffs_i;
+        owners[slave_glob[0]] = owners_i;
       }
     }
     else
@@ -248,10 +248,9 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
       if (l_master.size() > 0)
       {
         auto global_masters = imap->local_to_global(l_master, false);
-        local_masters.insert(
-            std::pair(local_slaves_as_glob[i], global_masters));
-        local_coeffs.insert(std::pair(local_slaves_as_glob[i], l_coeff));
-        local_owners.insert(std::pair(local_slaves_as_glob[i], l_owner));
+        local_masters[local_slaves_as_glob[i]] = global_masters;
+        local_coeffs[local_slaves_as_glob[i]] = l_coeff;
+        local_owners[local_slaves_as_glob[i]] = l_owner;
       }
       else
       {
@@ -449,9 +448,9 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
         }
         auto global_masters = imap->local_to_global(l_master, false);
         collision_slaves[i].push_back(slaves_recv[j]);
-        collision_masters[i].insert(std::pair(slaves_recv[j], global_masters));
-        collision_coeffs[i].insert(std::pair(slaves_recv[j], l_coeff));
-        collision_owners[i].insert(std::pair(slaves_recv[j], l_owner));
+        collision_masters[i][slaves_recv[j]] = global_masters;
+        collision_coeffs[i][slaves_recv[j]] = l_coeff;
+        collision_owners[i][slaves_recv[j]] = l_owner;
       }
     }
   }
@@ -1037,10 +1036,11 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       {
         if (l_master[j].size() > 0)
         {
+          const std::int32_t local_slave = local_slaves[j][i];
           auto global_masters = imap->local_to_global(l_master[j], false);
-          local_masters.insert(std::pair(local_slaves[j][i], global_masters));
-          local_coeffs.insert(std::pair(local_slaves[j][i], l_coeff[j]));
-          local_owners.insert(std::pair(local_slaves[j][i], l_owner[j]));
+          local_masters[local_slave] = global_masters;
+          local_coeffs[local_slave] = l_coeff[j];
+          local_owners[local_slave] = l_owner[j];
           found_masters = true;
         }
       }
@@ -1247,14 +1247,11 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
           }
         }
         collision_slaves[i].push_back(remote_slave_blocks[j]);
-        collision_masters[i].insert(
-            std::pair(remote_slave_blocks[j], remote_masters));
-        collision_coeffs[i].insert(
-            std::pair(remote_slave_blocks[j], remote_coeffs));
-        collision_owners[i].insert(
-            std::pair(remote_slave_blocks[j], remote_owners));
-        collision_block_offsets[i].insert(
-            std::pair(remote_slave_blocks[j], num_masters_per_slave));
+        collision_masters[i][remote_slave_blocks[j]] = remote_masters;
+        collision_coeffs[i][remote_slave_blocks[j]] = remote_coeffs;
+        collision_owners[i][remote_slave_blocks[j]] = remote_owners;
+        collision_block_offsets[i][remote_slave_blocks[j]]
+            = num_masters_per_slave;
       }
     }
   }
