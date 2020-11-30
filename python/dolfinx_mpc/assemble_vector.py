@@ -27,7 +27,7 @@ def assemble_vector(form, constraint,
     x_dofs = V.mesh.geometry.dofmap.array
     x = V.mesh.geometry.x
     dofs = V.dofmap.list.array
-
+    block_size = V.dofmap.index_map_bs
     # Data from multipointconstraint
     slave_cells = constraint.slave_cells()
     coefficients = constraint.coefficients()
@@ -43,7 +43,7 @@ def assemble_vector(form, constraint,
                 slave_cells, cell_to_slave, c_to_s_off)
     # Get index map and ghost info
     index_map = constraint.index_map()
-    vector = dolfinx.cpp.la.create_vector(index_map)
+    vector = dolfinx.cpp.la.create_vector(index_map, block_size)
     ufc_form = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form)
 
     # Pack constants and coefficients

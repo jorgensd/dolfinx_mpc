@@ -275,6 +275,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     # u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
     #                        mode=PETSc.ScatterMode.FORWARD)
     # u_h.name = "u_{0:.2f}".format(theta)
+    # import dolfinx.io as io
     # outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
     # outfile.write_mesh(mesh)
     # outfile.write_function(u_h, 0.0,

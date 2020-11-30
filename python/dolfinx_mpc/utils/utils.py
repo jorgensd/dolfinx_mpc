@@ -67,11 +67,9 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
-    all_dofs = np.array(
-        range(imap.size_local * imap.block_size), dtype=np.int32)
+    all_dofs = np.array(range(imap.size_local * imap.block_size), dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
-    top_dofs = dolfinx.fem.locate_dofs_topological(
-        V, V.mesh.topology.dim - 1, top_facets)[:, 0]
+    top_dofs = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)[:, 0]
     deac_dofs = all_dofs[np.isin(all_dofs, top_dofs, invert=True)]
 
     # Note there should be a better way to do this
@@ -80,8 +78,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
     block_size = V.dofmap.index_map.block_size
     blocks = np.unique(deac_dofs // block_size)
-    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(
-        pattern, blocks, block_size)
+    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, blocks, block_size)
     pattern.assemble()
 
     u_0 = dolfinx.Function(V)
@@ -91,8 +88,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     A = dolfinx.cpp.la.create_matrix(comm, pattern)
     A.zeroEntries()
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
-                                     [bc_deac], 1.0)
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], [bc_deac], 1.0)
     # Assemble the matrix with all entries
     dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, [bc_deac])
     A.assemble()
@@ -100,8 +96,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     b = dolfinx.fem.assemble_vector(L)
 
     dolfinx.fem.apply_lifting(b, [a], [[bc_deac]])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, [bc_deac])
 
     # Solve Linear problem
@@ -110,8 +105,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     solver.rtol = 1e-8
     solver.setOperators(A)
     solver.solve(b, nh.vector)
-    nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+    nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     timer.stop()
     return nh
 
@@ -122,11 +116,13 @@ def gather_slaves_global(constraint):
     return slaves for all processors with global dof numbering
     """
     loc_to_glob = np.array(
-        constraint.index_map().global_indices(False), dtype=np.int64)
+        constraint.index_map().global_indices(), dtype=np.int64)
+    block_size = constraint.function_space().dofmap.index_map_bs
     if constraint.num_local_slaves() > 0:
-        glob_slaves = np.array(loc_to_glob[
-            constraint.slaves()[:constraint.num_local_slaves()]],
-            dtype=np.int64)
+        slave_blocks = constraint.slaves()[:constraint.num_local_slaves()] // block_size
+        slave_rems = constraint.slaves()[: constraint.num_local_slaves()] % block_size
+        glob_slaves = np.array(loc_to_glob[slave_blocks] * block_size + slave_rems,
+                               dtype=np.int64)
     else:
         glob_slaves = np.array([], dtype=np.int64)
 
@@ -157,27 +153,34 @@ def create_transformation_matrix(V, constraint):
     """
     # Gather slaves from all procs
     loc_to_glob = np.array(
-        constraint.index_map().global_indices(False), dtype=np.int64)
+        constraint.index_map().global_indices(), dtype=np.int64)
+    block_size = V.dofmap.index_map_bs
     if constraint.num_local_slaves() > 0:
-        local_slaves = constraint.slaves()[:constraint.num_local_slaves()]
-        glob_slaves = np.array(loc_to_glob[local_slaves], dtype=np.int64)
+        local_slaves = constraint.slaves()[: constraint.num_local_slaves()]
+        local_blocks = local_slaves // block_size
+        local_rems = local_slaves % block_size
+        glob_slaves = np.array(loc_to_glob[local_blocks] * block_size + local_rems, dtype=np.int64)
     else:
         local_slaves = np.array([], dtype=np.int32)
         glob_slaves = np.array([], dtype=np.int64)
 
     global_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
     masters = constraint.masters_local().array
+    master_blocks = masters // block_size
+    master_rems = masters % block_size
     coeffs = constraint.coefficients()
     offsets = constraint.masters_local().offsets
     K = np.zeros((V.dim, V.dim - len(global_slaves)), dtype=PETSc.ScalarType)
     # Add entries to
     for i in range(K.shape[0]):
-        local_index = np.flatnonzero(i == loc_to_glob[local_slaves])
+        local_index = np.flatnonzero(i == glob_slaves)
         if len(local_index) > 0:
             # If local master add coeffs
             local_index = local_index[0]
-            masters_index = loc_to_glob[masters[offsets[local_index]:
-                                                offsets[local_index + 1]]]
+            masters_index = (loc_to_glob[master_blocks[offsets[local_index]:
+                                                       offsets[local_index + 1]]] * block_size
+                             + master_rems[offsets[local_index]:
+                                           offsets[local_index + 1]])
             coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
             for master, coeff in zip(masters_index, coeffs_index):
                 count = sum(master > global_slaves)
@@ -202,7 +205,7 @@ def PETScVector_to_global_numpy(vector):
     numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
-    numpy_vec[l_min:l_max] += vector.array
+    numpy_vec[l_min: l_max] += vector.array
     numpy_vec = sum(MPI.COMM_WORLD.allgather(numpy_vec))
     return numpy_vec
 
@@ -217,7 +220,7 @@ def PETScMatrix_to_global_numpy(A):
     B_np = B.getDenseArray()
     A_numpy = np.zeros((A.size[0], A.size[1]), dtype=B_np.dtype)
     o_range = A.getOwnershipRange()
-    A_numpy[o_range[0]:o_range[1], :] = B_np
+    A_numpy[o_range[0]: o_range[1], :] = B_np
     A_numpy = sum(MPI.COMM_WORLD.allgather(A_numpy))
     return A_numpy
 
