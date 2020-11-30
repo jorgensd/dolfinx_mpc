@@ -5,10 +5,8 @@ from petsc4py import PETSc
 
 import dolfinx
 
-from .contactcondition import create_contact_slip_condition
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition
-from .slipcondition import create_slip_condition
 
 
 class MultiPointConstraint():
@@ -109,15 +107,6 @@ class MultiPointConstraint():
              self.ghost_coeffs, self.ghost_masters, self.ghost_offsets,
              self.ghost_owners, self.ghost_slaves)
 
-    def create_contact_constraint(self, meshtag, slave_marker, master_marker):
-        """
-        Create a contact constraint between two mesh entities,
-        defined through markers.
-        """
-        slaves, masters, coeffs, owners, offsets = create_contact_slip_condition(
-            self.V, meshtag, slave_marker, master_marker)
-        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
-
     def create_periodic_constraint(self, meshtag, tag, relation, bcs, scale=1):
         """
         Create a periodic boundary condition (possibly scaled).
@@ -131,24 +120,6 @@ class MultiPointConstraint():
         """
         slaves, masters, coeffs, owners, offsets = create_periodic_condition(
             self.V, meshtag, tag, relation, bcs, scale)
-        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
-
-    def create_slip_constraint(self, sub_space, normal, sub_map, entity_data,
-                               bcs=[]):
-        """
-        Create a slip constraint dot(u,normal)=0 where u is either in the
-        constrained
-        space or a sub-space. Need to supply the map between the space of the
-        normal function (from the collapsed sub space) and the constraint
-        space,
-        as well as which mesh entities this constraint shall be applied on
-        """
-        if sub_space is None:
-            W = self.V
-        else:
-            W = (self.V, sub_space)
-        slaves, masters, coeffs, owners, offsets = create_slip_condition(
-            W, normal, sub_map, entity_data, bcs)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def create_general_constraint(self, slave_master_dict, subspace_slave=None,
