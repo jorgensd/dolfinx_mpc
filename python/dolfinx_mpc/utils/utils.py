@@ -67,18 +67,18 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
-    all_dofs = np.array(range(imap.size_local * imap.block_size), dtype=np.int32)
+    bs = V.dofmap.index_map_bs
+    all_dofs = np.array(range(imap.size_local * bs), dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
-    top_dofs = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)[:, 0]
+    top_dofs = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
     deac_dofs = all_dofs[np.isin(all_dofs, top_dofs, invert=True)]
 
     # Note there should be a better way to do this
     # Create sparsity pattern only for constraint + bc
     cpp_form = dolfinx.Form(a)._cpp_object
     pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
-    block_size = V.dofmap.index_map.block_size
-    blocks = np.unique(deac_dofs // block_size)
-    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, blocks, block_size)
+    blocks = np.unique(deac_dofs // bs)
+    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, blocks, bs)
     pattern.assemble()
 
     u_0 = dolfinx.Function(V)

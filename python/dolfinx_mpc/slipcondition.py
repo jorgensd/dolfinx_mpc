@@ -36,7 +36,7 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
 
     # Locate dofs in W on facets and create mapping from normal space to W
     if Wsub is None:
-        entity_dofs = fem.locate_dofs_topological(W, meshtag.dim, marked_entities)
+        entity_dofs = [fem.locate_dofs_topological(W, meshtag.dim, marked_entities)]
 
         def normal_to_W(x):
             return normal_dofs[x]
@@ -70,7 +70,8 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
                 for index in master_indices:
                     coeff = -n_vec[normal_dofs[index]] / n_vec[normal_dofs[slave_index]]
                     if not np.isclose(coeff, 0):
-                        pair_masters.append(W_global_indices[normal_to_W(index)])
+                        pair_masters.append(W_global_indices[normal_to_W(index)
+                                                             // W_bs] * W_bs + normal_to_W(index) % W_bs)
                         pair_coeffs.append(coeff)
                         if normal_to_W(index) < W_local_size * W_bs:
                             pair_owners.append(comm.rank)
