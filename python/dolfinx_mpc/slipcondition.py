@@ -81,7 +81,7 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
                 # append one to enforce Dirichlet BC 0
                 if len(pair_masters) == 0:
                     master = normal_to_W(master_indices[0])
-                    pair_masters = [W_global_indices[master]]
+                    pair_masters = [W_global_indices[master // W_bs] * W_bs + master % W_bs]
                     pair_coeffs = [-n_vec[master_indices[0]] / n_vec[normal_dofs[slave_index]]]
                     if master < W_local_size * W_bs:
                         pair_owners.append(comm.rank)
