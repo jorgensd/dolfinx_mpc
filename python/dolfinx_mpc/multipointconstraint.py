@@ -5,7 +5,6 @@ from petsc4py import PETSc
 
 import dolfinx
 
-from .contactcondition import create_contact_slip_condition
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition
 from .slipcondition import create_slip_condition
@@ -108,15 +107,6 @@ class MultiPointConstraint():
              self.local_coeffs, self.local_owners, self.offsets,
              self.ghost_coeffs, self.ghost_masters, self.ghost_offsets,
              self.ghost_owners, self.ghost_slaves)
-
-    def create_contact_constraint(self, meshtag, slave_marker, master_marker):
-        """
-        Create a contact constraint between two mesh entities,
-        defined through markers.
-        """
-        slaves, masters, coeffs, owners, offsets = create_contact_slip_condition(
-            self.V, meshtag, slave_marker, master_marker)
-        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def create_periodic_constraint(self, meshtag, tag, relation, bcs, scale=1):
         """

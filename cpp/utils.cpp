@@ -276,12 +276,11 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
 MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
     std::vector<std::int32_t>& local_dofs,
     std::vector<std::int32_t>& ghost_dofs,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map, bool blocked)
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map, int block_size)
 {
   // Get data from IndexMap
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
       = index_map->ghost_owner_rank();
-  const std::int32_t block_size = index_map->block_size();
   const std::int32_t size_local = index_map->size_local();
   std::map<std::int32_t, std::set<int>> shared_indices
       = index_map->compute_shared_indices();
@@ -297,9 +296,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 
   for (auto dof : local_dofs)
   {
-    std::int32_t block = dof;
-    if (!blocked)
-      block /= block_size;
+    std::int32_t block = dof / block_size;
 
     const std::set<int> procs = shared_indices[block];
     for (auto proc : procs)
@@ -308,9 +305,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 
   for (auto dof : ghost_dofs)
   {
-    std::int32_t block = dof;
-    if (!blocked)
-      block /= block_size;
+    std::int32_t block = dof / block_size;
 
     const std::int32_t proc = ghost_owners[block - size_local];
     src_edges.insert(proc);
@@ -339,7 +334,7 @@ dolfinx_mpc::create_dof_to_facet_map(
 
   const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
-  const std::int32_t block_size = dofmap->index_map->block_size();
+  const std::int32_t block_size = dofmap->index_map_bs();
   const std::int32_t tdim = mesh->topology().dim();
   // Locate all dofs for each facet
   mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
@@ -402,7 +397,7 @@ void dolfinx_mpc::create_normal_approximation(
 {
   auto x = V->tabulate_dof_coordinates();
   const std::int32_t tdim = V->mesh()->topology().dim();
-  const std::int32_t block_size = V->dofmap()->index_map->block_size();
+  const std::int32_t block_size = V->dofmap()->index_map_bs();
 
   std::map<std::int32_t, std::vector<std::int32_t>> facets_to_dofs
       = create_dof_to_facet_map(V, entities);

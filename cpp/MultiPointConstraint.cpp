@@ -145,7 +145,8 @@ void MultiPointConstraint::create_new_index_map()
   std::shared_ptr<const dolfinx::common::IndexMap> index_map = dofmap.index_map;
 
   // Compute local master index before creating new index-map
-  const std::int32_t& block_size = _V->dofmap()->index_map->block_size();
+  const std::int32_t& block_size = _V->dofmap()->index_map_bs();
+
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_array
       = _master_map->array();
   master_array /= block_size;
@@ -215,19 +216,18 @@ void MultiPointConstraint::create_new_index_map()
         dolfinx::MPI::compute_graph_edges(
             MPI_COMM_WORLD,
             std::set<int>(ghost_ranks.begin(), ghost_ranks.end())),
-        old_ghosts, ghost_ranks, block_size);
+        old_ghosts, ghost_ranks);
 
     timer_indexmap.stop();
   }
   // Create new dofmap
   const dolfinx::fem::DofMap* old_dofmap = _V->dofmap().get();
-  const int& bs = old_dofmap->element_dof_layout->block_size();
   dolfinx::mesh::Topology topology = _V->mesh()->topology();
   dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
-  auto [unused_indexmap, o_dofmap] = dolfinx::fem::DofMapBuilder::build(
+  auto [unused_indexmap, bs, o_dofmap] = dolfinx::fem::DofMapBuilder::build(
       _V->mesh()->mpi_comm(), topology, layout);
   _dofmap = std::make_shared<dolfinx::fem::DofMap>(
-      old_dofmap->element_dof_layout, _index_map, o_dofmap);
+      old_dofmap->element_dof_layout, _index_map, bs, o_dofmap);
 
   // Compute local master index before creating new index-map
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_blocks
@@ -280,20 +280,23 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
 
   assert(a.function_spaces().at(0) == _V);
   assert(a.function_spaces().at(1) == _V);
-
+  auto bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
+  auto bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
+  assert(bs0 == bs1);
   const dolfinx::mesh::Mesh& mesh = *(a.mesh());
 
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
   new_maps[0] = _index_map;
   new_maps[1] = _index_map;
-  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps);
+  std::array<int, 2> bs = {bs0, bs1};
+  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps, bs);
 
   ///  Create and build sparsity pattern for original form. Should be
   ///  equivalent to calling create_sparsity_pattern(Form a)
   dolfinx_mpc::build_standard_pattern(pattern, a);
 
   // Arrays replacing slave dof with master dof in sparsity pattern
-  const int& block_size = _index_map->block_size();
+  const int& block_size = bs0;
   Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_slave(block_size);
   Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_other_slave(block_size);
 

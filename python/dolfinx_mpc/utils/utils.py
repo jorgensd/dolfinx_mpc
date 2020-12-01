@@ -67,21 +67,18 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
-    all_dofs = np.array(
-        range(imap.size_local * imap.block_size), dtype=np.int32)
+    bs = V.dofmap.index_map_bs
+    all_dofs = np.array(range(imap.size_local * bs), dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
-    top_dofs = dolfinx.fem.locate_dofs_topological(
-        V, V.mesh.topology.dim - 1, top_facets)[:, 0]
+    top_dofs = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
     deac_dofs = all_dofs[np.isin(all_dofs, top_dofs, invert=True)]
 
     # Note there should be a better way to do this
     # Create sparsity pattern only for constraint + bc
     cpp_form = dolfinx.Form(a)._cpp_object
     pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
-    block_size = V.dofmap.index_map.block_size
-    blocks = np.unique(deac_dofs // block_size)
-    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(
-        pattern, blocks, block_size)
+    blocks = np.unique(deac_dofs // bs)
+    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, blocks, bs)
     pattern.assemble()
 
     u_0 = dolfinx.Function(V)
@@ -91,8 +88,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     A = dolfinx.cpp.la.create_matrix(comm, pattern)
     A.zeroEntries()
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
-                                     [bc_deac], 1.0)
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], [bc_deac], 1.0)
     # Assemble the matrix with all entries
     dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, [bc_deac])
     A.assemble()
@@ -100,8 +96,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     b = dolfinx.fem.assemble_vector(L)
 
     dolfinx.fem.apply_lifting(b, [a], [[bc_deac]])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, [bc_deac])
 
     # Solve Linear problem
@@ -110,8 +105,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     solver.rtol = 1e-8
     solver.setOperators(A)
     solver.solve(b, nh.vector)
-    nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+    nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     timer.stop()
     return nh
 
@@ -122,11 +116,13 @@ def gather_slaves_global(constraint):
     return slaves for all processors with global dof numbering
     """
     loc_to_glob = np.array(
-        constraint.index_map().global_indices(False), dtype=np.int64)
+        constraint.index_map().global_indices(), dtype=np.int64)
+    block_size = constraint.function_space().dofmap.index_map_bs
     if constraint.num_local_slaves() > 0:
-        glob_slaves = np.array(loc_to_glob[
-            constraint.slaves()[:constraint.num_local_slaves()]],
-            dtype=np.int64)
+        slave_blocks = constraint.slaves()[:constraint.num_local_slaves()] // block_size
+        slave_rems = constraint.slaves()[: constraint.num_local_slaves()] % block_size
+        glob_slaves = np.array(loc_to_glob[slave_blocks] * block_size + slave_rems,
+                               dtype=np.int64)
     else:
         glob_slaves = np.array([], dtype=np.int64)
 
@@ -157,27 +153,34 @@ def create_transformation_matrix(V, constraint):
     """
     # Gather slaves from all procs
     loc_to_glob = np.array(
-        constraint.index_map().global_indices(False), dtype=np.int64)
+        constraint.index_map().global_indices(), dtype=np.int64)
+    block_size = V.dofmap.index_map_bs
     if constraint.num_local_slaves() > 0:
-        local_slaves = constraint.slaves()[:constraint.num_local_slaves()]
-        glob_slaves = np.array(loc_to_glob[local_slaves], dtype=np.int64)
+        local_slaves = constraint.slaves()[: constraint.num_local_slaves()]
+        local_blocks = local_slaves // block_size
+        local_rems = local_slaves % block_size
+        glob_slaves = np.array(loc_to_glob[local_blocks] * block_size + local_rems, dtype=np.int64)
     else:
         local_slaves = np.array([], dtype=np.int32)
         glob_slaves = np.array([], dtype=np.int64)
 
     global_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
     masters = constraint.masters_local().array
+    master_blocks = masters // block_size
+    master_rems = masters % block_size
     coeffs = constraint.coefficients()
     offsets = constraint.masters_local().offsets
     K = np.zeros((V.dim, V.dim - len(global_slaves)), dtype=PETSc.ScalarType)
     # Add entries to
     for i in range(K.shape[0]):
-        local_index = np.flatnonzero(i == loc_to_glob[local_slaves])
+        local_index = np.flatnonzero(i == glob_slaves)
         if len(local_index) > 0:
             # If local master add coeffs
             local_index = local_index[0]
-            masters_index = loc_to_glob[masters[offsets[local_index]:
-                                                offsets[local_index + 1]]]
+            masters_index = (loc_to_glob[master_blocks[offsets[local_index]:
+                                                       offsets[local_index + 1]]] * block_size
+                             + master_rems[offsets[local_index]:
+                                           offsets[local_index + 1]])
             coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
             for master, coeff in zip(masters_index, coeffs_index):
                 count = sum(master > global_slaves)
@@ -202,7 +205,7 @@ def PETScVector_to_global_numpy(vector):
     numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
-    numpy_vec[l_min:l_max] += vector.array
+    numpy_vec[l_min: l_max] += vector.array
     numpy_vec = sum(MPI.COMM_WORLD.allgather(numpy_vec))
     return numpy_vec
 
@@ -217,7 +220,7 @@ def PETScMatrix_to_global_numpy(A):
     B_np = B.getDenseArray()
     A_numpy = np.zeros((A.size[0], A.size[1]), dtype=B_np.dtype)
     o_range = A.getOwnershipRange()
-    A_numpy[o_range[0]:o_range[1], :] = B_np
+    A_numpy[o_range[0]: o_range[1], :] = B_np
     A_numpy = sum(MPI.COMM_WORLD.allgather(A_numpy))
     return A_numpy
 
@@ -294,12 +297,10 @@ def rigid_motions_nullspace(V):
     dim = 3 if gdim == 2 else 6
 
     # Create list of vectors for null space
-    nullspace_basis = [dolfinx.cpp.la.create_vector(
-        V.dofmap.index_map) for i in range(dim)]
+    nullspace_basis = [dolfinx.cpp.la.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs) for i in range(dim)]
 
     with ExitStack() as stack:
-        vec_local = [stack.enter_context(x.localForm())
-                     for x in nullspace_basis]
+        vec_local = [stack.enter_context(x.localForm()) for x in nullspace_basis]
         basis = [np.asarray(x) for x in vec_local]
 
         x = V.tabulate_dof_coordinates()
@@ -341,8 +342,9 @@ def determine_closest_dofs(V, point):
     closest_cell_data = dolfinx.geometry.compute_closest_entity(bb_tree, midpoint_tree, V.mesh, point)
     closest_cell, min_distance = closest_cell_data[0][0], closest_cell_data[1][0]
     cell_imap = V.mesh.topology.index_map(tdim)
+
     # Set distance high if cell is not owned
-    if cell_imap.size_local * cell_imap.block_size <= closest_cell:
+    if cell_imap.size_local <= closest_cell:
         min_distance = 1e5
     # Find processor with cell closest to point
     global_distances = MPI.COMM_WORLD.allgather(min_distance)
@@ -351,7 +353,7 @@ def determine_closest_dofs(V, point):
     dofmap = V.dofmap
     imap = dofmap.index_map
     ghost_owner = imap.ghost_owner_rank()
-    block_size = imap.block_size
+    block_size = dofmap.index_map_bs
     local_max = imap.size_local * block_size
     # Determine which block of dofs is closest
     min_distance = max(min_distance, 1e5)
@@ -400,16 +402,17 @@ def determine_closest_dofs(V, point):
         assert(min_dof_owner == owning_processor)
         return owning_processor, [minimal_distance_block * block_size + i for i in range(block_size)]
     else:
-        return owning_processor, None
+        return owning_processor, []
 
 
 def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     # Determine which processor owns the dof closest to the slave and master point
     slave_proc, slave_dofs = determine_closest_dofs(V, slave_point)
     master_proc, master_dofs = determine_closest_dofs(V, master_point)
-
+    block_size = V.dofmap.index_map_bs
+    imap = V.dofmap.index_map
     # Create local to global mapping and map masters
-    loc_to_glob = np.array(V.dofmap.index_map.global_indices(False), dtype=np.int64)
+    loc_to_glob = np.array(imap.global_indices(), dtype=np.int64)
     # Output structures
     local_slaves, ghost_slaves = [], []
     local_masters, ghost_masters = [], []
@@ -433,28 +436,36 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             local_slaves = [slave_dofs[slave_index]]
             for i, slave in enumerate(slave_dofs):
                 if i != slave_index and not np.isin(i, zero_indices):
-                    local_masters.append(loc_to_glob[slave])
+                    block = slave // block_size
+                    rem = slave % block_size
+                    local_masters.append(loc_to_glob[block] * block_size + rem)
                     local_owners.append(slave_proc)
                     local_coeffs.append(-vector[i] / vector[slave_index])
 
+    global_masters = None
+
+    master_dofs = np.array(master_dofs, dtype=np.int32)
+    master_blocks = master_dofs // block_size
+    master_rems = master_dofs % block_size
+    masters_as_glob = loc_to_glob[master_blocks] * block_size + master_rems
     if MPI.COMM_WORLD.rank == slave_proc and slave_proc == master_proc:
         # If slaves and masters are on the same processor finalize local work
         if vector is None:
-            local_masters = loc_to_glob[master_dofs]
+            local_masters = masters_as_glob
             local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
             local_coeffs = np.ones(len(local_masters), dtype=PETSc.ScalarType)
             local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
         else:
-            for i, master in enumerate(master_dofs):
+            for i in range(len(masters_as_glob)):
                 if not np.isin(i, zero_indices):
-                    local_masters.append(loc_to_glob[master])
+                    local_masters.append(masters_as_glob[i])
                     local_owners.append(master_proc)
                     local_coeffs.append(vector[i] / vector[slave_index])
             local_offsets = [0, len(local_masters)]
     else:
         # Send/Recv masters from other processor
         if MPI.COMM_WORLD.rank == master_proc:
-            MPI.COMM_WORLD.send(loc_to_glob[master_dofs], dest=slave_proc, tag=10)
+            MPI.COMM_WORLD.send(masters_as_glob, dest=slave_proc, tag=10)
 
         if MPI.COMM_WORLD.rank == slave_proc:
             global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
@@ -475,8 +486,8 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             local_offsets = np.arange(0, len(local_slaves) + 1, dtype=np.int32)
         else:
             local_offsets = np.array([0, len(local_masters)], dtype=np.int32)
-        if slave_dofs[0] / imap.block_size in shared_indices.keys():
-            ghost_processors = list(shared_indices[slave_dofs[0] / imap.block_size])
+        if slave_dofs[0] / block_size in shared_indices.keys():
+            ghost_processors = list(shared_indices[slave_dofs[0] / block_size])
 
     # Broadcast processors containg slave
     ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)

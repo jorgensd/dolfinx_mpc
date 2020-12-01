@@ -62,14 +62,13 @@ create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
 /// Create neighbourhood communicators from local_dofs to processors who has
 /// this as a ghost.
 /// @param[in] local_dofs Vector of local dofs
-/// @param[in] local_dofs Vector of ghost dofs
+/// @param[in] ghost_dofs Vector of ghost dofs
 /// @param[in] index_map The index map relating procs and ghosts
-/// @param[in] blocked If true work with blocked indices
+/// @param[in] block_size block_size of input dofs
 MPI_Comm create_owner_to_ghost_comm(
     std::vector<std::int32_t>& local_dofs,
     std::vector<std::int32_t>& ghost_dofs,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map,
-    bool blocked = false);
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map, int block_size);
 
 /// Create a map from each dof found on the set of facets topologically, to the
 /// connecting facets
