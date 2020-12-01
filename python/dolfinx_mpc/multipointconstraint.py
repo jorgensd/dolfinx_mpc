@@ -7,6 +7,7 @@ import dolfinx
 
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition
+from .slipcondition import create_slip_condition
 
 
 class MultiPointConstraint():
@@ -120,6 +121,24 @@ class MultiPointConstraint():
         """
         slaves, masters, coeffs, owners, offsets = create_periodic_condition(
             self.V, meshtag, tag, relation, bcs, scale)
+        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+
+    def create_slip_constraint(self, sub_space, normal, sub_map, entity_data,
+                               bcs=[]):
+        """
+        Create a slip constraint dot(u,normal)=0 where u is either in the
+        constrained
+        space or a sub-space. Need to supply the map between the space of the
+        normal function (from the collapsed sub space) and the constraint
+        space,
+        as well as which mesh entities this constraint shall be applied on
+        """
+        if sub_space is None:
+            W = self.V
+        else:
+            W = (self.V, sub_space)
+        slaves, masters, coeffs, owners, offsets = create_slip_condition(
+            W, normal, sub_map, entity_data, bcs)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def create_general_constraint(self, slave_master_dict, subspace_slave=None,

@@ -110,7 +110,7 @@ def gather_dof_coordinates(V, dofs):
     Distributes the dof coordinates of this subset of dofs to all processors
     """
     x = V.tabulate_dof_coordinates()
-    local_dofs = dofs[dofs < V.dofmap.index_map.size_local * V.dofmap.index_map.block_size]
+    local_dofs = dofs[dofs < V.dofmap.index_map.size_local * V.dofmap.index_map_bs]
     coords = x[local_dofs]
     num_nodes = len(coords)
     glob_num_nodes = MPI.COMM_WORLD.allreduce(num_nodes, op=MPI.SUM)
@@ -128,9 +128,9 @@ def gather_dof_coordinates(V, dofs):
 V0 = V.sub(0).collapse()
 
 facets_r = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1))
-dofs_r = fem.locate_dofs_topological(V0, fdim, facets_r).T[0]
+dofs_r = fem.locate_dofs_topological(V0, fdim, facets_r)
 facets_l = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1.1))
-dofs_l = fem.locate_dofs_topological(V0, fdim, facets_l).T[0]
+dofs_l = fem.locate_dofs_topological(V0, fdim, facets_l)
 
 # Given the local coordinates of the dofs, distribute them on all processors
 nodes = []
@@ -205,7 +205,7 @@ u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"
 
-with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect.xdmf", "w") as xdmf:
+with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     # xdmf.write_meshtags(ct)
     # xdmf.write_meshtags(ft)

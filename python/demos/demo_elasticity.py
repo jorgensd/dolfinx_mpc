@@ -144,12 +144,14 @@ def demo_elasticity():
     slave_owner = None
     if mpc.num_local_slaves() > 0:
         slave_owner = MPI.COMM_WORLD.rank
-        l2g = np.array(mpc.index_map().global_indices(False))
+        l2g = np.array(mpc.index_map().global_indices())
+        bs = mpc.function_space().dofmap.index_map_bs
         slave = mpc.slaves()[0]
         print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}"
               .format(uh.array[slave], u_.vector.array[slave]))
         master_owner = mpc._cpp_object.owners().links(0)[0]
-        master_data = [l2g[mpc.masters_local().array[0]],
+        master = mpc.masters_local().array[0]
+        master_data = [l2g[master // bs] * bs + master % bs,
                        mpc.coefficients()[0]]
         # If master not on proc send info to this processor
         if MPI.COMM_WORLD.rank != master_owner:
