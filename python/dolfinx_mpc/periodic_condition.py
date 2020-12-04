@@ -24,7 +24,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     slave_dofs = slave_dofs[np.isin(slave_dofs, bc_dofs, invert=True)]
     num_local_dofs = len(slave_dofs[slave_dofs < bs * size_local])
     # Compute coordinates where each slave has to evaluate its masters
-    tree = dolfinx.geometry.BoundingBoxTree(V.mesh, dim=tdim)
+    tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim=tdim)
     global_tree = tree.compute_global_tree(comm)
     cell_map = V.mesh.topology.index_map(tdim)
     [cmin, cmax] = cell_map.local_range
