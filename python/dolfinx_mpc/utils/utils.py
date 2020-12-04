@@ -337,7 +337,7 @@ def determine_closest_dofs(V, point):
     """
     tdim = V.mesh.topology.dim
     bb_tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim)
-    midpoint_tree = bb_tree.create_midpoint_tree(V.mesh)
+    midpoint_tree = dolfinx.cpp.geometry.create_midpoint_tree(V.mesh)
     # Find facet closest
     closest_cell_data = dolfinx.geometry.compute_closest_entity(bb_tree, midpoint_tree, V.mesh, point)
     closest_cell, min_distance = closest_cell_data[0][0], closest_cell_data[1][0]
