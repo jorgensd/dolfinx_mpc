@@ -41,15 +41,14 @@ compute_shared_indices(std::shared_ptr<dolfinx::function::FunctionSpace> V);
 
 /// Append diagonal entries to sparsity pattern
 /// @param[in] pattern The sparsity pattern
-/// @param[in] dofs The dofs that require diagonal additions
-/// @param[in] block size of problem
+/// @param[in] blocks The blocks that require diagonal addition
 void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
-                          Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
-                          std::int32_t block_size);
+                          Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks);
 
 dolfinx::la::PETScMatrix
 create_matrix(const dolfinx::fem::Form<PetscScalar>& a,
-              const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc);
+              const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc,
+              const std::string& type = std::string());
 /// Create neighborhood communicators from every processor with a slave dof on
 /// it, to the processors with a set of master facets.
 /// @param[in] meshtags The meshtag

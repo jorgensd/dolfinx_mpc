@@ -227,7 +227,7 @@ void MultiPointConstraint::create_new_index_map()
   auto [unused_indexmap, bs, o_dofmap] = dolfinx::fem::DofMapBuilder::build(
       _V->mesh()->mpi_comm(), topology, layout);
   _dofmap = std::make_shared<dolfinx::fem::DofMap>(
-      old_dofmap->element_dof_layout, _index_map, bs, o_dofmap);
+      old_dofmap->element_dof_layout, _index_map, bs, o_dofmap, bs);
 
   // Compute local master index before creating new index-map
   Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_blocks

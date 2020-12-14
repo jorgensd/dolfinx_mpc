@@ -123,7 +123,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
         bc_mpc.extend(bcs)
         for bc in bcs:
             # Extract local index of possible sub space
-            bc_array = numpy.append(bc_array, bc.dof_indices[0])
+            bc_array = numpy.append(bc_array, bc.dof_indices())
 
     # Get data from mesh
     pos = V.mesh.geometry.dofmap.offsets

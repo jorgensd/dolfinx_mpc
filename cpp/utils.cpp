@@ -176,21 +176,16 @@ std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::add_pattern_diagonal(
     dolfinx::la::SparsityPattern& pattern,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
-    std::int32_t block_size)
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks)
 {
   for (std::int32_t i = 0; i < blocks.rows(); ++i)
-  {
-    Eigen::Array<PetscInt, Eigen::Dynamic, 1> diag_block(block_size);
-    for (std::size_t comp = 0; comp < block_size; comp++)
-      diag_block(comp) = block_size * blocks[i] + comp;
-    pattern.insert(diag_block, diag_block);
-  }
+    pattern.insert(blocks.row(i), blocks.row(i));
 }
 //-----------------------------------------------------------------------------
 dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc)
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc,
+    const std::string& type)
 {
   dolfinx::common::Timer timer("~MPC: Create Matrix");
 
@@ -203,7 +198,7 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   timer_s.stop();
 
   // Initialize matrix
-  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern);
+  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern, type);
 
   return A;
 }
@@ -334,19 +329,14 @@ dolfinx_mpc::create_dof_to_facet_map(
 
   const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
-  const std::int32_t block_size = dofmap->index_map_bs();
+  const int element_bs = dofmap->element_dof_layout->block_size();
   const std::int32_t tdim = mesh->topology().dim();
   // Locate all dofs for each facet
   mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
   mesh->topology_mutable().create_connectivity(tdim, tdim - 1);
   auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
   auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
-  Eigen::Array<std::int32_t, Eigen::Dynamic, Eigen::Dynamic> dofs
-      = dolfinx::fem::locate_dofs_topological({*V}, tdim - 1, facets, false);
-  // Initialize empty map for the dofs located topologically
   std::map<std::int32_t, std::vector<std::int32_t>> dofs_to_facets;
-  for (std::int32_t i = 0; i < dofs.size(); ++i)
-    dofs_to_facets.insert({dofs.row(i)[0], {}});
   // For each facet, find which dofs is on the given facet
   for (std::int32_t i = 0; i < facets.size(); ++i)
   {
@@ -358,14 +348,14 @@ dolfinx_mpc::create_dof_to_facet_map(
         cell_facets.data(), cell_facets.data() + cell_facets.rows(), facets[i]);
     assert(it != (cell_facets.data() + cell_facets.rows()));
     const int local_facet = std::distance(cell_facets.data(), it);
-    auto cell_dofs = dofmap->cell_dofs(cell[0]);
+    auto cell_blocks = dofmap->cell_dofs(cell[0]);
     auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
         tdim - 1, local_facet);
     for (std::int32_t j = 0; j < closure_blocks.size(); ++j)
     {
-      for (std::int32_t k = 0; k < block_size; ++k)
+      for (int block = 0; block < element_bs; ++block)
       {
-        auto dof = cell_dofs[block_size * closure_blocks[j] + k];
+        const int dof = element_bs * cell_blocks[closure_blocks[j]] + block;
         dofs_to_facets[dof].push_back(facets[i]);
       }
     }

@@ -108,18 +108,18 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
             V._cpp_object, mt, 4, 9, nh._cpp_object)
         mpc.add_constraint_from_mpc_data(V, mpc_data)
 
-    with dolfinx.common.Timer(
-            "~Contact: Add non-slip condition at bottom interface"):
+    with dolfinx.common.Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 5)
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/nh.xdmf", "w") as xdmf:
+            xdmf.write_mesh(mesh)
+            xdmf.write_function(bottom_normal)
         mpc.create_slip_constraint(None, bottom_normal, None, (mt, 5), bcs)
 
     with dolfinx.common.Timer(
             "~Contact: Add tangential constraint at one point"):
-        vertex = dolfinx.mesh.locate_entities_boundary(
-            mesh, 0, left_corner)
+        vertex = dolfinx.mesh.locate_entities_boundary(mesh, 0, left_corner)
 
-        tangent = dolfinx_mpc.utils.facet_normal_approximation(
-            V, mt, 3, tangent=True)
+        tangent = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 3, tangent=True)
         mtv = dolfinx.MeshTags(mesh, 0, vertex,
                                np.full(len(vertex), 6, dtype=np.int32))
         mpc.create_slip_constraint(None, tangent, None, (mtv, 6), bcs)

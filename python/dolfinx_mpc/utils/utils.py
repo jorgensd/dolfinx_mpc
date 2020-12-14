@@ -62,35 +62,34 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
             a = ufl.inner(u, v) * ds
             L = ufl.inner(tangential_proj(c, n), v) * ds
     else:
-        a = (ufl.inner(u, v) * ufl.ds)
+        a = (ufl.inner(u, v) * ds)
         L = ufl.inner(n, v) * ds
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
     bs = V.dofmap.index_map_bs
-    all_dofs = np.array(range(imap.size_local * bs), dtype=np.int32)
+    all_blocks = np.array(range(imap.size_local), dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
-    top_dofs = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
-    deac_dofs = all_dofs[np.isin(all_dofs, top_dofs, invert=True)]
+    top_blocks = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
+    deac_blocks = all_blocks[np.isin(all_blocks, top_blocks, invert=True)]
 
     # Note there should be a better way to do this
     # Create sparsity pattern only for constraint + bc
     cpp_form = dolfinx.Form(a)._cpp_object
     pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
-    blocks = np.unique(deac_dofs // bs)
-    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, blocks, bs)
+    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, deac_blocks)
     pattern.assemble()
-
     u_0 = dolfinx.Function(V)
     u_0.vector.set(0)
 
-    bc_deac = dolfinx.fem.DirichletBC(u_0, deac_dofs)
+    bc_deac = dolfinx.fem.DirichletBC(u_0, deac_blocks)
     A = dolfinx.cpp.la.create_matrix(comm, pattern)
     A.zeroEntries()
-    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], [bc_deac], 1.0)
+
     # Assemble the matrix with all entries
     dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, [bc_deac])
+    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], [bc_deac], 1.0)
     A.assemble()
 
     b = dolfinx.fem.assemble_vector(L)
@@ -303,25 +302,27 @@ def rigid_motions_nullspace(V):
         vec_local = [stack.enter_context(x.localForm()) for x in nullspace_basis]
         basis = [np.asarray(x) for x in vec_local]
 
-        x = V.tabulate_dof_coordinates()
         dofs = [V.sub(i).dofmap.list.array for i in range(gdim)]
 
         # Build translational null space basis
         for i in range(gdim):
-            basis[i][V.sub(i).dofmap.list.array] = 1.0
+            basis[i][dofs[i]] = 1.0
 
         # Build rotational null space basis
+        x = V.tabulate_dof_coordinates()
+        dofs_block = V.dofmap.list.array
+        x0, x1, x2 = x[dofs_block, 0], x[dofs_block, 1], x[dofs_block, 2]
         if gdim == 2:
-            basis[2][dofs[0]] = -x[dofs[0], 1]
-            basis[2][dofs[1]] = x[dofs[1], 0]
+            basis[2][dofs[0]] = -x1
+            basis[2][dofs[1]] = x0
         elif gdim == 3:
-            basis[3][dofs[0]] = -x[dofs[0], 1]
-            basis[3][dofs[1]] = x[dofs[1], 0]
+            basis[3][dofs[0]] = -x1
+            basis[3][dofs[1]] = x0
 
-            basis[4][dofs[0]] = x[dofs[0], 2]
-            basis[4][dofs[2]] = -x[dofs[2], 0]
-            basis[5][dofs[2]] = x[dofs[2], 1]
-            basis[5][dofs[1]] = -x[dofs[1], 2]
+            basis[4][dofs[0]] = x2
+            basis[4][dofs[2]] = -x0
+            basis[5][dofs[2]] = x1
+            basis[5][dofs[1]] = -x2
 
     basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
     basis.orthonormalize()

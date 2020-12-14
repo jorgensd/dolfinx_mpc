@@ -22,7 +22,9 @@ import ufl
 @pytest.mark.parametrize("master_space", [0, 1])
 def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
+    # mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 2, 1)
+
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     def boundary(x):
@@ -34,6 +36,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
         u_local.set(0.0)
 
     bdofsV = dolfinx.fem.locate_dofs_geometrical(V, boundary)
+    print(bdofsV)
     bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV)
     bcs = [bc]
 
@@ -54,11 +57,11 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Create multipoint constraint
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()
-    s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.1,
-                           l2b([0.5, 1]): 0.3}}
+    s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.1, l2b([0.5, 1]): 0.3}}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, slave_space, master_space)
     mpc.finalize()
+
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
@@ -76,7 +79,8 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     mpc.backsubstitution(uh)
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
+    print(A_np)
+    print()
     # Generate reference matrices for unconstrained problem
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
@@ -91,6 +95,8 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+    print(reduced_A)
+    exit()
     # Created reduced L
     vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
     reduced_L = np.dot(K.T, vec)

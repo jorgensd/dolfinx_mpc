@@ -126,25 +126,26 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     else:
         with dolfinx.common.Timer("~Contact: Create facet normal approximation"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
-
+        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/nh.xdmf", "w") as xdmf:
+            xdmf.write_mesh(mesh)
+            xdmf.write_function(nh)
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
                 V._cpp_object, mt, 4, 9, nh._cpp_object)
-
     with dolfinx.common.Timer("~~Contact: Add data and finialize MPC"):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
     with dolfinx.common.Timer("~~Contact: Assemble matrix ({0:d})".format(V.dim)):
-        A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+        #A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
     with dolfinx.common.Timer("~~Contact: Assemble vector ({0:d})".format(V.dim)):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
     # Solve Linear problem
@@ -172,8 +173,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     uh.set(0)
     with dolfinx.common.Timer("~~Contact: Solve"):
         solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                       mode=PETSc.ScatterMode.FORWARD)
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     with dolfinx.common.Timer("~~Contact: Backsubstit"):
         mpc.backsubstitution(uh)
 
@@ -191,10 +191,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     u_h.vector.setArray(uh.array)
     u_h.name = "u_{0:s}_{1:.2f}{3:s}{2:s}".format(celltype, theta, type_ext, mesh_ext)
     outfile.write_mesh(mesh)
-    outfile.write_function(u_h, 0.0,
-                           "Xdmf/Domain/"
-                           + "Grid[@Name='{0:s}'][1]"
-                           .format(mesh.name))
+    outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     if not compare:

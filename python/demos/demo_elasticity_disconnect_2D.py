@@ -95,8 +95,7 @@ def push(x):
 
 u_push = dolfinx.Function(V)
 u_push.interpolate(push)
-u_push.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+u_push.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
 bc_push = dolfinx.DirichletBC(u_push, dofs)
 u_fix = dolfinx.Function(V)
