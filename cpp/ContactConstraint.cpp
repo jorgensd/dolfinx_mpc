@@ -1056,7 +1056,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   for (std::int32_t i = 0; i < local_block.size(); ++i)
   {
     // Get coordinate and coeff for slave and save in send array
-    auto coord = coordinates.row(local_block[i] * block_size);
+    auto coord = coordinates.row(local_block[i]);
     local_slave_coordinates.row(i) = coord;
 
     // Use collision detection algorithm (GJK) to check distance from  cell
@@ -1072,7 +1072,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       // Compute interpolation on other cell
       Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic> basis_values
           = dolfinx_mpc::get_basis_functions(V, coord, verified_candidates[0]);
-      auto cell_dofs = V->dofmap()->cell_dofs(verified_candidates[0]);
+      auto cell_blocks = V->dofmap()->cell_dofs(verified_candidates[0]);
 
       std::vector<std::vector<std::int32_t>> l_master(3);
       std::vector<std::vector<PetscScalar>> l_coeff(3);
@@ -1080,17 +1080,20 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       // Create arrays per topological dimension
       for (std::int32_t j = 0; j < tdim; ++j)
       {
-        for (std::int32_t k = 0; k < cell_dofs.size(); ++k)
+        for (std::int32_t k = 0; k < cell_blocks.size(); ++k)
         {
-          if (std::abs(basis_values(k, j)) > 1e-6)
+          for (std::int32_t block = 0; block < block_size; ++block)
           {
-            l_master[j].push_back(cell_dofs[k]);
-            l_coeff[j].push_back(basis_values(k, j));
-            if (cell_dofs[k] < size_local * block_size)
-              l_owner[j].push_back(rank);
-            else
-              l_owner[j].push_back(
-                  ghost_owners[cell_dofs[k] / block_size - size_local]);
+            const PetscScalar coeff = basis_values(k * block_size + block, j);
+            if (std::abs(coeff) > 1e-6)
+            {
+              l_master[j].push_back(cell_blocks[k] * block_size + block);
+              l_coeff[j].push_back(coeff);
+              if (cell_blocks[k] < size_local)
+                l_owner[j].push_back(rank);
+              else
+                l_owner[j].push_back(ghost_owners[cell_blocks[k] - size_local]);
+            }
           }
         }
       }
@@ -1278,25 +1281,29 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
         // Compute local contribution of slave on master facet
         Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic> basis_values
             = get_basis_functions(V, slave_coord, verified_candidates[0]);
-        auto cell_dofs = V->dofmap()->cell_dofs(verified_candidates[0]);
+        auto cell_blocks = V->dofmap()->cell_dofs(verified_candidates[0]);
         std::vector<std::vector<std::int32_t>> l_master(3);
         std::vector<std::vector<PetscScalar>> l_coeff(3);
         std::vector<std::vector<std::int32_t>> l_owner(3);
         // Create arrays per topological dimension
         for (std::int32_t j = 0; j < tdim; ++j)
         {
-          for (std::int32_t k = 0; k < cell_dofs.size(); ++k)
+          for (std::int32_t k = 0; k < cell_blocks.size(); ++k)
           {
-            if (std::abs(basis_values(k, j)) > 1e-6)
+            for (std::int32_t block = 0; block < block_size; ++block)
             {
-              l_master[j].push_back(cell_dofs[k]);
-              l_coeff[j].push_back(basis_values(k, j));
-              if (cell_dofs[k] < size_local * block_size)
-                l_owner[j].push_back(rank);
-              else
+              const PetscScalar coeff = basis_values(k * block_size + block, j);
+              if (std::abs(coeff > 1e-6))
               {
-                l_owner[j].push_back(
-                    ghost_owners[cell_dofs[k] / block_size - size_local]);
+                l_master[j].push_back(cell_blocks[k] * block_size + block);
+                l_coeff[j].push_back(coeff);
+                if (cell_blocks[k] < size_local)
+                  l_owner[j].push_back(rank);
+                else
+                {
+                  l_owner[j].push_back(
+                      ghost_owners[cell_blocks[k] - size_local]);
+                }
               }
             }
           }

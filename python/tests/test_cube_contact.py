@@ -241,7 +241,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
-    assert(False)
+
     mpc.add_constraint_from_mpc_data(V, mpc_data)
     mpc.finalize()
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (old)"):
@@ -269,19 +269,19 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     mpc.backsubstitution(uh)
 
     # Write solution to file
-    # u_h = dolfinx.Function(mpc.function_space())
-    # u_h.vector.setArray(uh.array)
-    # u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-    #                        mode=PETSc.ScatterMode.FORWARD)
-    # u_h.name = "u_{0:.2f}".format(theta)
-    # import dolfinx.io as io
-    # outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
-    # outfile.write_mesh(mesh)
-    # outfile.write_function(u_h, 0.0,
-    #                        "Xdmf/Domain/"
-    #                        + "Grid[@Name='{0:s}'][1]"
-    #                        .format(mesh.name))
-    # outfile.close()
+    u_h = dolfinx.Function(mpc.function_space())
+    u_h.vector.setArray(uh.array)
+    u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                           mode=PETSc.ScatterMode.FORWARD)
+    u_h.name = "u_{0:.2f}".format(theta)
+    import dolfinx.io as io
+    outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
+    outfile.write_mesh(mesh)
+    outfile.write_function(u_h, 0.0,
+                           "Xdmf/Domain/"
+                           + "Grid[@Name='{0:s}'][1]"
+                           .format(mesh.name))
+    outfile.close()
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
