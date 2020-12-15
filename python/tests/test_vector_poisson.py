@@ -23,7 +23,6 @@ import ufl
 def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
-    # mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 2, 1)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -62,7 +61,8 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     mpc.finalize()
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
@@ -78,7 +78,6 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     mpc.backsubstitution(uh)
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
     # Generate reference matrices for unconstrained problem
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
