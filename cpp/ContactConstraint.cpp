@@ -6,6 +6,7 @@
 
 #include "ContactConstraint.h"
 #include "MultiPointConstraint.h"
+#include "dolfinx/fem/DirichletBC.h"
 #include "utils.h"
 #include <chrono>
 #include <dolfinx/geometry/BoundingBoxTree.h>

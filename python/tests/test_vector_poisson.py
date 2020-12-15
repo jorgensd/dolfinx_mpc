@@ -22,8 +22,8 @@ import ufl
 @pytest.mark.parametrize("master_space", [0, 1])
 def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Create mesh and function space
-    # mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 2, 1)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
+    # mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 2, 1)
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -36,7 +36,6 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
         u_local.set(0.0)
 
     bdofsV = dolfinx.fem.locate_dofs_geometrical(V, boundary)
-    print(bdofsV)
     bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV)
     bcs = [bc]
 
@@ -68,16 +67,14 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
 
     solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
@@ -88,8 +85,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
 
     L_org = dolfinx.fem.assemble_vector(rhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(L_org, bcs)
 
     # Create global transformation matrix
@@ -108,5 +104,4 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
     dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-    assert np.allclose(
-        uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])

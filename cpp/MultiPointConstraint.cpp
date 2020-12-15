@@ -354,8 +354,6 @@ void MultiPointConstraint::backsubstitution(
     assert(masters.size() == coeffs.size());
     for (std::int32_t k = 0; k < masters.size(); ++k)
     {
-      std::cout << slaves[i] << " " << vector.size() << " " << masters[k] << " "
-                << masters.size() << "\n";
 
       vector[slaves[i]] += coeffs[k] * vector[masters[k]];
     }
