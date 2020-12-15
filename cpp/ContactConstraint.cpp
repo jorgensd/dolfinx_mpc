@@ -15,10 +15,10 @@
 using namespace dolfinx_mpc;
 
 mpc_data dolfinx_mpc::create_contact_slip_condition(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker,
-    std::shared_ptr<dolfinx::function::Function<PetscScalar>> nh)
+    std::shared_ptr<dolfinx::fem::Function<PetscScalar>> nh)
 {
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
 
@@ -53,7 +53,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyz
-  std::pair<std::shared_ptr<dolfinx::function::FunctionSpace>,
+  std::pair<std::shared_ptr<dolfinx::fem::FunctionSpace>,
             std::vector<std::int32_t>>
       V0_pair = V->sub({0})->collapse();
   auto [V0, map] = V0_pair;
@@ -916,7 +916,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 }
 //-----------------------------------------------------------------------------
 mpc_data dolfinx_mpc::create_contact_inelastic_condition(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker)
 {
@@ -956,7 +956,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
 
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyz
-  std::pair<std::shared_ptr<dolfinx::function::FunctionSpace>,
+  std::pair<std::shared_ptr<dolfinx::fem::FunctionSpace>,
             std::vector<std::int32_t>>
       V0_pair = V->sub({0})->collapse();
   auto [V0, map] = V0_pair;

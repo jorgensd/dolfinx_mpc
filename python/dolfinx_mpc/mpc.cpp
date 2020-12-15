@@ -9,7 +9,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/la/PETScMatrix.h>
@@ -24,7 +24,6 @@
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-
 namespace py = pybind11;
 
 namespace dolfinx_mpc_wrappers
@@ -43,7 +42,7 @@ void mpc(py::module& m)
           m, "MultiPointConstraint",
           "Object for representing contact (non-penetrating) conditions");
   multipointconstraint
-      .def(py::init<std::shared_ptr<const dolfinx::function::FunctionSpace>,
+      .def(py::init<std::shared_ptr<const dolfinx::fem::FunctionSpace>,
                     Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
                     std::int32_t>())
       .def("slaves", &dolfinx_mpc::MultiPointConstraint::slaves)

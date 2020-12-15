@@ -12,14 +12,14 @@
 #include <dolfinx/common/log.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/DofMapBuilder.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <iostream>
 using namespace dolfinx_mpc;
 
 MultiPointConstraint::MultiPointConstraint(
-    std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves,
     std::int32_t num_local_slaves)
     : _V(V), _slaves(), _slave_cells(), _cell_to_slaves_map(),

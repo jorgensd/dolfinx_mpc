@@ -10,7 +10,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <petscsys.h>
@@ -31,7 +31,7 @@ public:
   /// @param[in] offsets Offsets for local slave cells
 
   MultiPointConstraint(
-      std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+      std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
       std::int32_t num_local_slaves);
 
@@ -136,7 +136,7 @@ public:
 
 private:
   // Original function space
-  std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
+  std::shared_ptr<const dolfinx::fem::FunctionSpace> _V;
   // Array including all slaves (local + ghosts)
   std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slaves;
   // Array for all cells containing slaves (local + ghosts)

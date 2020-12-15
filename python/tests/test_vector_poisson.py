@@ -31,7 +31,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
         return np.isclose(x.T, [0, 0, 0]).all(axis=1)
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -59,7 +59,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
         return np.array(li, dtype=np.float64).tobytes()
     s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.1, l2b([0.5, 1]): 0.3}}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_general_constraint(s_m_c, slave_space, master_space)
+    #mpc.create_general_constraint(s_m_c, slave_space, master_space)
     mpc.finalize()
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
@@ -84,6 +84,10 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Generate reference matrices for unconstrained problem
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
+
+    A_np2 = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+    from IPython import embed
+    embed()
     L_org = dolfinx.fem.assemble_vector(rhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,

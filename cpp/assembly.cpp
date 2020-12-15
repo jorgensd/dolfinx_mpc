@@ -5,8 +5,8 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "assembly.h"
+#include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/utils.h>
-#include <dolfinx/function/Constant.h>
 #include <iostream>
 namespace
 {

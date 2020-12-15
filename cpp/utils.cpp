@@ -15,9 +15,9 @@
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/FiniteElement.h>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/fem/Function.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/fem/SparsityPatternBuilder.h>
-#include <dolfinx/function/Function.h>
-#include <dolfinx/function/FunctionSpace.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/PETScMatrix.h>
@@ -71,7 +71,7 @@ void dolfinx_mpc::build_standard_pattern(
 //-----------------------------------------------------------------------------
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
 dolfinx_mpc::get_basis_functions(
-    std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index)
 {
@@ -169,7 +169,7 @@ dolfinx_mpc::get_basis_functions(
 }
 //-----------------------------------------------------------------------------
 std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V)
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V)
 {
   return V->dofmap()->index_map->compute_shared_indices();
 };
@@ -323,7 +323,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 //-----------------------------------------------------------------------------
 std::map<std::int32_t, std::vector<std::int32_t>>
 dolfinx_mpc::create_dof_to_facet_map(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> facets)
 {
 
@@ -364,7 +364,7 @@ dolfinx_mpc::create_dof_to_facet_map(
 };
 //-----------------------------------------------------------------------------
 Eigen::Vector3d dolfinx_mpc::create_average_normal(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V, std::int32_t dof,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dof,
     std::int32_t dim, Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities)
 {
   assert(entities.size() > 0);
@@ -381,7 +381,7 @@ Eigen::Vector3d dolfinx_mpc::create_average_normal(
 };
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::create_normal_approximation(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities,
     Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector)
 {

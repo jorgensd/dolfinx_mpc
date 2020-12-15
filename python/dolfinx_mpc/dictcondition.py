@@ -2,7 +2,6 @@ import typing
 
 import numpy as np
 import dolfinx.fem as fem
-import dolfinx.function as function
 
 
 def close_to(point):
@@ -14,7 +13,7 @@ def close_to(point):
     return lambda x: np.isclose(x, point).all(axis=0)
 
 
-def create_dictionary_constraint(V: function.FunctionSpace, slave_master_dict:
+def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
                                  typing.Dict[bytes, typing.Dict[bytes, float]],
                                  subspace_slave=None,
                                  subspace_master=None

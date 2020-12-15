@@ -7,8 +7,8 @@
 #pragma once
 
 #include <Eigen/Dense>
-#include <dolfinx/function/Function.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/Function.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/mesh/MeshTags.h>
 #include <petscsys.h>
 namespace dolfinx_mpc
@@ -66,10 +66,10 @@ struct mpc_data
 /// @param[in] master_marker Tag for the other interface
 /// @param[in] nh Function containing the normal at the slave marker interface
 mpc_data create_contact_slip_condition(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker,
-    std::shared_ptr<dolfinx::function::Function<PetscScalar>> nh);
+    std::shared_ptr<dolfinx::fem::Function<PetscScalar>> nh);
 
 /// Create a contact condition between two sets of facets
 /// @param[in] The mpc function space
@@ -77,7 +77,7 @@ mpc_data create_contact_slip_condition(
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
 mpc_data create_contact_inelastic_condition(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker);
 
