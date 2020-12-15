@@ -93,8 +93,8 @@ def assemble_vector(form, constraint,
         with Timer("*MPC: Assemble vector (facet numba)"):
             with vector.localForm() as b:
                 assemble_exterior_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x), gdim,
-                                         form_coeffs, form_consts, (permutation_info, facet_permutation_info), dofs,
-                                         num_dofs_per_element, mpc_data, (bc_dofs, bc_values))
+                                         form_coeffs, form_consts, (permutation_info, facet_permutation_info),
+                                         dofs, block_size, num_dofs_per_element, mpc_data, (bc_dofs, bc_values))
     timer_vector.stop()
     return vector
 
@@ -155,7 +155,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim, coeffs, constant
     pos, x_dofmap, x = mesh
 
     geometry = numpy.zeros((pos[1] - pos[0], gdim))
-    b_local = numpy.zeros(num_dofs_per_element, dtype=PETSc.ScalarType)
+    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=PETSc.ScalarType)
     slave_cells = mpc[4]
     for i in range(facet_info.shape[0]):
         cell_index, local_facet = facet_info[i]
