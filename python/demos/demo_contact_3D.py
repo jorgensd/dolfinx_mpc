@@ -63,7 +63,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -88,7 +88,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         values[1] = g_vec[1]
         values[2] = g_vec[2]
         return values
-    u_top = dolfinx.function.Function(V)
+    u_top = dolfinx.Function(V)
     u_top.interpolate(top_v)
 
     top_facets = mt.indices[np.flatnonzero(mt.values == 3)]

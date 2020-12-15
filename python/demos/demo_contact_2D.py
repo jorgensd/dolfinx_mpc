@@ -70,7 +70,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     def bottom_corner(x):
         return np.isclose(x, [[0], [0], [0]]).all(axis=0)
     # Fix bottom corner
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
     bottom_dofs = fem.locate_dofs_geometrical(V, bottom_corner)
