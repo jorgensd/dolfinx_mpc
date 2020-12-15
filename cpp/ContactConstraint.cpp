@@ -1294,7 +1294,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
             for (std::int32_t block = 0; block < block_size; ++block)
             {
               const PetscScalar coeff = basis_values(k * block_size + block, j);
-              if (std::abs(coeff > 1e-6))
+              if (std::abs(coeff) > 1e-6)
               {
                 l_master[j].push_back(cell_blocks[k] * block_size + block);
                 l_coeff[j].push_back(coeff);
