@@ -67,7 +67,6 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
-    bs = V.dofmap.index_map_bs
     all_blocks = np.array(range(imap.size_local), dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
     top_blocks = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)

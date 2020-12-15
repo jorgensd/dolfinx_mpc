@@ -21,7 +21,7 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
     W_ghost_owners = W.dofmap.index_map.ghost_owner_rank()
     W_bs = W.dofmap.index_map_bs
     W_local_size = W.dofmap.index_map.size_local
-    x = W.tabulate_dof_coordinates()
+    # x = W.tabulate_dof_coordinates()
 
     # Output arrays
     slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]

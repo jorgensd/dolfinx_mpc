@@ -138,7 +138,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
     with dolfinx.common.Timer("~~Contact: Assemble matrix ({0:d})".format(V.dim)):
-        #A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+        # A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
     with dolfinx.common.Timer("~~Contact: Assemble vector ({0:d})".format(V.dim)):

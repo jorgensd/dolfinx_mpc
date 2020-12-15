@@ -164,8 +164,8 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
         active_cells = numpy.array(cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id), dtype=numpy.int64)
         slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
         with Timer("~MPC: Assemble matrix (numba cells)"):
-            assemble_cells(A.handle, cell_kernel, active_cells[slave_cell_indices], (pos, x_dofs, x), gdim,
-                           form_coeffs, form_consts, permutation_info, dofs, block_size, num_dofs_per_element, mpc_data, bc_array)
+            assemble_cells(A.handle, cell_kernel, active_cells[slave_cell_indices], (pos, x_dofs, x), gdim, form_coeffs,
+                           form_consts, permutation_info, dofs, block_size, num_dofs_per_element, mpc_data, bc_array)
 
     # Assemble over exterior facets
     subdomain_ids = cpp_form.integral_ids(
@@ -440,7 +440,7 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
 
         A_local_copy = A_local.copy()
         #  If this slave contains a slave dof, modify local contribution
-        #modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy, local_pos, mpc, num_dofs_per_element)
+        # modify_mpc_cell_local(A, slave_cell_index, A_local, A_local_copy, local_pos, mpc, num_dofs_per_element)
         # Find local position of slaves
         (slaves_local, masters_local, coefficients, offsets, slave_cells, cell_to_slave, c_to_s_off) = mpc
         slave_indices = cell_to_slave[c_to_s_off[slave_cell_index]: c_to_s_off[slave_cell_index + 1]]
