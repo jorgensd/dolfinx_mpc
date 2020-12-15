@@ -8,7 +8,6 @@
 #include "MultiPointConstraint.h"
 #include "utils.h"
 #include <chrono>
-#include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 

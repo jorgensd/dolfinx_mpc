@@ -59,13 +59,14 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
         return np.array(li, dtype=np.float64).tobytes()
     s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.1, l2b([0.5, 1]): 0.3}}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    #mpc.create_general_constraint(s_m_c, slave_space, master_space)
+    mpc.create_general_constraint(s_m_c, slave_space, master_space)
     mpc.finalize()
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
+
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                   mode=PETSc.ScatterMode.REVERSE)
@@ -73,21 +74,18 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)
+
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
     A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-    print(A_np)
-    print()
+
     # Generate reference matrices for unconstrained problem
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
 
-    A_np2 = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-    from IPython import embed
-    embed()
     L_org = dolfinx.fem.assemble_vector(rhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
@@ -99,8 +97,6 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     # Create reduced A
     A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
     reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-    print(reduced_A)
-    exit()
     # Created reduced L
     vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
     reduced_L = np.dot(K.T, vec)

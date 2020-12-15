@@ -88,7 +88,7 @@ public:
   }
 
   /// Return number of local slaves
-  std::int32_t num_local_slaves() { return _num_local_slaves; }
+  const std::int32_t num_local_slaves() const { return _num_local_slaves; }
 
   /// Return constraint IndexMap
   std::shared_ptr<const dolfinx::common::IndexMap> index_map()

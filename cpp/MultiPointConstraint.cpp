@@ -10,6 +10,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/common/log.h>
+#include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/DofMapBuilder.h>
 #include <dolfinx/fem/FunctionSpace.h>
@@ -50,7 +51,7 @@ MultiPointConstraint::create_cell_maps(
   const dolfinx::fem::DofMap& dofmap = *(_V->dofmap());
   const int tdim = mesh.topology().dim();
   const int num_cells = mesh.topology().index_map(tdim)->size_local();
-
+  const int bs = dofmap.index_map_bs();
   // Create an array for the whole function space, where
   // dof index contains the index of the dof if it is in the list,
   // otherwise -1
@@ -73,11 +74,15 @@ MultiPointConstraint::create_cell_maps(
     for (std::int32_t j = 0; j < cell_dofs.size(); ++j)
     {
       // Check if cell dof in dofs list
-      if (dof_index[cell_dofs[j]] != -1)
+      for (Eigen::Index k = 0; k < bs; ++k)
       {
-        any_dof_in_cell = true;
-        dofs_in_cell.push_back(dof_index[cell_dofs[j]]);
-        idx_to_cell[dof_index[cell_dofs[j]]].push_back(i);
+        const std::int32_t dof_idx = dof_index[bs * cell_dofs[j] + k];
+        if (dof_idx != -1)
+        {
+          any_dof_in_cell = true;
+          dofs_in_cell.push_back(dof_idx);
+          idx_to_cell[dof_idx].push_back(i);
+        }
       }
     }
     if (any_dof_in_cell)
@@ -319,24 +324,19 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     flattened_masters.erase(
         std::unique(flattened_masters.begin(), flattened_masters.end()),
         flattened_masters.end());
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_block(1);
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> other_master_block(1);
     for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
     {
-      const std::int32_t& master_block = flattened_masters[j];
-      // Add all dofs of the slave cell to the master blocks sparsity pattern
-      for (std::size_t comp = 0; comp < block_size; ++comp)
-        master_for_slave(comp) = block_size * master_block + comp;
-
-      pattern.insert(master_for_slave, cell_dofs);
-      pattern.insert(cell_dofs, master_for_slave);
+      master_block[0] = flattened_masters[j];
+      pattern.insert(master_block, cell_dofs);
+      pattern.insert(cell_dofs, master_block);
       // Add sparsity pattern for all master dofs of any slave on this cell
       for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
       {
-        const std::int32_t& other_master_block = flattened_masters[k];
-        for (std::size_t comp = 0; comp < block_size; ++comp)
-          master_for_other_slave(comp) = block_size * other_master_block + comp;
-
-        pattern.insert(master_for_slave, master_for_other_slave);
-        pattern.insert(master_for_other_slave, master_for_slave);
+        other_master_block[0] = flattened_masters[k];
+        pattern.insert(master_block, other_master_block);
+        pattern.insert(other_master_block, master_block);
       }
     }
   }
@@ -353,6 +353,11 @@ void MultiPointConstraint::backsubstitution(
     auto coeffs = _coeff_map->links(i);
     assert(masters.size() == coeffs.size());
     for (std::int32_t k = 0; k < masters.size(); ++k)
+    {
+      std::cout << slaves[i] << " " << vector.size() << " " << masters[k] << " "
+                << masters.size() << "\n";
+
       vector[slaves[i]] += coeffs[k] * vector[masters[k]];
+    }
   }
 };

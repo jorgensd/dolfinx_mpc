@@ -77,8 +77,9 @@ void mpc(py::module& m)
            const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint>& mpc,
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs) {
-          dolfinx_mpc::assemble_matrix(dolfinx::la::PETScMatrix::add_fn(A), a,
-                                       mpc, bcs);
+          dolfinx_mpc::assemble_matrix(
+              dolfinx::la::PETScMatrix::add_block_fn(A),
+              dolfinx::la::PETScMatrix::add_fn(A), a, mpc, bcs);
         });
 
   m.def(

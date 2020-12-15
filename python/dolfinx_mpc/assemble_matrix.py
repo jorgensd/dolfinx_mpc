@@ -65,7 +65,6 @@ def pack_facet_info_numba(active_facets, c_to_f, f_to_c):
 
 def assemble_matrix_cpp(form, constraint, bcs=[]):
     assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
-    V = form.arguments()[0].ufl_function_space()
 
     # Generate matrix with MPC sparsity pattern
     cpp_form = dolfinx.Form(form)._cpp_object
@@ -73,15 +72,9 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
     A.zeroEntries()
     cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, bcs)
 
-    # Add Dirichlet boundary conditions (including slave dofs)
-    slaves_local = constraint.slaves()
-    local_slave_dofs_trimmed = slaves_local[:constraint.num_local_slaves()]
-    V = form.arguments()[0].ufl_function_space()
-    bc_mpc = [dolfinx.DirichletBC(dolfinx.Function(V), local_slave_dofs_trimmed)]
-    if len(bcs) > 0:
-        bc_mpc.extend(bcs)
+    # Add one on diagonal for Dirichlet boundary conditions
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bc_mpc, 1)
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bcs, 1)
     with dolfinx.common.Timer("~MPC: A.assemble()"):
         A.assemble()
     return A
