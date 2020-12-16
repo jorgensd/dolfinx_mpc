@@ -42,29 +42,17 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
             return normal_dofs[x]
 
     else:
-        dofs_at_entity = fem.locate_dofs_topological((Wsub, normal.function_space), meshtag.dim, marked_entities)
-
+        # Locate dofs in normal-sub space
         def normal_to_W(x):
             return n_to_W[normal_dofs[x]]
-
-        # Determine which dofs are located at the same coordinate
-        # and create a mapping for the local slaves
-        x = W.tabulate_dof_coordinates()
-
-        pairs = []
-        for i in range(len(dofs_at_entity[0])):
-            pairs.append(np.flatnonzero(np.isclose(np.linalg.norm(
-                x[dofs_at_entity[0]] - x[dofs_at_entity[0][i]], axis=1), 0)))
-        pairs = np.array(pairs, dtype=np.int32)
-        if len(pairs) > 0:
-            entity_dofs = np.unique(pairs, axis=0)
+        entity_dofs = fem.locate_dofs_topological(normal.function_space, meshtag.dim, marked_entities)
+        bs_n = normal.function_space.dofmap.index_map_bs
 
     for block in entity_dofs:
         if Wsub is None:
             normal_dofs = [block * W_bs + k for k in range(W_bs)]
         else:
-            # Use dofs in sub space to find normal
-            normal_dofs = dofs_at_entity[1][block]
+            normal_dofs = [block * bs_n + k for k in range(bs_n)]
 
         # Determine slave by largest normal component
         slave_index = np.argmax(np.abs(n_vec[normal_dofs]))
