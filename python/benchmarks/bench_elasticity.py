@@ -30,6 +30,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        mesh.topology.create_entities(mesh.topology.dim - 2)
         mesh = dolfinx.mesh.refine(mesh, redistribute=True)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
