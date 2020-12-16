@@ -12,8 +12,8 @@
 #include <dolfinx/common/log.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
-#include <dolfinx/fem/DofMapBuilder.h>
 #include <dolfinx/fem/FunctionSpace.h>
+#include <dolfinx/fem/dofmapbuilder.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <iostream>
@@ -229,7 +229,7 @@ void MultiPointConstraint::create_new_index_map()
   const dolfinx::fem::DofMap* old_dofmap = _V->dofmap().get();
   dolfinx::mesh::Topology topology = _V->mesh()->topology();
   dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
-  auto [unused_indexmap, bs, o_dofmap] = dolfinx::fem::DofMapBuilder::build(
+  auto [unused_indexmap, bs, o_dofmap] = dolfinx::fem::build_dofmap_data(
       _V->mesh()->mpi_comm(), topology, layout);
   _dofmap = std::make_shared<dolfinx::fem::DofMap>(
       old_dofmap->element_dof_layout, _index_map, bs, o_dofmap, bs);

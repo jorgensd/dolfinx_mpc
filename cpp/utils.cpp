@@ -17,7 +17,7 @@
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/Function.h>
 #include <dolfinx/fem/FunctionSpace.h>
-#include <dolfinx/fem/SparsityPatternBuilder.h>
+#include <dolfinx/fem/sparsitybuild.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/PETScMatrix.h>
@@ -46,8 +46,8 @@ void dolfinx_mpc::build_standard_pattern(
 
   if (a.integral_ids(dolfinx::fem::IntegralType::cell).size() > 0)
   {
-    dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh.topology(),
-                                                {{dofmaps[0], dofmaps[1]}});
+    dolfinx::fem::sparsitybuild::cells(pattern, mesh.topology(),
+                                       {{dofmaps[0], dofmaps[1]}});
   }
 
   if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
@@ -55,8 +55,8 @@ void dolfinx_mpc::build_standard_pattern(
     mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
     mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
                                                 mesh.topology().dim());
-    dolfinx::fem::SparsityPatternBuilder::interior_facets(
-        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+    dolfinx::fem::sparsitybuild::interior_facets(pattern, mesh.topology(),
+                                                 {{dofmaps[0], dofmaps[1]}});
   }
 
   if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
@@ -64,8 +64,8 @@ void dolfinx_mpc::build_standard_pattern(
     mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
     mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
                                                 mesh.topology().dim());
-    dolfinx::fem::SparsityPatternBuilder::exterior_facets(
-        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+    dolfinx::fem::sparsitybuild::exterior_facets(pattern, mesh.topology(),
+                                                 {{dofmaps[0], dofmaps[1]}});
   }
 }
 //-----------------------------------------------------------------------------

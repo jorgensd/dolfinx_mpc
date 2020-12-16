@@ -13,20 +13,14 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     x = V.tabulate_dof_coordinates()
     comm = V.mesh.mpi_comm()
     slave_entities = mt.indices[mt.values == tag]
-    possible_slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
-    slave_blocks = []
+    slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
     # Filter out Dirichlet BC dofs
-    bc_blocks = []
+    bc_dofs = []
     for bc in bcs:
-        bc_block = np.unique(bc.dof_indices() // bs)
-        bc_blocks.extend(bc_block)
-    all_bcs = np.hstack(comm.allgather(loc_to_glob[bc_blocks]))
+        bc_dofs.extend(bc.dof_indices())
 
-    for block in possible_slave_blocks:
-        glob_block = loc_to_glob[block]
-        if not np.isin(glob_block, all_bcs):
-            slave_blocks.append(block)
     slave_blocks = np.array(slave_blocks, dtype=np.int32)
+    slave_blocks = slave_blocks[np.isin(slave_blocks, bc_dofs, invert=True)]
     num_local_blocks = len(slave_blocks[slave_blocks < size_local])
 
     # Compute coordinates where each slave has to evaluate its masters

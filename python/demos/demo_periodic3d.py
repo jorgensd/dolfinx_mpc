@@ -197,16 +197,14 @@ def demo_periodic3D(celltype, out_periodic):
     b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
     dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-    assert np.allclose(
-        uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
 
 
 if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
     out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
                                        fname, "w")
-    for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron,
-                     dolfinx.cpp.mesh.CellType.hexahedron]:
+    for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron, dolfinx.cpp.mesh.CellType.hexahedron]:
         demo_periodic3D(celltype, out_periodic)
     out_periodic.close()
     dolfinx.common.list_timings(
