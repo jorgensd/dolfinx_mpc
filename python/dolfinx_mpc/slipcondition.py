@@ -21,7 +21,6 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
     W_ghost_owners = W.dofmap.index_map.ghost_owner_rank()
     W_bs = W.dofmap.index_map_bs
     W_local_size = W.dofmap.index_map.size_local
-    # x = W.tabulate_dof_coordinates()
 
     # Output arrays
     slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
@@ -43,27 +42,30 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
             return normal_dofs[x]
 
     else:
-        entity_dofs = fem.locate_dofs_topological((Wsub, normal.function_space), meshtag.dim, marked_entities)
+        dofs_at_entity = fem.locate_dofs_topological((Wsub, normal.function_space), meshtag.dim, marked_entities)
 
         def normal_to_W(x):
             return n_to_W[normal_dofs[x]]
-        raise NotImplementedError("Needs revision with new return type")
 
-    # Determine which dofs are located at the same coordinate
-    # and create a mapping for the local slaves
-    # pairs = []
-    # for i in range(len(entity_dofs[0])):
-    #     pairs.append(np.flatnonzero(np.isclose(np.linalg.norm(
-    #         x[entity_dofs[0]] - x[entity_dofs[0][i]], axis=1), 0)))
+        # Determine which dofs are located at the same coordinate
+        # and create a mapping for the local slaves
+        x = W.tabulate_dof_coordinates()
 
-    # if len(pairs) > 0:
-        # unique_pairs = np.unique(pairs, axis=0)
+        pairs = []
+        for i in range(len(dofs_at_entity[0])):
+            pairs.append(np.flatnonzero(np.isclose(np.linalg.norm(
+                x[dofs_at_entity[0]] - x[dofs_at_entity[0][i]], axis=1), 0)))
+        pairs = np.array(pairs, dtype=np.int32)
+        if len(pairs) > 0:
+            entity_dofs = np.unique(pairs, axis=0)
 
     for block in entity_dofs:
         if Wsub is None:
             normal_dofs = [block * W_bs + k for k in range(W_bs)]
         else:
-            raise NotImplementedError()
+            # Use dofs in sub space to find normal
+            normal_dofs = dofs_at_entity[1][block]
+
         # Determine slave by largest normal component
         slave_index = np.argmax(np.abs(n_vec[normal_dofs]))
         pair_masters, pair_coeffs, pair_owners = [], [], []
