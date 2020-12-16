@@ -12,16 +12,21 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     loc_to_glob = np.array(V.dofmap.index_map.global_indices(), dtype=np.int64)
     x = V.tabulate_dof_coordinates()
     comm = V.mesh.mpi_comm()
-    # Stack all Dirichlet BC dofs in one array, as MPCs cannot be used on
-    # Dirichlet BC dofs.
+    slave_entities = mt.indices[mt.values == tag]
+    possible_slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
+    slave_blocks = []
+    # Filter out Dirichlet BC dofs
     bc_blocks = []
     for bc in bcs:
         bc_block = np.unique(bc.dof_indices() // bs)
         bc_blocks.extend(bc_block)
-    slave_entities = mt.indices[mt.values == tag]
-    slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities)
-    # Filter out Dirichlet BC dofs
-    slave_blocks = slave_blocks[np.isin(slave_blocks, bc_blocks, invert=True)]
+    all_bcs = np.hstack(comm.allgather(loc_to_glob[bc_blocks]))
+
+    for block in possible_slave_blocks:
+        glob_block = loc_to_glob[block]
+        if not np.isin(glob_block, all_bcs):
+            slave_blocks.append(block)
+    slave_blocks = np.array(slave_blocks, dtype=np.int32)
     num_local_blocks = len(slave_blocks[slave_blocks < size_local])
 
     # Compute coordinates where each slave has to evaluate its masters
@@ -180,6 +185,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                     ghost_dofs[dof]["masters"] = from_owner[glob_dof]["masters"]
                     ghost_dofs[dof]["coeffs"] = from_owner[glob_dof]["coeffs"]
                     ghost_dofs[dof]["owners"] = from_owner[glob_dof]["owners"]
+
     # Flatten out arrays
     slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
     for dof in constraint_data.keys():
