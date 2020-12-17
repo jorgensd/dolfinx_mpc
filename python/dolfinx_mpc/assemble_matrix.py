@@ -112,7 +112,8 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     bc_array = numpy.array([])
     if len(bcs) > 0:
         for bc in bcs:
-            bc_array = numpy.append(bc_array, bc.dof_indices())
+            bc_indices, _ = bc.dof_indices()
+            bc_array = numpy.append(bc_array, bc_indices)
 
     # Get data from mesh
     pos = V.mesh.geometry.dofmap.offsets

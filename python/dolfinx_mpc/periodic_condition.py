@@ -17,7 +17,8 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     # Filter out Dirichlet BC dofs
     bc_dofs = []
     for bc in bcs:
-        bc_dofs.extend(bc.dof_indices())
+        bc_indices, _ = bc.dof_indices()
+        bc_dofs.extend(bc_indices)
 
     slave_blocks = np.array(slave_blocks, dtype=np.int32)
     slave_blocks = slave_blocks[np.isin(slave_blocks, bc_dofs, invert=True)]

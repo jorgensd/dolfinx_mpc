@@ -29,7 +29,8 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
     # Dirichlet BC dofs.
     bc_dofs = []
     for bc in bcs:
-        bc_dofs.extend(bc.dof_indices())
+        bc_indices, _ = bc.dof_indices()
+        bc_dofs.extend(bc_indices)
 
     marked_entities = meshtag.indices[meshtag.values == marker]
 

@@ -147,10 +147,9 @@ for i, pair in enumerate(pairs):
     sl, ms, co, ow, off = dolfinx_mpc.utils.create_point_to_point_constraint(
         V, pair[0], pair[1], vector=[1, 0])
     mpc.add_constraint(V, sl, ms, co, ow, off)
-
 mpc.finalize()
-null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
+null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(V.dim)):
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(V.dim)):
@@ -186,9 +185,7 @@ uh = b.copy()
 uh.set(0)
 with dolfinx.common.Timer("~Contact: Solve old"):
     solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
-
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
 
 it = solver.getIterationNumber()
@@ -200,10 +197,8 @@ if MPI.COMM_WORLD.rank == 0:
 # Write solution to file
 u_h = dolfinx.Function(mpc.function_space())
 u_h.vector.setArray(uh.array)
-u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                       mode=PETSc.ScatterMode.FORWARD)
+u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"
-
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     # xdmf.write_meshtags(ct)

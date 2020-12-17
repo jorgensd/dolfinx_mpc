@@ -140,27 +140,25 @@ dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
 a = ufl.inner(sigma(u), ufl.grad(v)) * dx
 x = ufl.SpatialCoordinate(mesh)
 rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * dx
-rhs += ufl.inner(dolfinx.Constant(mesh, (0, 0, -9.81e-2)), v) * dx(outer_tag)
-rhs += ufl.inner(ufl.as_vector((0, 0.5 * ufl.cos(x[0]), 0)), v) * dx(inner_tag)
+rhs += ufl.inner(dolfinx.Constant(mesh, (0.01, 0.02, 0)), v) * dx(outer_tag)
+rhs += ufl.inner(ufl.as_vector((0, 0, -9.81e-2)), v) * dx(inner_tag)
 
 
-owning_processor, bc_dofs = dolfinx_mpc.utils.determine_closest_dofs(V, -np.array([-r2, 0, 0]))
+owning_processor, bc_dofs = dolfinx_mpc.utils.determine_closest_block(V, -np.array([-r2, 0, 0]))
 u_fixed = dolfinx.Function(V)
 u_fixed.vector.set(0)
-u_fixed.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                           mode=PETSc.ScatterMode.FORWARD)
+u_fixed.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 
 if bc_dofs is None:
     bc_dofs = []
 
 bc_fixed = dolfinx.DirichletBC(u_fixed, bc_dofs)
 bcs = [bc_fixed]
-
 mpc = dolfinx_mpc.MultiPointConstraint(V)
 
 
-signs = [-1]
-axis = [0]
+signs = [-1, 1]
+axis = [0, 1]
 for i in axis:
     for s in signs:
         r0_point = np.zeros(3)
@@ -174,17 +172,15 @@ for i in axis:
             mpc.add_constraint(V, sl, ms, co, ow, off)
 
 mpc.finalize()
-
 null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
 with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(V.dim)):
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
 with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(V.dim)):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
 fem.apply_lifting(b, [a], [bcs])
-b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-              mode=PETSc.ScatterMode.REVERSE)
+b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 fem.set_bc(b, bcs)
 
 # Solve Linear problem
@@ -228,7 +224,6 @@ u_h.vector.setArray(uh.array)
 u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"
-
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     # xdmf.write_meshtags(ct)
