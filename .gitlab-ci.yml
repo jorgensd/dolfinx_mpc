@@ -93,7 +93,6 @@ nightly-complex:
     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
     - git clone https://github.com/fenics/dolfinx.git
     - cd dolfinx
-    - git checkout dokken/bc_dof_indices
     - mkdir build
     - cd build
     - cmake -G Ninja ../cpp
@@ -167,7 +166,6 @@ nightly-real:
     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
     - git clone https://github.com/fenics/dolfinx.git
     - cd dolfinx
-    - git checkout dokken/bc_dof_indices
     - mkdir build
     - cd build
     - cmake -G Ninja ../cpp
