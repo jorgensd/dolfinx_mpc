@@ -36,9 +36,9 @@ void dolfinx_mpc::build_standard_pattern(
 {
   dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
   // Get dof maps
-  std::array<const dolfinx::fem::DofMap*, 2> dofmaps
-      = {{a.function_spaces().at(0)->dofmap().get(),
-          a.function_spaces().at(1)->dofmap().get()}};
+  std::array<const std::reference_wrapper<const dolfinx::fem::DofMap>, 2>
+      dofmaps{*a.function_spaces().at(0)->dofmap(),
+              *a.function_spaces().at(1)->dofmap()};
 
   // Get mesh
   assert(a.mesh());
