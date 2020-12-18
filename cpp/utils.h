@@ -9,8 +9,8 @@
 #include "MultiPointConstraint.h"
 #include <Eigen/Dense>
 #include <dolfinx/fem/Form.h>
-#include <dolfinx/function/Function.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/Function.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
@@ -31,25 +31,24 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 /// @param[in] index   The cell_index
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
 get_basis_functions(
-    std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index);
 
 /// Given a function space, compute its shared entities
 std::map<std::int32_t, std::set<int>>
-compute_shared_indices(std::shared_ptr<dolfinx::function::FunctionSpace> V);
+compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 
 /// Append diagonal entries to sparsity pattern
 /// @param[in] pattern The sparsity pattern
-/// @param[in] dofs The dofs that require diagonal additions
-/// @param[in] block size of problem
+/// @param[in] blocks The blocks that require diagonal addition
 void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
-                          Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
-                          std::int32_t block_size);
+                          Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks);
 
 dolfinx::la::PETScMatrix
 create_matrix(const dolfinx::fem::Form<PetscScalar>& a,
-              const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc);
+              const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc,
+              const std::string& type = std::string());
 /// Create neighborhood communicators from every processor with a slave dof on
 /// it, to the processors with a set of master facets.
 /// @param[in] meshtags The meshtag
@@ -73,20 +72,20 @@ MPI_Comm create_owner_to_ghost_comm(
 /// Create a map from each dof found on the set of facets topologically, to the
 /// connecting facets
 std::map<std::int32_t, std::vector<std::int32_t>>
-create_dof_to_facet_map(std::shared_ptr<dolfinx::function::FunctionSpace> V,
+create_dof_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
                         Eigen::Array<std::int32_t, Eigen::Dynamic, 1> facets);
 
 /// For a dof, create an average normal over the topological entities it is
 /// connected to
 Eigen::Vector3d
-create_average_normal(std::shared_ptr<dolfinx::function::FunctionSpace> V,
+create_average_normal(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
                       std::int32_t dof, std::int32_t dim,
                       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities);
 
 /// Creates a normal approximation for the dofs in the closure of the attached
 /// facets, where the normal is an average if a dof belongs to multiple facets
 void create_normal_approximation(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities,
     Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector);
 } // namespace dolfinx_mpc

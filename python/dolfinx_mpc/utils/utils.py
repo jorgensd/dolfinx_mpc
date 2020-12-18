@@ -62,35 +62,33 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
             a = ufl.inner(u, v) * ds
             L = ufl.inner(tangential_proj(c, n), v) * ds
     else:
-        a = (ufl.inner(u, v) * ufl.ds)
+        a = (ufl.inner(u, v) * ds)
         L = ufl.inner(n, v) * ds
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
-    bs = V.dofmap.index_map_bs
-    all_dofs = np.array(range(imap.size_local * bs), dtype=np.int32)
+    all_blocks = np.array(range(imap.size_local), dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
-    top_dofs = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
-    deac_dofs = all_dofs[np.isin(all_dofs, top_dofs, invert=True)]
+    top_blocks = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
+    deac_blocks = all_blocks[np.isin(all_blocks, top_blocks, invert=True)]
 
     # Note there should be a better way to do this
     # Create sparsity pattern only for constraint + bc
     cpp_form = dolfinx.Form(a)._cpp_object
     pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
-    blocks = np.unique(deac_dofs // bs)
-    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, blocks, bs)
+    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, deac_blocks)
     pattern.assemble()
-
     u_0 = dolfinx.Function(V)
     u_0.vector.set(0)
 
-    bc_deac = dolfinx.fem.DirichletBC(u_0, deac_dofs)
+    bc_deac = dolfinx.fem.DirichletBC(u_0, deac_blocks)
     A = dolfinx.cpp.la.create_matrix(comm, pattern)
     A.zeroEntries()
-    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], [bc_deac], 1.0)
+
     # Assemble the matrix with all entries
     dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, [bc_deac])
+    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], [bc_deac], 1.0)
     A.assemble()
 
     b = dolfinx.fem.assemble_vector(L)
@@ -303,25 +301,27 @@ def rigid_motions_nullspace(V):
         vec_local = [stack.enter_context(x.localForm()) for x in nullspace_basis]
         basis = [np.asarray(x) for x in vec_local]
 
-        x = V.tabulate_dof_coordinates()
         dofs = [V.sub(i).dofmap.list.array for i in range(gdim)]
 
         # Build translational null space basis
         for i in range(gdim):
-            basis[i][V.sub(i).dofmap.list.array] = 1.0
+            basis[i][dofs[i]] = 1.0
 
         # Build rotational null space basis
+        x = V.tabulate_dof_coordinates()
+        dofs_block = V.dofmap.list.array
+        x0, x1, x2 = x[dofs_block, 0], x[dofs_block, 1], x[dofs_block, 2]
         if gdim == 2:
-            basis[2][dofs[0]] = -x[dofs[0], 1]
-            basis[2][dofs[1]] = x[dofs[1], 0]
+            basis[2][dofs[0]] = -x1
+            basis[2][dofs[1]] = x0
         elif gdim == 3:
-            basis[3][dofs[0]] = -x[dofs[0], 1]
-            basis[3][dofs[1]] = x[dofs[1], 0]
+            basis[3][dofs[0]] = -x1
+            basis[3][dofs[1]] = x0
 
-            basis[4][dofs[0]] = x[dofs[0], 2]
-            basis[4][dofs[2]] = -x[dofs[2], 0]
-            basis[5][dofs[2]] = x[dofs[2], 1]
-            basis[5][dofs[1]] = -x[dofs[1], 2]
+            basis[4][dofs[0]] = x2
+            basis[4][dofs[2]] = -x0
+            basis[5][dofs[2]] = x1
+            basis[5][dofs[1]] = -x2
 
     basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
     basis.orthonormalize()
@@ -331,7 +331,7 @@ def rigid_motions_nullspace(V):
     return nsp
 
 
-def determine_closest_dofs(V, point):
+def determine_closest_block(V, point):
     """
     Determine the closest dofs (in a single block) to a point and the distance
     """
@@ -353,29 +353,24 @@ def determine_closest_dofs(V, point):
     dofmap = V.dofmap
     imap = dofmap.index_map
     ghost_owner = imap.ghost_owner_rank()
-    block_size = dofmap.index_map_bs
-    local_max = imap.size_local * block_size
+    local_max = imap.size_local
     # Determine which block of dofs is closest
     min_distance = max(min_distance, 1e5)
     minimal_distance_block = None
     min_dof_owner = owning_processor
     if MPI.COMM_WORLD.rank == owning_processor:
         x = V.tabulate_dof_coordinates()
-        cell_dofs = dofmap.cell_dofs(closest_cell)
-        for dof in cell_dofs:
-            # Only do distance computation for one node per block
-            if dof % block_size == 0:
-                block = dof // block_size
-                distance = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, x[dof]))
-                if distance < min_distance:
-                    # If cell owned by processor, but not the closest dof
-                    if dof < local_max:
-                        minimal_distance_block = block
-                        min_dof_owner = MPI.COMM_WORLD.rank
-                    else:
-                        min_dof_owner = ghost_owner[block - imap.size_local]
-                        minimal_distance_block = block
-                    min_distance = distance
+        cell_blocks = dofmap.cell_dofs(closest_cell)
+        for block in cell_blocks:
+            distance = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, x[block]))
+            if distance < min_distance:
+                # If cell owned by processor, but not the closest dof
+                if block < local_max:
+                    min_dof_owner = MPI.COMM_WORLD.rank
+                else:
+                    min_dof_owner = ghost_owner[block - local_max]
+                minimal_distance_block = block
+                min_distance = distance
     min_dof_owner = MPI.COMM_WORLD.bcast(min_dof_owner, root=owning_processor)
     # If dofs not owned by cell
     if owning_processor != min_dof_owner:
@@ -384,31 +379,28 @@ def determine_closest_dofs(V, point):
     if MPI.COMM_WORLD.rank == min_dof_owner:
         # Re-search using the closest cell
         x = V.tabulate_dof_coordinates()
-        cell_dofs = dofmap.cell_dofs(closest_cell)
-        for dof in cell_dofs:
-            # Only do distance computation for one node per block
-            if dof % block_size == 0:
-                block = dof // block_size
-                distance = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, x[dof]))
-                if distance < min_distance:
-                    # If cell owned by processor, but not the closest dof
-                    if dof < local_max:
-                        minimal_distance_block = block
-                        min_dof_owner = MPI.COMM_WORLD.rank
-                    else:
-                        min_dof_owner = ghost_owner[block - imap.size_local]
-                        minimal_distance_block = block
-                    min_distance = distance
+        cell_blocks = dofmap.cell_dofs(closest_cell)
+        for block in cell_blocks:
+            distance = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, x[block]))
+            if distance < min_distance:
+                # If cell owned by processor, but not the closest dof
+                if block < local_max:
+                    min_dof_owner = MPI.COMM_WORLD.rank
+                else:
+                    min_dof_owner = ghost_owner[block - local_max]
+                minimal_distance_block = block
+                min_distance = distance
         assert(min_dof_owner == owning_processor)
-        return owning_processor, [minimal_distance_block * block_size + i for i in range(block_size)]
+        return owning_processor, [minimal_distance_block]
     else:
         return owning_processor, []
 
 
 def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     # Determine which processor owns the dof closest to the slave and master point
-    slave_proc, slave_dofs = determine_closest_dofs(V, slave_point)
-    master_proc, master_dofs = determine_closest_dofs(V, master_point)
+    slave_proc, slave_block = determine_closest_block(V, slave_point)
+    master_proc, master_block = determine_closest_block(V, master_point)
+
     block_size = V.dofmap.index_map_bs
     imap = V.dofmap.index_map
     # Create local to global mapping and map masters
@@ -426,28 +418,25 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         slave_index = np.argmax(np.abs(vector))
     if MPI.COMM_WORLD.rank == slave_proc:
         if vector is None:
-            local_slaves = slave_dofs
+            local_slaves = np.array(
+                [sb * block_size + k for sb in slave_block
+                 for k in range(block_size)], dtype=np.int32)
         else:
-            assert(len(vector) == len(slave_dofs))
+            assert(len(vector) == block_size)
             # Check for input vector (Should be of same length as number of slaves)
             # All entries should not be zero
             assert(not np.isin(slave_index, zero_indices))
             # Check vector for zero contributions
-            local_slaves = [slave_dofs[slave_index]]
-            for i, slave in enumerate(slave_dofs):
+            local_slaves = np.array([slave_block[0] * block_size + slave_index], dtype=np.int32)
+            for i in range(block_size):
                 if i != slave_index and not np.isin(i, zero_indices):
-                    block = slave // block_size
-                    rem = slave % block_size
-                    local_masters.append(loc_to_glob[block] * block_size + rem)
+                    local_masters.append(loc_to_glob[slave_block[0]] * block_size + i)
                     local_owners.append(slave_proc)
                     local_coeffs.append(-vector[i] / vector[slave_index])
 
     global_masters = None
 
-    master_dofs = np.array(master_dofs, dtype=np.int32)
-    master_blocks = master_dofs // block_size
-    master_rems = master_dofs % block_size
-    masters_as_glob = loc_to_glob[master_blocks] * block_size + master_rems
+    masters_as_glob = [loc_to_glob[block] * block_size + k for block in master_block for k in range(block_size)]
     if MPI.COMM_WORLD.rank == slave_proc and slave_proc == master_proc:
         # If slaves and masters are on the same processor finalize local work
         if vector is None:
@@ -469,7 +458,6 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
 
         if MPI.COMM_WORLD.rank == slave_proc:
             global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
-
     shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
     imap = V.dofmap.index_map
     ghost_processors = []
@@ -486,15 +474,17 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             local_offsets = np.arange(0, len(local_slaves) + 1, dtype=np.int32)
         else:
             local_offsets = np.array([0, len(local_masters)], dtype=np.int32)
-        if slave_dofs[0] / block_size in shared_indices.keys():
-            ghost_processors = list(shared_indices[slave_dofs[0] / block_size])
+        if slave_block[0] in shared_indices.keys():
+            ghost_processors = list(shared_indices[slave_block[0]])
 
     # Broadcast processors containg slave
     ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)
 
     if MPI.COMM_WORLD.rank == slave_proc:
         for proc in ghost_processors:
-            MPI.COMM_WORLD.send(loc_to_glob[local_slaves], dest=proc, tag=20 + proc)
+
+            MPI.COMM_WORLD.send(loc_to_glob[slave_block[0]] * block_size + local_slaves %
+                                block_size, dest=proc, tag=20 + proc)
             MPI.COMM_WORLD.send(local_coeffs, dest=proc, tag=30 + proc)
             MPI.COMM_WORLD.send(local_owners, dest=proc, tag=40 + proc)
             MPI.COMM_WORLD.send(local_masters, dest=proc, tag=50 + proc)
@@ -509,13 +499,15 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         ghost_masters = MPI.COMM_WORLD.recv(source=slave_proc, tag=50 + MPI.COMM_WORLD.rank)
         ghost_offsets = MPI.COMM_WORLD.recv(source=slave_proc, tag=60 + MPI.COMM_WORLD.rank)
 
-        ghosts = imap.indices(True)[imap.size_local * imap.block_size:]
+        ghosts = imap.ghosts
+        # Unroll ghost blocks
+        ghost_dofs = [g * block_size + i for g in ghosts for i in range(block_size)]
+
         ghost_slaves = np.zeros(len(recv_slaves), dtype=np.int32)
+        local_size = imap.size_local
         for i, slave in enumerate(recv_slaves):
-            idx = np.argwhere(ghosts == slave)[0, 0]
-
-            ghost_slaves[i] = imap.size_local * imap.block_size + idx
-
+            idx = np.argwhere(ghost_dofs == slave)[0, 0]
+            ghost_slaves[i] = local_size * block_size + idx
     return (local_slaves, ghost_slaves), (local_masters, ghost_masters), (local_coeffs, ghost_coeffs),\
         (local_owners, ghost_owners), (local_offsets, ghost_offsets)
 

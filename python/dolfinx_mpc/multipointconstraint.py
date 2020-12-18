@@ -84,22 +84,18 @@ class MultiPointConstraint():
         offsets = self.offsets
         # Merge local and ghost arrays
         if len(self.ghost_slaves) > 0:
-            ghost_offsets = [g_offset + num_local_masters
-                             for g_offset in self.ghost_offsets[1:]]
+            ghost_offsets = [g_offset + num_local_masters for g_offset in self.ghost_offsets[1:]]
             slaves.extend(self.ghost_slaves)
             masters.extend(self.ghost_masters)
             coeffs.extend(self.ghost_coeffs)
             owners.extend(self.ghost_owners)
             offsets.extend(ghost_offsets)
         # Initialize C++ object and create slave->cell maps
-        self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-            self.V._cpp_object, slaves, num_local_slaves)
+        self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(self.V._cpp_object, slaves, num_local_slaves)
         # Add masters and compute new index maps
         self._cpp_object.add_masters(masters, coeffs, owners, offsets)
         # Replace function space
-        V_cpp = dolfinx.cpp.function.FunctionSpace(self.V.mesh,
-                                                   self.V.element,
-                                                   self._cpp_object.dofmap())
+        V_cpp = dolfinx.cpp.fem.FunctionSpace(self.V.mesh, self.V.element, self._cpp_object.dofmap())
         self.V_mpc = dolfinx.FunctionSpace(None, self.V.ufl_element(), V_cpp)
         self.finalized = True
         # Delete variables that are no longer required

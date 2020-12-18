@@ -12,17 +12,18 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     loc_to_glob = np.array(V.dofmap.index_map.global_indices(), dtype=np.int64)
     x = V.tabulate_dof_coordinates()
     comm = V.mesh.mpi_comm()
-    # Stack all Dirichlet BC dofs in one array, as MPCs cannot be used on
-    # Dirichlet BC dofs.
+    slave_entities = mt.indices[mt.values == tag]
+    slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
+    # Filter out Dirichlet BC dofs
     bc_dofs = []
     for bc in bcs:
-        bc_dofs.extend(bc.dof_indices[0])
+        bc_indices, _ = bc.dof_indices()
+        bc_dofs.extend(bc_indices)
 
-    slave_entities = mt.indices[mt.values == tag]
-    slave_dofs = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities)
-    # Filter out Dirichlet BC dofs
-    slave_dofs = slave_dofs[np.isin(slave_dofs, bc_dofs, invert=True)]
-    num_local_dofs = len(slave_dofs[slave_dofs < bs * size_local])
+    slave_blocks = np.array(slave_blocks, dtype=np.int32)
+    slave_blocks = slave_blocks[np.isin(slave_blocks, bc_dofs, invert=True)]
+    num_local_blocks = len(slave_blocks[slave_blocks < size_local])
+
     # Compute coordinates where each slave has to evaluate its masters
     tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim=tdim)
     global_tree = tree.compute_global_tree(comm)
@@ -30,57 +31,58 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     [cmin, cmax] = cell_map.local_range
     loc2glob_cell = np.array(cell_map.global_indices(), dtype=np.int64)
     del cell_map
-    master_coordinates = relation(x[slave_dofs].T).T
+    master_coordinates = relation(x[slave_blocks].T).T
 
-    constraint_data = {slave_dof: {} for slave_dof in slave_dofs[:num_local_dofs]}
-    remaining_slaves = list(slave_dofs[:num_local_dofs])
+    constraint_data = {slave * bs + j: {} for slave in slave_blocks[:num_local_blocks] for j in range(bs)}
+    remaining_slaves = list(constraint_data.keys())
+
     num_remaining = len(remaining_slaves)
     search_data = {}
-    for (slave_dof, master_coordinate) in zip(slave_dofs[:num_local_dofs], master_coordinates):
-        block_idx = slave_dof % bs
-        procs = [0]
-        if comm.size > 1:
-            procs = np.array(dolfinx.geometry.compute_collisions_point(global_tree, master_coordinate), dtype=np.int32)
-        # Check if masters can be local
-        search_globally = True
-        masters_, coeffs_, owners_ = [], [], []
-        if comm.rank in procs:
-            possible_cells = np.array(dolfinx.geometry.compute_collisions_point(
-                tree, master_coordinate), dtype=np.int32)
-            if len(possible_cells) > 0:
-                glob_cells = loc2glob_cell[possible_cells]
-                is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
-                verified_candidate = dolfinx.cpp.geometry.select_colliding_cells(
-                    V.mesh, list(possible_cells[is_owned]), master_coordinate, 1)
-                if len(verified_candidate) > 0:
-                    basis_values = dolfinx_mpc.cpp.mpc.get_basis_functions(
-                        V._cpp_object, master_coordinate, verified_candidate[0])
-                    cell_dofs = V.dofmap.cell_dofs(verified_candidate[0])
-                    for local_idx, dof in enumerate(cell_dofs):
-                        if not np.isclose(basis_values[local_idx, block_idx], 0):
-                            block = dof // bs
-                            rem = dof % bs
-                            if block < size_local:
-                                owners_.append(comm.rank)
-                            else:
-                                owners_.append(ghost_owners[block - size_local])
-                            masters_.append(loc_to_glob[block] * bs + rem)
-                            coeffs_.append(scale * basis_values[local_idx, block_idx])
-            if len(masters_) > 0:
-                constraint_data[slave_dof]["masters"] = masters_
-                constraint_data[slave_dof]["coeffs"] = coeffs_
-                constraint_data[slave_dof]["owners"] = owners_
-                remaining_slaves.remove(slave_dof)
-                num_remaining -= 1
-                search_globally = False
-        # If masters not found on this processor
-        if search_globally:
-            other_procs = procs[procs != comm.rank]
-            for proc in other_procs:
-                if proc in search_data.keys():
-                    search_data[proc][slave_dof] = master_coordinate
-                else:
-                    search_data[proc] = {slave_dof: master_coordinate}
+    for (slave_block, master_coordinate) in zip(slave_blocks[:num_local_blocks], master_coordinates):
+        for block_idx in range(bs):
+            slave_dof = slave_block * bs + block_idx
+            procs = [0]
+            if comm.size > 1:
+                procs = np.array(dolfinx.geometry.compute_collisions_point(global_tree, master_coordinate))
+            # Check if masters can be local
+            search_globally = True
+            masters_, coeffs_, owners_ = [], [], []
+            if comm.rank in procs:
+                possible_cells = np.array(dolfinx.geometry.compute_collisions_point(
+                    tree, master_coordinate), dtype=np.int32)
+                if len(possible_cells) > 0:
+                    glob_cells = loc2glob_cell[possible_cells]
+                    is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
+                    verified_candidate = dolfinx.cpp.geometry.select_colliding_cells(
+                        V.mesh, list(possible_cells[is_owned]), master_coordinate, 1)
+                    if len(verified_candidate) > 0:
+                        basis_values = dolfinx_mpc.cpp.mpc.get_basis_functions(
+                            V._cpp_object, master_coordinate, verified_candidate[0])
+                        cell_blocks = V.dofmap.cell_dofs(verified_candidate[0])
+                        for local_idx, block in enumerate(cell_blocks):
+                            for rem in range(bs):
+                                if not np.isclose(basis_values[local_idx * bs + rem, block_idx], 0):
+                                    if block < size_local:
+                                        owners_.append(comm.rank)
+                                    else:
+                                        owners_.append(ghost_owners[block - size_local])
+                                    masters_.append(loc_to_glob[block] * bs + rem)
+                                    coeffs_.append(scale * basis_values[local_idx * bs + rem, block_idx])
+                if len(masters_) > 0:
+                    constraint_data[slave_dof]["masters"] = masters_
+                    constraint_data[slave_dof]["coeffs"] = coeffs_
+                    constraint_data[slave_dof]["owners"] = owners_
+                    remaining_slaves.remove(slave_dof)
+                    num_remaining -= 1
+                    search_globally = False
+            # If masters not found on this processor
+            if search_globally:
+                other_procs = procs[procs != comm.rank]
+                for proc in other_procs:
+                    if proc in search_data.keys():
+                        search_data[proc][slave_dof] = master_coordinate
+                    else:
+                        search_data[proc] = {slave_dof: master_coordinate}
 
     # Send search data
     recv_procs = []
@@ -111,17 +113,16 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                         if len(verified_candidate) > 0:
                             basis_values = dolfinx_mpc.cpp.mpc.get_basis_functions(
                                 V._cpp_object, coordinate, verified_candidate[0])
-                            cell_dofs = V.dofmap.cell_dofs(verified_candidate[0])
-                            for idx, dof in enumerate(cell_dofs):
-                                if not np.isclose(basis_values[idx, block_idx], 0):
-                                    block = dof // bs
-                                    rem = dof % bs
-                                    if block < size_local:
-                                        o_.append(comm.rank)
-                                    else:
-                                        o_.append(ghost_owners[block - size_local])
-                                    m_.append(loc_to_glob[block] * bs + rem)
-                                    c_.append(scale * basis_values[idx, block_idx])
+                            cell_blocks = V.dofmap.cell_dofs(verified_candidate[0])
+                            for idx, block in enumerate(cell_blocks):
+                                for rem in range(bs):
+                                    if not np.isclose(basis_values[idx * bs + rem, block_idx], 0):
+                                        if block < size_local:
+                                            o_.append(comm.rank)
+                                        else:
+                                            o_.append(ghost_owners[block - size_local])
+                                        m_.append(loc_to_glob[block] * bs + rem)
+                                        c_.append(scale * basis_values[idx * bs + rem, block_idx])
                     if len(m_) > 0:
                         out_data[slave_dof] = {"masters": m_, "coeffs": c_, "owners": o_}
                 comm.send(out_data, dest=proc, tag=22)
@@ -143,42 +144,43 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     shared_blocks = np.array(list(shared_indices.keys()))
     local_shared_blocks = shared_blocks[shared_blocks < size_local]
     del shared_blocks
-    for (i, dof) in enumerate(slave_dofs[:num_local_dofs]):
-        block = dof // bs
-        rem = dof % bs
-        if block in local_shared_blocks:
-            for proc in shared_indices[block]:
-                if proc in send_ghost_masters.keys():
-                    send_ghost_masters[proc][loc_to_glob[block] * bs + rem] = {
-                        "masters": constraint_data[dof]["masters"],
-                        "coeffs": constraint_data[dof]["coeffs"],
-                        "owners": constraint_data[dof]["owners"]}
-                else:
-                    send_ghost_masters[proc] = {loc_to_glob[block] * bs + rem:
-                                                {"masters": constraint_data[dof]["masters"],
-                                                 "coeffs": constraint_data[dof]["coeffs"],
-                                                 "owners": constraint_data[dof]["owners"]}}
+    for (i, block) in enumerate(slave_blocks[:num_local_blocks]):
+        for rem in range(bs):
+            dof = block * bs + rem
+            if block in local_shared_blocks:
+                for proc in shared_indices[block]:
+                    if proc in send_ghost_masters.keys():
+                        send_ghost_masters[proc][loc_to_glob[block] * bs + rem] = {
+                            "masters": constraint_data[dof]["masters"],
+                            "coeffs": constraint_data[dof]["coeffs"],
+                            "owners": constraint_data[dof]["owners"]}
+                    else:
+                        send_ghost_masters[proc] = {loc_to_glob[block] * bs + rem:
+                                                    {"masters": constraint_data[dof]["masters"],
+                                                     "coeffs": constraint_data[dof]["coeffs"],
+                                                     "owners": constraint_data[dof]["owners"]}}
     for proc in send_ghost_masters.keys():
         comm.send(send_ghost_masters[proc], dest=proc, tag=33)
 
     ghost_recv = []
-    for dof in slave_dofs[num_local_dofs:]:
-        g_block = dof // bs - size_local
-        owner = ghost_owners[g_block]
+    for block in slave_blocks[num_local_blocks:]:
+        owner = ghost_owners[block - size_local]
         ghost_recv.append(owner)
-        del owner, g_block
+        del owner, block
     ghost_recv = set(ghost_recv)
-    ghost_dofs = {dof: {} for dof in slave_dofs[num_local_dofs:]}
+    ghost_dofs = {block * bs + j: {} for block in slave_blocks[num_local_blocks:] for j in range(bs)}
     for owner in ghost_recv:
         from_owner = comm.recv(source=owner, tag=33)
-        for dof in slave_dofs[num_local_dofs:]:
-            block = dof // bs
-            rem = dof % bs
-            glob_dof = loc_to_glob[block] * bs + rem
-            if glob_dof in from_owner.keys():
-                ghost_dofs[dof]["masters"] = from_owner[glob_dof]["masters"]
-                ghost_dofs[dof]["coeffs"] = from_owner[glob_dof]["coeffs"]
-                ghost_dofs[dof]["owners"] = from_owner[glob_dof]["owners"]
+        for block in slave_blocks[num_local_blocks:]:
+            glob_block = loc_to_glob[block]
+            for rem in range(bs):
+                glob_dof = glob_block * bs + rem
+                if glob_dof in from_owner.keys():
+                    dof = block * bs + rem
+                    ghost_dofs[dof]["masters"] = from_owner[glob_dof]["masters"]
+                    ghost_dofs[dof]["coeffs"] = from_owner[glob_dof]["coeffs"]
+                    ghost_dofs[dof]["owners"] = from_owner[glob_dof]["owners"]
+
     # Flatten out arrays
     slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
     for dof in constraint_data.keys():

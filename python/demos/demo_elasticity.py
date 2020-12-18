@@ -21,7 +21,7 @@ def demo_elasticity():
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 

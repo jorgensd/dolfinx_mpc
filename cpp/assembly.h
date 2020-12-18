@@ -11,11 +11,16 @@
 namespace dolfinx_mpc
 {
 /// Assemble bilinear form into a matrix
+/// @param[in] mat_add_block The function for adding block values into the
+/// matrix
 /// @param[in] mat_add The function for adding values into the matrix
 /// @param[in] a The bilinear from to assemble
 /// @param[in] bcs Boundary conditions to apply. For boundary condition
 ///  dofs the row and column are zeroed. The diagonal  entry is not set.
 void assemble_matrix(
+    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
+                            const std::int32_t*, const PetscScalar*)>&
+        mat_add_block,
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const PetscScalar*)>& mat_add,
     const dolfinx::fem::Form<PetscScalar>& a,

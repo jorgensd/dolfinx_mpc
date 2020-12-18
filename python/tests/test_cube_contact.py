@@ -176,7 +176,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     # Helper for orienting traction
 
     # Bottom boundary is fixed in all directions
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -200,7 +200,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
         values[1] = g_vec[1]
         values[2] = g_vec[2]
         return values
-    u_top = dolfinx.function.Function(V)
+    u_top = dolfinx.Function(V)
     u_top.interpolate(top_v)
 
     top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
@@ -236,13 +236,12 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     if nonslip:
         with dolfinx.common.Timer("~Contact: Create non-elastic constraint"):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
-                V._cpp_object, mt, 4, 9)
+            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt, 4, 9)
     else:
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-                V._cpp_object, mt, 4, 9, nh._cpp_object)
+            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
+
     mpc.add_constraint_from_mpc_data(V, mpc_data)
     mpc.finalize()
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (old)"):
