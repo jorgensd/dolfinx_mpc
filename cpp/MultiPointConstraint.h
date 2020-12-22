@@ -68,7 +68,7 @@ public:
   }
 
   /// Return map from slave to coefficients
-  const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients() const
+  const std::vector<PetscScalar>& coefficients() const
   {
     return _coeff_map->array();
   }
@@ -112,10 +112,11 @@ public:
   /// @param[in] coeffs Coefficients corresponding to each master
   /// @param[in] owners Owners for each master
   /// @param[in] offsets Offsets for masters
-  void add_masters(Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-                   Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
-                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>);
+  void add_masters(std::vector<std::int64_t> masters,
+                   std::vector<PetscScalar> coeffs,
+                   std::vector<std::int32_t> owners,
+                   std::vector<std::int32_t> offsets);
+
   /// Helper function for creating new index map
   /// including all masters as ghosts and replacing
   /// _master_block_map and _master_local_map

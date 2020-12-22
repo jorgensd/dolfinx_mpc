@@ -58,10 +58,11 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
       V0_pair = V->sub({0})->collapse();
   auto [V0, map] = V0_pair;
 
-  std::array<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>, 2> slave_blocks
+  std::array<std::vector<std::int32_t>, 2> slave_blocks
       = dolfinx::fem::locate_dofs_topological({*V->sub({0}).get(), *V0.get()},
                                               fdim, slave_facets);
-  slave_blocks[0] /= block_size;
+  for (std::size_t i = 0; i < slave_blocks[0].size(); ++i)
+    slave_blocks[0][i] /= block_size;
 
   // Make maps for local data of slave and master coeffs
   std::vector<std::int32_t> local_slaves;
@@ -77,7 +78,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // normal vector normal vector)
   const Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1> normal_array
       = nh->x()->array();
-  for (std::int32_t i = 0; i < slave_blocks[0].rows(); ++i)
+  for (std::int32_t i = 0; i < slave_blocks[0].size(); ++i)
   {
     std::vector<std::int32_t> dofs(block_size);
     std::iota(dofs.begin(), dofs.end(), slave_blocks[0][i] * block_size);
@@ -143,23 +144,20 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   MPI_Comm slave_to_ghost = create_owner_to_ghost_comm(
       local_slaves, ghost_slaves, imap, block_size);
   // Create new index-map where there are only ghosts for slaves
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
-      = imap->ghost_owner_rank();
+  std::vector<std::int32_t> ghost_owners = imap->ghost_owner_rank();
   std::shared_ptr<const dolfinx::common::IndexMap> slave_index_map;
   {
     // Compute quotients and remainders for all ghost blocks
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghosts_eigen(
-        ghost_slaves.size());
-    // Cannot use Eigen::map as ghost_slaves is reused
-    for (std::int32_t i = 0; i < ghost_slaves.size(); ++i)
-      ghosts_eigen[i] = ghost_slaves[i];
-
-    ghosts_eigen /= block_size;
-    auto ghosts_as_global = imap->local_to_global(ghosts_eigen);
+    std::vector<std::int32_t> ghost_blocks(ghost_slaves.size());
+    for (std::size_t i = 0; i < ghost_slaves.size(); ++i)
+      ghost_blocks[i] = ghost_slaves[i] / block_size;
+    std::vector<std::int64_t> ghosts_as_global(ghost_blocks.size());
+    imap->local_to_global(ghost_blocks.data(), ghost_blocks.size(),
+                          ghosts_as_global.data());
 
     std::vector<int> slave_ranks(ghost_slaves.size());
     for (std::int32_t i = 0; i < ghost_slaves.size(); ++i)
-      slave_ranks[i] = ghost_owners[ghosts_eigen[i] - size_local];
+      slave_ranks[i] = ghost_owners[ghost_blocks[i] - size_local];
     slave_index_map = std::make_shared<dolfinx::common::IndexMap>(
         comm, imap->size_local(),
         dolfinx::MPI::compute_graph_edges(
@@ -254,7 +252,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
                                 * coeffs[j] / coeffs[max_index];
             if (std::abs(coeff) > 1e-6)
             {
-              l_master.push_back(cell_blocks(k) * block_size + block);
+              l_master.push_back(cell_blocks[k] * block_size + block);
               l_coeff.push_back(coeff);
               if (cell_blocks[k] < size_local)
                 l_owner.push_back(rank);
@@ -961,19 +959,20 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
             std::vector<std::int32_t>>
       V0_pair = V->sub({0})->collapse();
   auto [V0, map] = V0_pair;
-  std::array<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>, 2> slave_blocks
+  std::array<std::vector<std::int32_t>, 2> slave_blocks
       = dolfinx::fem::locate_dofs_topological({*V->sub({0}).get(), *V0.get()},
                                               fdim, slave_facets);
-  slave_blocks[0] /= block_size;
+  for (std::size_t i = 0; i < slave_blocks[0].size(); ++i)
+    slave_blocks[0][i] /= block_size;
   // Make maps for local data of slave and master coeffs
   std::vector<std::int32_t> local_block;
   std::vector<std::vector<std::int32_t>> local_slaves(tdim);
 
   // Array holding ghost slaves blocks (masters,coeffs and offsets will be
-  // recieved)
+  // received)
   std::vector<std::int32_t> ghost_blocks;
 
-  for (std::int32_t i = 0; i < slave_blocks[0].rows(); ++i)
+  for (std::int32_t i = 0; i < slave_blocks[0].size(); ++i)
   {
     if (slave_blocks[0][i] < size_local)
     {
@@ -998,16 +997,15 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       = create_owner_to_ghost_comm(local_block, ghost_blocks, imap, 1);
 
   // Create new index-map where there are only ghosts for slaves
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
-      = imap->ghost_owner_rank();
+  std::vector<std::int32_t> ghost_owners = imap->ghost_owner_rank();
   std::shared_ptr<const dolfinx::common::IndexMap> slave_index_map;
   {
     std::vector<int> slave_ranks(ghost_blocks.size());
     for (std::int32_t i = 0; i < ghost_blocks.size(); ++i)
       slave_ranks[i] = ghost_owners[ghost_blocks[i] - size_local];
-    Eigen::Map<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> ghosts_eigen(
-        ghost_blocks.data(), ghost_blocks.size());
-    auto ghosts_as_global = imap->local_to_global(ghosts_eigen);
+    std::vector<std::int64_t> ghosts_as_global(ghost_blocks.size());
+    imap->local_to_global(ghost_blocks.data(), ghost_blocks.size(),
+                          ghosts_as_global.data());
     slave_index_map = std::make_shared<dolfinx::common::IndexMap>(
         comm, imap->size_local(),
         dolfinx::MPI::compute_graph_edges(

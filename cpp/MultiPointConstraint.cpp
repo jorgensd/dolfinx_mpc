@@ -10,6 +10,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/common/log.h>
+#include <dolfinx/common/span.hpp>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/FunctionSpace.h>
@@ -124,11 +125,10 @@ MultiPointConstraint::create_cell_maps(
   return std::make_pair(adj_ptr, std::make_pair(dof_cells, adj2_ptr));
 }
 //-----------------------------------------------------------------------------
-void MultiPointConstraint::add_masters(
-    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> masters,
-    Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coeffs,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> owners,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> offsets)
+void MultiPointConstraint::add_masters(std::vector<std::int64_t> masters,
+                                       std::vector<PetscScalar> coeffs,
+                                       std::vector<std::int32_t> owners,
+                                       std::vector<std::int32_t> offsets)
 {
   _master_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int64_t>>(
       masters, offsets);
@@ -152,17 +152,15 @@ void MultiPointConstraint::create_new_index_map()
   // Compute local master index before creating new index-map
   const std::int32_t& block_size = _V->dofmap()->index_map_bs();
 
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_array
-      = _master_map->array();
-  master_array /= block_size;
+  std::vector<std::int64_t> master_array = _master_map->array();
+  for (std::size_t i = 0; i < master_array.size(); ++i)
+    master_array[i] /= block_size;
   const std::vector<std::int32_t> master_as_local
       = _V->dofmap()->index_map->global_to_local(master_array);
-  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> masters_block(
-      master_as_local.data(), master_as_local.size(), 1);
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       old_master_block_map
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-          masters_block, _master_map->offsets());
+          master_as_local, _master_map->offsets());
   int mpi_size = -1;
   MPI_Comm_size(comm, &mpi_size);
   if (mpi_size == 1)
@@ -196,14 +194,12 @@ void MultiPointConstraint::create_new_index_map()
         }
       }
     }
-    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& old_ranks
-        = index_map->ghost_owner_rank();
-    Eigen::Array<std::int64_t, Eigen::Dynamic, 1> old_ghosts
-        = index_map->ghosts();
-    std::int32_t num_ghosts = old_ghosts.size();
-    old_ghosts.conservativeResize(num_ghosts + new_ghosts.size());
+    const std::vector<std::int32_t>& old_ranks = index_map->ghost_owner_rank();
+    std::vector<std::int64_t> old_ghosts = index_map->ghosts();
+    const std::int32_t num_ghosts = old_ghosts.size();
+    old_ghosts.resize(num_ghosts + new_ghosts.size());
     for (std::int64_t i = 0; i < new_ghosts.size(); i++)
-      old_ghosts(num_ghosts + i) = new_ghosts[i];
+      old_ghosts[num_ghosts + i] = new_ghosts[i];
 
     // Append rank of new ghost owners
     std::vector<int> ghost_ranks(old_ghosts.size());
@@ -235,21 +231,17 @@ void MultiPointConstraint::create_new_index_map()
       old_dofmap->element_dof_layout, _index_map, bs, o_dofmap, bs);
 
   // Compute local master index before creating new index-map
-  Eigen::Array<std::int64_t, Eigen::Dynamic, 1> master_blocks
-      = _master_map->array();
-  master_blocks /= block_size;
+  std::vector<std::int64_t> master_blocks = _master_map->array();
+  for (std::size_t i = 0; i < master_blocks.size(); ++i)
+    master_blocks[i] /= block_size;
   const std::vector<std::int32_t>& master_block_local
       = _index_map->global_to_local(master_blocks);
-  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>
-      masters_block_eigen(master_block_local.data(), master_block_local.size(),
-                          1);
   _master_block_map
       = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-          masters_block_eigen, _master_map->offsets());
+          master_block_local, _master_map->offsets());
 
   // Go from blocks to actual local index
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> masters_local(
-      master_block_local.size());
+  std::vector<std::int32_t> masters_local(master_block_local.size());
   std::int32_t c = 0;
   for (Eigen::Index i = 0; i < _master_map->num_nodes(); ++i)
   {
@@ -259,7 +251,7 @@ void MultiPointConstraint::create_new_index_map()
       const int master_as_int = masters[j];
       const std::div_t div = std::div(master_as_int, block_size);
       const int rem = div.rem;
-      masters_local(c) = masters_block_eigen(c) * block_size + rem;
+      masters_local[c] = master_block_local[c] * block_size + rem;
       c++;
     }
   }
@@ -299,12 +291,15 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
   ///  Create and build sparsity pattern for original form. Should be
   ///  equivalent to calling create_sparsity_pattern(Form a)
   dolfinx_mpc::build_standard_pattern(pattern, a);
-
   // Arrays replacing slave dof with master dof in sparsity pattern
   const int& block_size = bs0;
   Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_slave(block_size);
   Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_other_slave(block_size);
 
+  std::vector<std::int32_t> master_block(1);
+  tcb::span<int32_t> master_span = tcb::make_span(master_block);
+  std::vector<std::int32_t> other_master_block(1);
+  tcb::span<int32_t> other_master_span = tcb::make_span(other_master_block);
   for (Eigen::Index i = 0; i < _cell_to_slaves_map->num_nodes(); ++i)
   {
 
@@ -324,19 +319,18 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     flattened_masters.erase(
         std::unique(flattened_masters.begin(), flattened_masters.end()),
         flattened_masters.end());
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> master_block(1);
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> other_master_block(1);
+
     for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
     {
       master_block[0] = flattened_masters[j];
-      pattern.insert(master_block, cell_dofs);
-      pattern.insert(cell_dofs, master_block);
+      pattern.insert(master_span, cell_dofs);
+      pattern.insert(cell_dofs, master_span);
       // Add sparsity pattern for all master dofs of any slave on this cell
       for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
       {
         other_master_block[0] = flattened_masters[k];
-        pattern.insert(master_block, other_master_block);
-        pattern.insert(other_master_block, master_block);
+        pattern.insert(master_span, other_master_span);
+        pattern.insert(other_master_span, master_span);
       }
     }
   }
@@ -353,9 +347,6 @@ void MultiPointConstraint::backsubstitution(
     auto coeffs = _coeff_map->links(i);
     assert(masters.size() == coeffs.size());
     for (std::int32_t k = 0; k < masters.size(); ++k)
-    {
-
       vector[slaves[i]] += coeffs[k] * vector[masters[k]];
-    }
   }
 };

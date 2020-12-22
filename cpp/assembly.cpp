@@ -17,8 +17,8 @@ void modify_mpc_cell(
     const int num_dofs,
     Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>&
         Ae,
-    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& dofs, int bs,
-    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_indices,
+    const tcb::span<const int32_t>& dofs, int bs,
+    const tcb::span<const int32_t>& slave_indices,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
         masters,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<PetscScalar>>&
@@ -144,8 +144,8 @@ void assemble_exterior_facets(
                              const std::uint8_t*, const std::uint32_t)>& kernel,
     const Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic,
                        Eigen::RowMajor>& coeffs,
-    const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> constants,
-    const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_info,
+    const std::vector<PetscScalar>& constants,
+    const std::vector<std::uint32_t>& cell_info,
     const Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>& perms,
     const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -190,7 +190,7 @@ void assemble_exterior_facets(
   {
     const std::int32_t f = active_facets[i];
     auto cells = f_to_c->links(f);
-    assert(cells.rows() == 1);
+    assert(cells.size() == 1);
     for (std::int32_t j = 0; j < slave_cells.size(); ++j)
       if (slave_cells[j] == cells[0])
       {
@@ -207,8 +207,8 @@ void assemble_exterior_facets(
 
     // Get local index of facet with respect to the cell
     auto facets = c_to_f->links(cells[0]);
-    const auto* it = std::find(facets.data(), facets.data() + facets.rows(), f);
-    assert(it != (facets.data() + facets.rows()));
+    const auto* it = std::find(facets.data(), facets.data() + facets.size(), f);
+    assert(it != (facets.data() + facets.size()));
     const int local_facet = std::distance(facets.data(), it);
 
     // Get cell vertex coordinates
@@ -302,8 +302,8 @@ void assemble_cells_impl(
                              const std::uint8_t*, const std::uint32_t)>& kernel,
     const Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic,
                        Eigen::RowMajor>& coeffs,
-    const Eigen::Array<PetscScalar, Eigen::Dynamic, 1>& constants,
-    const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_info,
+    const std::vector<PetscScalar>& constants,
+    const std::vector<std::uint32_t>& cell_info,
     const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
         masters,
@@ -354,7 +354,7 @@ void assemble_cells_impl(
     // Get cell coordinates/geometry
     const std::int32_t c = active_cells[k];
     auto x_dofs = x_dofmap.links(c);
-    for (int i = 0; i < x_dofs.rows(); ++i)
+    for (int i = 0; i < x_dofs.size(); ++i)
       for (int j = 0; j < gdim; ++j)
         coordinate_dofs(i, j) = x_g(x_dofs[i], j);
 
@@ -459,8 +459,7 @@ void assemble_matrix_impl(
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs1 = dofmap1->list();
   const int bs1 = dofmap1->bs();
   // Prepare constants
-  const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> constants
-      = pack_constants(a);
+  const std::vector<PetscScalar> constants = pack_constants(a);
 
   // Prepare coefficients
   const Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic,
@@ -470,10 +469,9 @@ void assemble_matrix_impl(
   const bool needs_permutation_data = a.needs_permutation_data();
   if (needs_permutation_data)
     mesh->topology_mutable().create_entity_permutations();
-  const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_info
-      = needs_permutation_data
-            ? mesh->topology().get_cell_permutation_info()
-            : Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>(num_cells);
+  const std::vector<std::uint32_t>& cell_info
+      = needs_permutation_data ? mesh->topology().get_cell_permutation_info()
+                               : std::vector<std::uint32_t>(num_cells);
 
   for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
   {

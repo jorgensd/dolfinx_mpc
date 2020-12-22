@@ -126,7 +126,7 @@ dolfinx_mpc::get_basis_functions(
 
   mesh->topology_mutable().create_entity_permutations();
 
-  const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& permutation_info
+  const std::vector<std::uint32_t> permutation_info
       = mesh->topology().get_cell_permutation_info();
   // Skip negative cell indices
   Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
@@ -274,8 +274,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
     std::shared_ptr<const dolfinx::common::IndexMap> index_map, int block_size)
 {
   // Get data from IndexMap
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
-      = index_map->ghost_owner_rank();
+  const std::vector<std::int32_t>& ghost_owners = index_map->ghost_owner_rank();
   const std::int32_t size_local = index_map->size_local();
   std::map<std::int32_t, std::set<int>> shared_indices
       = index_map->compute_shared_indices();
@@ -345,8 +344,8 @@ dolfinx_mpc::create_dof_to_facet_map(
     // Get local index of facet with respect to the cell
     auto cell_facets = c_to_f->links(cell[0]);
     const auto* it = std::find(
-        cell_facets.data(), cell_facets.data() + cell_facets.rows(), facets[i]);
-    assert(it != (cell_facets.data() + cell_facets.rows()));
+        cell_facets.data(), cell_facets.data() + cell_facets.size(), facets[i]);
+    assert(it != (cell_facets.data() + cell_facets.size()));
     const int local_facet = std::distance(cell_facets.data(), it);
     auto cell_blocks = dofmap->cell_dofs(cell[0]);
     auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
