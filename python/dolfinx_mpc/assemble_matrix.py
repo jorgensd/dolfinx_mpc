@@ -97,7 +97,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
 
     # Unravel data from MPC
     slave_cells = constraint.slave_cells()
-    coefficients = constraint.coefficients()
+    coefficients = numpy.array(constraint.coefficients(), dtype=PETSc.ScalarType)
     masters = constraint.masters_local()
     slave_cell_to_dofs = constraint.cell_to_slaves()
     cell_to_slave = slave_cell_to_dofs.array
@@ -129,7 +129,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
 
     # Pack constants and coefficients
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
+    form_consts = numpy.array(dolfinx.cpp.fem.pack_constants(cpp_form), dtype=PETSc.ScalarType)
 
     # Create sparsity pattern
     if A is None:
@@ -156,41 +156,37 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     num_cell_integrals = len(subdomain_ids)
 
     if num_cell_integrals > 0:
+        timer = Timer("~MPC: Assemble matrix (cells)")
         V.mesh.topology.create_entity_permutations()
-        permutation_info = V.mesh.topology.get_cell_permutation_info()
-
-    for subdomain_id in subdomain_ids:
-        with Timer("~MPC: Assemble matrix (cell kernel)"):
+        permutation_info = numpy.array(V.mesh.topology.get_cell_permutation_info(), dtype=numpy.uint32)
+        for subdomain_id in subdomain_ids:
             cell_kernel = ufc_form.create_cell_integral(subdomain_id).tabulate_tensor
-        active_cells = numpy.array(cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id), dtype=numpy.int64)
-        slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
-        with Timer("~MPC: Assemble matrix (numba cells)"):
+            active_cells = numpy.array(cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id), dtype=numpy.int64)
+            slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
             assemble_cells(A.handle, cell_kernel, active_cells[slave_cell_indices], (pos, x_dofs, x), gdim, form_coeffs,
                            form_consts, permutation_info, dofs, block_size, num_dofs_per_element, mpc_data, bc_array)
+        timer.stop()
 
     # Assemble over exterior facets
-    subdomain_ids = cpp_form.integral_ids(
-        dolfinx.fem.IntegralType.exterior_facet)
+    subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
 
     # Get cell orientation data
     if num_exterior_integrals > 0:
+        timer = Timer("~MPC: Assemble matrix (ext. facet kernel)")
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
-        permutation_info = V.mesh.topology.get_cell_permutation_info()
+        permutation_info = numpy.array(V.mesh.topology.get_cell_permutation_info(), dtype=numpy.uint32)
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         perm = (permutation_info, facet_permutation_info)
-
-    for subdomain_id in subdomain_ids:
-        active_facets = numpy.array(cpp_form.domains(
-            dolfinx.fem.IntegralType.exterior_facet, subdomain_id), dtype=numpy.int64)
-        facet_info = pack_facet_info(V.mesh, active_facets)
-        with Timer("~MPC: Assemble matrix (ext. facet kernel)"):
-            facet_kernel = ufc_form.create_exterior_facet_integral(
-                subdomain_id).tabulate_tensor
-        with Timer("~MPC: Assemble matrix (numba ext. facet)"):
+        for subdomain_id in subdomain_ids:
+            active_facets = numpy.array(cpp_form.domains(
+                dolfinx.fem.IntegralType.exterior_facet, subdomain_id), dtype=numpy.int64)
+            facet_info = pack_facet_info(V.mesh, active_facets)
+            facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
             assemble_exterior_facets(A.handle, facet_kernel, (pos, x_dofs, x), gdim, form_coeffs, form_consts,
                                      perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, bc_array)
+        timer.stop()
 
     with Timer("~MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs
