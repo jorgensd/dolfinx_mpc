@@ -136,11 +136,12 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.view()
 
     it = solver.getIterationNumber()
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if out_hdf5 is not None:
         d_set = out_hdf5.get("its")
         d_set[r_lvl] = it
         d_set = out_hdf5.get("num_dofs")
-        d_set[r_lvl] = V.dim
+        d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = end - start
 

@@ -53,10 +53,13 @@ MultiPointConstraint::create_cell_maps(
   const int tdim = mesh.topology().dim();
   const int num_cells = mesh.topology().index_map(tdim)->size_local();
   const int bs = dofmap.index_map_bs();
+  const int num_local_dofs
+      = (dofmap.index_map->size_local() + dofmap.index_map->num_ghosts()) * bs;
+
   // Create an array for the whole function space, where
   // dof index contains the index of the dof if it is in the list,
   // otherwise -1
-  std::vector<std::int64_t> dof_index(_V->dim(), -1);
+  std::vector<std::int32_t> dof_index(num_local_dofs, -1);
   std::map<std::int32_t, std::vector<std::int32_t>> idx_to_cell;
   for (std::int32_t i = 0; i < dofs.rows(); ++i)
   {

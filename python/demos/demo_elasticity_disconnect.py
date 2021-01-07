@@ -173,10 +173,10 @@ for i in axis:
 
 mpc.finalize()
 null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
-
-with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(V.dim)):
+num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
+with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(num_dofs)):
     A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
-with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(V.dim)):
+with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(num_dofs)):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
 fem.apply_lifting(b, [a], [bcs])
