@@ -168,7 +168,8 @@ def create_transformation_matrix(V, constraint):
     master_rems = masters % block_size
     coeffs = constraint.coefficients()
     offsets = constraint.masters_local().offsets
-    K = np.zeros((V.dim, V.dim - len(global_slaves)), dtype=PETSc.ScalarType)
+    dim = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
+    K = np.zeros((dim, dim - len(global_slaves)), dtype=PETSc.ScalarType)
     # Add entries to
     for i in range(K.shape[0]):
         local_index = np.flatnonzero(i == glob_slaves)

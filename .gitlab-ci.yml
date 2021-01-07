@@ -86,7 +86,7 @@ nightly-complex:
     - export HDF5_MPI="ON"
     - export CC=mpicc
     - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
-    - pip3 install --no-cache-dir --no-binary=h5py h5py
+    - pip3 install --no-cache-dir --no-binary=h5py h5py numpy==1.19.4
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
@@ -159,7 +159,7 @@ nightly-real:
     - export HDF5_MPI="ON"
     - export CC=mpicc
     - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
-    - pip3 install --no-cache-dir --no-binary=h5py h5py
+    - pip3 install --no-cache-dir --no-binary=h5py h5py  numpy==1.19.4
     - pip3 install git+https://github.com/FEniCS/fiat.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade

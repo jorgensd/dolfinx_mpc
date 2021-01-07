@@ -136,12 +136,12 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
-
-    with dolfinx.common.Timer("~~Contact: Assemble matrix ({0:d})".format(V.dim)):
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
+    with dolfinx.common.Timer("~~Contact: Assemble matrix ({0:d})".format(num_dofs)):
         # A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
-    with dolfinx.common.Timer("~~Contact: Assemble vector ({0:d})".format(V.dim)):
+    with dolfinx.common.Timer("~~Contact: Assemble vector ({0:d})".format(num_dofs)):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     fem.apply_lifting(b, [a], [bcs])
@@ -181,7 +181,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     unorm = uh.norm()
     num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)
     if comm.rank == 0:
-        print("Number of dofs: {0:d}".format(V.dim))
+        num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
+        print("Number of dofs: {0:d}".format(num_dofs))
         print("Number of slaves: {0:d}".format(num_slaves))
         print("Number of iterations: {0:d}".format(it))
         print("Norm of u {0:.5e}".format(unorm))
