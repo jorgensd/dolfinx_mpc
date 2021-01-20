@@ -146,9 +146,13 @@ dolfinx_mpc::get_basis_functions(
   // Compute basis on reference element
   element->evaluate_reference_basis(basis_reference_values, X);
 
+  element->apply_dof_transformation(basis_reference_values.data(),
+                                    permutation_info[index],
+                                    reference_value_size);
+
   // Push basis forward to physical element
   element->transform_reference_basis(basis_values, basis_reference_values, X, J,
-                                     detJ, K, permutation_info[index]);
+                                     detJ, K);
 
   // Get the degrees of freedom for the current cell
   auto dofs = dofmap->cell_dofs(index);

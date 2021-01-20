@@ -116,7 +116,6 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim, coeffs, constants, permu
 
     for slave_cell_index, cell_index in enumerate(active_cells):
         num_vertices = pos[cell_index + 1] - pos[cell_index]
-        # FIXME: This assumes a particular geometry dof layout
         cell = pos[cell_index]
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
@@ -163,7 +162,6 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim, coeffs, constant
             continue
         slave_cell_index = numpy.flatnonzero(slave_cells == cell_index)[0]
         num_vertices = pos[cell_index + 1] - pos[cell_index]
-        # FIXME: This assumes a particular geometry dof layout
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
             for k in range(gdim):
