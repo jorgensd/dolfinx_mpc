@@ -76,8 +76,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   // Determine which dof should be a slave dof (based on max component of
   // normal vector normal vector)
-  const Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1> normal_array
-      = nh->x()->array();
+  const std::vector<PetscScalar>& normal_array = nh->x()->array();
   for (std::int32_t i = 0; i < slave_blocks[0].size(); ++i)
   {
     std::vector<std::int32_t> dofs(block_size);

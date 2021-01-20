@@ -14,7 +14,7 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
     comm = mesh.mpi_comm()
 
     meshtag, marker = meshtag_info
-    n_vec = normal.x.array()
+    n_vec = np.array(normal.x.array, dtype=type(normal.x.array[0]))
 
     # Info from parent space
     W_global_indices = np.array(W.dofmap.index_map.global_indices(), dtype=np.int64)

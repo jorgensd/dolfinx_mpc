@@ -14,9 +14,9 @@ H = 1
 theta = np.pi / 5
 
 
-def create_mesh_gmsh():
+def create_mesh_gmsh(res=0.1):
     """
-    Create a channel of length 2, height one, rotated pi/6 degrees
+    Create a channel of length 2, height one, rotated theta degrees
     around origin, and corresponding facet markers:
     Walls: 1
     Outlet: 2
@@ -58,8 +58,8 @@ def create_mesh_gmsh():
         gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
         gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 0.1)
-        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", 0.1)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMin", res)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", res)
         gmsh.model.mesh.generate(2)
 
     mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
@@ -69,7 +69,7 @@ def create_mesh_gmsh():
 
 
 # ------------------- Mesh and function space creation ------------------------
-mesh, mt = create_mesh_gmsh()
+mesh, mt = create_mesh_gmsh(0.1)
 
 fdim = mesh.topology.dim - 1
 
@@ -96,16 +96,8 @@ W0 = W.sub(0)
 dofs = dolfinx.fem.locate_dofs_topological((W0, V), 1, inlet_facets)
 bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
 
-# Pressure condition at single dof to determine pressure
-zero = dolfinx.Function(Q)
-with zero.vector.localForm() as zero_local:
-    zero_local.set(0.0)
-W1 = W.sub(1)
-dofs = dolfinx.fem.locate_dofs_geometrical((W1, Q), lambda x: np.isclose(x.T, [0, 0, 0]).all(axis=1))
-bc2 = dolfinx.DirichletBC(zero, dofs, W1)
-
 # Collect Dirichlet boundary conditions
-bcs = [bc1, bc2]
+bcs = [bc1]
 
 # Slip conditions for walls
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 1])

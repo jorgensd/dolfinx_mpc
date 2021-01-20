@@ -245,7 +245,6 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
         num_vertices = pos[cell_index + 1] - pos[cell_index]
 
         # Compute vertices of cell from mesh data
-        # FIXME: This assumes a particular geometry dof layout
         cell = pos[cell_index]
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
@@ -253,7 +252,6 @@ def assemble_cells(A, kernel, active_cells, mesh, gdim, coeffs, constants,
                 geometry[j, k] = x[c[j], k]
 
         A_local.fill(0.0)
-        # FIXME: Numba does not support edge reflections
         kernel(ffi_fb(A_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm), permutation_info[cell_index])
 
@@ -411,8 +409,6 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
         cell = pos[cell_index]
         facet_index[0] = local_facet
         num_vertices = pos[cell_index + 1] - pos[cell_index]
-
-        # FIXME: This assumes a particular geometry dof layout
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
             for k in range(gdim):

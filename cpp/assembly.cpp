@@ -168,24 +168,13 @@ void assemble_exterior_facets(
   const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>& x_g
       = mesh.geometry().x();
 
-  // Data structures used in assembly
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coordinate_dofs(num_dofs_g, gdim);
-  const int num_dofs0 = dofmap0.links(0).size();
-  const int num_dofs1 = dofmap1.links(0).size();
-  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      Ae(bs0 * num_dofs0, bs0 * num_dofs1);
-
-  // Iterate over all facets
+  // Compute local indices for slave cells
+  std::vector<bool> is_slave_facet(active_facets.size(), false);
+  std::vector<std::int32_t> slave_cell_index(active_facets.size(), -1);
   auto f_to_c = mesh.topology().connectivity(tdim - 1, tdim);
   assert(f_to_c);
   auto c_to_f = mesh.topology().connectivity(tdim, tdim - 1);
   assert(c_to_f);
-
-  // Compute local indices for slave cells
-  std::vector<bool> is_slave_facet(active_facets.size(), false);
-  std::vector<std::int32_t> slave_cell_index(active_facets.size(), -1);
-
   for (std::int32_t i = 0; i < active_facets.size(); ++i)
   {
     const std::int32_t f = active_facets[i];
@@ -200,9 +189,16 @@ void assemble_exterior_facets(
       }
   }
 
-  for (std::int32_t i = 0; i < active_facets.size(); ++i)
+  // Iterate over all facets
+  const int num_dofs0 = dofmap0.links(0).size();
+  const int num_dofs1 = dofmap1.links(0).size();
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Ae(bs0 * num_dofs0, bs0 * num_dofs1);
+  std::vector<double> coordinate_dofs(num_dofs_g * gdim);
+
+  for (std::int32_t l = 0; l < active_facets.size(); ++l)
   {
-    const std::int32_t f = active_facets[i];
+    const std::int32_t f = active_facets[l];
     auto cells = f_to_c->links(f);
 
     // Get local index of facet with respect to the cell
@@ -213,10 +209,11 @@ void assemble_exterior_facets(
 
     // Get cell vertex coordinates
     auto x_dofs = x_dofmap.links(cells[0]);
-    for (int i = 0; i < num_dofs_g; ++i)
-      for (int j = 0; j < gdim; ++j)
-        coordinate_dofs(i, j) = x_g(x_dofs[i], j);
-
+    for (std::size_t i = 0; i < x_dofs.size(); ++i)
+    {
+      std::copy_n(x_g.row(x_dofs[i]).data(), gdim,
+                  std::next(coordinate_dofs.begin(), i * gdim));
+    }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
     kernel(Ae.data(), coeffs.row(cells[0]).data(), constants.data(),
@@ -248,11 +245,11 @@ void assemble_exterior_facets(
         }
       }
     }
-    if (is_slave_facet[i])
+    if (is_slave_facet[l])
     {
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
-      auto slave_indices = cell_to_slaves->links(slave_cell_index[i]);
+      auto slave_indices = cell_to_slaves->links(slave_cell_index[l]);
       // Find local position of every slave
       std::vector<bool> is_slave(num_dofs0, false);
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_indices(
@@ -326,13 +323,6 @@ void assemble_cells_impl(
   const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>& x_g
       = geometry.x();
 
-  // Data structures used in assembly
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coordinate_dofs(num_dofs_g, gdim);
-  const int num_dofs0 = dofmap0.links(0).size();
-  const int num_dofs1 = dofmap1.links(0).size();
-  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      Ae(bs0 * num_dofs0, bs1 * num_dofs1);
   // Compute local indices for slave cells
   std::vector<bool> is_slave_cell(active_cells.size(), false);
   std::vector<std::int32_t> slave_cell_index(active_cells.size(), -1);
@@ -348,15 +338,25 @@ void assemble_cells_impl(
       }
     }
   }
+
   // Iterate over active cells
-  for (std::int32_t k = 0; k < active_cells.size(); ++k)
+  std::vector<double> coordinate_dofs(num_dofs_g * gdim);
+  const int num_dofs0 = dofmap0.links(0).size();
+  const int num_dofs1 = dofmap1.links(0).size();
+  const int ndim0 = num_dofs0 * bs0;
+  const int ndim1 = num_dofs1 * bs1;
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Ae(bs0 * num_dofs0, bs1 * num_dofs1);
+  for (std::int32_t l = 0; l < active_cells.size(); ++l)
   {
     // Get cell coordinates/geometry
-    const std::int32_t c = active_cells[k];
+    const std::int32_t c = active_cells[l];
     auto x_dofs = x_dofmap.links(c);
-    for (int i = 0; i < x_dofs.size(); ++i)
-      for (int j = 0; j < gdim; ++j)
-        coordinate_dofs(i, j) = x_g(x_dofs[i], j);
+    for (std::size_t i = 0; i < x_dofs.size(); ++i)
+    {
+      std::copy_n(x_g.row(x_dofs[i]).data(), gdim,
+                  std::next(coordinate_dofs.begin(), i * gdim));
+    }
 
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
@@ -388,11 +388,11 @@ void assemble_cells_impl(
         }
       }
     }
-    if (is_slave_cell[k])
+    if (is_slave_cell[l])
     {
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
-      auto slave_indices = cell_to_slaves->links(slave_cell_index[k]);
+      auto slave_indices = cell_to_slaves->links(slave_cell_index[l]);
       // Find local position of every slave
       std::vector<bool> is_slave(bs0 * num_dofs0, false);
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_indices(
@@ -486,17 +486,13 @@ void assemble_matrix_impl(
   if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
       or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   {
-    // FIXME: cleanup these calls? Some of the happen internally again.
-    mesh->topology_mutable().create_entities(tdim - 1);
     mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
+    mesh->topology_mutable().create_entity_permutations();
 
     const int facets_per_cell = dolfinx::mesh::cell_num_entities(
         mesh->topology().cell_type(), tdim - 1);
     const Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>& perms
-        = needs_permutation_data
-              ? mesh->topology().get_facet_permutations()
-              : Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>(
-                  facets_per_cell, num_cells);
+        = mesh->topology().get_facet_permutations();
 
     for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
     {
