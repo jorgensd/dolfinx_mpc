@@ -188,7 +188,7 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -211,8 +211,9 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
         values[1] = g_vec[1]
         values[2] = g_vec[2]
         return values
-    u_top = dolfinx.function.Function(V)
+    u_top = dolfinx.Function(V)
     u_top.interpolate(top_v)
+    u_top.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
 
     top_facets = mt.indices[mt.values == 3]
     top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
@@ -237,27 +238,28 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if noslip:
-        with dolfinx.common.Timer("{0:d}: Contact-constraint".format(V.dim)):
+        with dolfinx.common.Timer("{0:d}: Contact-constraint".format(num_dofs)):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt, 4, 9)
     else:
-        with dolfinx.common.Timer("{0:d}: FacetNormal".format(V.dim)):
+        with dolfinx.common.Timer("{0:d}: FacetNormal".format(num_dofs)):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
-        with dolfinx.common.Timer("{0:d}: Contact-constraint".format(V.dim)):
+        with dolfinx.common.Timer("{0:d}: Contact-constraint".format(num_dofs)):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
 
-    with dolfinx.common.Timer("{0:d}: MPC-init".format(V.dim)):
+    with dolfinx.common.Timer("{0:d}: MPC-init".format(num_dofs)):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
-    # with dolfinx.common.Timer("~{0:d}:  Assemble matrix ({0:d})".format(V.dim))):
+    # with dolfinx.common.Timer("~{0:d}:  Assemble matrix ({0:d})".format(num_dofs))):
     #     A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
     # MPI.COMM_WORLD.barrier()
-    with dolfinx.common.Timer("{0:d}: Assemble-matrix".format(V.dim)):
+    with dolfinx.common.Timer("{0:d}: Assemble-matrix".format(num_dofs)):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
-    with dolfinx.common.Timer("{0:d}: Assemble-vector".format(V.dim)):
+    with dolfinx.common.Timer("{0:d}: Assemble-vector".format(num_dofs)):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
         fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
@@ -287,10 +289,10 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     solver.setFromOptions()
     uh = b.copy()
     uh.set(0)
-    with dolfinx.common.Timer("{0:d}: Solve".format(V.dim)):
+    with dolfinx.common.Timer("{0:d}: Solve".format(num_dofs)):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    with dolfinx.common.Timer("{0:d}: Backsubstitution".format(V.dim)):
+    with dolfinx.common.Timer("{0:d}: Backsubstitution".format(num_dofs)):
         mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
@@ -299,7 +301,7 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
     u_h.name = "u"
-    with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(V.dim), "w") as outfile:
+    with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
         outfile.write_mesh(mesh)
         outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
 
@@ -309,9 +311,9 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
         results_file = None
         num_procs = comm.size
         if comm.rank == 0:
-            results_file = open("results_bench_{0:d}.txt".format(V.dim), "w")
+            results_file = open("results_bench_{0:d}.txt".format(num_dofs), "w")
             print("#Procs: {0:d}".format(num_procs), file=results_file)
-            print("#Dofs: {0:d}".format(V.dim), file=results_file)
+            print("#Dofs: {0:d}".format(num_dofs), file=results_file)
             print("#Slaves: {0:d}".format(num_slaves), file=results_file)
             print("#Iterations: {0:d}".format(it), file=results_file)
         operations = ["Solve", "Assemble-matrix", "MPC-init", "Contact-constraint", "FacetNormal",
@@ -319,7 +321,7 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
         if comm.rank == 0:
             print("Operation  #Calls Avg Min Max", file=results_file)
         for op in operations:
-            op_timing = dolfinx.common.timing("{0:d}: ".format(V.dim) + op)
+            op_timing = dolfinx.common.timing("{0:d}: ".format(num_dofs) + op)
             num_calls = op_timing[0]
             wall_time = op_timing[1]
             avg_time = comm.allreduce(wall_time, op=MPI.SUM) / comm.size
