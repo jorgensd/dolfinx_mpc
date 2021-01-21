@@ -304,7 +304,8 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
         outfile.write_mesh(mesh)
         outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
-
+    if MPI.COMM_WORLD.rank == 0:
+        print(V.dofmap.index_map.size_global * V.dofmap.index_map_bs)
     # Write performance data to file
     if timings:
         num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)

@@ -1,9 +1,8 @@
-from IPython import embed
 import numpy as np
 import matplotlib.pyplot as plt
 
-
-dofs = [31776, 234546]  # , 234546, 1801086]
+# Res 0.1 31776, 0.05 234546, 0.025 1801086
+dofs = [31776, 234546, 1801086]  # , 234546, 1801086]
 
 
 def visualize_side_by_side(dofs):
@@ -118,5 +117,5 @@ def visualize_single(dof):
     plt.savefig(f"comparison_{slaves}.png")
 
 
-visualize_single(dofs[1])
+visualize_single(max(dofs))
 visualize_side_by_side(dofs)
