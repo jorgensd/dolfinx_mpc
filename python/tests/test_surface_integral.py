@@ -28,7 +28,7 @@ def test_surface_integrals():
     fdim = mesh.topology.dim - 1
     left_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, left_wall)
     bc_dofs = dolfinx.fem.locate_dofs_topological(V, 1, left_facets)
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
     bc = dolfinx.fem.DirichletBC(u_bc, bc_dofs)

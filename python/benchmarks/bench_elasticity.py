@@ -30,6 +30,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        mesh.topology.create_entities(mesh.topology.dim - 2)
         mesh = dolfinx.mesh.refine(mesh, redistribute=True)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
@@ -37,7 +38,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -152,16 +153,17 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Print max usage of summary
     mem = sum(MPI.COMM_WORLD.allgather(
         resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if MPI.COMM_WORLD.rank == 0:
         print("Rlvl {0:d}, Iterations {1:d}".format(r_lvl, it))
         print("Rlvl {0:d}, Max usage {1:d} (kb), #dofs {2:d}".format(
-            r_lvl, mem, V.dim))
+            r_lvl, mem, num_dofs))
 
     if out_hdf5 is not None:
         d_set = out_hdf5.get("its")
         d_set[r_lvl] = it
         d_set = out_hdf5.get("num_dofs")
-        d_set[r_lvl] = V.dim
+        d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
     if xdmf:

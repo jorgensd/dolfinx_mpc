@@ -95,8 +95,7 @@ def push(x):
 
 u_push = dolfinx.Function(V)
 u_push.interpolate(push)
-u_push.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+u_push.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
 bc_push = dolfinx.DirichletBC(u_push, dofs)
 u_fix = dolfinx.Function(V)
@@ -110,7 +109,7 @@ def gather_dof_coordinates(V, dofs):
     Distributes the dof coordinates of this subset of dofs to all processors
     """
     x = V.tabulate_dof_coordinates()
-    local_dofs = dofs[dofs < V.dofmap.index_map.size_local * V.dofmap.index_map.block_size]
+    local_dofs = dofs[dofs < V.dofmap.index_map.size_local * V.dofmap.index_map_bs]
     coords = x[local_dofs]
     num_nodes = len(coords)
     glob_num_nodes = MPI.COMM_WORLD.allreduce(num_nodes, op=MPI.SUM)
@@ -128,9 +127,9 @@ def gather_dof_coordinates(V, dofs):
 V0 = V.sub(0).collapse()
 
 facets_r = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1))
-dofs_r = fem.locate_dofs_topological(V0, fdim, facets_r).T[0]
+dofs_r = fem.locate_dofs_topological(V0, fdim, facets_r)
 facets_l = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1.1))
-dofs_l = fem.locate_dofs_topological(V0, fdim, facets_l).T[0]
+dofs_l = fem.locate_dofs_topological(V0, fdim, facets_l)
 
 # Given the local coordinates of the dofs, distribute them on all processors
 nodes = []
@@ -148,13 +147,13 @@ for i, pair in enumerate(pairs):
     sl, ms, co, ow, off = dolfinx_mpc.utils.create_point_to_point_constraint(
         V, pair[0], pair[1], vector=[1, 0])
     mpc.add_constraint(V, sl, ms, co, ow, off)
-
 mpc.finalize()
-null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 
-with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(V.dim)):
+null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
+with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(num_dofs)):
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(V.dim)):
+with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(num_dofs)):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
 fem.apply_lifting(b, [a], [bcs])
@@ -187,9 +186,7 @@ uh = b.copy()
 uh.set(0)
 with dolfinx.common.Timer("~Contact: Solve old"):
     solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
-
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
 
 it = solver.getIterationNumber()
@@ -201,11 +198,9 @@ if MPI.COMM_WORLD.rank == 0:
 # Write solution to file
 u_h = dolfinx.Function(mpc.function_space())
 u_h.vector.setArray(uh.array)
-u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                       mode=PETSc.ScatterMode.FORWARD)
+u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"
-
-with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect.xdmf", "w") as xdmf:
+with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     # xdmf.write_meshtags(ct)
     # xdmf.write_meshtags(ft)

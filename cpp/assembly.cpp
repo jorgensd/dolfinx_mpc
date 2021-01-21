@@ -5,8 +5,9 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "assembly.h"
+#include <dolfinx/fem/Constant.h>
+#include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/utils.h>
-#include <dolfinx/function/Constant.h>
 #include <iostream>
 namespace
 {
@@ -16,8 +17,8 @@ void modify_mpc_cell(
     const int num_dofs,
     Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>&
         Ae,
-    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& dofs,
-    const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_indices,
+    const tcb::span<const int32_t>& dofs, int bs,
+    const tcb::span<const int32_t>& slave_indices,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
         masters,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<PetscScalar>>&
@@ -48,10 +49,10 @@ void modify_mpc_cell(
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> m0(1);
   Eigen::Array<std::int32_t, Eigen::Dynamic, 1> m1(1);
   Eigen::Matrix<PetscScalar, 1, 1, Eigen::RowMajor> Amaster(1, 1);
-  Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1, Eigen::ColMajor> Arow(num_dofs,
-                                                                      1);
-  Eigen::Matrix<PetscScalar, 1, Eigen::Dynamic, Eigen::RowMajor> Acol(1,
-                                                                      num_dofs);
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1, Eigen::ColMajor> Arow(
+      bs * num_dofs, 1);
+  Eigen::Matrix<PetscScalar, 1, Eigen::Dynamic, Eigen::RowMajor> Acol(
+      1, bs * num_dofs);
   Eigen::Matrix<PetscScalar, 1, 1, Eigen::RowMajor> Am0m1;
   // Create copy to use for distribution to master dofs
   Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
@@ -60,10 +61,10 @@ void modify_mpc_cell(
   // Build matrix where all slave-slave entries are 0 for usage to row and
   // column addition
   Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      Ae_stripped(num_dofs, num_dofs);
-  for (std::int32_t i = 0; i < num_dofs; ++i)
+      Ae_stripped(bs * num_dofs, bs * num_dofs);
+  for (std::int32_t i = 0; i < bs * num_dofs; ++i)
   {
-    for (std::int32_t j = 0; j < num_dofs; ++j)
+    for (std::int32_t j = 0; j < bs * num_dofs; ++j)
     {
       if (is_slave[i] && is_slave[j])
         Ae_stripped(i, j) = 0;
@@ -72,7 +73,7 @@ void modify_mpc_cell(
     }
   }
 
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> mpc_dofs(dofs.size());
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> mpc_dofs(bs * dofs.size());
   for (std::int32_t i = 0; i < flattened_slaves.size(); ++i)
   {
     const std::int32_t& local_index = flattened_slaves[i];
@@ -87,12 +88,16 @@ void modify_mpc_cell(
     Arow.col(0) = coeff * Ae_stripped.col(local_index);
     Acol.row(0) = coeff * Ae_stripped.row(local_index);
     Amaster(0, 0) = coeff * coeff * Ae_original(local_index, local_index);
-    mpc_dofs = dofs;
-    mpc_dofs[local_index] = master;
-    mat_set(num_dofs, mpc_dofs.data(), 1, m0.data(), Arow.data());
-    mat_set(1, m0.data(), num_dofs, mpc_dofs.data(), Acol.data());
-    mat_set(1, m0.data(), 1, m0.data(), Amaster.data());
+    // Unroll dof blocks
+    for (std::int32_t j = 0; j < dofs.size(); ++j)
+      for (std::int32_t k = 0; k < bs; ++k)
+        mpc_dofs[j * bs + k] = dofs[j] * bs + k;
 
+    // Insert modified entries
+    mpc_dofs[local_index] = master;
+    mat_set(bs * num_dofs, mpc_dofs.data(), 1, m0.data(), Arow.data());
+    mat_set(1, m0.data(), bs * num_dofs, mpc_dofs.data(), Acol.data());
+    mat_set(1, m0.data(), 1, m0.data(), Amaster.data());
     // Loop through other masters on the same cell
     std::vector<std::int32_t> other_slaves(flattened_slaves.size() - 1);
     std::iota(std::begin(other_slaves), std::end(other_slaves), 0);
@@ -125,19 +130,22 @@ void modify_mpc_cell(
 void assemble_exterior_facets(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const PetscScalar*)>&
-        mat_set_values,
+        mat_add_block_values,
+    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
+                            const std::int32_t*, const PetscScalar*)>&
+        mat_add_values,
     const dolfinx::mesh::Mesh& mesh,
     const std::vector<std::int32_t>& active_facets,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(PetscScalar*, const PetscScalar*,
                              const PetscScalar*, const double*, const int*,
                              const std::uint8_t*, const std::uint32_t)>& kernel,
     const Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic,
                        Eigen::RowMajor>& coeffs,
-    const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> constants,
-    const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_info,
+    const std::vector<PetscScalar>& constants,
+    const std::vector<std::uint32_t>& cell_info,
     const Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>& perms,
     const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -160,29 +168,18 @@ void assemble_exterior_facets(
   const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>& x_g
       = mesh.geometry().x();
 
-  // Data structures used in assembly
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coordinate_dofs(num_dofs_g, gdim);
-  const int num_dofs0 = dofmap0.links(0).size();
-  const int num_dofs1 = dofmap1.links(0).size();
-  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      Ae(num_dofs0, num_dofs1);
-
-  // Iterate over all facets
+  // Compute local indices for slave cells
+  std::vector<bool> is_slave_facet(active_facets.size(), false);
+  std::vector<std::int32_t> slave_cell_index(active_facets.size(), -1);
   auto f_to_c = mesh.topology().connectivity(tdim - 1, tdim);
   assert(f_to_c);
   auto c_to_f = mesh.topology().connectivity(tdim, tdim - 1);
   assert(c_to_f);
-
-  // Compute local indices for slave cells
-  std::vector<bool> is_slave_facet(active_facets.size(), false);
-  std::vector<std::int32_t> slave_cell_index(active_facets.size(), -1);
-
   for (std::int32_t i = 0; i < active_facets.size(); ++i)
   {
     const std::int32_t f = active_facets[i];
     auto cells = f_to_c->links(f);
-    assert(cells.rows() == 1);
+    assert(cells.size() == 1);
     for (std::int32_t j = 0; j < slave_cells.size(); ++j)
       if (slave_cells[j] == cells[0])
       {
@@ -192,53 +189,67 @@ void assemble_exterior_facets(
       }
   }
 
-  for (std::int32_t i = 0; i < active_facets.size(); ++i)
+  // Iterate over all facets
+  const int num_dofs0 = dofmap0.links(0).size();
+  const int num_dofs1 = dofmap1.links(0).size();
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Ae(bs0 * num_dofs0, bs0 * num_dofs1);
+  std::vector<double> coordinate_dofs(num_dofs_g * gdim);
+
+  for (std::int32_t l = 0; l < active_facets.size(); ++l)
   {
-    const std::int32_t f = active_facets[i];
+    const std::int32_t f = active_facets[l];
     auto cells = f_to_c->links(f);
 
     // Get local index of facet with respect to the cell
     auto facets = c_to_f->links(cells[0]);
-    const auto* it = std::find(facets.data(), facets.data() + facets.rows(), f);
-    assert(it != (facets.data() + facets.rows()));
+    const auto* it = std::find(facets.data(), facets.data() + facets.size(), f);
+    assert(it != (facets.data() + facets.size()));
     const int local_facet = std::distance(facets.data(), it);
 
     // Get cell vertex coordinates
     auto x_dofs = x_dofmap.links(cells[0]);
-    for (int i = 0; i < num_dofs_g; ++i)
-      for (int j = 0; j < gdim; ++j)
-        coordinate_dofs(i, j) = x_g(x_dofs[i], j);
-
+    for (std::size_t i = 0; i < x_dofs.size(); ++i)
+    {
+      std::copy_n(x_g.row(x_dofs[i]).data(), gdim,
+                  std::next(coordinate_dofs.begin(), i * gdim));
+    }
     // Tabulate tensor
-    std::fill(Ae.data(), Ae.data() + num_dofs0 * num_dofs1, 0);
+    std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
     kernel(Ae.data(), coeffs.row(cells[0]).data(), constants.data(),
            coordinate_dofs.data(), &local_facet, &perms(local_facet, cells[0]),
            cell_info[cells[0]]);
-
     // Zero rows/columns for essential bcs
     auto dmap0 = dofmap0.links(cells[0]);
     auto dmap1 = dofmap1.links(cells[0]);
     if (!bc0.empty())
     {
-      for (Eigen::Index i = 0; i < Ae.rows(); ++i)
+      for (Eigen::Index i = 0; i < num_dofs0; ++i)
       {
-        if (bc0[dmap0[i]])
-          Ae.row(i).setZero();
+        for (Eigen::Index k = 0; k < bs0; ++k)
+        {
+          if (bc0[bs0 * dmap0[i] + k])
+            Ae.row(bs0 * i + k).setZero();
+        }
       }
     }
+
     if (!bc1.empty())
     {
-      for (Eigen::Index j = 0; j < Ae.cols(); ++j)
+      for (Eigen::Index j = 0; j < num_dofs1; ++j)
       {
-        if (bc1[dmap1[j]])
-          Ae.col(j).setZero();
+        for (Eigen::Index k = 0; k < bs1; ++k)
+        {
+          if (bc1[bs1 * dmap1[j] + k])
+            Ae.col(bs1 * j + k).setZero();
+        }
       }
     }
-    if (is_slave_facet[i])
+    if (is_slave_facet[l])
     {
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
-      auto slave_indices = cell_to_slaves->links(slave_cell_index[i]);
+      auto slave_indices = cell_to_slaves->links(slave_cell_index[l]);
       // Find local position of every slave
       std::vector<bool> is_slave(num_dofs0, false);
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_indices(
@@ -247,38 +258,49 @@ void assemble_exterior_facets(
       {
         for (std::int32_t j = 0; j < dmap0.size(); ++j)
         {
-          if (dmap0[j] == slaves[slave_indices[i]])
+          bool found = false;
+          for (Eigen::Index k = 0; k < bs0; ++k)
           {
-            local_indices[i] = j;
-            is_slave[j] = true;
-            break;
+            if (bs0 * dmap0[j] + k == slaves[slave_indices[i]])
+            {
+              local_indices[i] = j * bs0 + k;
+              is_slave[j * bs0 + k] = true;
+              found = true;
+              break;
+            }
           }
+          if (found)
+            break;
         }
       }
-      modify_mpc_cell(mat_set_values, num_dofs0, Ae, dmap0, slave_indices,
+      modify_mpc_cell(mat_add_values, num_dofs0, Ae, dmap0, bs0, slave_indices,
                       masters, coefficients, local_indices, is_slave);
     }
-    mat_set_values(dmap0.size(), dmap0.data(), dmap1.size(), dmap1.data(),
-                   Ae.data());
+    mat_add_block_values(dmap0.size(), dmap0.data(), dmap1.size(), dmap1.data(),
+                         Ae.data());
   }
-}
+} // namespace
 //-----------------------------------------------------------------------------
 
 void assemble_cells_impl(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const PetscScalar*)>& mat_set,
+                            const std::int32_t*, const PetscScalar*)>&
+        mat_add_block_values,
+    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
+                            const std::int32_t*, const PetscScalar*)>&
+        mat_add_values,
     const dolfinx::mesh::Geometry& geometry,
     const std::vector<std::int32_t>& active_cells,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(PetscScalar*, const PetscScalar*,
                              const PetscScalar*, const double*, const int*,
                              const std::uint8_t*, const std::uint32_t)>& kernel,
     const Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic,
                        Eigen::RowMajor>& coeffs,
-    const Eigen::Array<PetscScalar, Eigen::Dynamic, 1>& constants,
-    const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_info,
+    const std::vector<PetscScalar>& constants,
+    const std::vector<std::uint32_t>& cell_info,
     const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
         masters,
@@ -301,42 +323,43 @@ void assemble_cells_impl(
   const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>& x_g
       = geometry.x();
 
-  // Data structures used in assembly
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coordinate_dofs(num_dofs_g, gdim);
-  const int num_dofs0 = dofmap0.links(0).size();
-  const int num_dofs1 = dofmap1.links(0).size();
-  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      Ae(num_dofs0, num_dofs1);
-
   // Compute local indices for slave cells
   std::vector<bool> is_slave_cell(active_cells.size(), false);
   std::vector<std::int32_t> slave_cell_index(active_cells.size(), -1);
-
   for (std::int32_t i = 0; i < slave_cells.rows(); ++i)
   {
     for (std::int32_t j = 0; j < active_cells.size(); ++j)
+    {
       if (slave_cells[i] == active_cells[j])
       {
         is_slave_cell[j] = true;
         slave_cell_index[j] = i;
         break;
       }
+    }
   }
 
   // Iterate over active cells
-  for (std::int32_t k = 0; k < active_cells.size(); ++k)
+  std::vector<double> coordinate_dofs(num_dofs_g * gdim);
+  const int num_dofs0 = dofmap0.links(0).size();
+  const int num_dofs1 = dofmap1.links(0).size();
+  const int ndim0 = num_dofs0 * bs0;
+  const int ndim1 = num_dofs1 * bs1;
+  Eigen::Matrix<PetscScalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+      Ae(bs0 * num_dofs0, bs1 * num_dofs1);
+  for (std::int32_t l = 0; l < active_cells.size(); ++l)
   {
-
     // Get cell coordinates/geometry
-    const std::int32_t c = active_cells[k];
+    const std::int32_t c = active_cells[l];
     auto x_dofs = x_dofmap.links(c);
-    for (int i = 0; i < x_dofs.rows(); ++i)
-      for (int j = 0; j < gdim; ++j)
-        coordinate_dofs(i, j) = x_g(x_dofs[i], j);
+    for (std::size_t i = 0; i < x_dofs.size(); ++i)
+    {
+      std::copy_n(x_g.row(x_dofs[i]).data(), gdim,
+                  std::next(coordinate_dofs.begin(), i * gdim));
+    }
 
     // Tabulate tensor
-    std::fill(Ae.data(), Ae.data() + num_dofs0 * num_dofs1, 0);
+    std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
     kernel(Ae.data(), coeffs.row(c).data(), constants.data(),
            coordinate_dofs.data(), nullptr, nullptr, cell_info[c]);
 
@@ -345,53 +368,68 @@ void assemble_cells_impl(
     auto dofs1 = dofmap1.links(c);
     if (!bc0.empty())
     {
-      for (Eigen::Index i = 0; i < Ae.rows(); ++i)
+      for (Eigen::Index i = 0; i < num_dofs0; ++i)
       {
-        if (bc0[dofs0[i]])
-          Ae.row(i).setZero();
+        for (Eigen::Index k = 0; k < bs0; ++k)
+        {
+          if (bc0[bs0 * dofs0[i] + k])
+            Ae.row(bs0 * i + k).setZero();
+        }
       }
     }
     if (!bc1.empty())
     {
-      for (Eigen::Index j = 0; j < Ae.cols(); ++j)
+      for (Eigen::Index j = 0; j < num_dofs1; ++j)
       {
-        if (bc1[dofs1[j]])
-          Ae.col(j).setZero();
+        for (Eigen::Index k = 0; k < bs1; ++k)
+        {
+          if (bc1[bs1 * dofs1[j] + k])
+            Ae.col(bs1 * j + k).setZero();
+        }
       }
     }
-    if (is_slave_cell[k])
+    if (is_slave_cell[l])
     {
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
-      auto slave_indices = cell_to_slaves->links(slave_cell_index[k]);
+      auto slave_indices = cell_to_slaves->links(slave_cell_index[l]);
       // Find local position of every slave
-      std::vector<bool> is_slave(num_dofs0, false);
+      std::vector<bool> is_slave(bs0 * num_dofs0, false);
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_indices(
           slave_indices.size());
       for (std::int32_t i = 0; i < slave_indices.size(); ++i)
       {
+        bool found = false;
         for (std::int32_t j = 0; j < dofs0.size(); ++j)
         {
-          if (dofs0[j] == slaves[slave_indices[i]])
+          for (Eigen::Index k = 0; k < bs0; ++k)
           {
-            local_indices[i] = j;
-            is_slave[j] = true;
-            break;
+            if (bs0 * dofs0[j] + k == slaves[slave_indices[i]])
+            {
+              local_indices[i] = bs0 * j + k;
+              is_slave[j * bs0 + k] = true;
+              break;
+            }
           }
+          if (found)
+            break;
         }
       }
-
-      modify_mpc_cell(mat_set, num_dofs0, Ae, dofs0, slave_indices, masters,
-                      coefficients, local_indices, is_slave);
+      modify_mpc_cell(mat_add_values, num_dofs0, Ae, dofs0, bs0, slave_indices,
+                      masters, coefficients, local_indices, is_slave);
     }
-    mat_set(dofs0.size(), dofs0.data(), dofs1.size(), dofs1.data(), Ae.data());
+    mat_add_block_values(dofs0.size(), dofs0.data(), dofs1.size(), dofs1.data(),
+                         Ae.data());
   }
 }
 //-----------------------------------------------------------------------------
 void assemble_matrix_impl(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const PetscScalar*)>&
-        mat_set_values,
+        mat_add_block_values,
+    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
+                            const std::int32_t*, const PetscScalar*)>&
+        mat_add_values,
     const dolfinx::fem::Form<PetscScalar>& a, const std::vector<bool>& bc0,
     const std::vector<bool>& bc1,
     const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>& slaves,
@@ -417,11 +455,11 @@ void assemble_matrix_impl(
   assert(dofmap0);
   assert(dofmap1);
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs0 = dofmap0->list();
+  const int bs0 = dofmap0->bs();
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs1 = dofmap1->list();
-
+  const int bs1 = dofmap1->bs();
   // Prepare constants
-  const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> constants
-      = pack_constants(a);
+  const std::vector<PetscScalar> constants = pack_constants(a);
 
   // Prepare coefficients
   const Eigen::Array<PetscScalar, Eigen::Dynamic, Eigen::Dynamic,
@@ -431,45 +469,40 @@ void assemble_matrix_impl(
   const bool needs_permutation_data = a.needs_permutation_data();
   if (needs_permutation_data)
     mesh->topology_mutable().create_entity_permutations();
-  const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& cell_info
-      = needs_permutation_data
-            ? mesh->topology().get_cell_permutation_info()
-            : Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>(num_cells);
+  const std::vector<std::uint32_t>& cell_info
+      = needs_permutation_data ? mesh->topology().get_cell_permutation_info()
+                               : std::vector<std::uint32_t>(num_cells);
 
   for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i);
     const std::vector<std::int32_t>& active_cells
         = a.domains(dolfinx::fem::IntegralType::cell, i);
-    assemble_cells_impl(mat_set_values, mesh->geometry(), active_cells, dofs0,
-                        dofs1, bc0, bc1, fn, coeffs, constants, cell_info,
-                        slaves, masters, coefficients, slave_cells,
-                        cell_to_slaves);
+    assemble_cells_impl(mat_add_block_values, mat_add_values, mesh->geometry(),
+                        active_cells, dofs0, bs0, dofs1, bs1, bc0, bc1, fn,
+                        coeffs, constants, cell_info, slaves, masters,
+                        coefficients, slave_cells, cell_to_slaves);
   }
   if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
       or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   {
-    // FIXME: cleanup these calls? Some of the happen internally again.
-    mesh->topology_mutable().create_entities(tdim - 1);
     mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
+    mesh->topology_mutable().create_entity_permutations();
 
     const int facets_per_cell = dolfinx::mesh::cell_num_entities(
         mesh->topology().cell_type(), tdim - 1);
     const Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>& perms
-        = needs_permutation_data
-              ? mesh->topology().get_facet_permutations()
-              : Eigen::Array<std::uint8_t, Eigen::Dynamic, Eigen::Dynamic>(
-                  facets_per_cell, num_cells);
+        = mesh->topology().get_facet_permutations();
 
     for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
     {
       const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
       const std::vector<std::int32_t>& active_facets
           = a.domains(dolfinx::fem::IntegralType::exterior_facet, i);
-      assemble_exterior_facets(mat_set_values, *mesh, active_facets, dofs0,
-                               dofs1, bc0, bc1, fn, coeffs, constants,
-                               cell_info, perms, slaves, masters, coefficients,
-                               slave_cells, cell_to_slaves);
+      assemble_exterior_facets(
+          mat_add_block_values, mat_add_values, *mesh, active_facets, dofs0,
+          bs0, dofs1, bs1, bc0, bc1, fn, coeffs, constants, cell_info, perms,
+          slaves, masters, coefficients, slave_cells, cell_to_slaves);
     }
 
     const std::vector<int> c_offsets = a.coefficient_offsets();
@@ -491,6 +524,9 @@ void assemble_matrix_impl(
 
 void dolfinx_mpc::assemble_matrix(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
+                            const std::int32_t*, const PetscScalar*)>&
+        mat_add_block,
+    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const PetscScalar*)>& mat_add,
     const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint>& mpc,
@@ -502,13 +538,13 @@ void dolfinx_mpc::assemble_matrix(
   // Index maps for dof ranges
   auto map0 = a.function_spaces().at(0)->dofmap()->index_map;
   auto map1 = a.function_spaces().at(1)->dofmap()->index_map;
+  auto bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
+  auto bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
 
   // Build dof markers
   std::vector<bool> dof_marker0, dof_marker1;
-  std::int32_t dim0
-      = map0->block_size() * (map0->size_local() + map0->num_ghosts());
-  std::int32_t dim1
-      = map1->block_size() * (map1->size_local() + map1->num_ghosts());
+  std::int32_t dim0 = bs0 * (map0->size_local() + map0->num_ghosts());
+  std::int32_t dim1 = bs1 * (map1->size_local() + map1->num_ghosts());
   for (std::size_t k = 0; k < bcs.size(); ++k)
   {
     assert(bcs[k]);
@@ -538,6 +574,19 @@ void dolfinx_mpc::assemble_matrix(
       cell_to_slaves
       = mpc->cell_to_slaves();
 
-  assemble_matrix_impl(mat_add, a, dof_marker0, dof_marker1, slaves, masters,
-                       coefficients, slave_cells, cell_to_slaves);
-}
+  assemble_matrix_impl(mat_add_block, mat_add, a, dof_marker0, dof_marker1,
+                       slaves, masters, coefficients, slave_cells,
+                       cell_to_slaves);
+
+  // Add one on diagonal for slave dofs
+  const std::int32_t num_local_slaves = mpc->num_local_slaves();
+  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> diag_dof(1);
+  Eigen::Array<PetscScalar, 1, 1> diag_value;
+  diag_value[0] = 1;
+  for (std::int32_t i = 0; i < num_local_slaves; ++i)
+  {
+    diag_dof[0] = slaves[i];
+    mat_add(1, diag_dof.data(), 1, diag_dof.data(), diag_value.data());
+  }
+
+} // namespace

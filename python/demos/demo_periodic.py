@@ -37,7 +37,7 @@ mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N)
 V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition
-u_bc = dolfinx.function.Function(V)
+u_bc = dolfinx.Function(V)
 with u_bc.vector.localForm() as u_local:
     u_local.set(0.0)
 

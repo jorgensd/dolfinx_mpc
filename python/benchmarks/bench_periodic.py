@@ -49,7 +49,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     V = dolfinx.FunctionSpace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -161,11 +161,12 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Output information to HDF5
     it = solver.getIterationNumber()
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if out_hdf5 is not None:
         d_set = out_hdf5.get("its")
         d_set[r_lvl] = it
         d_set = out_hdf5.get("num_dofs")
-        d_set[r_lvl] = V.dim
+        d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("num_slaves")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = mpc.num_local_slaves()
         d_set = out_hdf5.get("solve_time")

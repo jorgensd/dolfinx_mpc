@@ -10,7 +10,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <petscsys.h>
@@ -31,7 +31,7 @@ public:
   /// @param[in] offsets Offsets for local slave cells
 
   MultiPointConstraint(
-      std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+      std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
       Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
       std::int32_t num_local_slaves);
 
@@ -68,7 +68,7 @@ public:
   }
 
   /// Return map from slave to coefficients
-  const Eigen::Array<PetscScalar, Eigen::Dynamic, 1> coefficients() const
+  const std::vector<PetscScalar>& coefficients() const
   {
     return _coeff_map->array();
   }
@@ -88,7 +88,7 @@ public:
   }
 
   /// Return number of local slaves
-  std::int32_t num_local_slaves() { return _num_local_slaves; }
+  const std::int32_t num_local_slaves() const { return _num_local_slaves; }
 
   /// Return constraint IndexMap
   std::shared_ptr<const dolfinx::common::IndexMap> index_map()
@@ -112,10 +112,11 @@ public:
   /// @param[in] coeffs Coefficients corresponding to each master
   /// @param[in] owners Owners for each master
   /// @param[in] offsets Offsets for masters
-  void add_masters(Eigen::Array<std::int64_t, Eigen::Dynamic, 1>,
-                   Eigen::Array<PetscScalar, Eigen::Dynamic, 1>,
-                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-                   Eigen::Array<std::int32_t, Eigen::Dynamic, 1>);
+  void add_masters(std::vector<std::int64_t> masters,
+                   std::vector<PetscScalar> coeffs,
+                   std::vector<std::int32_t> owners,
+                   std::vector<std::int32_t> offsets);
+
   /// Helper function for creating new index map
   /// including all masters as ghosts and replacing
   /// _master_block_map and _master_local_map
@@ -136,7 +137,7 @@ public:
 
 private:
   // Original function space
-  std::shared_ptr<const dolfinx::function::FunctionSpace> _V;
+  std::shared_ptr<const dolfinx::fem::FunctionSpace> _V;
   // Array including all slaves (local + ghosts)
   std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slaves;
   // Array for all cells containing slaves (local + ghosts)

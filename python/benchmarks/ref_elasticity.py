@@ -50,7 +50,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -92,8 +92,10 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     rhs = ufl.inner(g, v) * ufl.ds(domain=mesh,
                                    subdomain_data=mt, subdomain_id=1)\
         + ufl.inner(f, v) * ufl.dx
+
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if MPI.COMM_WORLD.rank == 0:
-        print("Problem size {0:d} ".format(V.dim))
+        print("Problem size {0:d} ".format(num_dofs))
 
     # Generate reference matrices and unconstrained solution
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
@@ -152,7 +154,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         d_set = out_hdf5.get("its")
         d_set[r_lvl] = it
         d_set = out_hdf5.get("num_dofs")
-        d_set[r_lvl] = V.dim
+        d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = end - start
 

@@ -15,9 +15,9 @@
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/FiniteElement.h>
 #include <dolfinx/fem/Form.h>
-#include <dolfinx/fem/SparsityPatternBuilder.h>
-#include <dolfinx/function/Function.h>
-#include <dolfinx/function/FunctionSpace.h>
+#include <dolfinx/fem/Function.h>
+#include <dolfinx/fem/FunctionSpace.h>
+#include <dolfinx/fem/sparsitybuild.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/PETScMatrix.h>
@@ -36,9 +36,9 @@ void dolfinx_mpc::build_standard_pattern(
 {
   dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
   // Get dof maps
-  std::array<const dolfinx::fem::DofMap*, 2> dofmaps
-      = {{a.function_spaces().at(0)->dofmap().get(),
-          a.function_spaces().at(1)->dofmap().get()}};
+  std::array<const std::reference_wrapper<const dolfinx::fem::DofMap>, 2>
+      dofmaps{*a.function_spaces().at(0)->dofmap(),
+              *a.function_spaces().at(1)->dofmap()};
 
   // Get mesh
   assert(a.mesh());
@@ -46,8 +46,8 @@ void dolfinx_mpc::build_standard_pattern(
 
   if (a.integral_ids(dolfinx::fem::IntegralType::cell).size() > 0)
   {
-    dolfinx::fem::SparsityPatternBuilder::cells(pattern, mesh.topology(),
-                                                {{dofmaps[0], dofmaps[1]}});
+    dolfinx::fem::sparsitybuild::cells(pattern, mesh.topology(),
+                                       {{dofmaps[0], dofmaps[1]}});
   }
 
   if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
@@ -55,8 +55,8 @@ void dolfinx_mpc::build_standard_pattern(
     mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
     mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
                                                 mesh.topology().dim());
-    dolfinx::fem::SparsityPatternBuilder::interior_facets(
-        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+    dolfinx::fem::sparsitybuild::interior_facets(pattern, mesh.topology(),
+                                                 {{dofmaps[0], dofmaps[1]}});
   }
 
   if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
@@ -64,14 +64,14 @@ void dolfinx_mpc::build_standard_pattern(
     mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
     mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
                                                 mesh.topology().dim());
-    dolfinx::fem::SparsityPatternBuilder::exterior_facets(
-        pattern, mesh.topology(), {{dofmaps[0], dofmaps[1]}});
+    dolfinx::fem::sparsitybuild::exterior_facets(pattern, mesh.topology(),
+                                                 {{dofmaps[0], dofmaps[1]}});
   }
 }
 //-----------------------------------------------------------------------------
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
 dolfinx_mpc::get_basis_functions(
-    std::shared_ptr<const dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
     const int index)
 {
@@ -126,7 +126,7 @@ dolfinx_mpc::get_basis_functions(
 
   mesh->topology_mutable().create_entity_permutations();
 
-  const Eigen::Array<std::uint32_t, Eigen::Dynamic, 1>& permutation_info
+  const std::vector<std::uint32_t> permutation_info
       = mesh->topology().get_cell_permutation_info();
   // Skip negative cell indices
   Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
@@ -146,9 +146,13 @@ dolfinx_mpc::get_basis_functions(
   // Compute basis on reference element
   element->evaluate_reference_basis(basis_reference_values, X);
 
+  element->apply_dof_transformation(basis_reference_values.data(),
+                                    permutation_info[index],
+                                    reference_value_size);
+
   // Push basis forward to physical element
   element->transform_reference_basis(basis_values, basis_reference_values, X, J,
-                                     detJ, K, permutation_info[index]);
+                                     detJ, K);
 
   // Get the degrees of freedom for the current cell
   auto dofs = dofmap->cell_dofs(index);
@@ -169,28 +173,23 @@ dolfinx_mpc::get_basis_functions(
 }
 //-----------------------------------------------------------------------------
 std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V)
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V)
 {
   return V->dofmap()->index_map->compute_shared_indices();
 };
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::add_pattern_diagonal(
     dolfinx::la::SparsityPattern& pattern,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks,
-    std::int32_t block_size)
+    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks)
 {
   for (std::int32_t i = 0; i < blocks.rows(); ++i)
-  {
-    Eigen::Array<PetscInt, Eigen::Dynamic, 1> diag_block(block_size);
-    for (std::size_t comp = 0; comp < block_size; comp++)
-      diag_block(comp) = block_size * blocks[i] + comp;
-    pattern.insert(diag_block, diag_block);
-  }
+    pattern.insert(blocks.row(i), blocks.row(i));
 }
 //-----------------------------------------------------------------------------
 dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc)
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc,
+    const std::string& type)
 {
   dolfinx::common::Timer timer("~MPC: Create Matrix");
 
@@ -203,7 +202,7 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   timer_s.stop();
 
   // Initialize matrix
-  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern);
+  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern, type);
 
   return A;
 }
@@ -276,12 +275,10 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
 MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
     std::vector<std::int32_t>& local_dofs,
     std::vector<std::int32_t>& ghost_dofs,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map, bool blocked)
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map, int block_size)
 {
   // Get data from IndexMap
-  Eigen::Array<std::int32_t, Eigen::Dynamic, 1> ghost_owners
-      = index_map->ghost_owner_rank();
-  const std::int32_t block_size = index_map->block_size();
+  const std::vector<std::int32_t>& ghost_owners = index_map->ghost_owner_rank();
   const std::int32_t size_local = index_map->size_local();
   std::map<std::int32_t, std::set<int>> shared_indices
       = index_map->compute_shared_indices();
@@ -297,9 +294,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 
   for (auto dof : local_dofs)
   {
-    std::int32_t block = dof;
-    if (!blocked)
-      block /= block_size;
+    std::int32_t block = dof / block_size;
 
     const std::set<int> procs = shared_indices[block];
     for (auto proc : procs)
@@ -308,9 +303,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 
   for (auto dof : ghost_dofs)
   {
-    std::int32_t block = dof;
-    if (!blocked)
-      block /= block_size;
+    std::int32_t block = dof / block_size;
 
     const std::int32_t proc = ghost_owners[block - size_local];
     src_edges.insert(proc);
@@ -333,20 +326,19 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 //-----------------------------------------------------------------------------
 std::map<std::int32_t, std::vector<std::int32_t>>
 dolfinx_mpc::create_dof_to_facet_map(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> facets)
 {
 
   const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
-  const std::int32_t block_size = dofmap->index_map->block_size();
+  const int element_bs = dofmap->element_dof_layout->block_size();
   const std::int32_t tdim = mesh->topology().dim();
   // Locate all dofs for each facet
   mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
   mesh->topology_mutable().create_connectivity(tdim, tdim - 1);
   auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
   auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
-
   // Initialize empty map for the dofs located topologically
   std::map<std::int32_t, std::vector<std::int32_t>> dofs_to_facets;
 
@@ -358,17 +350,17 @@ dolfinx_mpc::create_dof_to_facet_map(
     // Get local index of facet with respect to the cell
     auto cell_facets = c_to_f->links(cell[0]);
     const auto* it = std::find(
-        cell_facets.data(), cell_facets.data() + cell_facets.rows(), facets[i]);
-    assert(it != (cell_facets.data() + cell_facets.rows()));
+        cell_facets.data(), cell_facets.data() + cell_facets.size(), facets[i]);
+    assert(it != (cell_facets.data() + cell_facets.size()));
     const int local_facet = std::distance(cell_facets.data(), it);
-    auto cell_dofs = dofmap->cell_dofs(cell[0]);
+    auto cell_blocks = dofmap->cell_dofs(cell[0]);
     auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
         tdim - 1, local_facet);
     for (std::int32_t j = 0; j < closure_blocks.size(); ++j)
     {
-      for (std::int32_t k = 0; k < block_size; ++k)
+      for (int block = 0; block < element_bs; ++block)
       {
-        auto dof = cell_dofs[block_size * closure_blocks[j] + k];
+        const int dof = element_bs * cell_blocks[closure_blocks[j]] + block;
         dofs_to_facets[dof].push_back(facets[i]);
       }
     }
@@ -377,7 +369,7 @@ dolfinx_mpc::create_dof_to_facet_map(
 };
 //-----------------------------------------------------------------------------
 Eigen::Vector3d dolfinx_mpc::create_average_normal(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V, std::int32_t dof,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dof,
     std::int32_t dim, Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities)
 {
   assert(entities.size() > 0);
@@ -394,13 +386,13 @@ Eigen::Vector3d dolfinx_mpc::create_average_normal(
 };
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::create_normal_approximation(
-    std::shared_ptr<dolfinx::function::FunctionSpace> V,
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities,
     Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector)
 {
   auto x = V->tabulate_dof_coordinates();
   const std::int32_t tdim = V->mesh()->topology().dim();
-  const std::int32_t block_size = V->dofmap()->index_map->block_size();
+  const std::int32_t block_size = V->dofmap()->index_map_bs();
 
   std::map<std::int32_t, std::vector<std::int32_t>> facets_to_dofs
       = create_dof_to_facet_map(V, entities);

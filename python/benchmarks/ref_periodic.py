@@ -51,13 +51,12 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         N = 3
         for i in range(r_lvl):
             N *= 2
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                    dolfinx.cpp.mesh.CellType.hexahedron)
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.cpp.mesh.CellType.hexahedron)
 
     V = dolfinx.FunctionSpace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
-    u_bc = dolfinx.function.Function(V)
+    u_bc = dolfinx.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -68,8 +67,7 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                                            np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(
-        V, DirichletBoundary)
+    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
     bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
@@ -138,11 +136,12 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.view()
 
     it = solver.getIterationNumber()
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if out_hdf5 is not None:
         d_set = out_hdf5.get("its")
         d_set[r_lvl] = it
         d_set = out_hdf5.get("num_dofs")
-        d_set[r_lvl] = V.dim
+        d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = end - start
 

@@ -5,7 +5,6 @@ from petsc4py import PETSc
 
 import dolfinx
 
-from .contactcondition import create_contact_slip_condition
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition
 from .slipcondition import create_slip_condition
@@ -85,22 +84,18 @@ class MultiPointConstraint():
         offsets = self.offsets
         # Merge local and ghost arrays
         if len(self.ghost_slaves) > 0:
-            ghost_offsets = [g_offset + num_local_masters
-                             for g_offset in self.ghost_offsets[1:]]
+            ghost_offsets = [g_offset + num_local_masters for g_offset in self.ghost_offsets[1:]]
             slaves.extend(self.ghost_slaves)
             masters.extend(self.ghost_masters)
             coeffs.extend(self.ghost_coeffs)
             owners.extend(self.ghost_owners)
             offsets.extend(ghost_offsets)
         # Initialize C++ object and create slave->cell maps
-        self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-            self.V._cpp_object, slaves, num_local_slaves)
+        self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(self.V._cpp_object, slaves, num_local_slaves)
         # Add masters and compute new index maps
         self._cpp_object.add_masters(masters, coeffs, owners, offsets)
         # Replace function space
-        V_cpp = dolfinx.cpp.function.FunctionSpace(self.V.mesh,
-                                                   self.V.element,
-                                                   self._cpp_object.dofmap())
+        V_cpp = dolfinx.cpp.fem.FunctionSpace(self.V.mesh, self.V.element, self._cpp_object.dofmap())
         self.V_mpc = dolfinx.FunctionSpace(None, self.V.ufl_element(), V_cpp)
         self.finalized = True
         # Delete variables that are no longer required
@@ -108,15 +103,6 @@ class MultiPointConstraint():
              self.local_coeffs, self.local_owners, self.offsets,
              self.ghost_coeffs, self.ghost_masters, self.ghost_offsets,
              self.ghost_owners, self.ghost_slaves)
-
-    def create_contact_constraint(self, meshtag, slave_marker, master_marker):
-        """
-        Create a contact constraint between two mesh entities,
-        defined through markers.
-        """
-        slaves, masters, coeffs, owners, offsets = create_contact_slip_condition(
-            self.V, meshtag, slave_marker, master_marker)
-        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def create_periodic_constraint(self, meshtag, tag, relation, bcs, scale=1):
         """

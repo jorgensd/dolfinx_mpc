@@ -39,7 +39,7 @@ def test_cell_domains():
         else:
             values.append(2)
     ct = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim,
-                               range(num_cells),
+                               np.arange(num_cells, dtype=np.int32),
                                np.array(values, dtype=np.intc))
 
     # Solve Problem without MPC for reference
