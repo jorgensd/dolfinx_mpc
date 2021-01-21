@@ -237,6 +237,8 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx
 
+    dolfinx_mpc.utils.log_info("Create constraints")
+
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if noslip:
@@ -252,13 +254,15 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+    dolfinx_mpc.utils.log_info(f"Num dofs: {V.dofmap.index_map.size_global*V.dofmap.index_map_bs}")
 
     # with dolfinx.common.Timer("~{0:d}:  Assemble matrix ({0:d})".format(num_dofs))):
     #     A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
     # MPI.COMM_WORLD.barrier()
+    dolfinx_mpc.utils.log_info("Assemble matrix")
     with dolfinx.common.Timer("{0:d}: Assemble-matrix".format(num_dofs)):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-
+    dolfinx_mpc.utils.log_info("Assemble vector")
     with dolfinx.common.Timer("{0:d}: Assemble-vector".format(num_dofs)):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
         fem.apply_lifting(b, [a], [bcs])
@@ -289,13 +293,16 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     solver.setFromOptions()
     uh = b.copy()
     uh.set(0)
+    dolfinx_mpc.utils.log_info("Solve")
     with dolfinx.common.Timer("{0:d}: Solve".format(num_dofs)):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    dolfinx_mpc.utils.log_info("Backsub")
     with dolfinx.common.Timer("{0:d}: Backsubstitution".format(num_dofs)):
         mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
+    dolfinx_mpc.utils.log_info("IO")
 
     # Write solution to file
     u_h = dolfinx.Function(mpc.function_space())
@@ -304,9 +311,8 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
         outfile.write_mesh(mesh)
         outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
-    if MPI.COMM_WORLD.rank == 0:
-        print(V.dofmap.index_map.size_global * V.dofmap.index_map_bs)
     # Write performance data to file
+    dolfinx_mpc.utils.log_info("Timings")
     if timings:
         num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)
         results_file = None
