@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-dofs = [31776, 67281]  # , 234546, 1801086]
+dofs = [31776, 234546]  # , 234546, 1801086]
 
 
 def visualize_side_by_side(dofs):
@@ -12,11 +12,12 @@ def visualize_side_by_side(dofs):
     procs = []
     first = True
     slaves = []
+    totals = np.zeros(len(dofs))
     for i, dof in enumerate(dofs):
         infile = open("results_bench_{0:d}.txt".format(dof), "r")
 
         # Read problem info
-        procs.append(infile.readline().split(": ")[-1].strip("\n"))
+        procs.append(int(infile.readline().split(": ")[-1].strip("\n")))
         # Skip num dofs
         infile.readline()
         slaves .append(int(infile.readline().split(": ")[-1].strip("\n")))
@@ -44,21 +45,39 @@ def visualize_side_by_side(dofs):
 
             total_time += float(data[2])
         first = False
-
+        totals[i] = total_time
     ax.set_xticks(range(len(dofs)))
-    labels = ["#DOFS {0:d}\n#Slaves {2:d}\n#Procs {1:s}".format(
-        dof, proc, slave) for dof, proc, slave in zip(dofs, procs, slaves)]
+    labels = dofs
     ax.set_xticklabels(labels)
-    # ax.set_yscale("log")
-    plt.legend()
+    assert(np.allclose(procs, procs[0]))
+
     # Shrink current axis by 20%
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(bbox_to_anchor=(0.95, 0.5))
-    plt.title("Average runtime of operations")
-    plt.ylabel("Runtime (s)")
+    plt.xlabel("Degrees of freedom")
 
-    plt.savefig("test.png")
+    plt.title(f"Average runtime of operations with {procs[0]} MPI ranks")
+    plt.ylabel("Runtime (s)")
+    plt.savefig("comparison_bars.png")
+    # Second figure
+    plt.figure()
+    plt.ylabel("Runtime (s)")
+    plt.xlabel("Degrees of freedom")
+    power_min = int(np.log10(min(dofs)))
+    power_max = int(np.log10(max(dofs)) + 1)
+    power_tmin = int(np.log10(min(totals)) - 1)
+    power_tmax = int(np.log10(max(totals)) + 1)
+    print(dofs[0], totals[0])
+    plt.axis((10**power_min, 10**power_max, 10**power_tmin, 10**power_tmax))
+    plt.plot(dofs, totals, "-ro", label="Simulations")
+    plt.plot([3.1 * 10**4, 3.1 * 10**6], [5.7 * 10**-1, 5.7 * 10**1], "--g", label="Order 1")
+    plt.title(f"Total runtime of core operations with {procs[0]} MPI ranks")
+    plt.legend()
+    plt.grid()
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.savefig("comparison.png")
 
 
 def visualize_single(dof):
@@ -88,14 +107,15 @@ def visualize_single(dof):
     ax.set_xticks([])
     # ax.set_yscale("log")
     plt.legend()
+
     plt.ylabel("Runtime (s)")
     # Shrink current axis by 20%
     # box = ax.get_position()
     # ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     # ax.legend(bbox_to_anchor=(0.95, 0.5))
-    plt.title("Average runtime of operations with {0:d} slave DOFs of {1:s} processors".format(slaves, procs))
+    plt.title(f"Average runtime of operations with {dof} ({slaves} slaves) on {procs} MPI ranks")
 
-    plt.savefig("test_single.png")
+    plt.savefig(f"comparison_{slaves}.png")
 
 
 visualize_single(dofs[1])
