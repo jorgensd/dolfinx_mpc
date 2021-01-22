@@ -8,7 +8,7 @@ RUN pip3 install --no-cache-dir ipython
 
 RUN git clone https://github.com/jorgensd/dolfinx_mpc.git && \
     cd dolfinx_mpc && \
-	git checkout dokken/gamg-debug && \
+    git checkout dokken/cube_bench && \
     mkdir build && \
     cd build && \
     cmake -G Ninja ../cpp && \

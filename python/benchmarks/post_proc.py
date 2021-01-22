@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Res 0.1 31776, 0.05 234546, 0.025 1801086
-dofs = [31776, 234546, 1801086]  # , 234546, 1801086]
+# Res 0.1 31776, 0.05 234546, 0.025 1801086, 0.02 3488856, 0.0175 5147961,0.015 7960200
+dofs = [31776, 234546, 1801086, 3488856, 5147961, 7960200]
 
 
 def visualize_side_by_side(dofs):
@@ -67,10 +67,15 @@ def visualize_side_by_side(dofs):
     power_max = int(np.log10(max(dofs)) + 1)
     power_tmin = int(np.log10(min(totals)) - 1)
     power_tmax = int(np.log10(max(totals)) + 1)
-    print(dofs[0], totals[0])
+
     plt.axis((10**power_min, 10**power_max, 10**power_tmin, 10**power_tmax))
     plt.plot(dofs, totals, "-ro", label="Simulations")
-    plt.plot([3.1 * 10**4, 3.1 * 10**6], [5.7 * 10**-1, 5.7 * 10**1], "--g", label="Order 1")
+    # 7
+    plt.plot([3.1 * 10**4, 3.1 * 10**7], [4.3 * 10**-1, 4.3 * 10**2], "--g", label="Order 1")
+    # 6 procs
+    #plt.plot([3.1 * 10**4, 3.1 * 10**7], [4.8 * 10**-1, 4.8 * 10**2], "--g", label="Order 1")
+    # 4 procs
+    #plt.plot([3.1 * 10**4, 3.1 * 10**7], [5.7 * 10**-1, 5.7 * 10**2], "--g", label="Order 1")
     plt.title(f"Total runtime of core operations with {procs[0]} MPI ranks")
     plt.legend()
     plt.grid()

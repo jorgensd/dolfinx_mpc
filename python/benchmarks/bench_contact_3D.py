@@ -302,15 +302,17 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
         mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
-    dolfinx_mpc.utils.log_info("IO")
 
     # Write solution to file
-    u_h = dolfinx.Function(mpc.function_space())
-    u_h.vector.setArray(uh.array)
-    u_h.name = "u"
-    with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
-        outfile.write_mesh(mesh)
-        outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
+    # dolfinx_mpc.utils.log_info("Move to function")
+    # u_h = dolfinx.Function(mpc.function_space())
+    # u_h.vector.setArray(uh.array)
+    # u_h.name = "u"
+    # dolfinx_mpc.utils.log_info("IO")
+
+    # with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
+    #     outfile.write_mesh(mesh)
+    #     outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
     # Write performance data to file
     dolfinx_mpc.utils.log_info("Timings")
     if timings:

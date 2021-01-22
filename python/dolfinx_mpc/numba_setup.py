@@ -148,7 +148,8 @@ if MPI.COMM_WORLD.Get_rank() == 0:
 
     # Build module in same directory as test file
     path = pathlib.Path(__file__).parent.absolute()
-    ffibuilder.compile(tmpdir=path, verbose=False)
+    # ffibuilder.compile(tmpdir=path, verbose=False)
+    ffibuilder.compile(verbose=False)
 
 MPI.COMM_WORLD.Barrier()
 module = importlib.import_module("dolfinx_mpc." + module_name)

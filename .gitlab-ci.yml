@@ -118,6 +118,7 @@ nightly-complex:
     - mkdir results
     - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --gamg --timings
     - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
+    - mpirun -n 4 python3 bench_contact_3D.py 
     - cd ../demos
     - mkdir meshes
     - mkdir results
@@ -191,6 +192,7 @@ nightly-real:
     - mkdir results
     - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg --timings
     - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
+    - mpirun -n 4 python3 bench_contact_3D.py 
     - cd ../demos
     - mkdir meshes
     - mkdir results
