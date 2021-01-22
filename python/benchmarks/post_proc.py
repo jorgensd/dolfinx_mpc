@@ -73,9 +73,9 @@ def visualize_side_by_side(dofs):
     # 7
     plt.plot([3.1 * 10**4, 3.1 * 10**7], [4.3 * 10**-1, 4.3 * 10**2], "--g", label="Order 1")
     # 6 procs
-    #plt.plot([3.1 * 10**4, 3.1 * 10**7], [4.8 * 10**-1, 4.8 * 10**2], "--g", label="Order 1")
+    # plt.plot([3.1 * 10**4, 3.1 * 10**7], [4.8 * 10**-1, 4.8 * 10**2], "--g", label="Order 1")
     # 4 procs
-    #plt.plot([3.1 * 10**4, 3.1 * 10**7], [5.7 * 10**-1, 5.7 * 10**2], "--g", label="Order 1")
+    # plt.plot([3.1 * 10**4, 3.1 * 10**7], [5.7 * 10**-1, 5.7 * 10**2], "--g", label="Order 1")
     plt.title(f"Total runtime of core operations with {procs[0]} MPI ranks")
     plt.legend()
     plt.grid()
