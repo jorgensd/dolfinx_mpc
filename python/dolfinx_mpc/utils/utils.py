@@ -67,7 +67,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
 
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
-    all_blocks = np.array(range(imap.size_local), dtype=np.int32)
+    all_blocks = np.arange(imap.size_local, dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
     top_blocks = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
     deac_blocks = all_blocks[np.isin(all_blocks, top_blocks, invert=True)]
@@ -113,14 +113,12 @@ def gather_slaves_global(constraint):
     Given a multi point constraint,
     return slaves for all processors with global dof numbering
     """
-    loc_to_glob = np.array(
-        constraint.index_map().global_indices(), dtype=np.int64)
+    imap = constraint.index_map()
     block_size = constraint.function_space().dofmap.index_map_bs
     if constraint.num_local_slaves() > 0:
         slave_blocks = constraint.slaves()[:constraint.num_local_slaves()] // block_size
         slave_rems = constraint.slaves()[: constraint.num_local_slaves()] % block_size
-        glob_slaves = np.array(loc_to_glob[slave_blocks] * block_size + slave_rems,
-                               dtype=np.int64)
+        glob_slaves = imap.local_to_global(slave_blocks) * block_size + slave_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
 
@@ -150,14 +148,13 @@ def create_transformation_matrix(V, constraint):
       K = [[1,0], [alpha beta], [0,1]]
     """
     # Gather slaves from all procs
-    loc_to_glob = np.array(
-        constraint.index_map().global_indices(), dtype=np.int64)
+    imap = constraint.index_map()
     block_size = V.dofmap.index_map_bs
     if constraint.num_local_slaves() > 0:
         local_slaves = constraint.slaves()[: constraint.num_local_slaves()]
         local_blocks = local_slaves // block_size
         local_rems = local_slaves % block_size
-        glob_slaves = np.array(loc_to_glob[local_blocks] * block_size + local_rems, dtype=np.int64)
+        glob_slaves = imap.local_to_global(local_blocks) * block_size + local_rems
     else:
         local_slaves = np.array([], dtype=np.int32)
         glob_slaves = np.array([], dtype=np.int64)
@@ -176,10 +173,9 @@ def create_transformation_matrix(V, constraint):
         if len(local_index) > 0:
             # If local master add coeffs
             local_index = local_index[0]
-            masters_index = (loc_to_glob[master_blocks[offsets[local_index]:
-                                                       offsets[local_index + 1]]] * block_size
-                             + master_rems[offsets[local_index]:
-                                           offsets[local_index + 1]])
+            masters_index = (
+                imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]]) * block_size
+                + master_rems[offsets[local_index]: offsets[local_index + 1]])
             coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
             for master, coeff in zip(masters_index, coeffs_index):
                 count = sum(master > global_slaves)
@@ -404,8 +400,6 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
 
     block_size = V.dofmap.index_map_bs
     imap = V.dofmap.index_map
-    # Create local to global mapping and map masters
-    loc_to_glob = np.array(imap.global_indices(), dtype=np.int64)
     # Output structures
     local_slaves, ghost_slaves = [], []
     local_masters, ghost_masters = [], []
@@ -431,13 +425,14 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             local_slaves = np.array([slave_block[0] * block_size + slave_index], dtype=np.int32)
             for i in range(block_size):
                 if i != slave_index and not np.isin(i, zero_indices):
-                    local_masters.append(loc_to_glob[slave_block[0]] * block_size + i)
+                    local_masters.append(imap.local_to_global([slave_block[0]])[9] * block_size + i)
                     local_owners.append(slave_proc)
                     local_coeffs.append(-vector[i] / vector[slave_index])
 
     global_masters = None
 
-    masters_as_glob = [loc_to_glob[block] * block_size + k for block in master_block for k in range(block_size)]
+    masters_as_glob = [imap.local_to_global([block])[0] * block_size
+                       + k for block in master_block for k in range(block_size)]
     if MPI.COMM_WORLD.rank == slave_proc and slave_proc == master_proc:
         # If slaves and masters are on the same processor finalize local work
         if vector is None:
@@ -484,7 +479,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     if MPI.COMM_WORLD.rank == slave_proc:
         for proc in ghost_processors:
 
-            MPI.COMM_WORLD.send(loc_to_glob[slave_block[0]] * block_size + local_slaves %
+            MPI.COMM_WORLD.send(imap.local_to_global([slave_block[0]])[0] * block_size + local_slaves %
                                 block_size, dest=proc, tag=20 + proc)
             MPI.COMM_WORLD.send(local_coeffs, dest=proc, tag=30 + proc)
             MPI.COMM_WORLD.send(local_owners, dest=proc, tag=40 + proc)

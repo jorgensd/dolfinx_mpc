@@ -135,8 +135,7 @@ def demo_elasticity():
     # Compare LHS, RHS and solution with reference values
     dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
     dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-    assert(np.allclose(
-        uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]]))
+    assert(np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]]))
 
     # Print out master-slave connectivity for the first slave
     master_owner = None
@@ -144,14 +143,14 @@ def demo_elasticity():
     slave_owner = None
     if mpc.num_local_slaves() > 0:
         slave_owner = MPI.COMM_WORLD.rank
-        l2g = np.array(mpc.index_map().global_indices())
         bs = mpc.function_space().dofmap.index_map_bs
         slave = mpc.slaves()[0]
         print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}"
               .format(uh.array[slave], u_.vector.array[slave]))
         master_owner = mpc._cpp_object.owners().links(0)[0]
         master = mpc.masters_local().array[0]
-        master_data = [l2g[master // bs] * bs + master % bs,
+        glob_master = mpc.index_map().local_to_global([master // bs])[0]
+        master_data = [glob_master * bs + master % bs,
                        mpc.coefficients()[0]]
         # If master not on proc send info to this processor
         if MPI.COMM_WORLD.rank != master_owner:
@@ -168,7 +167,7 @@ def demo_elasticity():
     if slave_owner != master_owner and MPI.COMM_WORLD.rank == master_owner:
         bs = mpc.function_space().dofmap.index_map_bs
         in_data = MPI.COMM_WORLD.recv(source=MPI.ANY_SOURCE, tag=1)
-        l2g = np.array(mpc.index_map().global_indices())
+        l2g = mpc.index_map().global_indices()
         l_index = np.flatnonzero(l2g == in_data[0] // bs)[0]
         print("Master*Coeff (on other proc): {0:.5e}"
               .format(uh.array[l_index * bs + in_data[0] % bs] * in_data[1]))

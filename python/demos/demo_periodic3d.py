@@ -43,8 +43,7 @@ def demo_periodic3D(celltype, out_periodic):
     else:
         # Hex setup
         N = 12
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                    dolfinx.cpp.mesh.CellType.hexahedron)
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.cpp.mesh.CellType.hexahedron)
         V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
     # Create Dirichlet boundary condition
@@ -59,18 +58,15 @@ def demo_periodic3D(celltype, out_periodic):
                                            np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(
-        V, DirichletBoundary)
+    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
     bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
     def PeriodicBoundary(x):
         return np.isclose(x[0], 1)
 
-    facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, PeriodicBoundary)
-    mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1,
-                          facets, np.full(len(facets), 2, dtype=np.int32))
+    facets = dolfinx.mesh.locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
+    mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)
@@ -104,8 +100,7 @@ def demo_periodic3D(celltype, out_periodic):
 
     # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
     # Solve Linear problem
