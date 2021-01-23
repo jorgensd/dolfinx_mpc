@@ -339,7 +339,9 @@ dolfinx_mpc::create_dof_to_facet_map(
   mesh->topology_mutable().create_connectivity(tdim, tdim - 1);
   auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
   auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
+  // Initialize empty map for the dofs located topologically
   std::map<std::int32_t, std::vector<std::int32_t>> dofs_to_facets;
+
   // For each facet, find which dofs is on the given facet
   for (std::int32_t i = 0; i < facets.size(); ++i)
   {
