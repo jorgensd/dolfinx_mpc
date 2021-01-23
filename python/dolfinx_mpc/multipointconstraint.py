@@ -15,7 +15,7 @@ from .slipcondition import create_slip_condition
 class MultiPointConstraint():
     """
     Multi-point constraint class.
-    This class will hold data for multi point constraint relation ships, 
+    This class will hold data for multi point constraint relation ships,
     including new index maps for local assembly of matrices and vectors.
     """
 
