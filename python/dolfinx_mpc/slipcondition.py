@@ -3,8 +3,7 @@ import numpy as np
 import dolfinx.common as common
 
 
-def create_slip_condition(V, normal, n_to_W, meshtag_info,
-                          bcs=[]):
+def create_slip_condition(V, normal, n_to_W, meshtag_info, bcs=[]):
     timer = common.Timer("~MPC: Create slip condition")
     if isinstance(V, tuple):
         W, Wsub = V
@@ -17,10 +16,10 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
     n_vec = np.array(normal.x.array, dtype=type(normal.x.array[0]))
 
     # Info from parent space
-    W_global_indices = np.array(W.dofmap.index_map.global_indices(), dtype=np.int64)
-    W_ghost_owners = W.dofmap.index_map.ghost_owner_rank()
+    W_imap = W.dofmap.index_map
+    W_ghost_owners = W_imap.ghost_owner_rank()
     W_bs = W.dofmap.index_map_bs
-    W_local_size = W.dofmap.index_map.size_local
+    W_local_size = W_imap.size_local
 
     # Output arrays
     slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
@@ -63,8 +62,8 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
             for index in master_indices:
                 coeff = -n_vec[normal_dofs[index]] / n_vec[normal_dofs[slave_index]]
                 if not np.isclose(coeff, 0):
-                    pair_masters.append(W_global_indices[normal_to_W(index)
-                                                         // W_bs] * W_bs + normal_to_W(index) % W_bs)
+                    pair_masters.append(W_imap.local_to_global([normal_to_W(index)
+                                                                // W_bs])[0] * W_bs + normal_to_W(index) % W_bs)
                     pair_coeffs.append(coeff)
                     if normal_to_W(index) < W_local_size * W_bs:
                         pair_owners.append(comm.rank)
@@ -74,7 +73,7 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info,
             # append one to enforce Dirichlet BC 0
             if len(pair_masters) == 0:
                 master = normal_to_W(master_indices[0])
-                pair_masters = [W_global_indices[master // W_bs] * W_bs + master % W_bs]
+                pair_masters = [W_imap.local_to_global([master // W_bs])[0] * W_bs + master % W_bs]
                 pair_coeffs = [-n_vec[master_indices[0]] / n_vec[normal_dofs[slave_index]]]
                 if master < W_local_size * W_bs:
                     pair_owners.append(comm.rank)

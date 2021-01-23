@@ -15,9 +15,7 @@ def close_to(point):
 
 def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
                                  typing.Dict[bytes, typing.Dict[bytes, float]],
-                                 subspace_slave=None,
-                                 subspace_master=None
-                                 ):
+                                 subspace_slave=None, subspace_master=None):
     """
     Returns a multi point constraint for a given function space
     and dictionary constraint.
@@ -33,15 +31,15 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
         F at [e0,e1] and [f0,f1] as
         D = alpha E + beta F
         the dictionary should be:
-            {np.array([d0, d1], dtype=np.float64).tobytes():
-                 {np.array([e0, e1], dtype=np.float64).tobytes(): alpha,
-                  np.array([f0, f1], dtype=np.float64).tobytes(): beta}}
+            {np.array([d0, d1], dtype=numpy.float64).tobytes():
+                 {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
+                  numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
     """
     dfloat = np.float64
     comm = V.mesh.mpi_comm()
     bs = V.dofmap.index_map_bs
     local_size = V.dofmap.index_map.size_local * bs
-    loc_to_glob = V.dofmap.index_map.global_indices()
+    index_map = V.dofmap.index_map
     owned_entities = {}
     ghosted_entities = {}
     non_local_entities = {}
@@ -59,8 +57,8 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
             slave_dofs = fem.locate_dofs_geometrical(V, close_to(slave_point_nd))
         else:
             Vsub = V.sub(subspace_slave).collapse()
-            slave_dofs = np.array(fem.locate_dofs_geometrical(
-                (V.sub(subspace_slave), Vsub), close_to(slave_point_nd))[0])
+            slave_dofs = fem.locate_dofs_geometrical(
+                (V.sub(subspace_slave), Vsub), close_to(slave_point_nd))[0]
         if len(slave_dofs) == 1:
             # Decide if slave is ghost or not
             if slave_dofs[0] < local_size:
@@ -99,23 +97,24 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
             if len(master_dofs) == 1:
                 master_block = master_dofs[0] // bs
                 master_rem = master_dofs % bs
+                glob_master = index_map.local_to_global([master_block])[0]
                 if slave_status == -1:
                     if i in non_local_entities.keys():
-                        non_local_entities[i]["masters"].append(loc_to_glob[master_block] * bs + master_rem)
+                        non_local_entities[i]["masters"].append(glob_master * bs + master_rem)
                         non_local_entities[i]["coeffs"].append(slave_master_dict[slave_point][master_point])
                         non_local_entities[i]["owners"].append(comm.rank),
                         non_local_entities[i]["local_index"].append(j)
                     else:
-                        non_local_entities[i] = {"masters": [loc_to_glob[master_block] * bs + master_rem],
+                        non_local_entities[i] = {"masters": [glob_master * bs + master_rem],
                                                  "coeffs": [slave_master_dict[slave_point][master_point]],
                                                  "owners": [comm.rank], "local_index": [j]}
                 elif slave_status == 0:
-                    ghosted_entities[i]["masters"][j] = loc_to_glob[master_block] * bs + master_rem
+                    ghosted_entities[i]["masters"][j] = glob_master * bs + master_rem
                     ghosted_entities[i]["owners"][j] = comm.rank
                     ghosted_entities[i]["coeffs"][j] = slave_master_dict[slave_point][master_point]
                     ghosted_entities[i]["local_index"].append(j)
                 elif slave_status == 1:
-                    owned_entities[i]["masters"][j] = loc_to_glob[master_block] * bs + master_rem
+                    owned_entities[i]["masters"][j] = glob_master * bs + master_rem
                     owned_entities[i]["owners"][j] = comm.rank
                     owned_entities[i]["coeffs"][j] = slave_master_dict[slave_point][master_point]
                     owned_entities[i]["local_index"].append(j)

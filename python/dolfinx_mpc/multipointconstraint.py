@@ -1,9 +1,11 @@
 import warnings
-
-import dolfinx_mpc.cpp
-from petsc4py import PETSc
+from typing import Callable
 
 import dolfinx
+import numpy
+from petsc4py import PETSc
+
+import dolfinx_mpc.cpp
 
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition
@@ -11,7 +13,16 @@ from .slipcondition import create_slip_condition
 
 
 class MultiPointConstraint():
-    def __init__(self, V):
+    """
+    Multi-point constraint class.
+    This class will hold data for multi point constraint relation ships, 
+    including new index maps for local assembly of matrices and vectors.
+    """
+
+    def __init__(self, V: dolfinx.fem.FunctionSpace):
+        """
+        Initial multi point constraint for a given function space.
+        """
         self.local_slaves = []
         self.ghost_slaves = []
         self.local_masters = []
@@ -25,19 +36,29 @@ class MultiPointConstraint():
         self.V = V
         self.finalized = False
 
-    def add_constraint(self, V, slaves,
-                       masters, coeffs, owners, offsets):
+    def add_constraint(self, V: dolfinx.FunctionSpace, slaves: tuple([numpy.ndarray, numpy.ndarray]),
+                       masters: tuple([numpy.ndarray, numpy.ndarray]), coeffs: tuple([numpy.ndarray, numpy.ndarray]),
+                       owners: tuple([numpy.ndarray, numpy.ndarray]), offsets: tuple([numpy.ndarray, numpy.ndarray])):
         """
-        Add a constraint to your multipoint-constraint.
-        Takes in tuples of slaves, masters, coeffs, owners, and offsets.
-        Each tuple consist of one list, where the first list are related
-        to slaves owned by the processor, the second list is related
-        to the ghost slaves.
+        Add new constraint given by numpy arrays.
+        Input:
+            V: The function space for the constraint
+            slaves: Tuple of numpy arrays. First tuple contains the local index of slaves on this process.
+                    The second tuple contains the local index of ghosted slaves on this process.
+            masters: Tuple of numpy arrays. First tuple contains the local index of masters on this process.
+                    The second tuple contains the local index of ghosted masters on this process.
+                    As a single slave can have multiple master indices, they should be sorted such
+                    that they follow the offset tuples.
+            coeffs: Tuple of numpy arrays. The coefficients for each master.
+            owners: Tuple of numpy arrays containing the index for the process each master is owned by.
+            offsets: Tuple of numpy arrays indicating the location in the masters array for the i-th slave
+                    in the slaves arrays. I.e.
+                    local_masters_of_owned_slave[i] = masters[0][offsets[0][i]:offsets[0][i+1]]
+                    ghost_masters_of_ghost_slave[i] = masters[1][offsets[1][i]:offsets[1][i+1]]
         """
         assert(V == self.V)
         if self.finalized:
-            raise RuntimeError(
-                "MultiPointConstraint has already been finalized")
+            raise RuntimeError("MultiPointConstraint has already been finalized")
         local_slaves, ghost_slaves = slaves
         local_masters, ghost_masters = masters
         local_coeffs, ghost_coeffs = coeffs
@@ -58,10 +79,9 @@ class MultiPointConstraint():
             self.ghost_coeffs.extend(ghost_coeffs)
             self.ghost_owners.extend(ghost_owners)
 
-    def add_constraint_from_mpc_data(self, V, mpc_data):
+    def add_constraint_from_mpc_data(self, V: dolfinx.FunctionSpace, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
         if self.finalized:
-            raise RuntimeError(
-                "MultiPointConstraint has already been finalized")
+            raise RuntimeError("MultiPointConstraint has already been finalized")
         self.add_constraint(V, mpc_data.get_slaves(), mpc_data.get_masters(),
                             mpc_data.get_coeffs(), mpc_data.get_owners(),
                             mpc_data.get_offsets())
@@ -73,8 +93,7 @@ class MultiPointConstraint():
         additional ghosts
         """
         if self.finalized:
-            raise RuntimeError(
-                "MultiPointConstraint has already been finalized")
+            raise RuntimeError("MultiPointConstraint has already been finalized")
         num_local_slaves = len(self.local_slaves)
         num_local_masters = len(self.local_masters)
         slaves = self.local_slaves
@@ -104,7 +123,9 @@ class MultiPointConstraint():
              self.ghost_coeffs, self.ghost_masters, self.ghost_offsets,
              self.ghost_owners, self.ghost_slaves)
 
-    def create_periodic_constraint(self, meshtag, tag, relation, bcs, scale=1):
+    def create_periodic_constraint(self, meshtag: dolfinx.MeshTags, tag: int,
+                                   relation: Callable[[numpy.ndarray], numpy.ndarray],
+                                   bcs: list([dolfinx.DirichletBC]), scale: float = 1):
         """
         Create a periodic boundary condition (possibly scaled).
         Input:
@@ -119,26 +140,42 @@ class MultiPointConstraint():
             self.V, meshtag, tag, relation, bcs, scale)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_slip_constraint(self, sub_space, normal, sub_map, entity_data,
-                               bcs=[]):
+    def create_slip_constraint(self, facet_marker: tuple([dolfinx.MeshTags, int]), normal: dolfinx.Function,
+                               sub_space: dolfinx.FunctionSpace = None, sub_map: numpy.ndarray = None,
+                               bcs: list([dolfinx.DirichletBC]) = []):
         """
-        Create a slip constraint dot(u,normal)=0 where u is either in the
-        constrained
-        space or a sub-space. Need to supply the map between the space of the
-        normal function (from the collapsed sub space) and the constraint
-        space,
-        as well as which mesh entities this constraint shall be applied on
+        Create a slip constraint dot(u,normal)=0 over the entities defined in a dolfinx.Meshtags
+        marked with index i. normal is the normal vector defined as a vector function.
+        Example:
+
+        Create constaint dot(u, n)=0 of all indices in mt marked with i
+             create_slip_constaint((mt,i), n)
+
+        Create slip constaint for u when in a sub space:
+             me = MixedElement(VectorElement("CG", triangle, 2), FiniteElement("CG", triangle 1))
+             W = FunctionSpace(mesh, me)
+             V, V_to_W = W.sub(0).collapse(True)
+             n = Function(V)
+             create_slip_constraint((mt, i), normal, V, V_to_W, bcs=[])
+
+        A slip condition cannot be applied on the same degrees of freedom as a Dirichlet BC, and therefore
+        any Dirichlet bc for the space of the multi point constraint should be supplied.
+             me = MixedElement(VectorElement("CG", triangle, 2), FiniteElement("CG", triangle 1))
+             W = FunctionSpace(mesh, me)
+             W0 = W.sub(0)
+             V, V_to_W = W0.collapse(True)
+             n = Function(V)
+             bc = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
+             create_slip_constraint((mt, i), normal, V, V_to_W, bcs=[bc])
         """
         if sub_space is None:
             W = self.V
         else:
             W = (self.V, sub_space)
-        slaves, masters, coeffs, owners, offsets = create_slip_condition(
-            W, normal, sub_map, entity_data, bcs)
+        slaves, masters, coeffs, owners, offsets = create_slip_condition(W, normal, sub_map, facet_marker, bcs)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_general_constraint(self, slave_master_dict, subspace_slave=None,
-                                  subspace_master=None):
+    def create_general_constraint(self, slave_master_dict, subspace_slave=None, subspace_master=None):
         """
         Input:
             V - The function space

@@ -9,7 +9,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     bs = V.dofmap.index_map_bs
     size_local = V.dofmap.index_map.size_local
     ghost_owners = V.dofmap.index_map.ghost_owner_rank()
-    loc_to_glob = np.array(V.dofmap.index_map.global_indices(), dtype=np.int64)
+    imap = V.dofmap.index_map
     x = V.tabulate_dof_coordinates()
     comm = V.mesh.mpi_comm()
     slave_entities = mt.indices[mt.values == tag]
@@ -29,8 +29,6 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     global_tree = tree.compute_global_tree(comm)
     cell_map = V.mesh.topology.index_map(tdim)
     [cmin, cmax] = cell_map.local_range
-    loc2glob_cell = np.array(cell_map.global_indices(), dtype=np.int64)
-    del cell_map
     master_coordinates = relation(x[slave_blocks].T).T
 
     constraint_data = {slave * bs + j: {} for slave in slave_blocks[:num_local_blocks] for j in range(bs)}
@@ -51,7 +49,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                 possible_cells = np.array(dolfinx.geometry.compute_collisions_point(
                     tree, master_coordinate), dtype=np.int32)
                 if len(possible_cells) > 0:
-                    glob_cells = loc2glob_cell[possible_cells]
+                    glob_cells = cell_map.local_to_global(possible_cells)
                     is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
                     verified_candidate = dolfinx.cpp.geometry.select_colliding_cells(
                         V.mesh, list(possible_cells[is_owned]), master_coordinate, 1)
@@ -66,7 +64,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                                         owners_.append(comm.rank)
                                     else:
                                         owners_.append(ghost_owners[block - size_local])
-                                    masters_.append(loc_to_glob[block] * bs + rem)
+                                    masters_.append(imap.local_to_global([block])[0] * bs + rem)
                                     coeffs_.append(scale * basis_values[local_idx * bs + rem, block_idx])
                 if len(masters_) > 0:
                     constraint_data[slave_dof]["masters"] = masters_
@@ -106,7 +104,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                     possible_cells = np.array(dolfinx.geometry.compute_collisions_point(
                         tree, coordinate), dtype=np.int32)
                     if len(possible_cells) > 0:
-                        glob_cells = loc2glob_cell[possible_cells]
+                        glob_cells = cell_map.local_to_global(possible_cells)
                         is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
                         verified_candidate = dolfinx.cpp.geometry.select_colliding_cells(
                             V.mesh, list(possible_cells[is_owned]), coordinate, 1)
@@ -121,7 +119,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                                             o_.append(comm.rank)
                                         else:
                                             o_.append(ghost_owners[block - size_local])
-                                        m_.append(loc_to_glob[block] * bs + rem)
+                                        m_.append(imap.local_to_global([block])[0] * bs + rem)
                                         c_.append(scale * basis_values[idx * bs + rem, block_idx])
                     if len(m_) > 0:
                         out_data[slave_dof] = {"masters": m_, "coeffs": c_, "owners": o_}
@@ -150,12 +148,12 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
             if block in local_shared_blocks:
                 for proc in shared_indices[block]:
                     if proc in send_ghost_masters.keys():
-                        send_ghost_masters[proc][loc_to_glob[block] * bs + rem] = {
+                        send_ghost_masters[proc][imap.local_to_global([block])[0] * bs + rem] = {
                             "masters": constraint_data[dof]["masters"],
                             "coeffs": constraint_data[dof]["coeffs"],
                             "owners": constraint_data[dof]["owners"]}
                     else:
-                        send_ghost_masters[proc] = {loc_to_glob[block] * bs + rem:
+                        send_ghost_masters[proc] = {imap.local_to_global([block])[0] * bs + rem:
                                                     {"masters": constraint_data[dof]["masters"],
                                                      "coeffs": constraint_data[dof]["coeffs"],
                                                      "owners": constraint_data[dof]["owners"]}}
@@ -172,7 +170,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     for owner in ghost_recv:
         from_owner = comm.recv(source=owner, tag=33)
         for block in slave_blocks[num_local_blocks:]:
-            glob_block = loc_to_glob[block]
+            glob_block = imap.local_to_global([block])[0]
             for rem in range(bs):
                 glob_dof = glob_block * bs + rem
                 if glob_dof in from_owner.keys():

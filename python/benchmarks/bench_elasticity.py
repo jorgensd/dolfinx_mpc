@@ -53,8 +53,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Create traction meshtag
     def traction_boundary(x):
         return np.isclose(x[0], 1)
-    t_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
-                                                     traction_boundary)
+    t_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
     mt = dolfinx.MeshTags(mesh, fdim, t_facets, facet_values)
 

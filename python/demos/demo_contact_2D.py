@@ -113,7 +113,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/nh.xdmf", "w") as xdmf:
             xdmf.write_mesh(mesh)
             xdmf.write_function(bottom_normal)
-        mpc.create_slip_constraint(None, bottom_normal, None, (mt, 5), bcs)
+        mpc.create_slip_constraint((mt, 5), bottom_normal, bcs=bcs)
 
     with dolfinx.common.Timer(
             "~Contact: Add tangential constraint at one point"):
@@ -122,7 +122,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         tangent = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 3, tangent=True)
         mtv = dolfinx.MeshTags(mesh, 0, vertex,
                                np.full(len(vertex), 6, dtype=np.int32))
-        mpc.create_slip_constraint(None, tangent, None, (mtv, 6), bcs)
+        mpc.create_slip_constraint((mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
 
@@ -131,8 +131,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
     # Solve Linear problem

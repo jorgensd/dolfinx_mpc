@@ -2,11 +2,11 @@ import dolfinx.cpp
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
-import numpy as np
 import gmsh
+import numpy as np
 import ufl
-from petsc4py import PETSc
 from mpi4py import MPI
+from petsc4py import PETSc
 
 # Length, width and rotation of channel
 L = 2
@@ -102,7 +102,8 @@ bcs = [bc1]
 # Slip conditions for walls
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 1])
 mpc = dolfinx_mpc.MultiPointConstraint(W)
-mpc.create_slip_constraint(W.sub(0), n, np.array(V_to_W), (mt, 1), bcs=bcs)
+
+mpc.create_slip_constraint((mt, 1), n, sub_space=W.sub(0), sub_map=V_to_W, bcs=bcs)
 mpc.finalize()
 
 
