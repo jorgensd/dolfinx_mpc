@@ -146,7 +146,7 @@ if MPI.COMM_WORLD.Get_rank() == 0:
                               petsc_dir, petsc_arch, 'lib')],
                           extra_compile_args=[])
 
-    Build module in same directory as test file
+    # Build module in same directory as python script
     ffibuilder.compile(".", verbose=False)
 MPI.COMM_WORLD.Barrier()
 module = importlib.import_module(module_name, ".")
