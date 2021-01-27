@@ -215,7 +215,7 @@ class MultiPointConstraint():
 
     def num_local_slaves(self):
         if self.finalized:
-            return self._cpp_object.num_local_slaves()
+            return self._cpp_object.num_local_slaves
         else:
             return len(self.local_slaves)
 

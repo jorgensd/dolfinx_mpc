@@ -104,6 +104,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     c_to_s_off = slave_cell_to_dofs.offsets
     slaves_local = constraint.slaves()
     num_local_slaves = constraint.num_local_slaves()
+
     masters_local = masters.array
     offsets = masters.offsets
     mpc_data = (slaves_local, masters_local, coefficients, offsets, slave_cells, cell_to_slave, c_to_s_off)
@@ -121,7 +122,6 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     x = V.mesh.geometry.x
 
     # Generate ufc_form
-
     ufc_form = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form)
 
     # Generate matrix with MPC sparsity pattern
@@ -184,8 +184,10 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
                 dolfinx.fem.IntegralType.exterior_facet, subdomain_id), dtype=numpy.int64)
             facet_info = pack_facet_info(V.mesh, active_facets)
             facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
+            num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             assemble_exterior_facets(A.handle, facet_kernel, (pos, x_dofs, x), gdim, form_coeffs, form_consts,
-                                     perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, bc_array)
+                                     perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, bc_array,
+                                     num_facets_per_cell)
         timer.stop()
 
     with Timer("~MPC: Assemble matrix (diagonal handling)"):
@@ -379,7 +381,7 @@ def modify_mpc_cell_new(A, num_dofs, block_size, Ae, local_blocks, mpc_cell):
 
 @numba.njit
 def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
-                             dofmap, block_size, num_dofs_per_element, facet_info, mpc, bcs):
+                             dofmap, block_size, num_dofs_per_element, facet_info, mpc, bcs, num_facets_per_cell):
     """Assemble MPC contributions over exterior facet integrals"""
 
     slave_cells = mpc[4]  # Note: packing order for MPC really important
@@ -415,7 +417,7 @@ def assemble_exterior_facets(A, kernel, mesh, gdim, coeffs, consts, perm,
                 geometry[j, k] = x[c[j], k]
 
         A_local.fill(0.0)
-        facet_perm[0] = facet_perms[local_facet, cell_index]
+        facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi.from_buffer(A_local), ffi.from_buffer(coeffs[cell_index, :]), ffi.from_buffer(consts),
                ffi.from_buffer(geometry), ffi.from_buffer(facet_index), ffi.from_buffer(facet_perm),
                cell_perms[cell_index])

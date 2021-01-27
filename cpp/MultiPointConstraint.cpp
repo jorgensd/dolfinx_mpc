@@ -1,4 +1,4 @@
-// Copyright (C) 2019 Jorgen S. Dokken
+// Copyright (C) 2019-2021 Jorgen S. Dokken
 //
 // This file is part of DOLFINX_MPC
 //
@@ -22,30 +22,26 @@ using namespace dolfinx_mpc;
 
 MultiPointConstraint::MultiPointConstraint(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves,
-    std::int32_t num_local_slaves)
+    std::vector<std::int32_t> slaves, std::int32_t num_local_slaves)
     : _V(V), _slaves(), _slave_cells(), _cell_to_slaves_map(),
       _slave_to_cells_map(), _num_local_slaves(num_local_slaves), _master_map(),
       _coeff_map(), _owner_map(), _master_local_map(), _master_block_map(),
       _dofmap()
 {
-  _slaves
-      = std::make_shared<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>(slaves);
+  _slaves = slaves;
   auto [slave_to_cells, cell_to_slaves_map] = create_cell_maps(slaves);
   auto [unique_cells, cell_to_slaves] = cell_to_slaves_map;
-  _slave_cells
-      = std::make_shared<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>>(
-          unique_cells);
+  _slave_cells = unique_cells;
   _cell_to_slaves_map = cell_to_slaves;
   _slave_to_cells_map = slave_to_cells;
 }
 
 std::pair<
     std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>,
-    std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+    std::pair<std::vector<std::int32_t>,
               std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
 MultiPointConstraint::create_cell_maps(
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs)
+    const tcb::span<const std::int32_t>& dofs)
 {
   dolfinx::common::Timer timer("~MPC: Create slave->cell  and cell->slave map");
   const dolfinx::mesh::Mesh& mesh = *(_V->mesh());
@@ -61,7 +57,7 @@ MultiPointConstraint::create_cell_maps(
   // otherwise -1
   std::vector<std::int32_t> dof_index(num_local_dofs, -1);
   std::map<std::int32_t, std::vector<std::int32_t>> idx_to_cell;
-  for (std::int32_t i = 0; i < dofs.rows(); ++i)
+  for (std::int32_t i = 0; i < dofs.size(); ++i)
   {
     std::vector<std::int32_t> cell_vec;
     idx_to_cell.insert({i, cell_vec});
@@ -119,13 +115,11 @@ MultiPointConstraint::create_cell_maps(
           indices_to_cells, offsets_idx);
 
   // Create cell to dofs adjacency list
-  Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> dof_cells(
-      unique_cells.data(), unique_cells.size());
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> adj2_ptr;
   adj2_ptr = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
       cells_to_indices, offsets_cells);
 
-  return std::make_pair(adj_ptr, std::make_pair(dof_cells, adj2_ptr));
+  return std::make_pair(adj_ptr, std::make_pair(unique_cells, adj2_ptr));
 }
 //-----------------------------------------------------------------------------
 void MultiPointConstraint::add_masters(std::vector<std::int64_t> masters,
@@ -296,18 +290,15 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
   dolfinx_mpc::build_standard_pattern(pattern, a);
   // Arrays replacing slave dof with master dof in sparsity pattern
   const int& block_size = bs0;
-  Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_slave(block_size);
-  Eigen::Array<PetscInt, Eigen::Dynamic, 1> master_for_other_slave(block_size);
-
+  std::vector<PetscInt> master_for_slave(block_size);
+  std::vector<PetscInt> master_for_other_slave(block_size);
   std::vector<std::int32_t> master_block(1);
-  tcb::span<int32_t> master_span = tcb::make_span(master_block);
   std::vector<std::int32_t> other_master_block(1);
-  tcb::span<int32_t> other_master_span = tcb::make_span(other_master_block);
   for (Eigen::Index i = 0; i < _cell_to_slaves_map->num_nodes(); ++i)
   {
 
-    auto cell_dofs = _dofmap->cell_dofs(_slave_cells->array()[i]);
-    auto slaves = _cell_to_slaves_map->links(i);
+    tcb::span<const int32_t> cell_dofs = _dofmap->cell_dofs(_slave_cells[i]);
+    tcb::span<int32_t> slaves = _cell_to_slaves_map->links(i);
 
     // Arrays for flattened master slave data
     std::vector<std::int32_t> flattened_masters;
@@ -326,30 +317,30 @@ dolfinx::la::SparsityPattern MultiPointConstraint::create_sparsity_pattern(
     for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
     {
       master_block[0] = flattened_masters[j];
-      pattern.insert(master_span, cell_dofs);
-      pattern.insert(cell_dofs, master_span);
+      pattern.insert(tcb::make_span(master_block), cell_dofs);
+      pattern.insert(cell_dofs, tcb::make_span(master_block));
       // Add sparsity pattern for all master dofs of any slave on this cell
       for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
       {
         other_master_block[0] = flattened_masters[k];
-        pattern.insert(master_span, other_master_span);
-        pattern.insert(other_master_span, master_span);
+        pattern.insert(tcb::make_span(master_block),
+                       tcb::make_span(other_master_block));
+        pattern.insert(tcb::make_span(other_master_block),
+                       tcb::make_span(master_block));
       }
     }
   }
   return pattern;
 };
 //-----------------------------------------------------------------------------
-void MultiPointConstraint::backsubstitution(
-    Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector)
+void MultiPointConstraint::backsubstitution(tcb::span<PetscScalar> vector)
 {
-  auto slaves = *_slaves;
-  for (std::int32_t i = 0; i < slaves.size(); ++i)
+  for (std::int32_t i = 0; i < _slaves.size(); ++i)
   {
     auto masters = _master_local_map->links(i);
     auto coeffs = _coeff_map->links(i);
     assert(masters.size() == coeffs.size());
     for (std::int32_t k = 0; k < masters.size(); ++k)
-      vector[slaves[i]] += coeffs[k] * vector[masters[k]];
+      vector[_slaves[i]] += coeffs[k] * vector[masters[k]];
   }
 };

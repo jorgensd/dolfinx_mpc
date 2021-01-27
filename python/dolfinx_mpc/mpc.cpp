@@ -4,6 +4,7 @@
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
+#include "array.h"
 #include "caster_petsc.h"
 #include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
@@ -43,10 +44,15 @@ void mpc(py::module& m)
           "Object for representing contact (non-penetrating) conditions");
   multipointconstraint
       .def(py::init<std::shared_ptr<const dolfinx::fem::FunctionSpace>,
-                    Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
-                    std::int32_t>())
-      .def("slaves", &dolfinx_mpc::MultiPointConstraint::slaves)
-      .def("slave_cells", &dolfinx_mpc::MultiPointConstraint::slave_cells)
+                    std::vector<std::int32_t>, std::int32_t>())
+      .def("slaves",
+           [](dolfinx_mpc::MultiPointConstraint& self) {
+             return as_pyarray(self.slaves());
+           })
+      .def("slave_cells",
+           [](dolfinx_mpc::MultiPointConstraint& self) {
+             return as_pyarray(self.slave_cells());
+           })
       .def("slave_to_cells", &dolfinx_mpc::MultiPointConstraint::slave_to_cells)
       .def("add_masters", &dolfinx_mpc::MultiPointConstraint::add_masters)
       .def("cell_to_slaves", &dolfinx_mpc::MultiPointConstraint::cell_to_slaves)
@@ -54,13 +60,19 @@ void mpc(py::module& m)
       .def("coefficients", &dolfinx_mpc::MultiPointConstraint::coefficients)
       .def("create_sparsity_pattern",
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
-      .def("num_local_slaves",
-           &dolfinx_mpc::MultiPointConstraint::num_local_slaves)
+      .def_property_readonly(
+          "num_local_slaves",
+          &dolfinx_mpc::MultiPointConstraint::num_local_slaves)
       .def("index_map", &dolfinx_mpc::MultiPointConstraint::index_map)
       .def("dofmap", &dolfinx_mpc::MultiPointConstraint::dofmap)
       .def("owners", &dolfinx_mpc::MultiPointConstraint::owners)
-      .def("backsubstitution",
-           &dolfinx_mpc::MultiPointConstraint::backsubstitution);
+      .def(
+          "backsubstitution",
+          [](dolfinx_mpc::MultiPointConstraint& self,
+             py::array_t<PetscScalar, py::array::c_style> u) {
+            self.backsubstitution(tcb::span(u.mutable_data(), u.size()));
+          },
+          py::arg("u"), "Backsubstitute slave values into vector");
 
   py::class_<dolfinx_mpc::mpc_data, std::shared_ptr<dolfinx_mpc::mpc_data>>
       mpc_data(m, "mpc_data", "Object with data arrays for mpc");
