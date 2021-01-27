@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Jørgen S. Dokken
+# Copyright (C) 2020-2021 Garth Wells and Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -8,7 +8,6 @@ import ctypes
 import ctypes.util
 import importlib
 import os
-import pathlib
 
 import numba
 import numba.core.typing.cffi_utils as cffi_support
