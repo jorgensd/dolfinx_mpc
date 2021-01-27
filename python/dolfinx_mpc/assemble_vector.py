@@ -92,7 +92,8 @@ def assemble_vector(form, constraint,
             with vector.localForm() as b:
                 assemble_exterior_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x), gdim,
                                          form_coeffs, form_consts, (permutation_info, facet_permutation_info),
-                                         dofs, block_size, num_dofs_per_element, mpc_data, (bc_dofs, bc_values), num_facets_per_cell)
+                                         dofs, block_size, num_dofs_per_element, mpc_data, (bc_dofs, bc_values),
+                                         num_facets_per_cell)
         timer.stop()
     timer_vector.stop()
     return vector

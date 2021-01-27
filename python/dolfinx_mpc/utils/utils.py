@@ -114,10 +114,11 @@ def gather_slaves_global(constraint):
     return slaves for all processors with global dof numbering
     """
     imap = constraint.index_map()
+    num_local_slaves = constraint.num_local_slaves()
     block_size = constraint.function_space().dofmap.index_map_bs
-    if constraint.num_local_slaves() > 0:
-        slave_blocks = constraint.slaves()[:constraint.num_local_slaves()] // block_size
-        slave_rems = constraint.slaves()[: constraint.num_local_slaves()] % block_size
+    if num_local_slaves > 0:
+        slave_blocks = constraint.slaves()[:num_local_slaves] // block_size
+        slave_rems = constraint.slaves()[:num_local_slaves] % block_size
         glob_slaves = imap.local_to_global(slave_blocks) * block_size + slave_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
@@ -150,13 +151,12 @@ def create_transformation_matrix(V, constraint):
     # Gather slaves from all procs
     imap = constraint.index_map()
     block_size = V.dofmap.index_map_bs
-    if constraint.num_local_slaves() > 0:
-        local_slaves = constraint.slaves()[: constraint.num_local_slaves()]
-        local_blocks = local_slaves // block_size
-        local_rems = local_slaves % block_size
+    num_local_slaves = constraint.num_local_slaves()
+    if num_local_slaves > 0:
+        local_blocks = constraint.slaves()[: num_local_slaves] // block_size
+        local_rems = constraint.slaves()[: num_local_slaves] % block_size
         glob_slaves = imap.local_to_global(local_blocks) * block_size + local_rems
     else:
-        local_slaves = np.array([], dtype=np.int32)
         glob_slaves = np.array([], dtype=np.int64)
 
     global_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
@@ -173,9 +173,8 @@ def create_transformation_matrix(V, constraint):
         if len(local_index) > 0:
             # If local master add coeffs
             local_index = local_index[0]
-            masters_index = (
-                imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]]) * block_size
-                + master_rems[offsets[local_index]: offsets[local_index + 1]])
+            masters_index = (imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]])
+                             * block_size + master_rems[offsets[local_index]: offsets[local_index + 1]])
             coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
             for master, coeff in zip(masters_index, coeffs_index):
                 count = sum(master > global_slaves)
