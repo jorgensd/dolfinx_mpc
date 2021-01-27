@@ -146,12 +146,10 @@ if MPI.COMM_WORLD.Get_rank() == 0:
                               petsc_dir, petsc_arch, 'lib')],
                           extra_compile_args=[])
 
-    # Build module in same directory as test file
-    path = pathlib.Path(__file__).parent.absolute()
-    ffibuilder.compile(tmpdir=path, verbose=False)
-
+    Build module in same directory as test file
+    ffibuilder.compile(".", verbose=False)
 MPI.COMM_WORLD.Barrier()
-module = importlib.import_module("dolfinx_mpc." + module_name)
+module = importlib.import_module(module_name, ".")
 
 cffi_support.register_module(module)
 MatSetValues_api = module.lib.MatSetValues
