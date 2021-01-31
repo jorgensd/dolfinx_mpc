@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Jørgen S. Dokken
+# Copyright (C) 2020-2021 Garth Wells and Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -8,7 +8,6 @@ import ctypes
 import ctypes.util
 import importlib
 import os
-import pathlib
 
 import numba
 import numba.core.typing.cffi_utils as cffi_support
@@ -146,12 +145,10 @@ if MPI.COMM_WORLD.Get_rank() == 0:
                               petsc_dir, petsc_arch, 'lib')],
                           extra_compile_args=[])
 
-    # Build module in same directory as test file
-    path = pathlib.Path(__file__).parent.absolute()
-    ffibuilder.compile(tmpdir=path, verbose=False)
-
+    # Build module in same directory as python script
+    ffibuilder.compile(".", verbose=False)
 MPI.COMM_WORLD.Barrier()
-module = importlib.import_module("dolfinx_mpc." + module_name)
+module = importlib.import_module(module_name, ".")
 
 cffi_support.register_module(module)
 MatSetValues_api = module.lib.MatSetValues

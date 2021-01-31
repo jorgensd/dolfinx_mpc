@@ -114,10 +114,11 @@ def gather_slaves_global(constraint):
     return slaves for all processors with global dof numbering
     """
     imap = constraint.index_map()
+    num_local_slaves = constraint.num_local_slaves()
     block_size = constraint.function_space().dofmap.index_map_bs
-    if constraint.num_local_slaves() > 0:
-        slave_blocks = constraint.slaves()[:constraint.num_local_slaves()] // block_size
-        slave_rems = constraint.slaves()[: constraint.num_local_slaves()] % block_size
+    if num_local_slaves > 0:
+        slave_blocks = constraint.slaves()[:num_local_slaves] // block_size
+        slave_rems = constraint.slaves()[:num_local_slaves] % block_size
         glob_slaves = imap.local_to_global(slave_blocks) * block_size + slave_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
@@ -150,13 +151,12 @@ def create_transformation_matrix(V, constraint):
     # Gather slaves from all procs
     imap = constraint.index_map()
     block_size = V.dofmap.index_map_bs
-    if constraint.num_local_slaves() > 0:
-        local_slaves = constraint.slaves()[: constraint.num_local_slaves()]
-        local_blocks = local_slaves // block_size
-        local_rems = local_slaves % block_size
+    num_local_slaves = constraint.num_local_slaves()
+    if num_local_slaves > 0:
+        local_blocks = constraint.slaves()[: num_local_slaves] // block_size
+        local_rems = constraint.slaves()[: num_local_slaves] % block_size
         glob_slaves = imap.local_to_global(local_blocks) * block_size + local_rems
     else:
-        local_slaves = np.array([], dtype=np.int32)
         glob_slaves = np.array([], dtype=np.int64)
 
     global_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
@@ -173,9 +173,8 @@ def create_transformation_matrix(V, constraint):
         if len(local_index) > 0:
             # If local master add coeffs
             local_index = local_index[0]
-            masters_index = (
-                imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]]) * block_size
-                + master_rems[offsets[local_index]: offsets[local_index + 1]])
+            masters_index = (imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]])
+                             * block_size + master_rems[offsets[local_index]: offsets[local_index + 1]])
             coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
             for master, coeff in zip(masters_index, coeffs_index):
                 count = sum(master > global_slaves)
@@ -334,17 +333,19 @@ def determine_closest_block(V, point):
     """
     tdim = V.mesh.topology.dim
     bb_tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim)
-    midpoint_tree = dolfinx.cpp.geometry.create_midpoint_tree(V.mesh)
-    # Find facet closest
-    closest_cell_data = dolfinx.geometry.compute_closest_entity(bb_tree, midpoint_tree, V.mesh, point)
-    closest_cell, min_distance = closest_cell_data[0][0], closest_cell_data[1][0]
     cell_imap = V.mesh.topology.index_map(tdim)
+    num_cells = cell_imap.size_local
+    midpoint_tree = dolfinx.cpp.geometry.create_midpoint_tree(V.mesh, tdim, np.arange(num_cells, dtype=np.int32))
+
+    # Find facet closest
+    closest_midpoint_facet, R_init = dolfinx.geometry.compute_closest_entity(midpoint_tree, point, V.mesh)
+    closest_cell, R = dolfinx.geometry.compute_closest_entity(bb_tree, point, V.mesh, R_init)
 
     # Set distance high if cell is not owned
     if cell_imap.size_local <= closest_cell:
-        min_distance = 1e5
+        R = 1e5
     # Find processor with cell closest to point
-    global_distances = MPI.COMM_WORLD.allgather(min_distance)
+    global_distances = MPI.COMM_WORLD.allgather(R)
     owning_processor = np.argmin(global_distances)
 
     dofmap = V.dofmap
@@ -352,7 +353,7 @@ def determine_closest_block(V, point):
     ghost_owner = imap.ghost_owner_rank()
     local_max = imap.size_local
     # Determine which block of dofs is closest
-    min_distance = max(min_distance, 1e5)
+    min_distance = max(R, 1e5)
     minimal_distance_block = None
     min_dof_owner = owning_processor
     if MPI.COMM_WORLD.rank == owning_processor:

@@ -81,17 +81,19 @@ def assemble_vector(form, constraint,
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
         permutation_info = numpy.array(V.mesh.topology.get_cell_permutation_info(), dtype=numpy.uint32)
-        facet_permutation_info = V.mesh.topology.get_facet_permutations()
+        facet_permutation_info = numpy.array(V.mesh.topology.get_facet_permutations(), dtype=numpy.uint8)
         timer = Timer("MPC Assemble vector (exterior facets)")
         for subdomain_id in subdomain_ids:
             active_facets = numpy.array(cpp_form.domains(
                 dolfinx.fem.IntegralType.exterior_facet, subdomain_id), dtype=numpy.int64)
             facet_info = pack_facet_info(V.mesh, active_facets)
             facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
+            num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
                 assemble_exterior_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x), gdim,
                                          form_coeffs, form_consts, (permutation_info, facet_permutation_info),
-                                         dofs, block_size, num_dofs_per_element, mpc_data, (bc_dofs, bc_values))
+                                         dofs, block_size, num_dofs_per_element, mpc_data, (bc_dofs, bc_values),
+                                         num_facets_per_cell)
         timer.stop()
     timer_vector.stop()
     return vector
@@ -138,7 +140,7 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim, coeffs, constants, permu
 
 @numba.njit
 def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim, coeffs, constants, permutation_info,
-                             dofmap, block_size, num_dofs_per_element, mpc, bcs):
+                             dofmap, block_size, num_dofs_per_element, mpc, bcs, num_facets_per_cell):
     """Assemble additional MPC contributions for facets"""
     ffi_fb = ffi.from_buffer
     (bcs, values) = bcs
@@ -167,7 +169,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim, coeffs, constant
             for k in range(gdim):
                 geometry[j, k] = x[c[j], k]
         b_local.fill(0.0)
-        facet_perm[0] = facet_perms[local_facet, cell_index]
+        facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm), cell_perms[cell_index])
 

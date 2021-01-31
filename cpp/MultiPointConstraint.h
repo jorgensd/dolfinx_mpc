@@ -30,21 +30,20 @@ public:
   /// @param[in] slaves_cells List of local slave cells
   /// @param[in] offsets Offsets for local slave cells
 
-  MultiPointConstraint(
-      std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> local_slaves,
-      std::int32_t num_local_slaves);
+  MultiPointConstraint(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+                       std::vector<std::int32_t> local_slaves,
+                       std::int32_t num_local_slaves);
 
   /// Return the array of master dofs and corresponding coefficients
-  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slaves() const
+  tcb::span<const std::int32_t> slaves() const
   {
-    return _slaves->array();
+    return tcb::make_span(_slaves);
   };
 
   /// Return point to array of all unique local cells containing a slave
-  const Eigen::Array<std::int32_t, Eigen::Dynamic, 1> slave_cells() const
+  tcb::span<const std::int32_t> slave_cells() const
   {
-    return _slave_cells->array();
+    return tcb::make_span(_slave_cells);
   };
 
   /// Return map from slave to cells containing that slave
@@ -101,9 +100,9 @@ public:
   /// the cell to dof map
   std::pair<
       std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>,
-      std::pair<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>,
+      std::pair<std::vector<std::int32_t>,
                 std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
-  create_cell_maps(Eigen::Array<std::int32_t, Eigen::Dynamic, 1> dofs);
+  create_cell_maps(const tcb::span<const std::int32_t>& dofs);
 
   /// Add masters for the slaves in the contact constraint.
   /// Identifies which masters are non-local, and creates a new index-map where
@@ -132,16 +131,15 @@ public:
   std::shared_ptr<dolfinx::fem::DofMap> dofmap() { return _dofmap; }
 
   /// Backsubstitute slave/master constraint for a given function
-  void backsubstitution(
-      Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector);
+  void backsubstitution(tcb::span<PetscScalar> vector);
 
 private:
   // Original function space
   std::shared_ptr<const dolfinx::fem::FunctionSpace> _V;
   // Array including all slaves (local + ghosts)
-  std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slaves;
+  std::vector<std::int32_t> _slaves;
   // Array for all cells containing slaves (local + ghosts)
-  std::shared_ptr<Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> _slave_cells;
+  std::vector<std::int32_t> _slave_cells;
   // Map from slave cell to index in _slaves for a given slave cell
   std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       _cell_to_slaves_map;
