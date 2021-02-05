@@ -23,7 +23,7 @@ comm = MPI.COMM_WORLD
 
 
 def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
-                   ext="tetrahedron", res=0.1):
+                   ext="tetrahedron", num_refinements=0, N0=5):
     timer = dolfinx.common.Timer("Create mesh")
 
     def find_plane_function(p0, p1, p2):
@@ -51,19 +51,15 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         D = -(n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2])
         return lambda x: n[0] * x[0] + n[1] * x[1] + D > -n[2] * x[2]
 
-    N = int(1 / res)
+    tmp_mesh_name = "tmp_mesh.xdmf"
+    r_matrix = dolfinx_mpc.utils.rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+
     if MPI.COMM_WORLD.rank == 0:
-        mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, N, N, N, ct)
-        mesh1 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, 2 * N, 2 * N, 2 * N, ct)
+        # Create two coarse meshes and merge them
+        mesh0 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, N0, N0, N0, ct)
         mesh0.geometry.x[:, 2] += 1
+        mesh1 = dolfinx.UnitCubeMesh(MPI.COMM_SELF, 2 * N0, 2 * N0, 2 * N0, ct)
 
-        # Stack the two meshes in one mesh
-        r_matrix = dolfinx_mpc.utils.rotation_matrix(
-            [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
-        points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
-        points = np.dot(r_matrix, points.T).T
-
-        # Transform topology info into geometry info
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
         cells0 = dolfinx.cpp.mesh.entities_to_geometry(mesh0, tdim0,
@@ -74,93 +70,107 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
                                                        np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
         cells1 += mesh0.geometry.x.shape[0]
 
+        # Concatenate points and cells
+        points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
         cells = np.vstack([cells0, cells1])
         cell = ufl.Cell(ext, geometric_dimension=points.shape[1])
         domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
+        # Rotate mesh
+        points = np.dot(r_matrix, points.T).T
+
         mesh = dolfinx.mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
-        tdim = mesh.topology.dim
-        fdim = tdim - 1
-        # Find information about facets to be used in MeshTags
-        bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
-                                                   [0, 1, 0], [1, 1, 0]]).T)
-        bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1],
-                                     bottom_points[:, 2])
-        bottom_facets = dolfinx.mesh.locate_entities_boundary(
-            mesh, fdim, bottom)
-        top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
-                                                [0, 1, 2], [1, 1, 2]]).T)
-        top = find_plane_function(top_points[:, 0], top_points[:, 1],
-                                  top_points[:, 2])
-        top_facets = dolfinx.mesh.locate_entities_boundary(
-            mesh, fdim, top)
+        with dolfinx.io.XDMFFile(MPI.COMM_SELF, tmp_mesh_name, "w") as xdmf:
+            xdmf.write_mesh(mesh)
 
-        # left_side = find_line_function(top_points[:, 0], top_points[:, 3])
-        # left_facets = dolfinx.mesh.locate_entities_boundary(
-        #     mesh, fdim, left_side)
+    MPI.COMM_WORLD.barrier()
+    with dolfinx.io.XDMFFile(MPI.COMM_WORLD, tmp_mesh_name, "r") as xdmf:
+        mesh = xdmf.read_mesh()
 
-        # right_side = find_line_function(top_points[:, 1], top_points[:, 2])
-        # right_facets = dolfinx.mesh.locate_entities_boundary(
-        #     mesh, fdim, right_side)
-        if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
-                                               [0, 1, 1], [1, 1, 1]]).T)
+    # Refine coarse mesh
+    for i in range(num_refinements):
+        mesh.topology.create_entities(mesh.topology.dim - 2)
+        mesh = dolfinx.mesh.refine(mesh, redistribute=True)
 
-        interface = find_plane_function(if_points[:, 0], if_points[:, 1],
-                                        if_points[:, 2])
-        i_facets = dolfinx.mesh.locate_entities_boundary(
-            mesh, fdim, interface)
-        mesh.topology.create_connectivity(fdim, tdim)
-        top_interface = []
-        bottom_interface = []
-        facet_to_cell = mesh.topology.connectivity(fdim, tdim)
-        num_cells = mesh.topology.index_map(tdim).size_local
-        cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
-                                                    range(num_cells))
-        top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
-        for facet in i_facets:
-            i_cells = facet_to_cell.links(facet)
-            assert(len(i_cells == 1))
-            i_cell = i_cells[0]
-            if top_cube(cell_midpoints[i_cell]):
-                top_interface.append(facet)
-            else:
-                bottom_interface.append(facet)
+    tdim = mesh.topology.dim
+    fdim = tdim - 1
+    # Find information about facets to be used in MeshTags
 
-        num_cells = mesh.topology.index_map(tdim).size_local
-        cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
-                                                    range(num_cells))
-        top_cube_marker = 2
-        indices = []
-        values = []
-        for cell_index in range(num_cells):
-            if top_cube(cell_midpoints[cell_index]):
-                indices.append(cell_index)
-                values.append(top_cube_marker)
-        ct = dolfinx.mesh.MeshTags(mesh, tdim, np.array(
-            indices, dtype=np.intc), np.array(values, dtype=np.intc))
+    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
+                                               [0, 1, 0], [1, 1, 0]]).T)
+    bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1],
+                                 bottom_points[:, 2])
+    bottom_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, fdim, bottom)
+    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
+                                            [0, 1, 2], [1, 1, 2]]).T)
+    top = find_plane_function(top_points[:, 0], top_points[:, 1],
+                              top_points[:, 2])
+    top_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, top)
 
-        # Create meshtags for facet data
-        markers = {3: top_facets, 4: bottom_interface, 9: top_interface,
-                   5: bottom_facets}  # , 6: left_facets, 7: right_facets}
-        indices = np.array([], dtype=np.intc)
-        values = np.array([], dtype=np.intc)
+    # left_side = find_line_function(top_points[:, 0], top_points[:, 3])
+    # left_facets = dolfinx.mesh.locate_entities_boundary(
+    #     mesh, fdim, left_side)
 
-        for key in markers.keys():
-            indices = np.append(indices, markers[key])
-            values = np.append(values, np.full(len(markers[key]), key,
-                                               dtype=np.intc))
-        mt = dolfinx.mesh.MeshTags(mesh, fdim,
-                                   indices, values)
-        mt.name = "facet_tags"
-        fname = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(ext, theta)
+    # right_side = find_line_function(top_points[:, 1], top_points[:, 2])
+    # right_facets = dolfinx.mesh.locate_entities_boundary(
+    #     mesh, fdim, right_side)
+    # Determine interface facets
+    if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
+                                           [0, 1, 1], [1, 1, 1]]).T)
 
-        with dolfinx.io.XDMFFile(MPI.COMM_SELF, fname, "w") as o_f:
-            o_f.write_mesh(mesh)
-            o_f.write_meshtags(ct)
-            o_f.write_meshtags(mt)
+    interface = find_plane_function(if_points[:, 0], if_points[:, 1], if_points[:, 2])
+    i_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, interface)
+    mesh.topology.create_connectivity(fdim, tdim)
+    top_interface = []
+    bottom_interface = []
+    facet_to_cell = mesh.topology.connectivity(fdim, tdim)
+    num_cells = mesh.topology.index_map(tdim).size_local
+
+    # Find top and bottom interface facets
+    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim, range(num_cells))
+    top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
+    for facet in i_facets:
+        i_cells = facet_to_cell.links(facet)
+        assert(len(i_cells == 1))
+        i_cell = i_cells[0]
+        if top_cube(cell_midpoints[i_cell]):
+            top_interface.append(facet)
+        else:
+            bottom_interface.append(facet)
+
+    # Create cell tags
+    num_cells = mesh.topology.index_map(tdim).size_local
+    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim, range(num_cells))
+    top_cube_marker = 2
+    indices = []
+    values = []
+    for cell_index in range(num_cells):
+        if top_cube(cell_midpoints[cell_index]):
+            indices.append(cell_index)
+            values.append(top_cube_marker)
+    ct = dolfinx.mesh.MeshTags(mesh, tdim, np.array(indices, dtype=np.intc), np.array(values, dtype=np.intc))
+
+    # Create meshtags for facet data
+    markers = {3: top_facets, 4: bottom_interface, 9: top_interface,
+               5: bottom_facets}  # , 6: left_facets, 7: right_facets}
+    indices = np.array([], dtype=np.intc)
+    values = np.array([], dtype=np.intc)
+    for key in markers.keys():
+        indices = np.append(indices, markers[key])
+        values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
+    sorted_indices = np.argsort(indices)
+    mt = dolfinx.mesh.MeshTags(mesh, fdim, indices[sorted_indices], values[sorted_indices])
+    mt.name = "facet_tags"
+    fname = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(ext, theta)
+
+    with dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w") as o_f:
+        o_f.write_mesh(mesh)
+        o_f.write_meshtags(ct)
+        o_f.write_meshtags(mt)
     timer.stop()
 
 
-def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
+def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     if ct == dolfinx.cpp.mesh.CellType.hexahedron:
         celltype = "hexahedron"
     else:
@@ -172,7 +182,7 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     dolfinx_mpc.utils.log_info("Run theta:{0:.2f}, Cell: {1:s}, Noslip: {2:b}".format(theta, celltype, noslip))
 
     # Read in mesh
-    mesh_3D_dolfin(theta, ct, celltype, res)
+    mesh_3D_dolfin(theta=theta, ct=ct, ext=celltype, num_refinements=num_refinements, N0=N0)
     comm.barrier()
     with dolfinx.io.XDMFFile(comm, "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta), "r") as xdmf:
         mesh = xdmf.read_mesh(name="mesh")
@@ -304,15 +314,15 @@ def demo_stacked_cubes(theta, ct, res, noslip, timings=False):
     it = solver.getIterationNumber()
 
     # Write solution to file
-    # dolfinx_mpc.utils.log_info("Move to function")
-    # u_h = dolfinx.Function(mpc.function_space())
-    # u_h.vector.setArray(uh.array)
-    # u_h.name = "u"
-    # dolfinx_mpc.utils.log_info("IO")
+    dolfinx_mpc.utils.log_info("Move to function")
+    u_h = dolfinx.Function(mpc.function_space())
+    u_h.vector.setArray(uh.array)
+    u_h.name = "u"
+    dolfinx_mpc.utils.log_info("IO")
 
-    # with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
-    #     outfile.write_mesh(mesh)
-    #     outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
+    with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
+        outfile.write_mesh(mesh)
+        outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
     # Write performance data to file
     dolfinx_mpc.utils.log_info("Timings")
     if timings:
@@ -344,8 +354,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--theta", default=np.pi / 3, type=np.float64,
                         dest="theta", help="Rotation angle around axis [1, 1, 0]")
-    parser.add_argument("--res", default=0.1, type=np.float64,
-                        dest="res", help="Mesh resolution")
+    parser.add_argument("--ref", default=0, type=np.int32,
+                        dest="ref", help="Numer of mesh refinements")
+    parser.add_argument("--N0", default=3, type=np.int32,
+                        dest="N0", help="Initial mesh resolution")
+
     hex = parser.add_mutually_exclusive_group(required=False)
     hex.add_argument('--hex', dest='hex', action='store_true', help="Use hexahedron mesh", default=False)
     slip = parser.add_mutually_exclusive_group(required=False)
@@ -356,11 +369,12 @@ if __name__ == "__main__":
     noslip = args.noslip
     theta = args.theta
     hex = args.hex
-    res = args.res
+    ref = args.ref
+    N0 = args.N0
     ct = dolfinx.cpp.mesh.CellType.hexahedron if hex else dolfinx.cpp.mesh.CellType.tetrahedron
 
     # Create cache
-    demo_stacked_cubes(theta=theta, ct=ct, res=0.5, noslip=noslip, timings=False)
+    demo_stacked_cubes(theta=theta, ct=ct, num_refinements=0, N0=3, noslip=noslip, timings=False)
 
     # Run benchmark
-    demo_stacked_cubes(theta=theta, ct=ct, res=res, noslip=noslip, timings=True)
+    demo_stacked_cubes(theta=theta, ct=ct, num_refinements=ref, N0=N0, noslip=noslip, timings=True)
