@@ -98,7 +98,7 @@ nightly-complex:
     - cmake -G Ninja ../cpp
     - ninja ${MAKEFLAGS} install
     - cd ../python
-    - source /usr/local/share/dolfinx/dolfinx.conf
+    - source /usr/local/lib/dolfinx/dolfinx.conf
     - pip3 install .
     - cd ../../
     - mkdir -p build
@@ -173,7 +173,7 @@ nightly-real:
     - cmake -G Ninja ../cpp
     - ninja ${MAKEFLAGS} install
     - cd ../python
-    - source /usr/local/share/dolfinx/dolfinx.conf
+    - source /usr/local/lib/dolfinx/dolfinx.conf
     - pip3 install .
     - cd ../../
     - mkdir -p build
