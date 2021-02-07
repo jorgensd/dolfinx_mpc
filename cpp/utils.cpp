@@ -176,12 +176,13 @@ std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
   return V->dofmap()->index_map->compute_shared_indices();
 };
 //-----------------------------------------------------------------------------
-void dolfinx_mpc::add_pattern_diagonal(
-    dolfinx::la::SparsityPattern& pattern,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks)
+void dolfinx_mpc::add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
+                                       tcb::span<const std::int32_t> blocks)
 {
-  for (std::int32_t i = 0; i < blocks.rows(); ++i)
-    pattern.insert(blocks.row(i), blocks.row(i));
+
+  for (std::int32_t i = 0; i < blocks.size(); ++i)
+    pattern.insert(tcb::span(blocks.data() + i, 1),
+                   tcb::span(blocks.data() + i, 1));
 }
 //-----------------------------------------------------------------------------
 dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
@@ -325,7 +326,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 std::map<std::int32_t, std::vector<std::int32_t>>
 dolfinx_mpc::create_dof_to_facet_map(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> facets)
+    const tcb::span<const std::int32_t>& facets)
 {
 
   const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
@@ -368,7 +369,7 @@ dolfinx_mpc::create_dof_to_facet_map(
 //-----------------------------------------------------------------------------
 Eigen::Vector3d dolfinx_mpc::create_average_normal(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dof,
-    std::int32_t dim, Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities)
+    std::int32_t dim, const tcb::span<const std::int32_t>& entities)
 {
   assert(entities.size() > 0);
   auto normals = dolfinx::mesh::cell_normals(*V->mesh(), dim, entities);
@@ -385,8 +386,8 @@ Eigen::Vector3d dolfinx_mpc::create_average_normal(
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::create_normal_approximation(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities,
-    Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector)
+    const tcb::span<const std::int32_t>& entities,
+    tcb::span<PetscScalar> vector)
 {
   auto x = V->tabulate_dof_coordinates();
   const std::int32_t tdim = V->mesh()->topology().dim();
@@ -396,10 +397,9 @@ void dolfinx_mpc::create_normal_approximation(
       = create_dof_to_facet_map(V, entities);
   for (auto const& pair : facets_to_dofs)
   {
-    Eigen::Map<const Eigen::Array<std::int32_t, Eigen::Dynamic, 1>> facets(
-        pair.second.data(), pair.second.size());
-    Eigen::Vector3d normal
-        = create_average_normal(V, pair.first, tdim - 1, facets);
+    Eigen::Vector3d normal = create_average_normal(
+        V, pair.first, tdim - 1,
+        tcb::span(pair.second.data(), pair.second.size()));
     const std::div_t div = std::div(pair.first, block_size);
     const int& block = div.rem;
     vector[pair.first] = normal[block];

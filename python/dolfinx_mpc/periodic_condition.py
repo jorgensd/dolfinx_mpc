@@ -19,12 +19,11 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     for bc in bcs:
         bc_indices, _ = bc.dof_indices()
         bc_dofs.extend(bc_indices)
-
-    slave_blocks = np.array(slave_blocks, dtype=np.int32)
     slave_blocks = slave_blocks[np.isin(slave_blocks, bc_dofs, invert=True)]
     num_local_blocks = len(slave_blocks[slave_blocks < size_local])
 
     # Compute coordinates where each slave has to evaluate its masters
+    # FIXME: could be reduced to the set of boundary entities
     tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim, padding=1e-15)
     global_tree = tree.compute_global_tree(comm)
     cell_map = V.mesh.topology.index_map(tdim)
@@ -41,13 +40,13 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
             slave_dof = slave_block * bs + block_idx
             procs = [0]
             if comm.size > 1:
-                procs = np.array(dolfinx.geometry.compute_collisions_point(global_tree, master_coordinate))
+                procs = dolfinx.geometry.compute_collisions_point(global_tree, master_coordinate)
+
             # Check if masters can be local
             search_globally = True
             masters_, coeffs_, owners_ = [], [], []
             if comm.rank in procs:
-                possible_cells = np.array(dolfinx.geometry.compute_collisions_point(
-                    tree, master_coordinate), dtype=np.int32)
+                possible_cells = dolfinx.geometry.compute_collisions_point(tree, master_coordinate)
                 if len(possible_cells) > 0:
                     glob_cells = cell_map.local_to_global(possible_cells)
                     is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
@@ -101,8 +100,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
                     block_idx = slave_dof % bs
                     coordinate = in_data[slave_dof]
                     m_, c_, o_ = [], [], []
-                    possible_cells = np.array(dolfinx.geometry.compute_collisions_point(
-                        tree, coordinate), dtype=np.int32)
+                    possible_cells = dolfinx.geometry.compute_collisions_point(tree, coordinate)
                     if len(possible_cells) > 0:
                         glob_cells = cell_map.local_to_global(possible_cells)
                         is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
@@ -139,7 +137,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     # Get the shared indices per block and send all dofs
     send_ghost_masters = {}
     shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
-    shared_blocks = np.array(list(shared_indices.keys()))
+    shared_blocks = np.fromiter(shared_indices.keys(), dtype=np.int32)
     local_shared_blocks = shared_blocks[shared_blocks < size_local]
     del shared_blocks
     for (i, block) in enumerate(slave_blocks[:num_local_blocks]):

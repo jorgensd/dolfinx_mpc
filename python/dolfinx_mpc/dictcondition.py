@@ -45,14 +45,17 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
     non_local_entities = {}
     slaves_local = {}
     slaves_ghost = {}
+    slave_point_nd = np.zeros((3, 1), dtype=dfloat)
     for i, slave_point in enumerate(slave_master_dict.keys()):
         num_masters = len(list(slave_master_dict[slave_point].keys()))
         # Status for current slave, -1 if not on proc, 0 if ghost, 1 if owned
         slave_status = -1
         # Wrap slave point as numpy array
-        slave_point_nd = np.zeros((3, 1), dtype=dfloat)
-        for j, coord in enumerate(np.frombuffer(slave_point, dtype=dfloat)):
+        sp = np.frombuffer(slave_point, dtype=dfloat)
+        for j, coord in enumerate(sp):
             slave_point_nd[j] = coord
+        slave_point_nd[len(sp):] = 0
+
         if subspace_slave is None:
             slave_dofs = fem.locate_dofs_geometrical(V, close_to(slave_point_nd))
         else:

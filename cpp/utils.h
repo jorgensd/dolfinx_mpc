@@ -43,7 +43,7 @@ compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 /// @param[in] pattern The sparsity pattern
 /// @param[in] blocks The blocks that require diagonal addition
 void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
-                          Eigen::Array<std::int32_t, Eigen::Dynamic, 1> blocks);
+                          tcb::span<const std::int32_t> blocks);
 
 dolfinx::la::PETScMatrix
 create_matrix(const dolfinx::fem::Form<PetscScalar>& a,
@@ -73,19 +73,18 @@ MPI_Comm create_owner_to_ghost_comm(
 /// connecting facets
 std::map<std::int32_t, std::vector<std::int32_t>>
 create_dof_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-                        Eigen::Array<std::int32_t, Eigen::Dynamic, 1> facets);
+                        const tcb::span<const std::int32_t>& facets);
 
 /// For a dof, create an average normal over the topological entities it is
 /// connected to
 Eigen::Vector3d
 create_average_normal(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
                       std::int32_t dof, std::int32_t dim,
-                      Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities);
+                      const tcb::span<const std::int32_t>& entities);
 
 /// Creates a normal approximation for the dofs in the closure of the attached
 /// facets, where the normal is an average if a dof belongs to multiple facets
-void create_normal_approximation(
-    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-    Eigen::Array<std::int32_t, Eigen::Dynamic, 1> entities,
-    Eigen::Ref<Eigen::Matrix<PetscScalar, Eigen::Dynamic, 1>> vector);
+void create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
+                                 const tcb::span<const std::int32_t>& entities,
+                                 tcb::span<PetscScalar> vector);
 } // namespace dolfinx_mpc
