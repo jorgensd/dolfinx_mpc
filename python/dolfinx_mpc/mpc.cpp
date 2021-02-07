@@ -34,7 +34,12 @@ void mpc(py::module& m)
 
   m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices);
-  m.def("add_pattern_diagonal", &dolfinx_mpc::add_pattern_diagonal);
+  m.def("add_pattern_diagonal",
+        [](dolfinx::la::SparsityPattern& pattern,
+           const py::array_t<std::int32_t, py::array::c_style>& blocks) {
+          dolfinx_mpc::add_pattern_diagonal(
+              pattern, tcb::span(blocks.data(), blocks.size()));
+        });
 
   // dolfinx_mpc::MultiPointConstraint
   py::class_<dolfinx_mpc::MultiPointConstraint,
@@ -115,6 +120,12 @@ void mpc(py::module& m)
   m.def("create_dof_to_facet_map", &dolfinx_mpc::create_dof_to_facet_map);
   m.def("create_average_normal", &dolfinx_mpc::create_average_normal);
   m.def("create_normal_approximation",
-        &dolfinx_mpc::create_normal_approximation);
+        [](std::shared_ptr<dolfinx::fem::FunctionSpace> V,
+           const py::array_t<std::int32_t, py::array::c_style>& entities,
+           py::array_t<PetscScalar, py::array::c_style> vector) {
+          return dolfinx_mpc::create_normal_approximation(
+              V, tcb::span(entities.data(), entities.size()),
+              tcb::span(vector.mutable_data(), vector.size()));
+        });
 }
 } // namespace dolfinx_mpc_wrappers
