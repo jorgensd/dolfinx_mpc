@@ -13,7 +13,6 @@ def create_slip_condition(V, normal, n_to_W, meshtag_info, bcs=[]):
     comm = mesh.mpi_comm()
 
     meshtag, marker = meshtag_info
-    print(type(normal.x.array))
     n_vec = np.array(normal.x.array, dtype=type(normal.x.array[0]))
 
     # Info from parent space
