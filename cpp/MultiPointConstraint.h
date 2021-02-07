@@ -67,9 +67,9 @@ public:
   }
 
   /// Return map from slave to coefficients
-  const std::vector<PetscScalar>& coefficients() const
+  const tcb::span<PetscScalar> coefficients() const
   {
-    return _coeff_map->array();
+    return tcb::make_span(_coeff_map->array());
   }
 
   /// Return map from slave to coefficients

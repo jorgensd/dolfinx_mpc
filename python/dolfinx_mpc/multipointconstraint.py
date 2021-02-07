@@ -36,22 +36,22 @@ class MultiPointConstraint():
         self.V = V
         self.finalized = False
 
-    def add_constraint(self, V: dolfinx.FunctionSpace, slaves: tuple([numpy.ndarray, numpy.ndarray]),
-                       masters: tuple([numpy.ndarray, numpy.ndarray]), coeffs: tuple([numpy.ndarray, numpy.ndarray]),
-                       owners: tuple([numpy.ndarray, numpy.ndarray]), offsets: tuple([numpy.ndarray, numpy.ndarray])):
+    def add_constraint(self, V: dolfinx.FunctionSpace, slaves: tuple([list, list]),
+                       masters: tuple([list, list]), coeffs: tuple([list, list]),
+                       owners: tuple([list, list]), offsets: tuple([list, list])):
         """
         Add new constraint given by numpy arrays.
         Input:
             V: The function space for the constraint
-            slaves: Tuple of numpy arrays. First tuple contains the local index of slaves on this process.
+            slaves: Tuple of arrays. First tuple contains the local index of slaves on this process.
                     The second tuple contains the local index of ghosted slaves on this process.
-            masters: Tuple of numpy arrays. First tuple contains the local index of masters on this process.
+            masters: Tuple of arrays. First tuple contains the local index of masters on this process.
                     The second tuple contains the local index of ghosted masters on this process.
                     As a single slave can have multiple master indices, they should be sorted such
                     that they follow the offset tuples.
-            coeffs: Tuple of numpy arrays. The coefficients for each master.
-            owners: Tuple of numpy arrays containing the index for the process each master is owned by.
-            offsets: Tuple of numpy arrays indicating the location in the masters array for the i-th slave
+            coeffs: Tuple of arrays. The coefficients for each master.
+            owners: Tuple of arrays containing the index for the process each master is owned by.
+            offsets: Tuple of arrays indicating the location in the masters array for the i-th slave
                     in the slaves arrays. I.e.
                     local_masters_of_owned_slave[i] = masters[0][offsets[0][i]:offsets[0][i+1]]
                     ghost_masters_of_ghost_slave[i] = masters[1][offsets[1][i]:offsets[1][i+1]]

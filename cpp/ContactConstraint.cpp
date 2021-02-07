@@ -45,10 +45,6 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
     if (meshtags.values()[i] == slave_marker)
       slave_facets.push_back(meshtags.indices()[i]);
 
-  // Extract dofs on slave facets per dimension
-  std::vector<Eigen::Array<std::int32_t, Eigen::Dynamic, Eigen::Dynamic>>
-      dofs_on_slave_facet(tdim);
-
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyz
   std::pair<std::shared_ptr<dolfinx::fem::FunctionSpace>,
@@ -416,10 +412,11 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
     for (std::int32_t j = disp[i]; j < disp[i + 1]; ++j)
     {
       // Extract slave coordinates and normals from incoming data
+      // FIXME: Remove once Garth has removed eigen from public interface
       Eigen::Map<const Eigen::Array<double, 1, 3>> slave_coord(
           coord_recv.data() + 3 * j, 3);
-      Eigen::Map<const Eigen::Array<PetscScalar, 3, 1>> slave_normal(
-          normal_recv.data() + 3 * j, 3);
+      tcb::span<const PetscScalar> slave_normal
+          = tcb::span(normal_recv.data() + 3 * j, 3);
 
       // Find index of slave coord by using block size remainder
       std::int32_t local_index = slaves_recv[j] % block_size;
@@ -913,10 +910,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     if (meshtags.values()[i] == slave_marker)
       slave_facets.push_back(meshtags.indices()[i]);
 
-  // Extract dofs on slave facets per dimension
-  std::vector<Eigen::Array<std::int32_t, Eigen::Dynamic, Eigen::Dynamic>>
-      dofs_on_slave_facet(tdim);
-
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyz
   std::pair<std::shared_ptr<dolfinx::fem::FunctionSpace>,
@@ -928,6 +921,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
           {*V->sub({0}).get(), *V0.get()}, fdim, tcb::make_span(slave_facets));
   for (std::size_t i = 0; i < slave_blocks[0].size(); ++i)
     slave_blocks[0][i] /= block_size;
+
   // Make maps for local data of slave and master coeffs
   std::vector<std::int32_t> local_block;
   std::vector<std::vector<std::int32_t>> local_slaves(tdim);
@@ -1219,6 +1213,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     for (std::int32_t j = disp[i]; j < disp[i + 1]; ++j)
     {
       // Extract slave coordinates and normals from incoming data
+      // FIXME: Remove once Garth has removed eigen from public interface
       Eigen::Map<const Eigen::Array<double, 1, 3>> slave_coord(
           coord_recv.data() + 3 * j, 3);
 

@@ -30,7 +30,7 @@ def assemble_vector(form, constraint,
     block_size = V.dofmap.index_map_bs
     # Data from multipointconstraint
     slave_cells = constraint.slave_cells()
-    coefficients = numpy.array(constraint.coefficients(), dtype=PETSc.ScalarType)
+    coefficients = constraint.coefficients()
     masters = constraint.masters_local()
     slave_cell_to_dofs = constraint.cell_to_slaves()
     cell_to_slave = slave_cell_to_dofs.array

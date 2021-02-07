@@ -57,7 +57,10 @@ void mpc(py::module& m)
       .def("add_masters", &dolfinx_mpc::MultiPointConstraint::add_masters)
       .def("cell_to_slaves", &dolfinx_mpc::MultiPointConstraint::cell_to_slaves)
       .def("masters_local", &dolfinx_mpc::MultiPointConstraint::masters_local)
-      .def("coefficients", &dolfinx_mpc::MultiPointConstraint::coefficients)
+      .def("coefficients",
+           [](dolfinx_mpc::MultiPointConstraint& self) {
+             return as_pyarray(self.coefficients());
+           })
       .def("create_sparsity_pattern",
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
       .def_property_readonly(
