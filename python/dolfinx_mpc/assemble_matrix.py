@@ -97,7 +97,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
 
     # Unravel data from MPC
     slave_cells = constraint.slave_cells()
-    coefficients = numpy.array(constraint.coefficients(), dtype=PETSc.ScalarType)
+    coefficients = constraint.coefficients()
     masters = constraint.masters_local()
     slave_cell_to_dofs = constraint.cell_to_slaves()
     cell_to_slave = slave_cell_to_dofs.array
@@ -129,7 +129,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
 
     # Pack constants and coefficients
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = numpy.array(dolfinx.cpp.fem.pack_constants(cpp_form), dtype=PETSc.ScalarType)
+    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     # Create sparsity pattern
     if A is None:
@@ -158,10 +158,10 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     if num_cell_integrals > 0:
         timer = Timer("~MPC: Assemble matrix (cells)")
         V.mesh.topology.create_entity_permutations()
-        permutation_info = numpy.array(V.mesh.topology.get_cell_permutation_info(), dtype=numpy.uint32)
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
         for subdomain_id in subdomain_ids:
             cell_kernel = ufc_form.create_cell_integral(subdomain_id).tabulate_tensor
-            active_cells = numpy.array(cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id), dtype=numpy.int64)
+            active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id)
             slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
             assemble_cells(A.handle, cell_kernel, active_cells[slave_cell_indices], (pos, x_dofs, x), gdim, form_coeffs,
                            form_consts, permutation_info, dofs, block_size, num_dofs_per_element, mpc_data, bc_array)
@@ -176,12 +176,11 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
         timer = Timer("~MPC: Assemble matrix (ext. facet kernel)")
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
-        permutation_info = numpy.array(V.mesh.topology.get_cell_permutation_info(), dtype=numpy.uint32)
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         perm = (permutation_info, facet_permutation_info)
         for subdomain_id in subdomain_ids:
-            active_facets = numpy.array(cpp_form.domains(
-                dolfinx.fem.IntegralType.exterior_facet, subdomain_id), dtype=numpy.int64)
+            active_facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, subdomain_id)
             facet_info = pack_facet_info(V.mesh, active_facets)
             facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))

@@ -49,7 +49,7 @@ def assemble_vector(form, constraint,
     # Pack constants and coefficients
     cpp_form = dolfinx.Form(form)._cpp_object
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = numpy.array(dolfinx.cpp.fem.pack_constants(cpp_form), dtype=PETSc.ScalarType)
+    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
     gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
@@ -62,11 +62,11 @@ def assemble_vector(form, constraint,
     num_cell_integrals = len(subdomain_ids)
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
-        permutation_info = numpy.array(V.mesh.topology.get_cell_permutation_info(), dtype=numpy.uint32)
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
         timer = Timer("~MPC: Assemble matrix (cells)")
         for subdomain_id in subdomain_ids:
             cell_kernel = ufc_form.create_cell_integral(subdomain_id).tabulate_tensor
-            active_cells = numpy.array(cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id), dtype=numpy.int64)
+            active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id)
             slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[slave_cell_indices],
@@ -80,12 +80,11 @@ def assemble_vector(form, constraint,
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
-        permutation_info = numpy.array(V.mesh.topology.get_cell_permutation_info(), dtype=numpy.uint32)
-        facet_permutation_info = numpy.array(V.mesh.topology.get_facet_permutations(), dtype=numpy.uint8)
+        permutation_info = V.mesh.topology.get_cell_permutation_info()
+        facet_permutation_info = V.mesh.topology.get_facet_permutations()
         timer = Timer("MPC Assemble vector (exterior facets)")
         for subdomain_id in subdomain_ids:
-            active_facets = numpy.array(cpp_form.domains(
-                dolfinx.fem.IntegralType.exterior_facet, subdomain_id), dtype=numpy.int64)
+            active_facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, subdomain_id)
             facet_info = pack_facet_info(V.mesh, active_facets)
             facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))

@@ -35,16 +35,10 @@ public:
                        std::int32_t num_local_slaves);
 
   /// Return the array of master dofs and corresponding coefficients
-  tcb::span<const std::int32_t> slaves() const
-  {
-    return tcb::make_span(_slaves);
-  };
+  const std::vector<std::int32_t>& slaves() const { return _slaves; };
 
   /// Return point to array of all unique local cells containing a slave
-  tcb::span<const std::int32_t> slave_cells() const
-  {
-    return tcb::make_span(_slave_cells);
-  };
+  const std::vector<std::int32_t>& slave_cells() const { return _slave_cells; };
 
   /// Return map from slave to cells containing that slave
   const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -67,9 +61,9 @@ public:
   }
 
   /// Return map from slave to coefficients
-  const tcb::span<PetscScalar> coefficients() const
+  const std::vector<PetscScalar>& coefficients() const
   {
-    return tcb::make_span(_coeff_map->array());
+    return _coeff_map->array();
   }
 
   /// Return map from slave to coefficients
