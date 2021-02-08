@@ -30,10 +30,8 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 /// @param[in] x       The physical coordinate
 /// @param[in] index   The cell_index
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-get_basis_functions(
-    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
-    const int index);
+get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+                    const std::array<double, 3>& x, const int index);
 
 /// Given a function space, compute its shared entities
 std::map<std::int32_t, std::set<int>>
