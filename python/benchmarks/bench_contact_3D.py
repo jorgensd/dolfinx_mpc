@@ -22,8 +22,7 @@ from petsc4py import PETSc
 comm = MPI.COMM_WORLD
 
 
-def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
-                   ext="tetrahedron", num_refinements=0, N0=5):
+def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron, ext="tetrahedron", num_refinements=0, N0=5):
     timer = dolfinx.common.Timer("Create mesh")
 
     def find_plane_function(p0, p1, p2):
@@ -36,8 +35,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
 
         n = np.cross(v1, v2)
         D = -(n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2])
-        return lambda x: np.isclose(0,
-                                    np.dot(n, x) + D)
+        return lambda x: np.isclose(0, np.dot(n, x) + D)
 
     def over_plane(p0, p1, p2):
         """
@@ -62,8 +60,8 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
 
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
-        cells0 = dolfinx.cpp.mesh.entities_to_geometry(mesh0, tdim0,
-                                                       np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+        cells0 = dolfinx.cpp.mesh.entities_to_geometry(
+            mesh0, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
         cells1 = dolfinx.cpp.mesh.entities_to_geometry(mesh1, tdim1,
@@ -94,17 +92,11 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
     tdim = mesh.topology.dim
     fdim = tdim - 1
     # Find information about facets to be used in MeshTags
-
-    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
-                                               [0, 1, 0], [1, 1, 0]]).T)
-    bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1],
-                                 bottom_points[:, 2])
-    bottom_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, fdim, bottom)
-    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
-                                            [0, 1, 2], [1, 1, 2]]).T)
-    top = find_plane_function(top_points[:, 0], top_points[:, 1],
-                              top_points[:, 2])
+    bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]).T)
+    bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
+    bottom_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, bottom)
+    top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2], [0, 1, 2], [1, 1, 2]]).T)
+    top = find_plane_function(top_points[:, 0], top_points[:, 1], top_points[:, 2])
     top_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, top)
 
     # left_side = find_line_function(top_points[:, 0], top_points[:, 3])
@@ -114,10 +106,9 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
     # right_side = find_line_function(top_points[:, 1], top_points[:, 2])
     # right_facets = dolfinx.mesh.locate_entities_boundary(
     #     mesh, fdim, right_side)
-    # Determine interface facets
-    if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
-                                           [0, 1, 1], [1, 1, 1]]).T)
 
+    # Determine interface facets
+    if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]).T)
     interface = find_plane_function(if_points[:, 0], if_points[:, 1], if_points[:, 2])
     i_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, interface)
     mesh.topology.create_connectivity(fdim, tdim)
@@ -161,7 +152,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
     sorted_indices = np.argsort(indices)
     mt = dolfinx.mesh.MeshTags(mesh, fdim, indices[sorted_indices], values[sorted_indices])
     mt.name = "facet_tags"
-    fname = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(ext, theta)
+    fname = f"meshes/mesh_{ext}_{theta:.2f}.xdmf"
 
     with dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w") as o_f:
         o_f.write_mesh(mesh)
@@ -171,27 +162,21 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
 
 
 def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
-    if ct == dolfinx.cpp.mesh.CellType.hexahedron:
-        celltype = "hexahedron"
-    else:
-        celltype = "tetrahedron"
-    if noslip:
-        type_ext = "no_slip"
-    else:
-        type_ext = "slip"
-    dolfinx_mpc.utils.log_info("Run theta:{0:.2f}, Cell: {1:s}, Noslip: {2:b}".format(theta, celltype, noslip))
+    celltype = "hexahedron" if ct == dolfinx.cpp.mesh.CellType.hexahedron else "tetrahedron"
+    type_ext = "no_slip" if noslip else "slip"
+    dolfinx_mpc.utils.log_info(f"Run theta: {theta:.2f}, Cell: {celltype:s}, Noslip: {noslip:b}")
 
     # Read in mesh
     mesh_3D_dolfin(theta=theta, ct=ct, ext=celltype, num_refinements=num_refinements, N0=N0)
     comm.barrier()
-    with dolfinx.io.XDMFFile(comm, "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta), "r") as xdmf:
+    with dolfinx.io.XDMFFile(comm, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
         mesh = xdmf.read_mesh(name="mesh")
         tdim = mesh.topology.dim
         fdim = tdim - 1
         mesh.topology.create_connectivity(tdim, tdim)
         mesh.topology.create_connectivity(fdim, tdim)
         mt = xdmf.read_meshtags(mesh, "facet_tags")
-    mesh.name = "mesh_{0:s}_{1:.2f}{2:s}".format(celltype, theta, type_ext)
+    mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext:s}"
 
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
@@ -209,8 +194,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     g_vec = [0, 0, -4.25e-1]
     if not noslip:
         # Helper for orienting traction
-        r_matrix = dolfinx_mpc.utils.rotation_matrix(
-            [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+        r_matrix = dolfinx_mpc.utils.rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
@@ -252,28 +236,25 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if noslip:
-        with dolfinx.common.Timer("{0:d}: Contact-constraint".format(num_dofs)):
+        with dolfinx.common.Timer(f"{num_dofs}: Contact-constraint"):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt, 4, 9)
     else:
-        with dolfinx.common.Timer("{0:d}: FacetNormal".format(num_dofs)):
+        with dolfinx.common.Timer(f"{num_dofs}: FacetNormal"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
-        with dolfinx.common.Timer("{0:d}: Contact-constraint".format(num_dofs)):
+        with dolfinx.common.Timer(f"{num_dofs}: Contact-constraint"):
             mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
 
-    with dolfinx.common.Timer("{0:d}: MPC-init".format(num_dofs)):
+    with dolfinx.common.Timer(f"{num_dofs}: MPC-init"):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
-    dolfinx_mpc.utils.log_info(f"Num dofs: {V.dofmap.index_map.size_global*V.dofmap.index_map_bs}")
+    dolfinx_mpc.utils.log_info(f"Num dofs: {num_dofs}")
 
-    # with dolfinx.common.Timer("~{0:d}:  Assemble matrix ({0:d})".format(num_dofs))):
-    #     A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
-    # MPI.COMM_WORLD.barrier()
     dolfinx_mpc.utils.log_info("Assemble matrix")
-    with dolfinx.common.Timer("{0:d}: Assemble-matrix".format(num_dofs)):
+    with dolfinx.common.Timer(f"{num_dofs}: Assemble-matrix"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     dolfinx_mpc.utils.log_info("Assemble vector")
-    with dolfinx.common.Timer("{0:d}: Assemble-vector".format(num_dofs)):
+    with dolfinx.common.Timer(f"{num_dofs}: Assemble-vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
         fem.apply_lifting(b, [a], [bcs])
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
@@ -304,43 +285,40 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     uh = b.copy()
     uh.set(0)
     dolfinx_mpc.utils.log_info("Solve")
-    with dolfinx.common.Timer("{0:d}: Solve".format(num_dofs)):
+    with dolfinx.common.Timer(f"{num_dofs}: Solve"):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     dolfinx_mpc.utils.log_info("Backsub")
-    with dolfinx.common.Timer("{0:d}: Backsubstitution".format(num_dofs)):
+    with dolfinx.common.Timer(f"{num_dofs}: Backsubstitution"):
         mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
 
     # Write solution to file
-    dolfinx_mpc.utils.log_info("Move to function")
     u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
     u_h.name = "u"
-    dolfinx_mpc.utils.log_info("IO")
-
-    with dolfinx.io.XDMFFile(comm, "results/bench_contact_{0:d}.xdmf".format(num_dofs), "w") as outfile:
+    with dolfinx.io.XDMFFile(comm, f"results/bench_contact_{num_dofs}.xdmf", "w") as outfile:
         outfile.write_mesh(mesh)
-        outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
+        outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
     # Write performance data to file
-    dolfinx_mpc.utils.log_info("Timings")
     if timings:
+        dolfinx_mpc.utils.log_info("Timings")
         num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)
         results_file = None
         num_procs = comm.size
         if comm.rank == 0:
-            results_file = open("results_bench_{0:d}.txt".format(num_dofs), "w")
-            print("#Procs: {0:d}".format(num_procs), file=results_file)
-            print("#Dofs: {0:d}".format(num_dofs), file=results_file)
-            print("#Slaves: {0:d}".format(num_slaves), file=results_file)
-            print("#Iterations: {0:d}".format(it), file=results_file)
+            results_file = open(f"results_bench_{num_dofs}.txt", "w")
+            print(f"#Procs: {num_procs}", file=results_file)
+            print(f"#Dofs: {num_dofs}", file=results_file)
+            print(f"#Slaves: {num_slaves}", file=results_file)
+            print(f"#Iterations: {it}", file=results_file)
         operations = ["Solve", "Assemble-matrix", "MPC-init", "Contact-constraint", "FacetNormal",
                       "Assemble-vector", "Backsubstitution"]
         if comm.rank == 0:
             print("Operation  #Calls Avg Min Max", file=results_file)
         for op in operations:
-            op_timing = dolfinx.common.timing("{0:d}: ".format(num_dofs) + op)
+            op_timing = dolfinx.common.timing(f"{num_dofs}: {op}")
             num_calls = op_timing[0]
             wall_time = op_timing[1]
             avg_time = comm.allreduce(wall_time, op=MPI.SUM) / comm.size
@@ -348,6 +326,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
             max_time = comm.allreduce(wall_time, op=MPI.MAX)
             if comm.rank == 0:
                 print(op, num_calls, avg_time, min_time, max_time, file=results_file)
+        dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
 
 
 if __name__ == "__main__":

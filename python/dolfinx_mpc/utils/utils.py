@@ -331,11 +331,19 @@ def determine_closest_block(V, point):
     """
     Determine the closest dofs (in a single block) to a point and the distance
     """
+    # Create boundingboxtree of cells connected to boundary facets
     tdim = V.mesh.topology.dim
-    bb_tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim)
+    boundary_facets = np.flatnonzero(dolfinx.cpp.mesh.compute_boundary_facets(V.mesh.topology))
+    V.mesh.topology.create_connectivity(tdim - 1, tdim)
+    f_to_c = V.mesh.topology.connectivity(tdim - 1, tdim)
+    boundary_cells = []
+    for facet in boundary_facets:
+        boundary_cells.extend(f_to_c.links(facet))
     cell_imap = V.mesh.topology.index_map(tdim)
-    num_cells = cell_imap.size_local
-    midpoint_tree = dolfinx.cpp.geometry.create_midpoint_tree(V.mesh, tdim, np.arange(num_cells, dtype=np.int32))
+    boundary_cells = np.array(np.unique(boundary_cells), dtype=np.int32)
+    boundary_cells = boundary_cells[boundary_cells < cell_imap.size_local]
+    bb_tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim, boundary_cells)
+    midpoint_tree = dolfinx.cpp.geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest
     closest_midpoint_facet, R_init = dolfinx.geometry.compute_closest_entity(midpoint_tree, point, V.mesh)
@@ -398,6 +406,8 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     # Determine which processor owns the dof closest to the slave and master point
     slave_proc, slave_block = determine_closest_block(V, slave_point)
     master_proc, master_block = determine_closest_block(V, master_point)
+    is_master_proc = MPI.COMM_WORLD.rank == master_proc
+    is_slave_proc = MPI.COMM_WORLD.rank == slave_proc
 
     block_size = V.dofmap.index_map_bs
     imap = V.dofmap.index_map
@@ -412,11 +422,12 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     if vector is not None:
         zero_indices = np.argwhere(np.isclose(vector, 0)).T[0]
         slave_index = np.argmax(np.abs(vector))
-    if MPI.COMM_WORLD.rank == slave_proc:
+    if is_slave_proc:
+        assert(len(slave_block) == 1)
+        slave_block_g = imap.local_to_global(slave_block)[0]
         if vector is None:
-            local_slaves = np.array(
-                [sb * block_size + k for sb in slave_block
-                 for k in range(block_size)], dtype=np.int32)
+            local_slaves = np.arange(slave_block[0] * block_size, slave_block[0]
+                                     * block_size + block_size, dtype=np.int32)
         else:
             assert(len(vector) == block_size)
             # Check for input vector (Should be of same length as number of slaves)
@@ -426,15 +437,23 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             local_slaves = np.array([slave_block[0] * block_size + slave_index], dtype=np.int32)
             for i in range(block_size):
                 if i != slave_index and not np.isin(i, zero_indices):
-                    local_masters.append(imap.local_to_global([slave_block[0]])[9] * block_size + i)
+                    local_masters.append(slave_block_g * block_size + i)
                     local_owners.append(slave_proc)
                     local_coeffs.append(-vector[i] / vector[slave_index])
 
     global_masters = None
+    if is_master_proc:
+        assert(len(master_block) == 1)
+        master_block_g = imap.local_to_global(master_block)[0]
+        masters_as_glob = np.arange(master_block_g * block_size,
+                                    master_block_g * block_size + block_size, dtype=np.int64)
+    else:
+        masters_as_glob = np.array([], dtype=np.int64)
 
-    masters_as_glob = [imap.local_to_global([block])[0] * block_size
-                       + k for block in master_block for k in range(block_size)]
-    if MPI.COMM_WORLD.rank == slave_proc and slave_proc == master_proc:
+    ghost_processors = []
+    shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
+
+    if is_master_proc and is_slave_proc:
         # If slaves and masters are on the same processor finalize local work
         if vector is None:
             local_masters = masters_as_glob
@@ -450,37 +469,30 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             local_offsets = [0, len(local_masters)]
     else:
         # Send/Recv masters from other processor
-        if MPI.COMM_WORLD.rank == master_proc:
+        if is_master_proc:
             MPI.COMM_WORLD.send(masters_as_glob, dest=slave_proc, tag=10)
-
-        if MPI.COMM_WORLD.rank == slave_proc:
+        if is_slave_proc:
             global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
-    shared_indices = dolfinx_mpc.cpp.mpc.compute_shared_indices(V._cpp_object)
-    imap = V.dofmap.index_map
-    ghost_processors = []
-    if MPI.COMM_WORLD.rank == slave_proc and slave_proc != master_proc:
-        for i, master in enumerate(global_masters):
-            if not np.isin(i, zero_indices):
-                local_masters.append(master)
-                local_owners.append(master_proc)
-                if vector is None:
-                    local_coeffs.append(1)
-                else:
-                    local_coeffs.append(vector[i] / vector[slave_index])
-        if vector is None:
-            local_offsets = np.arange(0, len(local_slaves) + 1, dtype=np.int32)
-        else:
-            local_offsets = np.array([0, len(local_masters)], dtype=np.int32)
-        if slave_block[0] in shared_indices.keys():
-            ghost_processors = list(shared_indices[slave_block[0]])
+            for i, master in enumerate(global_masters):
+                if not np.isin(i, zero_indices):
+                    local_masters.append(master)
+                    local_owners.append(master_proc)
+                    if vector is None:
+                        local_coeffs.append(1)
+                    else:
+                        local_coeffs.append(vector[i] / vector[slave_index])
+            if vector is None:
+                local_offsets = np.arange(0, len(local_slaves) + 1, dtype=np.int32)
+            else:
+                local_offsets = np.array([0, len(local_masters)], dtype=np.int32)
+            if slave_block[0] in shared_indices.keys():
+                ghost_processors = list(shared_indices[slave_block[0]])
 
     # Broadcast processors containg slave
     ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)
-
-    if MPI.COMM_WORLD.rank == slave_proc:
+    if is_slave_proc:
         for proc in ghost_processors:
-
-            MPI.COMM_WORLD.send(imap.local_to_global([slave_block[0]])[0] * block_size + local_slaves %
+            MPI.COMM_WORLD.send(slave_block_g * block_size + local_slaves %
                                 block_size, dest=proc, tag=20 + proc)
             MPI.COMM_WORLD.send(local_coeffs, dest=proc, tag=30 + proc)
             MPI.COMM_WORLD.send(local_owners, dest=proc, tag=40 + proc)
@@ -496,8 +508,8 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         ghost_masters = MPI.COMM_WORLD.recv(source=slave_proc, tag=50 + MPI.COMM_WORLD.rank)
         ghost_offsets = MPI.COMM_WORLD.recv(source=slave_proc, tag=60 + MPI.COMM_WORLD.rank)
 
-        ghosts = imap.ghosts
         # Unroll ghost blocks
+        ghosts = imap.ghosts
         ghost_dofs = [g * block_size + i for g in ghosts for i in range(block_size)]
 
         ghost_slaves = np.zeros(len(recv_slaves), dtype=np.int32)

@@ -35,25 +35,21 @@ comm = MPI.COMM_WORLD
 
 
 def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res=0.1):
-    dolfinx_mpc.utils.log_info("Run theta:{0:.2f}, Quad: {1:b}, Gmsh {2:b}, Res {3:.2e}"
-                               .format(theta, quad, gmsh, res))
+    dolfinx_mpc.utils.log_info(f"Run theta:{theta:.2f}, Quad: {quad}, Gmsh {gmsh}, Res {res:.2e}")
 
-    if quad:
-        celltype = "quadrilateral"
-    else:
-        celltype = "triangle"
+    celltype = "quadrilateral" if quad else "triangle"
     if gmsh:
         mesh, mt = gmsh_2D_stacked(celltype, theta)
-        mesh.name = "mesh_{0:s}_{1:.2f}_gmsh".format(celltype, theta)
+        mesh.name = f"mesh_{celltype}_{theta:.2f}_gmsh"
 
     else:
         mesh_name = "mesh"
-        filename = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta)
+        filename = f"meshes/mesh_{celltype}_{theta:.2f}.xdmf"
 
         mesh_2D_dolfin(celltype, theta)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD, filename, "r") as xdmf:
             mesh = xdmf.read_mesh(name=mesh_name)
-            mesh.name = "mesh_{0:s}_{1:.2f}".format(celltype, theta)
+            mesh.name = f"mesh_{celltype}_{theta:.2f}"
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
@@ -85,17 +81,14 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v))
-                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v)) + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
-                     subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * ufl.dx\
-        + ufl.inner(g, v) * ds
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
+    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * ufl.dx + ufl.inner(g, v) * ds
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
@@ -120,8 +113,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         vertex = dolfinx.mesh.locate_entities_boundary(mesh, 0, left_corner)
 
         tangent = dolfinx_mpc.utils.facet_normal_approximation(V, mt, 3, tangent=True)
-        mtv = dolfinx.MeshTags(mesh, 0, vertex,
-                               np.full(len(vertex), 6, dtype=np.int32))
+        mtv = dolfinx.MeshTags(mesh, 0, vertex, np.full(len(vertex), 6, dtype=np.int32))
         mpc.create_slip_constraint((mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
@@ -161,8 +153,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     uh = b.copy()
     uh.set(0)
     solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
     it = solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
@@ -170,7 +161,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     unorm = uh.norm()
     if MPI.COMM_WORLD.rank == 0:
-        print(unorm)
+        print(f"Norm of u: {unorm}")
 
     # Write solution to file
     ext = "gmsh" if gmsh else ""
@@ -180,17 +171,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
 
     outfile.write_mesh(mesh)
-    outfile.write_function(u_h, 0.0,
-                           "Xdmf/Domain/"
-                           + "Grid[@Name='{0:s}'][1]"
-                           .format(mesh.name))
+    outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     if not compare:
         return
-    dolfinx_mpc.utils.log_info(
-        "Solving reference problem with global matrix (using numpy)")
+    dolfinx_mpc.utils.log_info("Solving reference problem with global matrix (using numpy)")
     with dolfinx.common.Timer("~MPC: Reference problem"):
         # Generate reference matrices and unconstrained solution
         A_org = fem.assemble_matrix(a, bcs)
@@ -198,8 +185,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         A_org.assemble()
         L_org = fem.assemble_vector(rhs)
         fem.apply_lifting(L_org, [a], [bcs])
-        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                          mode=PETSc.ScatterMode.REVERSE)
+        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(L_org, bcs)
 
         # Create global transformation matrix
@@ -221,8 +207,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
         dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
         dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                              uh.owner_range[1]], atol=1e-7)
+        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]: uh.owner_range[1]], atol=1e-7)
 
 
 if __name__ == "__main__":
@@ -252,14 +237,10 @@ if __name__ == "__main__":
     theta = args.theta
     quad = args.quad
 
-    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                  "results/demo_contact_2D.xdmf", "w")
-    # Built in meshes aligned with coordinate system
-
+    outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_contact_2D.xdmf", "w")
     demo_stacked_cubes(outfile, theta=theta, gmsh=gmsh,
                        quad=quad, compare=compare, res=res)
 
     outfile.close()
     if timing:
-        dolfinx.common.list_timings(
-            MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+        dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

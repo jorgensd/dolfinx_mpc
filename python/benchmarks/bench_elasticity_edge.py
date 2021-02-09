@@ -29,10 +29,8 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
     N = 3
     for i in range(r_lvl):
         N *= 2
-    if tetra:
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
-    else:
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.cpp.mesh.CellType.hexahedron)
+    ct = dolfinx.cpp.mesh.CellType.tetrahedron if tetra else dolfinx.cpp.mesh.CellType.hexahedron
+    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
     # Get number of unknowns on each edge
 
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
@@ -100,7 +98,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
 
     # Setup MPC system
     if info:
-        dolfinx_mpc.utils.log_info("Run {0:1d}: Assembling matrix and vector".format(r_lvl))
+        dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Assembling matrix and vector")
     with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
@@ -143,7 +141,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
     solver.setFromOptions()
 
     if info:
-        dolfinx_mpc.utils.log_info("Run {0:1d}: Solving".format(r_lvl))
+        dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Solving")
 
     with dolfinx.common.Timer("~Elasticity: Solve problem") as timer:
         solver.setOperators(A)
@@ -170,15 +168,14 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
     if info:
-        dolfinx_mpc.utils.log_info(
-            "Lvl: {0:d}, Its: {1:d}, max Mem: {2:d}, dim(V): {3:d}".format(r_lvl, it, mem, num_dofs))
+        dolfinx_mpc.utils.log_info(f"Lvl: {r_lvl}, Its: {it}, max Mem: {mem}, dim(V): {num_dofs}")
 
     if xdmf:
         # Write solution to file
         u_h = dolfinx.Function(mpc.function_space())
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
-        fname = "results/bench_elasticity_edge_{0:d}.xdmf".format(r_lvl)
+        fname = f"results/bench_elasticity_edge_{r_lvl}.xdmf"
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)
@@ -210,8 +207,7 @@ if __name__ == "__main__":
         setattr(thismodule, key, getattr(args, key))
     N = n_ref + 1
 
-    h5f = h5py.File('bench_edge_output.hdf5', 'w',
-                    driver='mpio', comm=MPI.COMM_WORLD)
+    h5f = h5py.File('bench_edge_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     h5f.create_dataset("num_slaves", (N, MPI.COMM_WORLD.size), dtype=np.int32)
@@ -223,10 +219,7 @@ if __name__ == "__main__":
     sd.attrs["ct"] = np.string_(ct)
 
     for i in range(N):
-        if MPI.COMM_WORLD.rank == 0:
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-            dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Run {0:1d} in progress".format(i))
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+        dolfinx_mpc.utils.log_info(f"Run {i} in progress")
         bench_elasticity_edge(tetra=tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
                               degree=degree, info=info)
 

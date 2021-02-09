@@ -153,8 +153,7 @@ def generate_tet_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
-                                                    facet_data=True)
+    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
     gmsh.finalize()
     return mesh, ft
 
@@ -207,8 +206,7 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
         # Identitfy entities for each surface of top and bottom cube
 
         # Physical markers for bottom cube
-        bottom_surfaces = gmsh.model.getBoundary(volumes[bottom_index],
-                                                 recursive=False)
+        bottom_surfaces = gmsh.model.getBoundary(volumes[bottom_index], recursive=False)
         for entity in bottom_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
             if np.allclose(com, [(x1 - x0) / 2, y1, (z1 - z0) / 2]):
@@ -230,8 +228,7 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
                 entities["Bottom"]["Front"][0].append(entity[1])
                 entities["Bottom"]["Front"][1] = facet_markers[0][5]
         # Physical markers for top
-        top_surfaces = gmsh.model.getBoundary(volumes[top_index],
-                                              recursive=False)
+        top_surfaces = gmsh.model.getBoundary(volumes[top_index], recursive=False)
         for entity in top_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
             if np.allclose(com, [(x1 - x0) / 2, y1, (z2 - z1) / 2 + z1]):
@@ -260,23 +257,18 @@ def generate_hex_boxes(x0, y0, z0, x1, y1, z1, z2, res, facet_markers,
 
         for volume in volume_entities.keys():
             gmsh.model.addPhysicalGroup(
-                volume_entities[volume][0][0], [volume_entities[volume][0][1]],
-                tag=volume_entities[volume][1])
-            gmsh.model.setPhysicalName(volume_entities[volume][0][0],
-                                       volume_entities[volume][1], volume)
+                volume_entities[volume][0][0], [volume_entities[volume][0][1]], tag=volume_entities[volume][1])
+            gmsh.model.setPhysicalName(volume_entities[volume][0][0], volume_entities[volume][1], volume)
 
         for box in entities.keys():
             for surface in entities[box].keys():
-                gmsh.model.addPhysicalGroup(2, entities[box][surface][0],
-                                            tag=entities[box][surface][1])
-                gmsh.model.setPhysicalName(2, entities[box][surface][1], box
-                                           + ":" + surface)
+                gmsh.model.addPhysicalGroup(2, entities[box][surface][0], tag=entities[box][surface][1])
+                gmsh.model.setPhysicalName(2, entities[box][surface][1], box + ":" + surface)
         # Set mesh sizes on the points from the surface we are extruding
         bottom_nodes = gmsh.model.getBoundary((2, bottom), recursive=True)
         for entity in bottom_nodes:
             gmsh.model.occ.mesh.setSize(entity, res)
-        top_nodes = gmsh.model.getBoundary((2, top),
-                                           recursive=True)
+        top_nodes = gmsh.model.getBoundary((2, top), recursive=True)
         for entity in top_nodes:
             gmsh.model.occ.mesh.setSize(entity, 2 * res)
         # NOTE: Need to synchronize after setting mesh sizes
@@ -302,7 +294,6 @@ def gmsh_2D_stacked(celltype, theta, verbose=False):
 
     # Check if GMSH is initialized
     gmsh.initialize()
-
     gmsh.clear()
 
     if MPI.COMM_WORLD.rank == 0:
@@ -317,10 +308,8 @@ def gmsh_2D_stacked(celltype, theta, verbose=False):
                   gmsh.model.occ.addPoint(x0, y2, z0), gmsh.model.occ.addPoint(x1, y2, z0)]
         bottom = gmsh.model.occ.addLine(points[0], points[1])
         top = gmsh.model.occ.addLine(points[2], points[3])
-        gmsh.model.occ.extrude([(1, bottom)], 0, y1 - y0, 0,
-                               numElements=[int(1 / (res))], recombine=recombine)
-        gmsh.model.occ.extrude([(1, top)], 0, y1 - y2 - 1e-12, 0,
-                               numElements=[int(1 / (2 * res))], recombine=recombine)
+        gmsh.model.occ.extrude([(1, bottom)], 0, y1 - y0, 0, numElements=[int(1 / (res))], recombine=recombine)
+        gmsh.model.occ.extrude([(1, top)], 0, y1 - y2 - 1e-12, 0, numElements=[int(1 / (2 * res))], recombine=recombine)
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
@@ -343,8 +332,7 @@ def gmsh_2D_stacked(celltype, theta, verbose=False):
         # Bottom cube: Top, Right, Bottom, Left
         # Top cube : Top, Right, Bottom, Left
         facet_markers = [[4, 7, 5, 6], [3, 12, 9, 13]]
-        bottom_surfaces = gmsh.model.getBoundary(volumes[bottom_index],
-                                                 recursive=False)
+        bottom_surfaces = gmsh.model.getBoundary(volumes[bottom_index], recursive=False)
 
         for entity in bottom_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], abs(entity[1]))
@@ -361,8 +349,7 @@ def gmsh_2D_stacked(celltype, theta, verbose=False):
                 entities["Bottom"]["Top"][0].append(entity[1])
                 entities["Bottom"]["Top"][1] = facet_markers[0][0]
         # Physical markers for top
-        top_surfaces = gmsh.model.getBoundary(volumes[top_index],
-                                              recursive=False)
+        top_surfaces = gmsh.model.getBoundary(volumes[top_index], recursive=False)
         for entity in top_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], abs(entity[1]))
             if np.allclose(com, [(x1 - x0) / 2, y1, z0]):
@@ -385,21 +372,17 @@ def gmsh_2D_stacked(celltype, theta, verbose=False):
             gmsh.model.addPhysicalGroup(
                 volume_entities[volume][0][0], [volume_entities[volume][0][1]],
                 tag=volume_entities[volume][1])
-            gmsh.model.setPhysicalName(volume_entities[volume][0][0],
-                                       volume_entities[volume][1], volume)
+            gmsh.model.setPhysicalName(volume_entities[volume][0][0], volume_entities[volume][1], volume)
 
         for box in entities.keys():
             for surface in entities[box].keys():
-                gmsh.model.addPhysicalGroup(1, entities[box][surface][0],
-                                            tag=entities[box][surface][1])
-                gmsh.model.setPhysicalName(1, entities[box][surface][1], box
-                                           + ":" + surface)
+                gmsh.model.addPhysicalGroup(1, entities[box][surface][0], tag=entities[box][surface][1])
+                gmsh.model.setPhysicalName(1, entities[box][surface][1], box + ":" + surface)
         # Set mesh sizes on the points from the surface we are extruding
         bottom_nodes = gmsh.model.getBoundary(volumes[bottom_index], recursive=True)
         for entity in bottom_nodes:
             gmsh.model.occ.mesh.setSize(entity, res)
-        top_nodes = gmsh.model.getBoundary(volumes[top_index],
-                                           recursive=True)
+        top_nodes = gmsh.model.getBoundary(volumes[top_index], recursive=True)
         for entity in top_nodes:
             gmsh.model.occ.mesh.setSize(entity, 2 * res)
         # NOTE: Need to synchronize after setting mesh sizes
@@ -410,8 +393,7 @@ def gmsh_2D_stacked(celltype, theta, verbose=False):
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(2)
         gmsh.model.mesh.setOrder(1)
-    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
-                                                    facet_data=True, gdim=2)
+    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True, gdim=2)
     r_matrix = dolfinx_mpc.utils.rotation_matrix([0, 0, 1], theta)
 
     # NOTE: Hex mesh must be rotated after generation due to gmsh API
@@ -435,9 +417,7 @@ def mesh_2D_dolfin(celltype, theta=0):
         # Line aligned with y axis
         if np.isclose(p1[0], p0[0]):
             return lambda x: np.isclose(x[0], p0[0])
-        return lambda x: np.isclose(x[1],
-                                    p0[1] + (p1[1] - p0[1]) / (p1[0] - p0[0])
-                                    * (x[0] - p0[0]))
+        return lambda x: np.isclose(x[1], p0[1] + (p1[1] - p0[1]) / (p1[0] - p0[0]) * (x[0] - p0[0]))
 
     def over_line(p0, p1):
         """
@@ -468,12 +448,12 @@ def mesh_2D_dolfin(celltype, theta=0):
         # Transform topology info into geometry info
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
-        cells0 = dolfinx.cpp.mesh.entities_to_geometry(mesh0, tdim0,
-                                                       np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+        cells0 = dolfinx.cpp.mesh.entities_to_geometry(
+            mesh0, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
-        cells1 = dolfinx.cpp.mesh.entities_to_geometry(mesh1, tdim1,
-                                                       np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
+        cells1 = dolfinx.cpp.mesh.entities_to_geometry(
+            mesh1, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
@@ -537,16 +517,14 @@ def mesh_2D_dolfin(celltype, theta=0):
             values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
         mt = dolfinx.mesh.MeshTags(mesh, fdim, indices, values)
         mt.name = "facet_tags"
-        with dolfinx.io.XDMFFile(MPI.COMM_SELF, "meshes/mesh_{0:s}_{1:.2f}.xdmf"
-                                 .format(celltype, theta), "w") as o_f:
+        with dolfinx.io.XDMFFile(MPI.COMM_SELF, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "w") as o_f:
             o_f.write_mesh(mesh)
             o_f.write_meshtags(ct)
             o_f.write_meshtags(mt)
     MPI.COMM_WORLD.barrier()
 
 
-def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
-                   ext="tetrahedron", res=0.1):
+def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron, ext="tetrahedron", res=0.1):
     timer = dolfinx.common.Timer("~~Contact: Create mesh")
 
     def find_plane_function(p0, p1, p2):
@@ -559,8 +537,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
 
         n = np.cross(v1, v2)
         D = -(n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2])
-        return lambda x: np.isclose(0,
-                                    np.dot(n, x) + D)
+        return lambda x: np.isclose(0, np.dot(n, x) + D)
 
     def over_plane(p0, p1, p2):
         """
@@ -581,20 +558,19 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         mesh0.geometry.x[:, 2] += 1
 
         # Stack the two meshes in one mesh
-        r_matrix = dolfinx_mpc.utils.rotation_matrix(
-            [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+        r_matrix = dolfinx_mpc.utils.rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
         points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
         points = np.dot(r_matrix, points.T).T
 
         # Transform topology info into geometry info
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
-        cells0 = dolfinx.cpp.mesh.entities_to_geometry(mesh0, tdim0,
-                                                       np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+        cells0 = dolfinx.cpp.mesh.entities_to_geometry(
+            mesh0, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
-        cells1 = dolfinx.cpp.mesh.entities_to_geometry(mesh1, tdim1,
-                                                       np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
+        cells1 = dolfinx.cpp.mesh.entities_to_geometry(
+            mesh1, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
@@ -604,18 +580,13 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         tdim = mesh.topology.dim
         fdim = tdim - 1
         # Find information about facets to be used in MeshTags
-        bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0],
-                                                   [0, 1, 0], [1, 1, 0]]).T)
-        bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1],
-                                     bottom_points[:, 2])
-        bottom_facets = dolfinx.mesh.locate_entities_boundary(
-            mesh, fdim, bottom)
-        top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2],
-                                                [0, 1, 2], [1, 1, 2]]).T)
-        top = find_plane_function(top_points[:, 0], top_points[:, 1],
-                                  top_points[:, 2])
-        top_facets = dolfinx.mesh.locate_entities_boundary(
-            mesh, fdim, top)
+        bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]).T)
+        bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
+        bottom_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, bottom)
+
+        top_points = np.dot(r_matrix, np.array([[0, 0, 2], [1, 0, 2], [0, 1, 2], [1, 1, 2]]).T)
+        top = find_plane_function(top_points[:, 0], top_points[:, 1], top_points[:, 2])
+        top_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, top)
 
         # left_side = find_line_function(top_points[:, 0], top_points[:, 3])
         # left_facets = dolfinx.mesh.locate_entities_boundary(
@@ -627,19 +598,15 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
         if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
                                                [0, 1, 1], [1, 1, 1]]).T)
 
-        interface = find_plane_function(if_points[:, 0], if_points[:, 1],
-                                        if_points[:, 2])
-        i_facets = dolfinx.mesh.locate_entities_boundary(
-            mesh, fdim, interface)
+        interface = find_plane_function(if_points[:, 0], if_points[:, 1], if_points[:, 2])
+        i_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, interface)
         mesh.topology.create_connectivity(fdim, tdim)
         top_interface = []
         bottom_interface = []
         facet_to_cell = mesh.topology.connectivity(fdim, tdim)
         num_cells = mesh.topology.index_map(tdim).size_local
-        cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
-                                                    range(num_cells))
-        top_cube = over_plane(if_points[:, 0], if_points[:, 1],
-                              if_points[:, 2])
+        cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim, range(num_cells))
+        top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
         for facet in i_facets:
             i_cells = facet_to_cell.links(facet)
             assert(len(i_cells == 1))
@@ -650,8 +617,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
                 bottom_interface.append(facet)
 
         num_cells = mesh.topology.index_map(tdim).size_local
-        cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
-                                                    range(num_cells))
+        cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim, range(num_cells))
         top_cube_marker = 2
         indices = []
         values = []
@@ -659,8 +625,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
             if top_cube(cell_midpoints[cell_index]):
                 indices.append(cell_index)
                 values.append(top_cube_marker)
-        ct = dolfinx.mesh.MeshTags(mesh, tdim, np.array(
-            indices, dtype=np.intc), np.array(values, dtype=np.intc))
+        ct = dolfinx.mesh.MeshTags(mesh, tdim, np.array(indices, dtype=np.intc), np.array(values, dtype=np.intc))
 
         # Create meshtags for facet data
         markers = {3: top_facets, 4: bottom_interface, 9: top_interface,
@@ -670,12 +635,10 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron,
 
         for key in markers.keys():
             indices = np.append(indices, markers[key])
-            values = np.append(values, np.full(len(markers[key]), key,
-                                               dtype=np.intc))
-        mt = dolfinx.mesh.MeshTags(mesh, fdim,
-                                   indices, values)
+            values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
+        mt = dolfinx.mesh.MeshTags(mesh, fdim, indices, values)
         mt.name = "facet_tags"
-        fname = "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(ext, theta)
+        fname = f"meshes/mesh_{ext}_{theta:.2f}.xdmf"
 
         with dolfinx.io.XDMFFile(MPI.COMM_SELF, fname, "w") as o_f:
             o_f.write_mesh(mesh)
