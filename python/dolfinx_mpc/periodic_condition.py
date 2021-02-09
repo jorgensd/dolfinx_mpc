@@ -25,7 +25,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     # Compute coordinates where each slave has to evaluate its masters
     # FIXME: could be reduced to the set of boundary entities
     tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim, padding=1e-15)
-    global_tree = tree.compute_global_tree(comm)
+    global_tree = tree.create_global_tree(comm)
     cell_map = V.mesh.topology.index_map(tdim)
     [cmin, cmax] = cell_map.local_range
     master_coordinates = relation(x[slave_blocks].T).T
