@@ -29,10 +29,8 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     N = 3
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         mesh.topology.create_entities(mesh.topology.dim - 2)
         mesh = dolfinx.mesh.refine(mesh, redistribute=True)
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
     fdim = mesh.topology.dim - 1
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
@@ -44,8 +42,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
-    facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
-                                                   boundaries)
+    facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = dolfinx.fem.locate_dofs_topological(V, fdim, facets)
     bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
     bcs = [bc]
@@ -70,15 +67,13 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v))
-                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return 2.0 * mu * ufl.sym(ufl.grad(v)) + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(g, v) * ufl.ds(domain=mesh,
-                                   subdomain_data=mt, subdomain_id=1)
+    rhs = ufl.inner(g, v) * ufl.ds(domain=mesh, subdomain_data=mt, subdomain_id=1)
 
     # Create MPC
     with dolfinx.common.Timer("~Elasticity: Init constraint"):
@@ -95,13 +90,11 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
     # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
     # Apply boundary conditions
     dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
     # Create functionspace and function for mpc vector
@@ -131,8 +124,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     # opts["ksp_view"] = None # List progress of solver
 
     with dolfinx.common.Timer("~Elasticity: Solve problem") as timer:
-        null_space = dolfinx_mpc.utils.rigid_motions_nullspace(
-            mpc.function_space())
+        null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
         A.setNearNullSpace(null_space)
         solver.setFromOptions()
         solver.setOperators(A)
@@ -140,8 +132,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         uh = b.copy()
         uh.set(0)
         solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                       mode=PETSc.ScatterMode.FORWARD)
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
         mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
 
@@ -150,13 +141,11 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         solver.view()
 
     # Print max usage of summary
-    mem = sum(MPI.COMM_WORLD.allgather(
-        resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
+    mem = sum(MPI.COMM_WORLD.allgather(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if MPI.COMM_WORLD.rank == 0:
-        print("Rlvl {0:d}, Iterations {1:d}".format(r_lvl, it))
-        print("Rlvl {0:d}, Max usage {1:d} (kb), #dofs {2:d}".format(
-            r_lvl, mem, num_dofs))
+        print(f"Rlvl {r_lvl}, Iterations {it}")
+        print(f"Rlvl {r_lvl}, Max usage {mem} (kb), #dofs {num_dofs}")
 
     if out_hdf5 is not None:
         d_set = out_hdf5.get("its")
@@ -171,9 +160,8 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
 
-        fname = "results/bench_elasticity_{0:d}.xdmf".format(r_lvl)
-        outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                      fname, "w")
+        fname = f"results/bench_elasticity_{r_lvl}.xdmf"
+        outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
         outfile.write_mesh(mesh)
         outfile.write_function(u_h)
         outfile.close()
@@ -192,11 +180,9 @@ if __name__ == "__main__":
     parser.add_argument("-o", default='elasticity_one.hdf5', dest="hdf5",
                         help="Name of HDF5 output file")
     solver_parser = parser.add_mutually_exclusive_group(required=False)
-    solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
-                               action='store_true',
+    solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True, action='store_true',
                                help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg',
-                               action='store_false',
+    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
@@ -211,21 +197,14 @@ if __name__ == "__main__":
     h5f = h5py.File(hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
-    sd = h5f.create_dataset(
-        "solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
+    sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if boomeramg else "GAMG"
     sd.attrs["solver"] = np.string_(solver)
 
     # Loop over refinement levels
     for i in range(N):
-        if MPI.COMM_WORLD.rank == 0:
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-            dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                            "Run {0:1d} in progress".format(i))
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
-        bench_elasticity_one(r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
-                             boomeramg=boomeramg, kspview=kspview)
+        dolfinx_mpc.utils.log_info(f"Run {i} in progress")
+        bench_elasticity_one(r_lvl=i, out_hdf5=h5f, xdmf=xdmf, boomeramg=boomeramg, kspview=kspview)
         if timings and i == N - 1:
-            dolfinx.common.list_timings(
-                MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+            dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
     h5f.close()

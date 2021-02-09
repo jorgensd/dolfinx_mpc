@@ -25,20 +25,10 @@ comm = MPI.COMM_WORLD
 
 def demo_stacked_cubes(outfile, theta, gmsh=False,
                        ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True, res=0.1, noslip=False):
-    if ct == dolfinx.cpp.mesh.CellType.hexahedron:
-        celltype = "hexahedron"
-    else:
-        celltype = "tetrahedron"
-    if noslip:
-        type_ext = "no_slip"
-    else:
-        type_ext = "slip"
-    mesh_ext = "_"
-    if gmsh:
-        mesh_ext = "_gmsh_"
-    dolfinx_mpc.utils.log_info(
-        "Run theta:{0:.2f}, Cell: {1:s}, GMSH {2:b}, Noslip: {3:b}"
-        .format(theta, celltype, gmsh, noslip))
+    celltype = "hexahedron" if ct == dolfinx.cpp.mesh.CellType.hexahedron else "tetrahedron"
+    type_ext = "no_slip" if noslip else "slip"
+    mesh_ext = "_gmsh_" if gmsh else "_"
+    dolfinx_mpc.utils.log_info(f"Run theta:{theta:.2f}, Cell: {celltype}, GMSH {gmsh}, Noslip: {noslip}")
 
     # Read in mesh
     if gmsh:
@@ -50,14 +40,14 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     else:
         mesh_3D_dolfin(theta, ct, celltype, res)
         comm.barrier()
-        with dolfinx.io.XDMFFile(comm, "meshes/mesh_{0:s}_{1:.2f}.xdmf".format(celltype, theta), "r") as xdmf:
+        with dolfinx.io.XDMFFile(comm, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
             mesh = xdmf.read_mesh(name="mesh")
             tdim = mesh.topology.dim
             fdim = tdim - 1
             mesh.topology.create_connectivity(tdim, tdim)
             mesh.topology.create_connectivity(fdim, tdim)
             mt = xdmf.read_meshtags(mesh, "facet_tags")
-    mesh.name = "mesh_{0:s}_{1:.2f}{3:s}{2:s}".format(celltype, theta, type_ext, mesh_ext)
+    mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext}{mesh_ext}"
     # Create functionspaces
     V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
@@ -74,8 +64,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     g_vec = [0, 0, -4.25e-1]
     if not noslip:
         # Helper for orienting traction
-        r_matrix = dolfinx_mpc.utils.rotation_matrix(
-            [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+        r_matrix = dolfinx_mpc.utils.rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
@@ -105,24 +94,21 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v))
-                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * ufl.sym(ufl.grad(v)) + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     # NOTE: Traction deactivated until we have a way of fixing nullspace
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt,
-                     subdomain_id=3)
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
     rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx
     + ufl.inner(g, v) * ds
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     if noslip:
         with dolfinx.common.Timer("~~Contact: Create non-elastic constraint"):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
-                V._cpp_object, mt, 4, 9)
+            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt, 4, 9)
     else:
         with dolfinx.common.Timer("~Contact: Create facet normal approximation"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
@@ -130,18 +116,17 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
             xdmf.write_mesh(mesh)
             xdmf.write_function(nh)
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-                V._cpp_object, mt, 4, 9, nh._cpp_object)
+            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
     with dolfinx.common.Timer("~~Contact: Add data and finialize MPC"):
         mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
-    with dolfinx.common.Timer("~~Contact: Assemble matrix ({0:d})".format(num_dofs)):
+    with dolfinx.common.Timer(f"~~Contact: Assemble matrix ({num_dofs})"):
         # A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
-    with dolfinx.common.Timer("~~Contact: Assemble vector ({0:d})".format(num_dofs)):
+    with dolfinx.common.Timer(f"~~Contact: Assemble vector ({num_dofs})"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     fem.apply_lifting(b, [a], [bcs])
@@ -174,7 +159,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     with dolfinx.common.Timer("~~Contact: Solve"):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    with dolfinx.common.Timer("~~Contact: Backsubstit"):
+    with dolfinx.common.Timer("~~Contact: Backsubstitution"):
         mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
@@ -182,24 +167,23 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)
     if comm.rank == 0:
         num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
-        print("Number of dofs: {0:d}".format(num_dofs))
-        print("Number of slaves: {0:d}".format(num_slaves))
-        print("Number of iterations: {0:d}".format(it))
-        print("Norm of u {0:.5e}".format(unorm))
+        print(f"Number of dofs: {num_dofs}")
+        print(f"Number of slaves: {num_slaves}")
+        print(f"Number of iterations: {it}")
+        print(f"Norm of u {unorm:.5e}")
 
     # Write solution to file
     u_h = dolfinx.Function(mpc.function_space())
     u_h.vector.setArray(uh.array)
-    u_h.name = "u_{0:s}_{1:.2f}{3:s}{2:s}".format(celltype, theta, type_ext, mesh_ext)
+    u_h.name = f"u_{celltype}_{theta:.2f}{mesh_ext}{type_ext}".format(celltype, theta, type_ext, mesh_ext)
     outfile.write_mesh(mesh)
-    outfile.write_function(u_h, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
+    outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     if not compare:
         return
 
-    dolfinx_mpc.utils.log_info(
-        "Solving reference problem with global matrix (using numpy)")
+    dolfinx_mpc.utils.log_info("Solving reference problem with global matrix (using numpy)")
     with dolfinx.common.Timer("~~Contact: Reference problem"):
         A_org = fem.assemble_matrix(a, bcs)
         A_org.assemble()
@@ -267,5 +251,4 @@ if __name__ == "__main__":
 
     dolfinx_mpc.utils.log_info("Simulation finished")
     if timing:
-        dolfinx.common.list_timings(
-            comm, [dolfinx.common.TimingType.wall])
+        dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
