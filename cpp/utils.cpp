@@ -72,8 +72,7 @@ void dolfinx_mpc::build_standard_pattern(
 Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
 dolfinx_mpc::get_basis_functions(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    const Eigen::Ref<const Eigen::Array<double, 1, 3, Eigen::RowMajor>>& x,
-    const int index)
+    const std::array<double, 3>& x, const int index)
 {
 
   // TODO: This could be easily made more efficient by exploiting points
@@ -137,9 +136,11 @@ dolfinx_mpc::get_basis_functions(
   auto x_dofs = x_dofmap.links(index);
   for (int i = 0; i < num_dofs_g; ++i)
     coordinate_dofs.row(i) = x_g.row(x_dofs[i]).head(gdim);
-
+  Eigen::Map<const Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic,
+                                Eigen::RowMajor>>
+      point(x.data(), 1, gdim);
   // Compute reference coordinates X, and J, detJ and K
-  cmap.compute_reference_geometry(X, J, detJ, K, x.head(gdim), coordinate_dofs);
+  cmap.compute_reference_geometry(X, J, detJ, K, point, coordinate_dofs);
 
   // Compute basis on reference element
   element->evaluate_reference_basis(basis_reference_values, X);

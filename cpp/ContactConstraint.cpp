@@ -187,8 +187,8 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor> coordinates
       = V->tabulate_dof_coordinates();
-  Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>
-      local_slave_coordinates(local_slaves.size(), 3);
+  std::vector<std::array<double, 3>> local_slave_coordinates(
+      local_slaves.size());
   Eigen::Array<PetscScalar, Eigen::Dynamic, 3, Eigen::RowMajor>
       local_slave_normal(local_slaves.size(), 3);
   std::vector<std::int64_t> slaves_wo_local_collision;
@@ -198,25 +198,27 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   std::vector<int> master_cells_vec(master_cells.begin(), master_cells.end());
   dolfinx::geometry::BoundingBoxTree bb_tree(*V->mesh(), tdim, master_cells_vec,
                                              1e-12);
-
+  Eigen::Array<PetscScalar, 1, 3> slave_coeffs;
   for (std::int32_t i = 0; i < local_slaves.size(); ++i)
   {
     // Get coordinate and coeff for slave and save in send array
-    auto coord = coordinates.row(slave_blocks[0][i]);
-    local_slave_coordinates.row(i) = coord;
-    Eigen::Array<PetscScalar, 1, 3> coeffs;
+    const std::int32_t slave_block = slave_blocks[0][i];
+    const std::array<double, 3> coord
+        = {coordinates(slave_block, 0), coordinates(slave_block, 1),
+           coordinates(slave_block, 2)};
+    local_slave_coordinates[i] = coord;
     std::vector<std::int32_t> dofs(block_size);
     std::iota(dofs.begin(), dofs.end(), slave_blocks[0][i] * block_size);
     for (std::int32_t j = 0; j < gdim; ++j)
-      coeffs[j] = normal_array[dofs[j]];
+      slave_coeffs[j] = normal_array[dofs[j]];
     // Pad 2D spaces with zero in normal
     for (std::int32_t j = gdim; j < 3; ++j)
-      coeffs[j] = 0;
-    coeffs /= std::sqrt(coeffs.abs2().sum());
+      slave_coeffs[j] = 0;
+    slave_coeffs /= std::sqrt(slave_coeffs.abs2().sum());
     Eigen::Index max_index;
-    const double _c = coeffs.abs().maxCoeff(&max_index);
+    const double _c = slave_coeffs.abs().maxCoeff(&max_index);
 
-    local_slave_normal.row(i) = coeffs;
+    local_slave_normal.row(i) = slave_coeffs;
 
     // Use collision detection algorithm (GJK) to check distance from  cell
     // to point and select one within 1e-10
@@ -242,7 +244,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
           for (std::int32_t block = 0; block < block_size; ++block)
           {
             PetscScalar coeff = basis_values(k * block_size + block, j)
-                                * coeffs[j] / coeffs[max_index];
+                                * slave_coeffs[j] / slave_coeffs[max_index];
             if (std::abs(coeff) > 1e-6)
             {
               l_master.push_back(cell_blocks[k] * block_size + block);
@@ -285,19 +287,17 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   }
 
   // Extract coordinates and normals to distribute
-  Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>
-      distribute_coordinates(slaves_wo_local_collision.size(), 3);
+  std::vector<std::array<double, 3>> distribute_coordinates(
+      slaves_wo_local_collision.size());
   Eigen::Array<PetscScalar, Eigen::Dynamic, 3, Eigen::RowMajor>
       distribute_normals(slaves_wo_local_collision.size(), 3);
   for (std::int32_t i = 0; i < collision_to_local.size(); ++i)
   {
-    distribute_coordinates.row(i)
-        = local_slave_coordinates.row(collision_to_local[i]);
+    distribute_coordinates[i] = local_slave_coordinates[collision_to_local[i]];
     distribute_normals.row(i) = local_slave_normal.row(collision_to_local[i]);
   }
   // Structure storing mpc arrays
   dolfinx_mpc::mpc_data mpc;
-
   // If serial, we only have to gather slaves, masters, coeffs in 1D arrays
   int mpi_size = -1;
   MPI_Comm_size(comm, &mpi_size);
@@ -385,7 +385,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // Send slave normal and coordinate to neighbors
   std::vector<double> coord_recv(disp3.back());
   MPI_Neighbor_allgatherv(
-      distribute_coordinates.data(), distribute_coordinates.size(),
+      distribute_coordinates.data(), 3 * distribute_coordinates.size(),
       dolfinx::MPI::mpi_type<double>(), coord_recv.data(),
       num_slaves_recv3.data(), disp3.data(), dolfinx::MPI::mpi_type<double>(),
       neighborhood_comms[0]);
@@ -412,9 +412,8 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
     for (std::int32_t j = disp[i]; j < disp[i + 1]; ++j)
     {
       // Extract slave coordinates and normals from incoming data
-      // FIXME: Remove once Garth has removed eigen from public interface
-      Eigen::Map<const Eigen::Array<double, 1, 3>> slave_coord(
-          coord_recv.data() + 3 * j, 3);
+      const std::array<double, 3> slave_coord
+          = {coord_recv[3 * j], coord_recv[3 * j + 1], coord_recv[3 * j + 2]};
       tcb::span<const PetscScalar> slave_normal
           = tcb::span(normal_recv.data() + 3 * j, 3);
 
@@ -1000,8 +999,8 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
 
   Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor> coordinates
       = V->tabulate_dof_coordinates();
-  Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>
-      local_slave_coordinates(local_block.size(), 3);
+  std::vector<std::array<double, 3>> local_slave_coordinates(
+      local_block.size());
   std::vector<std::int64_t> blocks_wo_local_collision;
 
   // Map to get coordinates and normals of slaves that should be distributed
@@ -1013,8 +1012,10 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   for (std::int32_t i = 0; i < local_block.size(); ++i)
   {
     // Get coordinate and coeff for slave and save in send array
-    auto coord = coordinates.row(local_block[i]);
-    local_slave_coordinates.row(i) = coord;
+    const std::int32_t block = local_block[i];
+    const std::array<double, 3> coord
+        = {coordinates(block, 0), coordinates(block, 1), coordinates(block, 2)};
+    local_slave_coordinates[i] = coord;
 
     // Use collision detection algorithm (GJK) to check distance from  cell
     // to point and select one within 1e-10
@@ -1092,12 +1093,11 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     }
   }
   // Extract coordinates and normals to distribute
-  Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>
-      distribute_coordinates(blocks_wo_local_collision.size(), 3);
+  std::vector<std::array<double, 3>> distribute_coordinates(
+      blocks_wo_local_collision.size());
   for (std::int32_t i = 0; i < collision_to_local.size(); ++i)
   {
-    distribute_coordinates.row(i)
-        = local_slave_coordinates.row(collision_to_local[i]);
+    distribute_coordinates[i] = local_slave_coordinates[collision_to_local[i]];
   }
 
   dolfinx_mpc::mpc_data mpc;
@@ -1190,7 +1190,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   // Send slave coordinates to neighbors
   std::vector<double> coord_recv(coordinate_disp.back());
   MPI_Neighbor_allgatherv(
-      distribute_coordinates.data(), distribute_coordinates.size(),
+      distribute_coordinates.data(), 3 * distribute_coordinates.size(),
       dolfinx::MPI::mpi_type<double>(), coord_recv.data(),
       num_block_coordinates.data(), coordinate_disp.data(),
       dolfinx::MPI::mpi_type<double>(), neighborhood_comms[0]);
@@ -1206,17 +1206,14 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       collision_owners(indegree);
   std::vector<std::map<std::int64_t, std::vector<std::int32_t>>>
       collision_block_offsets(indegree);
-
   // Loop over slaves per incoming processor
   for (std::int32_t i = 0; i < indegree; ++i)
   {
     for (std::int32_t j = disp[i]; j < disp[i + 1]; ++j)
     {
       // Extract slave coordinates and normals from incoming data
-      // FIXME: Remove once Garth has removed eigen from public interface
-      Eigen::Map<const Eigen::Array<double, 1, 3>> slave_coord(
-          coord_recv.data() + 3 * j, 3);
-
+      const std::array<double, 3> slave_coord
+          = {coord_recv[3 * j], coord_recv[3 * j + 1], coord_recv[3 * j + 2]};
       // Use collision detection algorithm (GJK) to check distance from
       // cell to point and select one within 1e-10
       std::vector<int> bbox_collisions

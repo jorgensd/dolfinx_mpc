@@ -52,11 +52,15 @@ void mpc(py::module& m)
                     std::vector<std::int32_t>, std::int32_t>())
       .def("slaves",
            [](dolfinx_mpc::MultiPointConstraint& self) {
-             return as_pyarray(self.slaves());
+             const std::vector<std::int32_t>& slaves = self.slaves();
+             return py::array_t<std::int32_t>(slaves.size(), slaves.data(),
+                                              py::cast(self));
            })
       .def("slave_cells",
            [](dolfinx_mpc::MultiPointConstraint& self) {
-             return as_pyarray(self.slave_cells());
+             const std::vector<std::int32_t>& slave_cells = self.slave_cells();
+             return py::array_t<std::int32_t>(
+                 slave_cells.size(), slave_cells.data(), py::cast(self));
            })
       .def("slave_to_cells", &dolfinx_mpc::MultiPointConstraint::slave_to_cells)
       .def("add_masters", &dolfinx_mpc::MultiPointConstraint::add_masters)
@@ -64,7 +68,9 @@ void mpc(py::module& m)
       .def("masters_local", &dolfinx_mpc::MultiPointConstraint::masters_local)
       .def("coefficients",
            [](dolfinx_mpc::MultiPointConstraint& self) {
-             return as_pyarray(self.coefficients());
+             const std::vector<PetscScalar>& coefficients = self.coefficients();
+             return py::array_t<PetscScalar>(
+                 coefficients.size(), coefficients.data(), py::cast(self));
            })
       .def("create_sparsity_pattern",
            &dolfinx_mpc::MultiPointConstraint::create_sparsity_pattern)
