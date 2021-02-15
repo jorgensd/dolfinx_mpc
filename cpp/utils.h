@@ -17,13 +17,8 @@
 
 namespace dolfinx_mpc
 {
-
-/// Append standard sparsity pattern for a given form to a pre-initialized
-/// pattern and a DofMap
-/// @param[in] pattern The sparsity pattern
-/// @param[in] a       The variational formulation
-void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
-                            const dolfinx::fem::Form<PetscScalar>& a);
+template <typename T>
+class MultiPointConstraint;
 
 /// Get basis values for all degrees at point x in a given cell
 /// @param[in] V       The function space
@@ -43,10 +38,10 @@ compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
                           tcb::span<const std::int32_t> blocks);
 
-dolfinx::la::PETScMatrix
-create_matrix(const dolfinx::fem::Form<PetscScalar>& a,
-              const std::shared_ptr<dolfinx_mpc::MultiPointConstraint> mpc,
-              const std::string& type = std::string());
+dolfinx::la::PETScMatrix create_matrix(
+    const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
+    const std::string& type = std::string());
 /// Create neighborhood communicators from every processor with a slave dof on
 /// it, to the processors with a set of master facets.
 /// @param[in] meshtags The meshtag

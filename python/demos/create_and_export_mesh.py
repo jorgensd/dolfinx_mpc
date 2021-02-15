@@ -21,7 +21,7 @@ def gmsh_3D_stacked(celltype, theta, res=0.1, verbose=False):
                                       volume_markers=[1, 2], verbose=verbose)
 
     r_matrix = dolfinx_mpc.utils.rotation_matrix([1, 1, 0], -theta)
-    mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
+    mesh.geometry.x[:] = np.dot(r_matrix, mesh.geometry.x.T).T
     return mesh, ft
 
 
@@ -397,7 +397,7 @@ def gmsh_2D_stacked(celltype, theta, verbose=False):
     r_matrix = dolfinx_mpc.utils.rotation_matrix([0, 0, 1], theta)
 
     # NOTE: Hex mesh must be rotated after generation due to gmsh API
-    mesh.geometry.x = np.dot(r_matrix, mesh.geometry.x.T).T
+    mesh.geometry.x[:] = np.dot(r_matrix, mesh.geometry.x.T).T
     gmsh.clear()
     gmsh.finalize()
     MPI.COMM_WORLD.barrier()

@@ -110,9 +110,9 @@ class MultiPointConstraint():
             owners.extend(self.ghost_owners)
             offsets.extend(ghost_offsets)
         # Initialize C++ object and create slave->cell maps
-        self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(self.V._cpp_object, slaves, num_local_slaves)
+        self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
+            self.V._cpp_object, slaves, num_local_slaves, masters, coeffs, owners, offsets)
         # Add masters and compute new index maps
-        self._cpp_object.add_masters(masters, coeffs, owners, offsets)
         # Replace function space
         V_cpp = dolfinx.cpp.fem.FunctionSpace(self.V.mesh, self.V.element, self._cpp_object.dofmap())
         self.V_mpc = dolfinx.FunctionSpace(None, self.V.ufl_element(), V_cpp)
