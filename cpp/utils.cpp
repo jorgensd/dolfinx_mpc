@@ -100,7 +100,7 @@ dolfinx_mpc::get_basis_functions(
   }
   dolfinx::common::array2d<double> xp(1, gdim);
   for (int j = 0; j < gdim; ++j)
-    xp(1, j) = x[j];
+    xp(0, j) = x[j];
   // Compute reference coordinates X, and J, detJ and K
   cmap.compute_reference_geometry(X, J, detJ, K, xp, coordinate_dofs);
 
