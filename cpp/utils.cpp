@@ -10,6 +10,7 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/MPI.h>
 #include <dolfinx/common/Timer.h>
+#include <dolfinx/common/array2d.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
@@ -51,8 +52,7 @@ dolfinx_mpc::get_basis_functions(
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
   const dolfinx::common::array2d<double>& x_g = mesh->geometry().x();
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      coordinate_dofs(num_dofs_g, gdim);
+  dolfinx::common::array2d<double> coordinate_dofs(num_dofs_g, gdim);
 
   // Get coordinate mapping
   const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
@@ -69,8 +69,7 @@ dolfinx_mpc::get_basis_functions(
   std::vector<double> J(gdim * tdim);
   std::array<double, 1> detJ;
   std::vector<double> K(tdim * gdim);
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> X(1,
-                                                                          tdim);
+  dolfinx::common::array2d<double> X(1, tdim);
   // Prepare basis function data structures
   std::vector<double> basis_reference_values(space_dimension
                                              * reference_value_size);
@@ -99,11 +98,11 @@ dolfinx_mpc::get_basis_functions(
     for (int j = 0; j < gdim; ++j)
       coordinate_dofs(i, j) = coord[j];
   }
-  Eigen::Map<const Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic,
-                                Eigen::RowMajor>>
-      point(x.data(), 1, gdim);
+  dolfinx::common::array2d<double> xp(1, gdim);
+  for (int j = 0; j < gdim; ++j)
+    xp(0, j) = x[j];
   // Compute reference coordinates X, and J, detJ and K
-  cmap.compute_reference_geometry(X, J, detJ, K, point, coordinate_dofs);
+  cmap.compute_reference_geometry(X, J, detJ, K, xp, coordinate_dofs);
 
   // Compute basis on reference element
   element->evaluate_reference_basis(basis_reference_values, X);
