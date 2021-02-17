@@ -51,8 +51,8 @@ dolfinx_mpc::get_basis_functions(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  const dolfinx::common::array2d<double>& x_g = mesh->geometry().x();
-  dolfinx::common::array2d<double> coordinate_dofs(num_dofs_g, gdim);
+  const dolfinx::array2d<double>& x_g = mesh->geometry().x();
+  dolfinx::array2d<double> coordinate_dofs(num_dofs_g, gdim);
 
   // Get coordinate mapping
   const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
@@ -69,7 +69,7 @@ dolfinx_mpc::get_basis_functions(
   std::vector<double> J(gdim * tdim);
   std::array<double, 1> detJ;
   std::vector<double> K(tdim * gdim);
-  dolfinx::common::array2d<double> X(1, tdim);
+  dolfinx::array2d<double> X(1, tdim);
   // Prepare basis function data structures
   std::vector<double> basis_reference_values(space_dimension
                                              * reference_value_size);
@@ -98,7 +98,7 @@ dolfinx_mpc::get_basis_functions(
     for (int j = 0; j < gdim; ++j)
       coordinate_dofs(i, j) = coord[j];
   }
-  dolfinx::common::array2d<double> xp(1, gdim);
+  dolfinx::array2d<double> xp(1, gdim);
   for (int j = 0; j < gdim; ++j)
     xp(0, j) = x[j];
   // Compute reference coordinates X, and J, detJ and K
@@ -326,7 +326,7 @@ Eigen::Vector3d dolfinx_mpc::create_average_normal(
     std::int32_t dim, const tcb::span<const std::int32_t>& entities)
 {
   assert(entities.size() > 0);
-  dolfinx::common::array2d<double> normals
+  dolfinx::array2d<double> normals
       = dolfinx::mesh::cell_normals(*V->mesh(), dim, entities);
   Eigen::Map<const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>>
       normals_eigen(normals.data(), normals.shape[0], normals.shape[1]);
