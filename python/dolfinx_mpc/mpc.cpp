@@ -34,12 +34,6 @@ void mpc(py::module& m)
 
   m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices);
-  m.def("add_pattern_diagonal",
-        [](dolfinx::la::SparsityPattern& pattern,
-           const py::array_t<std::int32_t, py::array::c_style>& blocks) {
-          dolfinx_mpc::add_pattern_diagonal(
-              pattern, tcb::span(blocks.data(), blocks.size()));
-        });
 
   // dolfinx_mpc::MultiPointConstraint
   py::class_<dolfinx_mpc::MultiPointConstraint<PetscScalar>,

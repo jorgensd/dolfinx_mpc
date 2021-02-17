@@ -139,15 +139,6 @@ std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
   return V->dofmap()->index_map->compute_shared_indices();
 };
 //-----------------------------------------------------------------------------
-void dolfinx_mpc::add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
-                                       tcb::span<const std::int32_t> blocks)
-{
-
-  for (std::int32_t i = 0; i < blocks.size(); ++i)
-    pattern.insert(tcb::span(blocks.data() + i, 1),
-                   tcb::span(blocks.data() + i, 1));
-}
-//-----------------------------------------------------------------------------
 dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
