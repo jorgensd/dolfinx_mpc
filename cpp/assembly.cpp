@@ -139,7 +139,7 @@ void assemble_exterior_facets(
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*, const std::uint32_t)>& kernel,
-    const dolfinx::common::array2d<T>& coeffs, const std::vector<T>& constants,
+    const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
     const std::vector<std::uint32_t>& cell_info,
     const std::vector<std::uint8_t>& perms,
     tcb::span<const std::int32_t> slaves,
@@ -159,7 +159,7 @@ void assemble_exterior_facets(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  const dolfinx::common::array2d<double>& x_g = mesh.geometry().x();
+  const dolfinx::array2d<double>& x_g = mesh.geometry().x();
 
   // Compute local indices for slave cells
   std::vector<bool> is_slave_facet(active_facets.size(), false);
@@ -289,7 +289,7 @@ void assemble_cells_impl(
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*, const std::uint32_t)>& kernel,
-    const dolfinx::common::array2d<T>& coeffs, const std::vector<T>& constants,
+    const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
     const std::vector<std::uint32_t>& cell_info,
     tcb::span<const std::int32_t> slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -309,7 +309,7 @@ void assemble_cells_impl(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  const dolfinx::common::array2d<double>& x_g = geometry.x();
+  const dolfinx::array2d<double>& x_g = geometry.x();
 
   // Compute local indices for slave cells
   std::vector<bool> is_slave_cell(active_cells.size(), false);
@@ -449,7 +449,7 @@ void assemble_matrix_impl(
   const std::vector<T> constants = pack_constants(a);
 
   // Prepare coefficients
-  const dolfinx::common::array2d<T> coeffs = dolfinx::fem::pack_coefficients(a);
+  const dolfinx::array2d<T> coeffs = dolfinx::fem::pack_coefficients(a);
 
   const bool needs_permutation_data = a.needs_permutation_data();
   if (needs_permutation_data)

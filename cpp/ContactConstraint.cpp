@@ -185,8 +185,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   std::map<std::int32_t, std::vector<std::int64_t>> local_masters;
   std::map<std::int32_t, std::vector<PetscScalar>> local_coeffs;
 
-  dolfinx::common::array2d<double> coordinates
-      = V->tabulate_dof_coordinates(false);
+  dolfinx::array2d<double> coordinates = V->tabulate_dof_coordinates(false);
   std::vector<std::array<double, 3>> local_slave_coordinates(
       local_slaves.size());
   Eigen::Array<PetscScalar, Eigen::Dynamic, 3, Eigen::RowMajor>
@@ -997,8 +996,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   std::map<std::int32_t, std::vector<std::int64_t>> local_masters;
   std::map<std::int32_t, std::vector<PetscScalar>> local_coeffs;
 
-  dolfinx::common::array2d<double> coordinates
-      = V->tabulate_dof_coordinates(false);
+  dolfinx::array2d<double> coordinates = V->tabulate_dof_coordinates(false);
   std::vector<std::array<double, 3>> local_slave_coordinates(
       local_block.size());
   std::vector<std::int64_t> blocks_wo_local_collision;

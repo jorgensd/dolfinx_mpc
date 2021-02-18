@@ -76,7 +76,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     # Create sparsity pattern only for constraint + bc
     cpp_form = dolfinx.Form(a)._cpp_object
     pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
-    dolfinx_mpc.cpp.mpc.add_pattern_diagonal(pattern, deac_blocks)
+    pattern.insert_diagonal(deac_blocks)
     pattern.assemble()
     u_0 = dolfinx.Function(V)
     u_0.vector.set(0)

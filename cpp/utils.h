@@ -32,12 +32,6 @@ get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
 std::map<std::int32_t, std::set<int>>
 compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 
-/// Append diagonal entries to sparsity pattern
-/// @param[in] pattern The sparsity pattern
-/// @param[in] blocks The blocks that require diagonal addition
-void add_pattern_diagonal(dolfinx::la::SparsityPattern& pattern,
-                          tcb::span<const std::int32_t> blocks);
-
 dolfinx::la::PETScMatrix create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
