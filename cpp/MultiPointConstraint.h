@@ -236,8 +236,8 @@ private:
     std::vector<std::int64_t> master_array = _master_map->array();
     for (std::size_t i = 0; i < master_array.size(); ++i)
       master_array[i] /= block_size;
-    const std::vector<std::int32_t> master_as_local
-        = _V->dofmap()->index_map->global_to_local(master_array);
+    std::vector<std::int32_t> master_as_local(master_array.size());
+    _V->dofmap()->index_map->global_to_local(master_array, master_as_local);
     std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
         old_master_block_map
         = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
@@ -316,8 +316,8 @@ private:
     std::vector<std::int64_t> master_blocks = _master_map->array();
     for (std::size_t i = 0; i < master_blocks.size(); ++i)
       master_blocks[i] /= block_size;
-    const std::vector<std::int32_t>& master_block_local
-        = _index_map->global_to_local(master_blocks);
+    std::vector<std::int32_t> master_block_local(master_blocks.size());
+    _index_map->global_to_local(master_blocks, master_block_local);
     _master_block_map
         = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
             master_block_local, _master_map->offsets());

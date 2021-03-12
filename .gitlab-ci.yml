@@ -88,7 +88,13 @@ nightly-complex:
     - export CC=mpicc
     - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
     - pip3 install --no-cache-dir --no-binary=h5py h5py
-    - pip3 install git+https://github.com/FEniCS/basix.git --upgrade
+    - git clone https://github.com/FEniCS/basix.git
+    - cd basix
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dir -S .
+    - cmake --build build-dir --parallel 3
+    - cmake --install build-dir
+    - pip3 install ./python
+    - cd ..
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
@@ -163,7 +169,13 @@ nightly-real:
     - export CC=mpicc
     - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
     - pip3 install --no-cache-dir --no-binary=h5py h5py
-    - pip3 install git+https://github.com/FEniCS/basix.git --upgrade
+    - git clone https://github.com/FEniCS/basix.git
+    - cd basix
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dir -S .
+    - cmake --build build-dir --parallel 3
+    - cmake --install build-dir
+    - pip3 install ./python
+    - cd ..
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
