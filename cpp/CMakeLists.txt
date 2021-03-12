@@ -102,6 +102,12 @@ set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     URL "https://github.com/FEniCS/dolfinx"
     PURPOSE "Main dependency of library")
 
+find_package(Basix 0.0.1 REQUIRED)
+set_package_properties(basix PROPERTIES TYPE REQUIRED
+      DESCRIPTION "FEniCS tabulation library"
+      URL "https://github.com/fenics/basix")
+
+
 # MPI and PETSC
 
 # MPI
@@ -125,6 +131,8 @@ target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
 target_link_libraries(dolfinx_mpc PUBLIC PETSC::petsc)
 target_link_libraries(dolfinx_mpc PRIVATE PETSC::petsc_static)
 target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${EIGEN3_INCLUDE_DIR})
+# Basix
+target_link_libraries(dolfinx_mpc PUBLIC Basix::basix)
 
 
 
