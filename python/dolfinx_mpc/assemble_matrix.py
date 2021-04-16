@@ -155,13 +155,15 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
 
+    subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.cell)
+    num_cell_integrals = len(subdomain_ids)
     if num_cell_integrals > 0:
         timer = Timer("~MPC: Assemble matrix (cells)")
         V.mesh.topology.create_entity_permutations()
         permutation_info = V.mesh.topology.get_cell_permutation_info()
-        for subdomain_id in subdomain_ids:
-            cell_kernel = ufc_form.create_cell_integral(subdomain_id).tabulate_tensor
-            active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, subdomain_id)
+        for i, id in enumerate(subdomain_ids):
+            cell_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i].tabulate_tensor
+            active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
             slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
             assemble_cells(A.handle, cell_kernel, active_cells[slave_cell_indices], (pos, x_dofs, x), gdim, form_coeffs,
                            form_consts, permutation_info, dofs, block_size, num_dofs_per_element, mpc_data, bc_array)
@@ -179,10 +181,11 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
         permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         perm = (permutation_info, facet_permutation_info)
-        for subdomain_id in subdomain_ids:
-            active_facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, subdomain_id)
+
+        for i, id in enumerate(subdomain_ids):
+            facet_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i].tabulate_tensor
+            active_facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
             facet_info = pack_facet_info(V.mesh, active_facets)
-            facet_kernel = ufc_form.create_exterior_facet_integral(subdomain_id).tabulate_tensor
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             assemble_exterior_facets(A.handle, facet_kernel, (pos, x_dofs, x), gdim, form_coeffs, form_consts,
                                      perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, bc_array,
