@@ -83,7 +83,7 @@ void mpc(py::module& m)
           "backsubstitution",
           [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
              py::array_t<PetscScalar, py::array::c_style> u) {
-            self.backsubstitution(tcb::span(u.mutable_data(), u.size()));
+            self.backsubstitution(xtl::span(u.mutable_data(), u.size()));
           },
           py::arg("u"), "Backsubstitute slave values into vector");
 
@@ -131,8 +131,8 @@ void mpc(py::module& m)
            const py::array_t<std::int32_t, py::array::c_style>& entities,
            py::array_t<PetscScalar, py::array::c_style> vector) {
           return dolfinx_mpc::create_normal_approximation(
-              V, tcb::span(entities.data(), entities.size()),
-              tcb::span(vector.mutable_data(), vector.size()));
+              V, xtl::span(entities.data(), entities.size()),
+              xtl::span(vector.mutable_data(), vector.size()));
         });
 }
 } // namespace dolfinx_mpc_wrappers

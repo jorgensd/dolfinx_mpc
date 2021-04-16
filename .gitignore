@@ -10,3 +10,6 @@ dolfinx_mpc.egg-info
 *.vtu
 .vscode
 **/debug/*
+*.png
+*results*
+*.msh
