@@ -11,7 +11,6 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/common/log.h>
-#include <dolfinx/common/span.hpp>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/Form.h>
@@ -115,8 +114,8 @@ public:
     for (Eigen::Index i = 0; i < _cell_to_slaves_map->num_nodes(); ++i)
     {
 
-      tcb::span<const int32_t> cell_dofs = _dofmap->cell_dofs(_slave_cells[i]);
-      tcb::span<int32_t> slaves = _cell_to_slaves_map->links(i);
+      xtl::span<const int32_t> cell_dofs = _dofmap->cell_dofs(_slave_cells[i]);
+      xtl::span<int32_t> slaves = _cell_to_slaves_map->links(i);
 
       // Arrays for flattened master slave data
       std::vector<std::int32_t> flattened_masters;
@@ -152,7 +151,7 @@ public:
   };
   //-----------------------------------------------------------------------------
   /// Backsubstitute slave/master constraint for a given function
-  void backsubstitution(tcb::span<T> vector)
+  void backsubstitution(xtl::span<T> vector)
   {
     for (std::int32_t i = 0; i < _slaves.size(); ++i)
     {
@@ -349,7 +348,7 @@ private:
       std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>,
       std::pair<std::vector<std::int32_t>,
                 std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>>>
-  create_cell_maps(const tcb::span<const std::int32_t>& dofs)
+  create_cell_maps(const xtl::span<const std::int32_t>& dofs)
   {
     dolfinx::common::Timer timer(
         "~MPC: Create slave->cell  and cell->slave map");

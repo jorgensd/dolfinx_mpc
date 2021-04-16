@@ -423,8 +423,8 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
       // Extract slave coordinates and normals from incoming data
       for (std::int32_t k = 0; k < 3; ++k)
         slave_coord[k] = coord_recv[3 * j + k];
-      tcb::span<const PetscScalar> slave_normal
-          = tcb::span(normal_recv.data() + 3 * j, 3);
+      xtl::span<const PetscScalar> slave_normal
+          = xtl::span(normal_recv.data() + 3 * j, 3);
 
       // Find index of slave coord by using block size remainder
       std::int32_t local_index = slaves_recv[j] % block_size;

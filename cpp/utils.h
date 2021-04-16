@@ -60,18 +60,18 @@ MPI_Comm create_owner_to_ghost_comm(
 /// connecting facets
 std::map<std::int32_t, std::vector<std::int32_t>>
 create_dof_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-                        const tcb::span<const std::int32_t>& facets);
+                        const xtl::span<const std::int32_t>& facets);
 
 /// For a dof, create an average normal over the topological entities it is
 /// connected to
 Eigen::Vector3d
 create_average_normal(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
                       std::int32_t dof, std::int32_t dim,
-                      const tcb::span<const std::int32_t>& entities);
+                      const xtl::span<const std::int32_t>& entities);
 
 /// Creates a normal approximation for the dofs in the closure of the attached
 /// facets, where the normal is an average if a dof belongs to multiple facets
 void create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-                                 const tcb::span<const std::int32_t>& entities,
-                                 tcb::span<PetscScalar> vector);
+                                 const xtl::span<const std::int32_t>& entities,
+                                 xtl::span<PetscScalar> vector);
 } // namespace dolfinx_mpc

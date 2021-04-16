@@ -94,7 +94,7 @@ dolfinx_mpc::get_basis_functions(
   auto x_dofs = x_dofmap.links(index);
   for (int i = 0; i < num_dofs_g; ++i)
   {
-    tcb::span<const double> coord = x_g.row(x_dofs[i]);
+    xtl::span<const double> coord = x_g.row(x_dofs[i]);
     for (int j = 0; j < gdim; ++j)
       coordinate_dofs(i, j) = coord[j];
   }
@@ -280,7 +280,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 std::map<std::int32_t, std::vector<std::int32_t>>
 dolfinx_mpc::create_dof_to_facet_map(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-    const tcb::span<const std::int32_t>& facets)
+    const xtl::span<const std::int32_t>& facets)
 {
 
   const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
@@ -323,7 +323,7 @@ dolfinx_mpc::create_dof_to_facet_map(
 //-----------------------------------------------------------------------------
 Eigen::Vector3d dolfinx_mpc::create_average_normal(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dof,
-    std::int32_t dim, const tcb::span<const std::int32_t>& entities)
+    std::int32_t dim, const xtl::span<const std::int32_t>& entities)
 {
   assert(entities.size() > 0);
   dolfinx::array2d<double> normals
@@ -343,8 +343,8 @@ Eigen::Vector3d dolfinx_mpc::create_average_normal(
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::create_normal_approximation(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-    const tcb::span<const std::int32_t>& entities,
-    tcb::span<PetscScalar> vector)
+    const xtl::span<const std::int32_t>& entities,
+    xtl::span<PetscScalar> vector)
 {
   const std::int32_t tdim = V->mesh()->topology().dim();
   const std::int32_t block_size = V->dofmap()->index_map_bs();
@@ -355,7 +355,7 @@ void dolfinx_mpc::create_normal_approximation(
   {
     Eigen::Vector3d normal = create_average_normal(
         V, pair.first, tdim - 1,
-        tcb::span(pair.second.data(), pair.second.size()));
+        xtl::span(pair.second.data(), pair.second.size()));
     const std::div_t div = std::div(pair.first, block_size);
     const int& block = div.rem;
     vector[pair.first] = normal[block];
