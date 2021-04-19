@@ -277,9 +277,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     # outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
     # outfile.write_mesh(mesh)
     # outfile.write_function(u_h, 0.0,
-    #                        "Xdmf/Domain/"
-    #                        + "Grid[@Name='{0:s}'][1]"
-    #                        .format(mesh.name))
+    #                        f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
     # outfile.close()
 
     # Solve the MPC problem using a global transformation matrix

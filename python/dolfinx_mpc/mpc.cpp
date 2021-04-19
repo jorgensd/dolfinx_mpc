@@ -6,7 +6,6 @@
 
 #include "array.h"
 #include "caster_petsc.h"
-#include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
@@ -21,7 +20,6 @@
 #include <memory>
 #include <petscmat.h>
 #include <petscvec.h>
-#include <pybind11/eigen.h>
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -83,7 +81,8 @@ void mpc(py::module& m)
           "backsubstitution",
           [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
              py::array_t<PetscScalar, py::array::c_style> u) {
-            self.backsubstitution(xtl::span(u.mutable_data(), u.size()));
+            self.backsubstitution(
+                xtl::span<PetscScalar>(u.mutable_data(), u.size()));
           },
           py::arg("u"), "Backsubstitute slave values into vector");
 
@@ -104,8 +103,8 @@ void mpc(py::module& m)
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs) {
           dolfinx_mpc::assemble_matrix(
-              dolfinx::la::PETScMatrix::add_block_fn(A),
-              dolfinx::la::PETScMatrix::add_fn(A), a, mpc, bcs);
+              dolfinx::la::PETScMatrix::set_block_fn(A, ADD_VALUES),
+              dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc, bcs);
         });
 
   m.def(
@@ -131,8 +130,9 @@ void mpc(py::module& m)
            const py::array_t<std::int32_t, py::array::c_style>& entities,
            py::array_t<PetscScalar, py::array::c_style> vector) {
           return dolfinx_mpc::create_normal_approximation(
-              V, xtl::span(entities.data(), entities.size()),
-              xtl::span(vector.mutable_data(), vector.size()));
+              V,
+              xtl::span<const std::int32_t>(entities.data(), entities.size()),
+              xtl::span<PetscScalar>(vector.mutable_data(), vector.size()));
         });
 }
 } // namespace dolfinx_mpc_wrappers

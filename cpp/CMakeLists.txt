@@ -45,11 +45,6 @@ option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and install
 add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
 
 
-# Check for required package Eigen3
-find_package(Eigen3 3.2.90 REQUIRED)
-set_package_properties(Eigen3 PROPERTIES TYPE REQUIRED
-  DESCRIPTION "Lightweight C++ template library for linear algebra"
-  URL "http://eigen.tuxfamily.org")
 
 # Check for required package UFC (part of ffcx)
 MESSAGE(STATUS "Asking Python module FFCX for location of UFC...")
@@ -130,7 +125,7 @@ add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
 target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
 target_link_libraries(dolfinx_mpc PUBLIC PETSC::petsc)
 target_link_libraries(dolfinx_mpc PRIVATE PETSC::petsc_static)
-target_include_directories(dolfinx_mpc SYSTEM PUBLIC ${EIGEN3_INCLUDE_DIR})
+
 # Basix
 target_link_libraries(dolfinx_mpc PUBLIC Basix::basix)
 

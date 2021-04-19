@@ -74,7 +74,9 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
 
     # Add one on diagonal for Dirichlet boundary conditions
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], bcs, 1)
+        A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
+        A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
+        dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], bcs, 1)
     with dolfinx.common.Timer("~MPC: A.assemble()"):
         A.assemble()
     return A
@@ -192,15 +194,17 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
                                      num_facets_per_cell)
         timer.stop()
 
+    # Add mpc entries on diagonal
+    add_diagonal(A.handle, slaves_local[:num_local_slaves])
+
     with Timer("~MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs
         # NOTE: In the future one could use a constant in the DirichletBC
         if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-            dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0],
-                                         bcs, 1.0)
-
-    # Add mpc entries on diagonal
-    add_diagonal(A.handle, slaves_local[:num_local_slaves])
+            A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
+            A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
+            dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0],
+                                            bcs, 1.0)
 
     with Timer("~MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()

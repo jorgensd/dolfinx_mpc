@@ -6,7 +6,7 @@
 
 #include "utils.h"
 #include "MultiPointConstraint.h"
-#include <Eigen/Core>
+#include <array>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/MPI.h>
 #include <dolfinx/common/Timer.h>
@@ -26,33 +26,32 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
+#include <xtensor.hpp>
+#include <xtl/xspan.hpp>
 
 using namespace dolfinx_mpc;
 
 //-----------------------------------------------------------------------------
-Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-dolfinx_mpc::get_basis_functions(
+xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::array<double, 3>& x, const int index)
 {
 
-  // TODO: This could be easily made more efficient by exploiting points
-  // being ordered by the cell to which they belong.
   // Get mesh
   assert(V);
   assert(V->mesh());
   const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
-  const int gdim = mesh->geometry().dim();
-  const int tdim = mesh->topology().dim();
+  const size_t gdim = mesh->geometry().dim();
+  const size_t tdim = mesh->topology().dim();
 
   // Get geometry data
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
       = mesh->geometry().dofmap();
 
   // FIXME: Add proper interface for num coordinate dofs
-  const int num_dofs_g = x_dofmap.num_links(0);
-  const dolfinx::array2d<double>& x_g = mesh->geometry().x();
-  dolfinx::array2d<double> coordinate_dofs(num_dofs_g, gdim);
+  const size_t num_dofs_g = x_dofmap.num_links(0);
+  const xt::xtensor<double, 2>& x_g = mesh->geometry().x();
+  xt::xtensor<double, 2> coordinate_dofs({num_dofs_g, gdim});
 
   // Get coordinate mapping
   const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
@@ -60,20 +59,23 @@ dolfinx_mpc::get_basis_functions(
   // Get element
   assert(V->element());
   std::shared_ptr<const dolfinx::fem::FiniteElement> element = V->element();
-  const int block_size = element->block_size();
-  const int reference_value_size = element->reference_value_size() / block_size;
-  const int value_size = element->value_size() / block_size;
-  const int space_dimension = element->space_dimension() / block_size;
+  const size_t block_size = element->block_size();
+  const size_t reference_value_size
+      = element->reference_value_size() / block_size;
+  const size_t value_size = element->value_size() / block_size;
+  const size_t space_dimension = element->space_dimension() / block_size;
 
-  // Prepare geometry data structures
-  std::vector<double> J(gdim * tdim);
-  std::array<double, 1> detJ;
-  std::vector<double> K(tdim * gdim);
-  dolfinx::array2d<double> X(1, tdim);
+  // Create data structures for Jacobian info
+  xt::xtensor<double, 2> X = xt::empty<double>({(size_t)1, tdim});
+  xt::xtensor<double, 3> J = xt::empty<double>({X.shape(0), gdim, tdim});
+  xt::xtensor<double, 3> K = xt::empty<double>({X.shape(0), tdim, gdim});
+  xt::xtensor<double, 1> detJ = xt::empty<double>({X.shape(0)});
+
   // Prepare basis function data structures
-  std::vector<double> basis_reference_values(space_dimension
-                                             * reference_value_size);
-  std::vector<double> basis_values(space_dimension * value_size);
+  xt::xtensor<double, 3> basis_reference_values(
+      {1, space_dimension, reference_value_size});
+  xt::xtensor<double, 3> basis_values(
+      {static_cast<std::size_t>(1), space_dimension, value_size});
 
   // Get dofmap
   assert(V->dofmap());
@@ -84,9 +86,8 @@ dolfinx_mpc::get_basis_functions(
   const std::vector<std::uint32_t> permutation_info
       = mesh->topology().get_cell_permutation_info();
   // Skip negative cell indices
-  Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
-      basis_array(space_dimension * block_size, value_size * block_size);
-  basis_array.setZero();
+  xt::xtensor<double, 2> basis_array = xt::zeros<double>(
+      {space_dimension * block_size, value_size * block_size});
   if (index < 0)
     return basis_array;
 
@@ -94,25 +95,27 @@ dolfinx_mpc::get_basis_functions(
   auto x_dofs = x_dofmap.links(index);
   for (int i = 0; i < num_dofs_g; ++i)
   {
-    xtl::span<const double> coord = x_g.row(x_dofs[i]);
+    auto coord = xt::row(x_g, x_dofs[i]);
     for (int j = 0; j < gdim; ++j)
       coordinate_dofs(i, j) = coord[j];
   }
-  dolfinx::array2d<double> xp(1, gdim);
+  xt::xtensor<double, 2> xp({1, gdim});
   for (int j = 0; j < gdim; ++j)
     xp(0, j) = x[j];
+
   // Compute reference coordinates X, and J, detJ and K
-  cmap.compute_reference_geometry(X, J, detJ, K, xp, coordinate_dofs);
+  cmap.pull_back(X, J, detJ, K, xp, coordinate_dofs);
 
   // Compute basis on reference element
   element->evaluate_reference_basis(basis_reference_values, X);
 
-  element->apply_dof_transformation(basis_reference_values.data(),
-                                    permutation_info[index],
-                                    reference_value_size);
+  element->apply_dof_transformation(
+      xtl::span<double>(basis_reference_values.data(),
+                        basis_reference_values.size()),
+      permutation_info[index], reference_value_size);
 
   // Push basis forward to physical element
-  element->transform_reference_basis(basis_values, basis_reference_values, X, J,
+  element->transform_reference_basis(basis_values, basis_reference_values, J,
                                      detJ, K);
 
   // Get the degrees of freedom for the current cell
@@ -126,7 +129,7 @@ dolfinx_mpc::get_basis_functions(
       for (int j = 0; j < value_size; ++j)
       {
         basis_array(i * block_size + block, j * block_size + block)
-            = basis_values[i * value_size + j];
+            = basis_values(0, i, j);
       }
     }
   }
@@ -321,23 +324,23 @@ dolfinx_mpc::create_dof_to_facet_map(
   return dofs_to_facets;
 };
 //-----------------------------------------------------------------------------
-Eigen::Vector3d dolfinx_mpc::create_average_normal(
+xt::xtensor_fixed<double, xt::xshape<3>> dolfinx_mpc::create_average_normal(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dof,
     std::int32_t dim, const xtl::span<const std::int32_t>& entities)
 {
   assert(entities.size() > 0);
-  dolfinx::array2d<double> normals
+  xt::xtensor<double, 2> normals
       = dolfinx::mesh::cell_normals(*V->mesh(), dim, entities);
-  Eigen::Map<const Eigen::Array<double, Eigen::Dynamic, 3, Eigen::RowMajor>>
-      normals_eigen(normals.data(), normals.shape[0], normals.shape[1]);
-  Eigen::Vector3d normal(normals_eigen.row(0));
-  for (std::int32_t i = 1; i < normals.shape[0]; ++i)
+  xt::xtensor_fixed<double, xt::xshape<3>> normal = xt::row(normals, 0);
+  xt::xtensor_fixed<double, xt::xshape<3>> normal_i;
+  for (std::int32_t i = 1; i < normals.shape(0); ++i)
   {
-    Eigen::Vector3d normal_i = normals_eigen.row(i);
-    double sign = normal.dot(normal_i) / std::abs(normal.dot(normal_i));
-    normal += sign * normal_i;
+    normal_i = xt::row(normals, i);
+    auto sign = xt::linalg::dot(normal, normal_i)
+                / xt::abs(xt::linalg::dot(normal, normal_i));
+    normal += sign[0] * normal_i;
   }
-  normal /= std::sqrt(normal.dot(normal));
+  normal /= std::sqrt(xt::linalg::dot(normal, normal)[0]);
   return normal;
 };
 //-----------------------------------------------------------------------------
@@ -353,9 +356,9 @@ void dolfinx_mpc::create_normal_approximation(
       = create_dof_to_facet_map(V, entities);
   for (auto const& pair : facets_to_dofs)
   {
-    Eigen::Vector3d normal = create_average_normal(
+    xt::xtensor_fixed<double, xt::xshape<3>> normal = create_average_normal(
         V, pair.first, tdim - 1,
-        xtl::span(pair.second.data(), pair.second.size()));
+        xtl::span<const std::int32_t>(pair.second.data(), pair.second.size()));
     const std::div_t div = std::div(pair.first, block_size);
     const int& block = div.rem;
     vector[pair.first] = normal[block];

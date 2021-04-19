@@ -15,8 +15,7 @@ template <typename T>
 void modify_mpc_cell(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const T*)>& mat_set,
-    const int num_dofs,
-    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& Ae,
+    const int num_dofs, xt::xtensor<T, 2>& Ae,
     const xtl::span<const int32_t>& dofs, int bs,
     const xtl::span<const int32_t>& slave_indices,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
@@ -48,18 +47,16 @@ void modify_mpc_cell(
   // Matrices used for master insertion
   std::vector<std::int32_t> m0(1);
   std::vector<std::int32_t> m1(1);
-  Eigen::Matrix<T, 1, 1, Eigen::RowMajor> Amaster(1, 1);
-  Eigen::Matrix<T, Eigen::Dynamic, 1, Eigen::ColMajor> Arow(bs * num_dofs, 1);
-  Eigen::Matrix<T, 1, Eigen::Dynamic, Eigen::RowMajor> Acol(1, bs * num_dofs);
-  Eigen::Matrix<T, 1, 1, Eigen::RowMajor> Am0m1;
-  // Create copy to use for distribution to master dofs
-  Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Ae_original
-      = Ae;
+  xt::xtensor_fixed<T, xt::xshape<1>> Amaster;
+  xt::xarray<T> Arow(bs * num_dofs);
+  xt::xarray<T> Acol(bs * num_dofs);
+  xt::xtensor_fixed<T, xt::xshape<1>> Am0m1;
 
+  // Create copy to use for distribution to master dofs
+  xt::xtensor<T, 2> Ae_original = Ae;
   // Build matrix where all slave-slave entries are 0 for usage to row and
   // column addition
-  Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Ae_stripped(
-      bs * num_dofs, bs * num_dofs);
+  xt::xtensor<T, 2> Ae_stripped = xt::empty<T>({bs * num_dofs, bs * num_dofs});
   for (std::int32_t i = 0; i < bs * num_dofs; ++i)
   {
     for (std::int32_t j = 0; j < bs * num_dofs; ++j)
@@ -70,7 +67,6 @@ void modify_mpc_cell(
         Ae_stripped(i, j) = Ae(i, j);
     }
   }
-
   std::vector<std::int32_t> mpc_dofs(bs * dofs.size());
   for (std::int32_t i = 0; i < flattened_slaves.size(); ++i)
   {
@@ -79,13 +75,13 @@ void modify_mpc_cell(
     const T& coeff = flattened_coeffs[i];
 
     // Remove contributions form Ae
-    Ae.col(local_index).setZero();
-    Ae.row(local_index).setZero();
+    xt::col(Ae, local_index) = xt::zeros<PetscScalar>({num_dofs * bs});
+    xt::row(Ae, local_index).fill(0);
 
     m0[0] = master;
-    Arow.col(0) = coeff * Ae_stripped.col(local_index);
-    Acol.row(0) = coeff * Ae_stripped.row(local_index);
-    Amaster(0, 0) = coeff * coeff * Ae_original(local_index, local_index);
+    Arow = coeff * xt::col(Ae_stripped, local_index);
+    Acol = coeff * xt::row(Ae_stripped, local_index);
+    Amaster(0) = coeff * coeff * Ae_original(local_index, local_index);
     // Unroll dof blocks
     for (std::int32_t j = 0; j < dofs.size(); ++j)
       for (std::int32_t k = 0; k < bs; ++k)
@@ -112,13 +108,13 @@ void modify_mpc_cell(
       if (slaves_loc[i] != slaves_loc[j])
       {
         // Add contributions for masters on the same cell (different slave)
-        Am0m1(0, 0) = c0c1 * Ae_original(local_index, other_local_index);
+        Am0m1(0) = c0c1 * Ae_original(local_index, other_local_index);
         mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
       }
       else
       {
         // Add contributions for different masters of the same slave
-        Am0m1(0, 0) = c0c1 * Ae_original(local_index, local_index);
+        Am0m1(0) = c0c1 * Ae_original(local_index, local_index);
         mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
       }
     }
@@ -134,8 +130,8 @@ void assemble_exterior_facets(
                             const std::int32_t*, const T*)>& mat_add_values,
     const dolfinx::mesh::Mesh& mesh,
     const std::vector<std::int32_t>& active_facets,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, size_t bs0,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, size_t bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*, const std::uint32_t)>& kernel,
@@ -159,7 +155,7 @@ void assemble_exterior_facets(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  const dolfinx::array2d<double>& x_g = mesh.geometry().x();
+  const xt::xtensor<double, 2>& x_g = mesh.geometry().x();
 
   // Compute local indices for slave cells
   std::vector<bool> is_slave_facet(active_facets.size(), false);
@@ -183,10 +179,9 @@ void assemble_exterior_facets(
   }
 
   // Iterate over all facets
-  const int num_dofs0 = dofmap0.links(0).size();
-  const int num_dofs1 = dofmap1.links(0).size();
-  Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Ae(
-      bs0 * num_dofs0, bs0 * num_dofs1);
+  const size_t num_dofs0 = dofmap0.links(0).size();
+  const size_t num_dofs1 = dofmap1.links(0).size();
+  xt::xtensor<T, 2> Ae({bs0 * num_dofs0, bs1 * num_dofs1});
   std::vector<double> coordinate_dofs(num_dofs_g * gdim);
 
   for (std::int32_t l = 0; l < active_facets.size(); ++l)
@@ -204,7 +199,7 @@ void assemble_exterior_facets(
     xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cells[0]);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(x_g.row(x_dofs[i]).data(), gdim,
+      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), gdim,
                   std::next(coordinate_dofs.begin(), i * gdim));
     }
     // Tabulate tensor
@@ -217,24 +212,24 @@ void assemble_exterior_facets(
     xtl::span<const std::int32_t> dmap1 = dofmap1.links(cells[0]);
     if (!bc0.empty())
     {
-      for (Eigen::Index i = 0; i < num_dofs0; ++i)
+      for (std::int32_t i = 0; i < num_dofs0; ++i)
       {
-        for (Eigen::Index k = 0; k < bs0; ++k)
+        for (std::int32_t k = 0; k < bs0; ++k)
         {
           if (bc0[bs0 * dmap0[i] + k])
-            Ae.row(bs0 * i + k).setZero();
+            xt::row(Ae, bs0 * i + k).fill(0);
         }
       }
     }
 
     if (!bc1.empty())
     {
-      for (Eigen::Index j = 0; j < num_dofs1; ++j)
+      for (std::int32_t j = 0; j < num_dofs1; ++j)
       {
-        for (Eigen::Index k = 0; k < bs1; ++k)
+        for (std::int32_t k = 0; k < bs1; ++k)
         {
           if (bc1[bs1 * dmap1[j] + k])
-            Ae.col(bs1 * j + k).setZero();
+            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({bs1 * num_dofs1});
         }
       }
     }
@@ -252,7 +247,7 @@ void assemble_exterior_facets(
         for (std::int32_t j = 0; j < dmap0.size(); ++j)
         {
           bool found = false;
-          for (Eigen::Index k = 0; k < bs0; ++k)
+          for (std::int32_t k = 0; k < bs0; ++k)
           {
             if (bs0 * dmap0[j] + k == slaves[slave_indices[i]])
             {
@@ -309,7 +304,7 @@ void assemble_cells_impl(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  const dolfinx::array2d<double>& x_g = geometry.x();
+  const xt::xtensor<double, 2>& x_g = geometry.x();
 
   // Compute local indices for slave cells
   std::vector<bool> is_slave_cell(active_cells.size(), false);
@@ -331,10 +326,9 @@ void assemble_cells_impl(
   std::vector<double> coordinate_dofs(num_dofs_g * gdim);
   const int num_dofs0 = dofmap0.links(0).size();
   const int num_dofs1 = dofmap1.links(0).size();
-  const int ndim0 = num_dofs0 * bs0;
-  const int ndim1 = num_dofs1 * bs1;
-  Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Ae(
-      bs0 * num_dofs0, bs1 * num_dofs1);
+  const size_t ndim0 = num_dofs0 * bs0;
+  const size_t ndim1 = num_dofs1 * bs1;
+  xt::xtensor<T, 2> Ae({ndim0, ndim1});
   for (std::int32_t l = 0; l < active_cells.size(); ++l)
   {
     // Get cell coordinates/geometry
@@ -342,10 +336,9 @@ void assemble_cells_impl(
     xtl::span<const int32_t> x_dofs = x_dofmap.links(c);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(x_g.row(x_dofs[i]).data(), gdim,
+      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), gdim,
                   std::next(coordinate_dofs.begin(), i * gdim));
     }
-
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
     kernel(Ae.data(), coeffs.row(c).data(), constants.data(),
@@ -356,23 +349,23 @@ void assemble_cells_impl(
     xtl::span<const int32_t> dofs1 = dofmap1.links(c);
     if (!bc0.empty())
     {
-      for (Eigen::Index i = 0; i < num_dofs0; ++i)
+      for (std::int32_t i = 0; i < num_dofs0; ++i)
       {
-        for (Eigen::Index k = 0; k < bs0; ++k)
+        for (std::int32_t k = 0; k < bs0; ++k)
         {
           if (bc0[bs0 * dofs0[i] + k])
-            Ae.row(bs0 * i + k).setZero();
+            xt::row(Ae, bs0 * i + k).fill(0);
         }
       }
     }
     if (!bc1.empty())
     {
-      for (Eigen::Index j = 0; j < num_dofs1; ++j)
+      for (std::int32_t j = 0; j < num_dofs1; ++j)
       {
-        for (Eigen::Index k = 0; k < bs1; ++k)
+        for (std::int32_t k = 0; k < bs1; ++k)
         {
           if (bc1[bs1 * dofs1[j] + k])
-            Ae.col(bs1 * j + k).setZero();
+            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({num_dofs1 * bs1});
         }
       }
     }
@@ -390,7 +383,7 @@ void assemble_cells_impl(
         bool found = false;
         for (std::int32_t j = 0; j < dofs0.size(); ++j)
         {
-          for (Eigen::Index k = 0; k < bs0; ++k)
+          for (std::int32_t k = 0; k < bs0; ++k)
           {
             if (bs0 * dofs0[j] + k == slaves[slave_indices[i]])
             {
