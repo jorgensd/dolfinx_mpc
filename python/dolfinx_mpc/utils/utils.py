@@ -88,7 +88,10 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     # Assemble the matrix with all entries
     dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, [bc_deac])
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        dolfinx.cpp.fem.add_diagonal(A, cpp_form.function_spaces[0], [bc_deac], 1.0)
+        A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
+        A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
+        dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0],
+                                        [bc_deac], 1.0)
     A.assemble()
 
     b = dolfinx.fem.assemble_vector(L)

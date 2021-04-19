@@ -7,13 +7,14 @@
 #pragma once
 
 #include "MultiPointConstraint.h"
-#include <Eigen/Dense>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/Function.h>
 #include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
+#include <xtensor/xfixed.hpp>
+#include <xtensor/xtensor.hpp>
 
 namespace dolfinx_mpc
 {
@@ -24,7 +25,7 @@ class MultiPointConstraint;
 /// @param[in] V       The function space
 /// @param[in] x       The physical coordinate
 /// @param[in] index   The cell_index
-Eigen::Array<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+xt::xtensor<double, 2>
 get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
                     const std::array<double, 3>& x, const int index);
 
@@ -64,7 +65,7 @@ create_dof_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
 
 /// For a dof, create an average normal over the topological entities it is
 /// connected to
-Eigen::Vector3d
+xt::xtensor_fixed<double, xt::xshape<3>>
 create_average_normal(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
                       std::int32_t dof, std::int32_t dim,
                       const xtl::span<const std::int32_t>& entities);

@@ -7,7 +7,6 @@
 #pragma once
 
 #include "utils.h"
-#include <Eigen/Dense>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/common/log.h>
@@ -111,7 +110,7 @@ public:
     std::vector<PetscInt> master_for_other_slave(block_size);
     std::vector<std::int32_t> master_block(1);
     std::vector<std::int32_t> other_master_block(1);
-    for (Eigen::Index i = 0; i < _cell_to_slaves_map->num_nodes(); ++i)
+    for (std::int32_t i = 0; i < _cell_to_slaves_map->num_nodes(); ++i)
     {
 
       xtl::span<const int32_t> cell_dofs = _dofmap->cell_dofs(_slave_cells[i]);
@@ -253,9 +252,9 @@ private:
       std::vector<std::int64_t> new_ghosts;
       std::vector<std::int32_t> new_ranks;
 
-      for (Eigen::Index i = 0; i < old_master_block_map->num_nodes(); ++i)
+      for (std::int32_t i = 0; i < old_master_block_map->num_nodes(); ++i)
       {
-        for (Eigen::Index j = 0; j < old_master_block_map->links(i).size(); ++j)
+        for (std::int32_t j = 0; j < old_master_block_map->links(i).size(); ++j)
         {
           // Check if master is already ghosted
           if (old_master_block_map->links(i)[j] == -1)
@@ -324,10 +323,10 @@ private:
     // Go from blocks to actual local index
     std::vector<std::int32_t> masters_local(master_block_local.size());
     std::int32_t c = 0;
-    for (Eigen::Index i = 0; i < _master_map->num_nodes(); ++i)
+    for (std::int32_t i = 0; i < _master_map->num_nodes(); ++i)
     {
       auto masters = _master_map->links(i);
-      for (Eigen::Index j = 0; j < masters.size(); ++j)
+      for (std::int32_t j = 0; j < masters.size(); ++j)
       {
         const int master_as_int = masters[j];
         const std::div_t div = std::div(master_as_int, block_size);
@@ -383,7 +382,7 @@ private:
       for (std::int32_t j = 0; j < cell_dofs.size(); ++j)
       {
         // Check if cell dof in dofs list
-        for (Eigen::Index k = 0; k < bs; ++k)
+        for (std::int32_t k = 0; k < bs; ++k)
         {
           const std::int32_t dof_idx = dof_index[bs * cell_dofs[j] + k];
           if (dof_idx != -1)
