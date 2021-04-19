@@ -63,7 +63,7 @@ def assemble_vector(form, constraint,
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
         permutation_info = V.mesh.topology.get_cell_permutation_info()
-        timer = Timer("~MPC: Assemble matrix (cells)")
+        timer = Timer("~MPC: Assemble vector (cells)")
         for i, id in enumerate(subdomain_ids):
             cell_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i].tabulate_tensor
             active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
