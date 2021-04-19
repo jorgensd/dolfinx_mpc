@@ -9,6 +9,7 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/utils.h>
 #include <iostream>
+
 namespace
 {
 template <typename T>
@@ -75,7 +76,7 @@ void modify_mpc_cell(
     const T& coeff = flattened_coeffs[i];
 
     // Remove contributions form Ae
-    xt::col(Ae, local_index) = xt::zeros<PetscScalar>({num_dofs * bs});
+    xt::col(Ae, local_index) = xt::zeros<T>({num_dofs * bs});
     xt::row(Ae, local_index).fill(0);
 
     m0[0] = master;
