@@ -23,6 +23,8 @@
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <xtensor/xtensor.hpp>
+
 namespace py = pybind11;
 
 namespace dolfinx_mpc_wrappers
@@ -30,7 +32,14 @@ namespace dolfinx_mpc_wrappers
 void mpc(py::module& m)
 {
 
-  m.def("get_basis_functions", &dolfinx_mpc::get_basis_functions);
+  m.def("get_basis_functions",
+        [](std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+           const std::array<double, 3>& x, const int index) {
+          const xt::xtensor<double, 2> basis_function
+              = dolfinx_mpc::get_basis_functions(V, x, index);
+          return py::array_t<double>(basis_function.shape(),
+                                     basis_function.data());
+        });
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices);
 
   // dolfinx_mpc::MultiPointConstraint
