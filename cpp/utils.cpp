@@ -26,6 +26,7 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
+#include <xtensor-blas/xlinalg.hpp>
 #include <xtensor.hpp>
 #include <xtl/xspan.hpp>
 
