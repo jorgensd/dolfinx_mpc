@@ -44,14 +44,13 @@ def assemble_vector(form, constraint,
     # Get index map and ghost info
     index_map = constraint.index_map()
     vector = dolfinx.cpp.la.create_vector(index_map, block_size)
-    ufc_form = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form)
+    ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form)
 
     # Pack constants and coefficients
     cpp_form = dolfinx.Form(form)._cpp_object
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
-    gdim = V.mesh.geometry.dim
     tdim = V.mesh.topology.dim
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
@@ -70,7 +69,7 @@ def assemble_vector(form, constraint,
             slave_cell_indices = numpy.flatnonzero(numpy.isin(active_cells, slave_cells))
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[slave_cell_indices],
-                               (pos, x_dofs, x), gdim, form_coeffs, form_consts,
+                               (pos, x_dofs, x), form_coeffs, form_consts,
                                permutation_info, dofs, block_size, num_dofs_per_element, mpc_data, (bc_dofs, bc_values))
         timer.stop()
 
@@ -89,7 +88,7 @@ def assemble_vector(form, constraint,
             facet_info = pack_facet_info(V.mesh, active_facets)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
-                assemble_exterior_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x), gdim,
+                assemble_exterior_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x),
                                          form_coeffs, form_consts, (permutation_info, facet_permutation_info),
                                          dofs, block_size, num_dofs_per_element, mpc_data, (bc_dofs, bc_values),
                                          num_facets_per_cell)
@@ -99,7 +98,7 @@ def assemble_vector(form, constraint,
 
 
 @numba.njit
-def assemble_cells(b, kernel, active_cells, mesh, gdim, coeffs, constants, permutation_info,
+def assemble_cells(b, kernel, active_cells, mesh, coeffs, constants, permutation_info,
                    dofmap, block_size, num_dofs_per_element, mpc, bcs):
     """Assemble additional MPC contributions for cell integrals"""
     ffi_fb = ffi.from_buffer
@@ -112,7 +111,7 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim, coeffs, constants, permu
     # Unpack mesh data
     pos, x_dofmap, x = mesh
 
-    geometry = numpy.zeros((pos[1] - pos[0], gdim))
+    geometry = numpy.zeros((pos[1] - pos[0], 3))
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=PETSc.ScalarType)
 
     for slave_cell_index, cell_index in enumerate(active_cells):
@@ -120,8 +119,7 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim, coeffs, constants, permu
         cell = pos[cell_index]
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
-            for k in range(gdim):
-                geometry[j, k] = x[c[j], k]
+            geometry[j, :] = x[c[j], :]
         b_local.fill(0.0)
 
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
@@ -138,7 +136,7 @@ def assemble_cells(b, kernel, active_cells, mesh, gdim, coeffs, constants, permu
 
 
 @numba.njit
-def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim, coeffs, constants, permutation_info,
+def assemble_exterior_facets(b, kernel, facet_info, mesh, coeffs, constants, permutation_info,
                              dofmap, block_size, num_dofs_per_element, mpc, bcs, num_facets_per_cell):
     """Assemble additional MPC contributions for facets"""
     ffi_fb = ffi.from_buffer
@@ -152,7 +150,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim, coeffs, constant
     # Unpack mesh data
     pos, x_dofmap, x = mesh
 
-    geometry = numpy.zeros((pos[1] - pos[0], gdim))
+    geometry = numpy.zeros((pos[1] - pos[0], 3))
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=PETSc.ScalarType)
     slave_cells = mpc[4]
     for i in range(facet_info.shape[0]):
@@ -165,8 +163,7 @@ def assemble_exterior_facets(b, kernel, facet_info, mesh, gdim, coeffs, constant
         num_vertices = pos[cell_index + 1] - pos[cell_index]
         c = x_dofmap[cell:cell + num_vertices]
         for j in range(num_vertices):
-            for k in range(gdim):
-                geometry[j, k] = x[c[j], k]
+            geometry[j, :] = x[c[j], :]
         b_local.fill(0.0)
         facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
