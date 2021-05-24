@@ -147,7 +147,6 @@ void assemble_exterior_facets(
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
         cell_to_slaves)
 {
-  const int gdim = mesh.geometry().dim();
   const int tdim = mesh.topology().dim();
 
   // Prepare cell geometry
@@ -183,7 +182,7 @@ void assemble_exterior_facets(
   const size_t num_dofs0 = dofmap0.links(0).size();
   const size_t num_dofs1 = dofmap1.links(0).size();
   xt::xtensor<T, 2> Ae({bs0 * num_dofs0, bs1 * num_dofs1});
-  std::vector<double> coordinate_dofs(num_dofs_g * gdim);
+  std::vector<double> coordinate_dofs(3 * num_dofs_g);
 
   for (std::int32_t l = 0; l < active_facets.size(); ++l)
   {
@@ -200,8 +199,8 @@ void assemble_exterior_facets(
     xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cells[0]);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), gdim,
-                  std::next(coordinate_dofs.begin(), i * gdim));
+      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), 3,
+                  std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
@@ -297,8 +296,6 @@ void assemble_cells_impl(
 {
   dolfinx::common::Timer timer("~MPC (C++): Assemble cells");
 
-  const int gdim = geometry.dim();
-
   // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
       = geometry.dofmap();
@@ -324,7 +321,7 @@ void assemble_cells_impl(
   }
 
   // Iterate over active cells
-  std::vector<double> coordinate_dofs(num_dofs_g * gdim);
+  std::vector<double> coordinate_dofs(3 * num_dofs_g);
   const int num_dofs0 = dofmap0.links(0).size();
   const int num_dofs1 = dofmap1.links(0).size();
   const size_t ndim0 = num_dofs0 * bs0;
@@ -337,8 +334,8 @@ void assemble_cells_impl(
     xtl::span<const int32_t> x_dofs = x_dofmap.links(c);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), gdim,
-                  std::next(coordinate_dofs.begin(), i * gdim));
+      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), 3,
+                  std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
