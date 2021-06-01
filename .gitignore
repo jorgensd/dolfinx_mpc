@@ -9,7 +9,9 @@ dolfinx_mpc.egg-info
 *.pvd
 *.vtu
 .vscode
-**/debug/*
+debug
 *.png
 *results*
 *.msh
+CMakeFiles
+build-dir

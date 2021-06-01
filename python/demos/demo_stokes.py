@@ -101,9 +101,9 @@ bcs = [bc1]
 
 # Slip conditions for walls
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 1])
-mpc = dolfinx_mpc.MultiPointConstraint(W)
-
-mpc.create_slip_constraint((mt, 1), n, sub_space=W.sub(0), sub_map=V_to_W, bcs=bcs)
+with dolfinx.common.Timer("~Stokes: Create slip constraint"):
+    mpc = dolfinx_mpc.MultiPointConstraint(W)
+    mpc.create_slip_constraint((mt, 1), n, sub_space=W.sub(0), sub_map=V_to_W, bcs=bcs)
 mpc.finalize()
 
 

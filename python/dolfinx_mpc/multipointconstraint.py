@@ -9,7 +9,6 @@ import dolfinx_mpc.cpp
 
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition
-from .slipcondition import create_slip_condition
 
 
 class MultiPointConstraint():
@@ -141,7 +140,7 @@ class MultiPointConstraint():
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def create_slip_constraint(self, facet_marker: tuple([dolfinx.MeshTags, int]), normal: dolfinx.Function,
-                               sub_space: dolfinx.FunctionSpace = None, sub_map: numpy.ndarray = None,
+                               sub_space: dolfinx.FunctionSpace = None, sub_map: numpy.ndarray = numpy.array([]),
                                bcs: list([dolfinx.DirichletBC]) = []):
         """
         Create a slip constraint dot(u,normal)=0 over the entities defined in a dolfinx.Meshtags
@@ -169,11 +168,13 @@ class MultiPointConstraint():
              create_slip_constraint((mt, i), normal, V, V_to_W, bcs=[bc])
         """
         if sub_space is None:
-            W = self.V
+            W = [self.V._cpp_object]
         else:
-            W = (self.V, sub_space)
-        slaves, masters, coeffs, owners, offsets = create_slip_condition(W, normal, sub_map, facet_marker, bcs)
-        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+            W = [self.V._cpp_object, sub_space._cpp_object]
+        mesh_tag, marker = facet_marker
+        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(W, mesh_tag, marker, normal._cpp_object,
+                                                             numpy.asarray(sub_map, dtype=numpy.int32), bcs)
+        self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_general_constraint(self, slave_master_dict, subspace_slave=None, subspace_master=None):
         """
