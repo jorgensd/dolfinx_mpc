@@ -1,49 +1,37 @@
-# FROM dolfinx/dev-env as dolfinx-mpc-debug
-# WORKDIR /tmp
-# ENV PETSC_ARCH "linux-gnu-complex-32"
-# RUN  git clone  git+https://github.com/FEniCS/basix.git && \
-#     cd basix && \
-#     rm -rf build-dir && \
-#     cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -B build-dir -S .  && \
-#     cmake --build build-dir --parallel 3 && \
-#     cmake --install build-dir && \
-#     pip3 install -v -e ./python  && \
-#     pip3 install git+https://github.com/FEniCS/ufl.git --no-cache-dir &&\
-#     pip3 install git+https://github.com/FEniCS/ffcx.git --no-cache-dir
-# RUN git clone https://github.com/fenics/dolfinx.git && \
-#     cd dolfinx && \
-#     mkdir build && \
-#     cd build && \
-#     cmake -G Ninja ../cpp && \
-#     ninja ${MAKEFLAGS} install && \
-#     cd ../python && \
-#     . /usr/local/lib/dolfinx/dolfinx.conf && \
-#     pip3 install .
-# RUN  git clone https://github.com/jorgensd/dolfinx_mpc.git  && \
-#     cd dolfinx_mpc && \
-#     mkdir -p build && \
-#     cd build && \
-#     cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/ && \
-#     ninja -j3 install && \
-#     cd ../python && \
-#     pip3 install . --upgrade
-
-# WORKDIR /root
-FROM dolfinx/dolfinx as dolfinx-mpc-real
-LABEL description="DOLFIN-X in real mode with MPC"
-USER root
-
+FROM dolfinx/dev-env as dolfinx-mpc
 WORKDIR /tmp
+# Set env variables
+ENV PETSC_ARCH="linux-gnu-real-32"\
+    HDF5_MPI="ON" \
+    CC=mpicc \
+    HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
 
-RUN pip3 install --no-cache-dir ipython
-
-RUN git clone https://github.com/jorgensd/dolfinx_mpc.git && \
+#Install basix, ufl, ffcx
+RUN git clone https://github.com/FEniCS/basix.git && \
+    cd basix && \
+    git checkout 0.1.0 && \
+    cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -B build-dir -S .  && \
+    cmake --build build-dir && \
+    cmake --install build-dir && \
+    pip3 install -v -e ./python  && \
+    pip3 install git+https://github.com/FEniCS/ufl.git@2021.1.0 --no-cache-dir &&\
+    pip3 install git+https://github.com/FEniCS/ffcx.git@0.1.0 --no-cache-dir
+# Install dolfinx
+RUN git clone https://github.com/fenics/dolfinx.git && \
+    cd dolfinx && \
+    git checkout 0.1.0 && \
+    cmake -G Ninja cpp -B build-dir && \
+    ninja ${MAKEFLAGS} -j12 install -C build-dir && \
+    . /usr/local/lib/dolfinx/dolfinx.conf && \
+    pip3 install python/.
+# Install dolfinx_mpc
+RUN  git clone https://github.com/jorgensd/dolfinx_mpc.git  && \
     cd dolfinx_mpc && \
-    mkdir build && \
-    cd build && \
-    cmake -G Ninja  -DCMAKE_BUILD_TYPE=Release ../cpp && \
-    ninja install && \
-    cd ../python && \
-    pip3 install .
+    git checkout 0.1.0 && \
+    cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dir cpp/ && \
+    ninja install -j12  -C build-dir && \
+    pip3 install python/. --upgrade
+# Install h5py
+RUN pip3 install --no-binary=h5py h5py
 
 WORKDIR /root
