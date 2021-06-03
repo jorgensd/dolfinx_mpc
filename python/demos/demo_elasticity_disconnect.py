@@ -50,7 +50,7 @@ if MPI.COMM_WORLD.rank == 0:
 
     # Add physical tags for surfaces
     r1_surface, r2_surface = [], []
-    hollow_boundary = gmsh.model.getBoundary(hollow_sphere[0:1])
+    hollow_boundary = gmsh.model.getBoundary(hollow_sphere[0])
     inner_boundary = gmsh.model.getBoundary([(3, inner_sphere)])
     for boundary in hollow_boundary:
         bbox = gmsh.model.getBoundingBox(boundary[0], boundary[1])

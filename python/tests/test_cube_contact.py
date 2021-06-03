@@ -74,7 +74,7 @@ def generate_hex_boxes():
         # Identitfy entities for each surface of top and bottom cube
 
         # Physical markers for bottom cube
-        bottom_surfaces = gmsh.model.getBoundary(volumes[bottom_index],
+        bottom_surfaces = gmsh.model.getBoundary([volumes[bottom_index]],
                                                  recursive=False)
         for entity in bottom_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
@@ -97,7 +97,7 @@ def generate_hex_boxes():
                 entities["Bottom"]["Front"][0].append(entity[1])
                 entities["Bottom"]["Front"][1] = facet_markers[0][5]
         # Physical markers for top
-        top_surfaces = gmsh.model.getBoundary(volumes[top_index],
+        top_surfaces = gmsh.model.getBoundary([volumes[top_index]],
                                               recursive=False)
         for entity in top_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
@@ -139,13 +139,11 @@ def generate_hex_boxes():
                 gmsh.model.setPhysicalName(2, entities[box][surface][1], box
                                            + ":" + surface)
         # Set mesh sizes on the points from the surface we are extruding
-        bottom_nodes = gmsh.model.getBoundary((2, bottom), recursive=True)
-        for entity in bottom_nodes:
-            gmsh.model.occ.mesh.setSize(entity, res)
-        top_nodes = gmsh.model.getBoundary((2, top),
+        bottom_nodes = gmsh.model.getBoundary([(2, bottom)], recursive=True)
+        gmsh.model.occ.mesh.setSize(bottom_nodes, res)
+        top_nodes = gmsh.model.getBoundary([(2, top)],
                                            recursive=True)
-        for entity in top_nodes:
-            gmsh.model.occ.mesh.setSize(entity, 2 * res)
+        gmsh.model.occ.mesh.setSize(top_nodes, 2 * res)
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
