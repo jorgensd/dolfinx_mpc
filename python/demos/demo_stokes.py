@@ -8,30 +8,40 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
-# Length, width and rotation of channel
-L = 2
-H = 1
-theta = np.pi / 5
 
-
-def create_mesh_gmsh(res=0.1):
+def create_mesh_gmsh(L: int = 2, H: int = 1, res: np.float64 = 0.1, theta: np.float64 = np.pi / 5,
+                     wall_marker: int = 1, outlet_marker: int = 2, inlet_marker: int = 3):
     """
-    Create a channel of length 2, height one, rotated theta degrees
-    around origin, and corresponding facet markers:
-    Walls: 1
-    Outlet: 2
-    Inlet: 3
+    Create a channel of length L, height H, rotated theta degrees
+    around origin, with facet markers for inlet, outlet and walls.
+
+
+    Parameters
+    ----------
+    L
+        The length of the channel
+    H
+        Width of the channel
+    res
+        Mesh resolution (uniform)
+    theta
+        Rotation angle
+    wall_marker
+        Integer used to mark the walls of the channel
+    outlet_marker
+        Integer used to mark the outlet of the channel
+    inlet_marker
+        Integer used to mark the inlet of the channel
     """
     gmsh.initialize()
     if MPI.COMM_WORLD.rank == 0:
         gmsh.model.add("Square duct")
 
+        # Create rectangular channel
         channel = gmsh.model.occ.addRectangle(0, 0, 0, L, H)
         gmsh.model.occ.synchronize()
-        gmsh.model.addPhysicalGroup(2, [channel], 1)
-        gmsh.model.setPhysicalName(2, 1, "Fluid volume")
 
-        import numpy as np
+        # Find entity markers before rotation
         surfaces = gmsh.model.occ.getEntities(dim=1)
         inlet_marker, outlet_marker, wall_marker = 3, 2, 1
         walls = []
@@ -45,31 +55,40 @@ def create_mesh_gmsh(res=0.1):
                 outlets.append(surface[1])
             elif np.isclose(com[1], 0) or np.isclose(com[1], H):
                 walls.append(surface[1])
-
+        # Rotate channel theta degrees in the xy-plane
         gmsh.model.occ.rotate([(2, channel)], 0, 0, 0,
                               0, 0, 1, theta)
         gmsh.model.occ.synchronize()
+
+        # Add physical markers
+        gmsh.model.addPhysicalGroup(2, [channel], 1)
+        gmsh.model.setPhysicalName(2, 1, "Fluid volume")
         gmsh.model.addPhysicalGroup(1, walls, wall_marker)
         gmsh.model.setPhysicalName(1, wall_marker, "Walls")
         gmsh.model.addPhysicalGroup(1, inlets, inlet_marker)
         gmsh.model.setPhysicalName(1, inlet_marker, "Fluid inlet")
         gmsh.model.addPhysicalGroup(1, outlets, outlet_marker)
         gmsh.model.setPhysicalName(1, outlet_marker, "Fluid outlet")
+
+        # Set number of threads used for mesh
         gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
         gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
+
+        # Set uniform mesh size
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", res)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", res)
-        gmsh.model.mesh.generate(2)
 
-    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model,
-                                                    facet_data=True, gdim=2)
+        # Generate mesh
+        gmsh.model.mesh.generate(2)
+    # Convert gmsh model to DOLFINx Mesh and MeshTags
+    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True, gdim=2)
     gmsh.finalize()
     return mesh, ft
 
 
 # ------------------- Mesh and function space creation ------------------------
-mesh, mt = create_mesh_gmsh(0.1)
+mesh, mt = create_mesh_gmsh(res=0.1)
 
 fdim = mesh.topology.dim - 1
 
@@ -92,6 +111,7 @@ def inlet_velocity_expression(x):
 inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
+dolfinx.cpp.la.scatter_forward(inlet_velocity.x)
 W0 = W.sub(0)
 dofs = dolfinx.fem.locate_dofs_topological((W0, V), 1, inlet_facets)
 bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
