@@ -17,7 +17,7 @@
 #include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/SlipConstraint.h>
-#include <dolfinx_mpc/assembly.h>
+#include <dolfinx_mpc/assemble_matrix.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>
 #include <petscmat.h>
