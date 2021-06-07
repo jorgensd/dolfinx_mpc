@@ -5,6 +5,7 @@
 - Slip condition constructor moved to C++ (Speedup for large problems)
 - Update GMSH code in demos to be compatible with [GMSH 4.8.4](https://gitlab.onelab.info/gmsh/gmsh/-/tags/gmsh_4_8_4).
 - Renaming and cleanup in `assemble_matrix` in C++/ 
+- Use scipy sparse matrices for verification
 
 
 
