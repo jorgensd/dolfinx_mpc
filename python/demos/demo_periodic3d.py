@@ -21,10 +21,11 @@ import dolfinx
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
-import ufl
 import numpy as np
-from petsc4py import PETSc
+import scipy.sparse.linalg
+import ufl
 from mpi4py import MPI
+from petsc4py import PETSc
 
 # Get PETSc int and scalar types
 if np.dtype(PETSc.ScalarType).kind == 'c':
@@ -52,10 +53,8 @@ def demo_periodic3D(celltype, out_periodic):
         u_local.set(0.0)
 
     def DirichletBoundary(x):
-        return np.logical_or(np.logical_or(np.isclose(x[1], 0),
-                                           np.isclose(x[1], 1)),
-                             np.logical_or(np.isclose(x[2], 0),
-                                           np.isclose(x[2], 1)))
+        return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
+                             np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
@@ -130,7 +129,7 @@ def demo_periodic3D(celltype, out_periodic):
         mpc.backsubstitution(uh)
         # solver.view()
         it = solver.getIterationNumber()
-        print("Constrained solver iterations {0:d}".format(it))
+        print(f"Constrained solver iterations {it}")
 
     # Write solution to file
     u_h = dolfinx.Function(mpc.function_space())
@@ -144,63 +143,51 @@ def demo_periodic3D(celltype, out_periodic):
     u_h.name = "u_" + ext
 
     out_periodic.write_mesh(mesh)
-    out_periodic.write_function(u_h, 0.0,
-                                "Xdmf/Domain/"
-                                + "Grid[@Name='{0:s}'][1]"
-                                .format(mesh.name))
+    out_periodic.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
-    print("----Verification----")
     # --------------------VERIFICATION-------------------------
+    print("----Verification----")
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
-
     A_org.assemble()
     L_org = dolfinx.fem.assemble_vector(rhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(L_org, bcs)
     solver.setOperators(A_org)
     u_ = dolfinx.Function(V)
     with dolfinx.common.Timer("~Periodic: Unconstrained solve"):
         solver.solve(L_org, u_.vector)
         it = solver.getIterationNumber()
-    print("Unconstrained solver iterations: {0:d}".format(it))
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+    print(f"Unconstrained solver iterations: {it}")
+    dolfinx.cpp.la.scatter_forward(u_.x)
     u_.name = "u_" + ext + "_unconstrained"
-    out_periodic.write_function(u_, 0.0,
-                                "Xdmf/Domain/"
-                                + "Grid[@Name='{0:s}'][1]"
-                                .format(mesh.name))
+    out_periodic.write_function(u_, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
-    # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-    # Create reduced A
-    A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-    reduced_A = np.matmul(np.matmul(K.T, A_global), K)
+    root = 0
+    with dolfinx.common.Timer("~Demo: Verification"):
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
-    # Created reduced L
-    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    reduced_L = np.dot(K.T, vec)
-    # Solve linear system
-    d = np.linalg.solve(reduced_A, reduced_L)
-    # Back substitution to full solution vector
-    uh_numpy = np.dot(K, d)
+        # Gather LHS, RHS and solution on one process
+        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
 
-    # Compare LHS, RHS and solution with reference values
-    A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+        if MPI.COMM_WORLD.rank == root:
+            KTAK = K.T * A_csr * K
+            reduced_L = K.T @ L_np
+            # Solve linear system
+            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+            # Back substitution to full solution vector
+            uh_numpy = K @ d
+            assert np.allclose(uh_numpy, u_mpc)
 
 
 if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
-    out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                       fname, "w")
+    out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
     for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron, dolfinx.cpp.mesh.CellType.hexahedron]:
         demo_periodic3D(celltype, out_periodic)
     out_periodic.close()
-    dolfinx.common.list_timings(
-        MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

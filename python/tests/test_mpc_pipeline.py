@@ -4,16 +4,16 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
+import dolfinx
+import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
+import scipy.sparse.linalg
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
-
-import dolfinx
-import dolfinx.io
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
@@ -59,8 +59,7 @@ def test_pipeline(master_point):
 
     A = dolfinx_mpc.assemble_matrix(a, mpc)
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
@@ -71,37 +70,28 @@ def test_pipeline(master_point):
     uh = b.copy()
     uh.set(0)
     solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
 
-    # Transfer data from the MPC problem to numpy arrays for comparison
-    A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    root = 0
+    comm = mesh.mpi_comm()
+    with dolfinx.common.Timer("~TEST: Compare"):
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
-    # Solve the MPC problem using a global transformation matrix
-    # and numpy solvers to get reference values
+        # Gather LHS, RHS and solution on one process
+        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
 
-    # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
+        if MPI.COMM_WORLD.rank == root:
+            KTAK = K.T * A_csr * K
+            reduced_L = K.T @ L_np
+            # Solve linear system
+            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+            # Back substitution to full solution vector
+            uh_numpy = K @ d
+            assert np.allclose(uh_numpy, u_mpc)
 
-    # Create reduced A
-    A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-    reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-
-    # Created reduced L
-    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    reduced_L = np.dot(K.T, vec)
-
-    # Solve linear system
-    d = np.linalg.solve(reduced_A, reduced_L)
-    # Backsubstitution to full solution vector
-    uh_numpy = np.dot(K, d)
-
-    # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-
-    # Move solution to global array
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                          uh.owner_range[1]])
+    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])

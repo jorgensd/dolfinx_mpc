@@ -39,18 +39,14 @@ def test_mpc_assembly(master_point, degree, celltype):
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
-    b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     # Reduce system with global matrix K after assembly
     L_org = dolfinx.fem.assemble_vector(rhs)
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    root = 0
+    comm = mesh.mpi_comm()
+    with dolfinx.common.Timer("~TEST: Compare"):
+        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
-    K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-
-    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    reduced_L = np.dot(K.T, vec)
-
-    dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
+    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])

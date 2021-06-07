@@ -18,6 +18,8 @@ import pytest
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
+import scipy.sparse.linalg
+
 
 theta = np.pi / 5
 
@@ -163,6 +165,7 @@ def generate_hex_boxes():
 @pytest.mark.parametrize("nonslip", [True, False])
 def test_cube_contact(generate_hex_boxes, nonslip):
     comm = MPI.COMM_WORLD
+    root = 0
     # Generate mesh
     mesh_data = generate_hex_boxes
     mesh, mt = mesh_data
@@ -246,10 +249,8 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (cached)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (C++)"):
-        Anew = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("~TEST: Assemble bilnear form (unconstrained)"):
-        A_org = fem.assemble_matrix(a, bcs)
-        A_org.assemble()
+        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
@@ -261,6 +262,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
         uh = b.copy()
         uh.set(0)
         solver.solve(b, uh)
+
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                    mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
@@ -280,47 +282,42 @@ def test_cube_contact(generate_hex_boxes, nonslip):
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
-    dolfinx_mpc.utils.log_info(
-        "Solving reference problem with global matrix (using numpy)")
+    dolfinx_mpc.utils.log_info("Solving reference problem with global matrix (using numpy)")
 
-    with dolfinx.common.Timer("~MPC: Reference problem"):
+    with dolfinx.common.Timer("~TEST: Assemble bilnear form (unconstrained)"):
+        A_org = fem.assemble_matrix(a, bcs)
+        A_org.assemble()
 
         # Generate reference matrices and unconstrained solution
-        A_org = fem.assemble_matrix(a, bcs)
-
-        A_org.assemble()
         L_org = fem.assemble_vector(rhs)
         fem.apply_lifting(L_org, [a], [bcs])
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
                           mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(L_org, bcs)
 
-        # Create global transformation matrix
-        K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-        # Create reduced A
-        A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
+    with dolfinx.common.Timer("~TEST: Compare"):
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
-        reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-        # Created reduced L
-        vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-        reduced_L = np.dot(K.T, vec)
-        # Solve linear system
-        d = np.linalg.solve(reduced_A, reduced_L)
-        # Back substitution to full solution vector
-        uh_numpy = np.dot(K, d)
+        # Gather LHS, RHS and solution on one process
+        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
 
-    # Transfer data from the MPC problem to numpy arrays for comparison
-    with dolfinx.common.Timer("~MPC: Petsc->numpy"):
-        A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-        b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-    A_new_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(Anew)
+        if MPI.COMM_WORLD.rank == root:
+            KTAK = K.T * A_csr * K
+            reduced_L = K.T @ L_np
+            # Solve linear system
+            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+            # Back substitution to full solution vector
+            uh_numpy = K @ d
+            assert np.allclose(uh_numpy, u_mpc)
 
-    assert(np.allclose(A_new_np, A_np))
-    with dolfinx.common.Timer("~MPC: Compare"):
-        # Compare LHS, RHS and solution with reference values
-        dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-        dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:
-                                              uh.owner_range[1]])
-    dolfinx.common.list_timings(
-        comm, [dolfinx.common.TimingType.wall])
+        # Compare python and C++ assembly
+        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
+        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
+        if MPI.COMM_WORLD.rank == root:
+            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
+
+    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])

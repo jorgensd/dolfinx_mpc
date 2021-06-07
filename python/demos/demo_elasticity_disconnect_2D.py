@@ -157,8 +157,7 @@ with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(num_dofs)):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
 fem.apply_lifting(b, [a], [bcs])
-b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-              mode=PETSc.ScatterMode.REVERSE)
+b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 fem.set_bc(b, bcs)
 
 # Solve Linear problem

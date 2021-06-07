@@ -17,16 +17,15 @@ import argparse
 import dolfinx
 import dolfinx.fem as fem
 import dolfinx.io
-import dolfinx.la
-import dolfinx.log
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
+import scipy.sparse.linalg
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
-from create_and_export_mesh import mesh_2D_dolfin, gmsh_2D_stacked
+from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 
 dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
 
@@ -143,8 +142,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     # opts["ksp_view"] = None # List progress of solver
 
     # Create functionspace and build near nullspace
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(
-        mpc.function_space())
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
     A.setNearNullSpace(null_space)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -188,26 +186,25 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(L_org, bcs)
 
-        # Create global transformation matrix
-        K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-        # Create reduced A
-        A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-        reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-        # Created reduced L
-        vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-        reduced_L = np.dot(K.T, vec)
-        # Solve linear system
-        d = np.linalg.solve(reduced_A, reduced_L)
-        # Back substitution to full solution vector
-        uh_numpy = np.dot(K, d)
+    root = 0
+    with dolfinx.common.Timer("~MPC: Verification"):
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
-    with dolfinx.common.Timer("~MPC: Compare"):
-        # Compare LHS, RHS and solution with reference values
-        A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-        b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-        dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-        dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]: uh.owner_range[1]], atol=1e-7)
+        # Gather LHS, RHS and solution on one process
+        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+
+        if MPI.COMM_WORLD.rank == root:
+            KTAK = K.T * A_csr * K
+            reduced_L = K.T @ L_np
+            # Solve linear system
+            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+            # Back substitution to full solution vector
+            uh_numpy = K @ d
+            assert np.allclose(uh_numpy, u_mpc)
 
 
 if __name__ == "__main__":

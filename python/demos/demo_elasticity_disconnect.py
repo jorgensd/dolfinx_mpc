@@ -221,8 +221,7 @@ if MPI.COMM_WORLD.rank == 0:
 # Write solution to file
 u_h = dolfinx.Function(mpc.function_space())
 u_h.vector.setArray(uh.array)
-u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                       mode=PETSc.ScatterMode.FORWARD)
+u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"
 with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)

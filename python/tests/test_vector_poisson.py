@@ -4,16 +4,16 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import pytest
-import numpy as np
-
-from petsc4py import PETSc
-from mpi4py import MPI
 import dolfinx
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
+import numpy as np
+import pytest
+import scipy.sparse.linalg
 import ufl
+from mpi4py import MPI
+from petsc4py import PETSc
 
 
 @pytest.mark.parametrize("Nx", [4])
@@ -76,8 +76,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
-    A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-    b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
+
     # Generate reference matrices for unconstrained problem
     A_org = dolfinx.fem.assemble_matrix(a, bcs)
     A_org.assemble()
@@ -87,20 +86,25 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(L_org, bcs)
 
-    # Create global transformation matrix
-    K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-    # Create reduced A
-    A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-    reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-    # Created reduced L
-    vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-    reduced_L = np.dot(K.T, vec)
-    # Solve linear system
-    d = np.linalg.solve(reduced_A, reduced_L)
-    # Backsubstitution to full solution vector
-    uh_numpy = np.dot(K, d)
+    root = 0
+    comm = mesh.mpi_comm()
+    with dolfinx.common.Timer("~TEST: Compare"):
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
-    # Compare LHS, RHS and solution with reference values
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-    dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-    assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+        # Gather LHS, RHS and solution on one process
+        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+
+        if MPI.COMM_WORLD.rank == root:
+            KTAK = K.T * A_csr * K
+            reduced_L = K.T @ L_np
+            # Solve linear system
+            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+            # Back substitution to full solution vector
+            uh_numpy = K @ d
+            assert np.allclose(uh_numpy, u_mpc)
+
+    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
