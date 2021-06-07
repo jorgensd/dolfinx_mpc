@@ -20,8 +20,9 @@ import dolfinx
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
-import ufl
 import numpy as np
+import scipy.sparse.linalg
+import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -46,8 +47,7 @@ def DirichletBoundary(x):
     return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
 
 
-facets = dolfinx.mesh.locate_entities_boundary(mesh, 1,
-                                               DirichletBoundary)
+facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, DirichletBoundary)
 topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
 bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
@@ -59,8 +59,7 @@ def PeriodicBoundary(x):
 
 facets = dolfinx.mesh.locate_entities_boundary(
     mesh, mesh.topology.dim - 1, PeriodicBoundary)
-mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1,
-                      facets, np.full(len(facets), 2, dtype=np.int32))
+mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
 
 
 def periodic_relation(x):
@@ -84,8 +83,7 @@ a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
 x = ufl.SpatialCoordinate(mesh)
 dx = x[0] - 0.9
 dy = x[1] - 0.5
-f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) \
-    + 1.0 * ufl.exp(-(dx * dx + dy * dy) / 0.02)
+f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) + 1.0 * ufl.exp(-(dx * dx + dy * dy) / 0.02)
 
 rhs = ufl.inner(f, v) * ufl.dx
 
@@ -98,8 +96,7 @@ with dolfinx.common.Timer("~PERIODIC: Assemble LHS and RHS"):
 
 # Apply boundary conditions
 dolfinx.fem.apply_lifting(b, [a], [bcs])
-b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-              mode=PETSc.ScatterMode.REVERSE)
+b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.set_bc(b, bcs)
 
 # Solve Linear problem
@@ -125,8 +122,7 @@ with dolfinx.common.Timer("~PERIODIC: Solve old"):
     uh = b.copy()
     uh.set(0)
     solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
 
     # solver.view()
@@ -137,8 +133,7 @@ with dolfinx.common.Timer("~PERIODIC: Solve old"):
 u_h = dolfinx.Function(mpc.function_space())
 u_h.vector.setArray(uh.array)
 u_h.name = "u_mpc"
-outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                              "results/demo_periodic.xdmf", "w")
+outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_periodic.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(u_h)
 
@@ -159,30 +154,28 @@ solver.solve(L_org, u_.vector)
 
 it = solver.getIterationNumber()
 print("Unconstrained solver iterations {0:d}".format(it))
-u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                      mode=PETSc.ScatterMode.FORWARD)
+dolfinx.cpp.la.scatter_forward(u_.x)
 u_.name = "u_unconstrained"
 outfile.write_function(u_)
 
+root = 0
+comm = mesh.mpi_comm()
+with dolfinx.common.Timer("~Demo: Verification"):
+    dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+    dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
-# Create global transformation matrix
-K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
+    # Gather LHS, RHS and solution on one process
+    A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+    K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+    L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
 
-# Create reduced RHS and LHS
-A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-reduced_L = np.dot(K.T, vec)
-# Solve linear system
-d = np.linalg.solve(reduced_A, reduced_L)
-uh_numpy = np.dot(K, d)
-
-# Transfer data from the MPC problem to numpy arrays for comparison
-A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-
-dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-assert np.allclose(
-    uh.array, uh_numpy[uh.owner_range[0]:uh.owner_range[1]])
+    if MPI.COMM_WORLD.rank == root:
+        KTAK = K.T * A_csr * K
+        reduced_L = K.T @ L_np
+        # Solve linear system
+        d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+        # Back substitution to full solution vector
+        uh_numpy = K @ d
+        assert np.allclose(uh_numpy, u_mpc)
 dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

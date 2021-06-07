@@ -14,11 +14,12 @@ import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
+import scipy.sparse.linalg
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
-from create_and_export_mesh import mesh_3D_dolfin, gmsh_3D_stacked
+from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 
 comm = MPI.COMM_WORLD
 
@@ -183,7 +184,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     if not compare:
         return
 
-    dolfinx_mpc.utils.log_info("Solving reference problem with global matrix (using numpy)")
+    dolfinx_mpc.utils.log_info("Solving reference problem with global matrix (using scipy)")
     with dolfinx.common.Timer("~~Contact: Reference problem"):
         A_org = fem.assemble_matrix(a, bcs)
         A_org.assemble()
@@ -191,27 +192,33 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         fem.apply_lifting(L_org, [a], [bcs])
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(L_org, bcs)
-        K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-        A_global = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
 
-        reduced_A = np.matmul(np.matmul(K.T, A_global), K)
-        vec = dolfinx_mpc.utils.PETScVector_to_global_numpy(L_org)
-        reduced_L = np.dot(K.T, vec)
-        d = np.linalg.solve(reduced_A, reduced_L)
-        uh_numpy = np.dot(K, d)
-
+    root = 0
     with dolfinx.common.Timer("~~Contact: Compare LHS, RHS and solution"):
-        A_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A)
-        b_np = dolfinx_mpc.utils.PETScVector_to_global_numpy(b)
-        dolfinx_mpc.utils.compare_matrices(reduced_A, A_np, mpc)
-        dolfinx_mpc.utils.compare_vectors(reduced_L, b_np, mpc)
-        assert np.allclose(uh.array, uh_numpy[uh.owner_range[0]: uh.owner_range[1]])
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+
+        # Gather LHS, RHS and solution on one process
+        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+
+        if MPI.COMM_WORLD.rank == root:
+            KTAK = K.T * A_csr * K
+            reduced_L = K.T @ L_np
+            # Solve linear system
+            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+            # Back substitution to full solution vector
+            uh_numpy = K @ d
+            assert np.allclose(uh_numpy, u_mpc)
+
+    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--res", default=0.1, type=np.float64, dest="res",
-                        help="Resolution of Mesh")
+    parser.add_argument("--res", default=0.1, type=np.float64, dest="res", help="Resolution of Mesh")
     parser.add_argument("--theta", default=np.pi / 3, type=np.float64, dest="theta",
                         help="Rotation angle around axis [1, 1, 0]")
     hex = parser.add_mutually_exclusive_group(required=False)

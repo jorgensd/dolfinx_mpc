@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Jørgen S. Dokken
+# Copyright (C) 2020-2021 Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -11,6 +11,7 @@ import numpy as np
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
+import scipy.sparse
 
 import dolfinx
 import dolfinx.common
@@ -18,6 +19,12 @@ import dolfinx.la
 import dolfinx.log
 import dolfinx.geometry
 import dolfinx.cpp
+
+
+__all__ = ["rotation_matrix", "facet_normal_approximation", "gather_PETScVector",
+           "gather_PETScMatrix", "compare_MPC_LHS", "log_info", "rigid_motions_nullspace",
+           "determine_closest_block", "compare_MPC_RHS", "create_normal_approximation",
+           "gather_transformation_matrix", "compare_CSR", "create_point_to_point_constraint"]
 
 
 def rotation_matrix(axis, angle):
@@ -130,12 +137,10 @@ def gather_slaves_global(constraint):
     return slaves
 
 
-def create_transformation_matrix(V, constraint):
+def gather_transformation_matrix(constraint, root=0):
     """
-    Creates the transformation matrix K (dim x dim-len(slaves)) f
-    or a given set of slaves, masters and coefficients.
-    All input is given as 1D arrays, where offsets[j] indicates where
-    the first master and corresponding coefficient of slaves[j] is located.
+    Creates the transformation matrix K (dim x dim-len(slaves)) for a given MPC
+    and gathers it as a scipy CSR matrix on process 'root'.
 
     Example:
 
@@ -152,9 +157,11 @@ def create_transformation_matrix(V, constraint):
       K = [[1,0], [alpha beta], [0,1]]
     """
     # Gather slaves from all procs
+    V = constraint.V
     imap = constraint.index_map()
     block_size = V.dofmap.index_map_bs
     num_local_slaves = constraint.num_local_slaves()
+    # Gather all global_slaves
     if num_local_slaves > 0:
         local_blocks = constraint.slaves()[: num_local_slaves] // block_size
         local_rems = constraint.slaves()[: num_local_slaves] % block_size
@@ -168,36 +175,74 @@ def create_transformation_matrix(V, constraint):
     master_rems = masters % block_size
     coeffs = constraint.coefficients()
     offsets = constraint.masters_local().offsets
-    dim = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
-    K = np.zeros((dim, dim - len(global_slaves)), dtype=PETSc.ScalarType)
-    # Add entries to
-    for i in range(K.shape[0]):
-        local_index = np.flatnonzero(i == glob_slaves)
-        if len(local_index) > 0:
-            # If local master add coeffs
-            local_index = local_index[0]
-            masters_index = (imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]])
-                             * block_size + master_rems[offsets[local_index]: offsets[local_index + 1]])
-            coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
-            for master, coeff in zip(masters_index, coeffs_index):
-                count = sum(master > global_slaves)
-                K[i, master - count] = coeff
-        elif i in global_slaves:
-            # Do not add anything if there is a master
-            pass
-        else:
-            # For all other nodes add one over number of procs to sum to 1
-            count = sum(i > global_slaves)
-            K[i, i - count] = 1 / MPI.COMM_WORLD.size
-    # Gather K
-    K = np.sum(MPI.COMM_WORLD.allgather(K), axis=0)
-    return K
+
+    # Create sparse K matrix
+    K_val, rows, cols = [], [], []
+    # Add local contributions to K from local slaves
+    for local_index, slave in enumerate(glob_slaves):
+        masters_index = (imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]])
+                         * block_size + master_rems[offsets[local_index]: offsets[local_index + 1]])
+        coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
+        for master, coeff in zip(masters_index, coeffs_index):
+            count = sum(master > global_slaves)
+            K_val.append(coeff)
+            rows.append(slave)
+            cols.append(master - count)
+
+    # Add identity for all dofs on diagonal
+    l_range = V.dofmap.index_map.local_range
+    global_dofs = np.arange(l_range[0] * block_size, l_range[1] * block_size)
+    is_slave = np.isin(global_dofs, glob_slaves)
+    for i, dof in enumerate(global_dofs):
+        if not is_slave[i]:
+            K_val.append(1)
+            rows.append(dof)
+            cols.append(dof - sum(dof > global_slaves))
+
+    # Gather K to root
+    K_vals = MPI.COMM_WORLD.gather(np.asarray(K_val, dtype=PETSc.ScalarType), root=root)
+    rows_g = MPI.COMM_WORLD.gather(np.asarray(rows, dtype=np.int64), root=root)
+    cols_g = MPI.COMM_WORLD.gather(np.asarray(cols, dtype=np.int64), root=root)
+
+    if MPI.COMM_WORLD.rank == root:
+        K_sparse = scipy.sparse.coo_matrix((np.hstack(K_vals), (np.hstack(rows_g), np.hstack(cols_g)))).tocsr()
+        return K_sparse
 
 
-def PETScVector_to_global_numpy(vector):
+def petsc_to_local_CSR(A: PETSc.Mat, mpc: dolfinx_mpc.MultiPointConstraint):
+    """
+    Convert a PETSc matrix to a local CSR matrix (scipy) including ghost entries
+    """
+    global_indices = np.asarray(mpc.function_space().dofmap.index_map.global_indices(), dtype=PETSc.IntType)
+    sort_index = np.argsort(global_indices)
+    is_A = PETSc.IS().createGeneral(global_indices[sort_index])
+    A_loc = A.createSubMatrices(is_A)[0]
+    ai, aj, av = A_loc.getValuesCSR()
+    A_csr = scipy.sparse.csr_matrix((av, aj, ai))
+    return A_csr[global_indices[:, None], global_indices]
+
+
+def gather_PETScMatrix(A: PETSc.Mat, root=0):
+    """
+    Given a distributed PETSc matrix, gather in on process 'root' in
+    a scipy CSR matrix
+    """
+    ai, aj, av = A.getValuesCSR()
+    aj_all = MPI.COMM_WORLD.gather(aj, root=root)
+    av_all = MPI.COMM_WORLD.gather(av, root=root)
+    ai_all = MPI.COMM_WORLD.gather(ai, root=root)
+    if MPI.COMM_WORLD.rank == root:
+        ai_cum = [0]
+        for ai in ai_all:
+            offsets = ai[1:] + ai_cum[-1]
+            ai_cum.extend(offsets)
+        return scipy.sparse.csr_matrix((np.hstack(av_all), np.hstack(aj_all), ai_cum))
+
+
+def gather_PETScVector(vector, root=0):
     """
     Gather a PETScVector from different processors on
-    all processors as a numpy array
+    process 'root' as an numpy array
     """
     numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
@@ -207,67 +252,63 @@ def PETScVector_to_global_numpy(vector):
     return numpy_vec
 
 
-def PETScMatrix_to_global_numpy(A):
+def compare_CSR(A, B, atol=1e-10):
+    """ Compuare CSR matrices A and B """
+    diff = np.abs(np.abs(A - B))
+    assert(diff.max() < atol)
+
+
+def compare_MPC_LHS(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
+                    mpc: dolfinx_mpc.MultiPointConstraint, root: int = 0):
     """
-    Gather a PETScMatrix from different processors on
-    all processors as a numpy nd array.
+    Compare an unmodified matrix for the problem with the one assembled with a
+    multi point constraint.
+
+    The unmodified matrix is multiplied with K^T A K, where K is the global transformation matrix.
     """
+    timer = dolfinx.common.Timer("~MPC: Compare matrices")
+    comm = mpc.V.mesh.mpi_comm()
+    V = mpc.V
+    assert(root < comm.size)
 
-    B = A.convert("dense")
-    B_np = B.getDenseArray()
-    A_numpy = np.zeros((A.size[0], A.size[1]), dtype=B_np.dtype)
-    o_range = A.getOwnershipRange()
-    A_numpy[o_range[0]: o_range[1], :] = B_np
-    A_numpy = sum(MPI.COMM_WORLD.allgather(A_numpy))
-    return A_numpy
+    K = gather_transformation_matrix(mpc, root=root)
+    A_csr = gather_PETScMatrix(A_org, root=root)
+
+    # Get global slaves
+    glob_slaves = gather_slaves_global(mpc)
+    A_mpc_csr = gather_PETScMatrix(A_mpc, root=root)
+
+    if MPI.COMM_WORLD.rank == root:
+        KTAK = K.T * A_csr * K
+
+        # Remove identity rows of MPC matrix
+        all_cols = np.arange(V.dofmap.index_map.size_global * V.dofmap.index_map_bs)
+        cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
+        mpc_without_slaves = A_mpc_csr[cols_except_slaves[:, None], cols_except_slaves]
+
+        # Compute difference
+        compare_CSR(KTAK, mpc_without_slaves)
+
+    timer.stop()
 
 
-def compare_vectors(reduced_vec, vec, constraint):
+def compare_MPC_RHS(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.MultiPointConstraint, root: int = 0):
     """
-    Compare two numpy vectors of different lengths,
-    where the constraints slaves are not in the reduced vector
+    Compare an unconstrained RHS with an MPC rhs.
     """
-    global_zeros = gather_slaves_global(constraint)
-    count = 0
-    for i in range(len(vec)):
-        if i in global_zeros:
-            count += 1
-            assert np.isclose(vec[i], 0)
-        else:
-            assert(np.isclose(reduced_vec[i - count], vec[i]))
+    glob_slaves = gather_slaves_global(constraint)
+    b_org_np = dolfinx_mpc.utils.gather_PETScVector(b_org, root=root)
+    b_np = dolfinx_mpc.utils.gather_PETScVector(b, root=root)
+    K = gather_transformation_matrix(constraint, root=root)
 
+    comm = constraint.V.mesh.mpi_comm()
+    if comm.rank == root:
+        reduced_b = K.T @ b_org_np
 
-def compare_matrices(reduced_A, A, constraint):
-    """
-    Compare a reduced matrix (stemming from numpy global matrix product),
-    with a matrix stemming from MPC computations (having identity
-    rows for slaves) given a multi-point constraint
-    """
-    global_ones = gather_slaves_global(constraint)
-    A_numpy_padded = np.zeros(A.shape, dtype=reduced_A.dtype)
-    count = 0
-    for i in range(A.shape[0]):
-        if i in global_ones:
-            A_numpy_padded[i, i] = 1
-            count += 1
-            continue
-        m = 0
-        for j in range(A.shape[1]):
-            if j in global_ones:
-                m += 1
-                continue
-            else:
-                A_numpy_padded[i, j] = reduced_A[i - count, j - m]
-    D = np.abs(A - A_numpy_padded)
-
-    max_index = np.unravel_index(np.argmax(D, axis=None), D.shape)
-    if D[max_index] > 1e-6:
-        print("Unequal ({0:.2e}) at ".format(D[max_index]), max_index)
-        print(A_numpy_padded[max_index], A[max_index])
-        print("Unequal at:", np.argwhere(D != 0))
-
-    # Check that all entities are close
-    assert np.allclose(A, A_numpy_padded)
+        all_cols = np.arange(constraint.V.dofmap.index_map.size_global * constraint.V.dofmap.index_map_bs)
+        cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
+        assert np.allclose(b_np[glob_slaves], 0)
+        assert np.allclose(b_np[cols_except_slaves], reduced_b)
 
 
 def log_info(message):

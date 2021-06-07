@@ -14,6 +14,8 @@ from mpi4py import MPI
 import dolfinx
 import dolfinx.log
 
+root = 0
+
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
@@ -45,19 +47,18 @@ def test_mpc_assembly(master_point, degree, celltype):
         A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
 
     with dolfinx.common.Timer("~TEST: Assemble matrix C++"):
-        A2 = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
+        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
 
-    A_new = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A2)
-    A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
-    assert np.allclose(A_new, A_mpc_np)
+    with dolfinx.common.Timer("~TEST: Compare with numpy"):
+        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
+        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A_mpc, root=root)
+        if MPI.COMM_WORLD.rank == root:
+            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
 
-    # Create globally reduced system with numpy
-    K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-    A_org = dolfinx.fem.assemble_matrix(a)
-    A_org.assemble()
-    A_org_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-    reduced_A = np.matmul(np.matmul(K.T, A_org_np), K)
-    dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, mpc)
+        # Create globally reduced system
+        A_org = dolfinx.fem.assemble_matrix(a)
+        A_org.assemble()
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_mpc, mpc)
 
 
 # Check if ordering of connected dofs matter
@@ -93,22 +94,18 @@ def test_slave_on_same_cell(master_point, degree, celltype):
         A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
 
     with dolfinx.common.Timer("~TEST: Assemble matrix C++"):
-        A2 = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
+        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
 
     with dolfinx.common.Timer("~TEST: Compare with numpy"):
-        A_mpc_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_mpc)
-        A_new = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A2)
-        assert np.allclose(A_new, A_mpc_np)
+        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
+        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A_mpc, root=root)
+        if MPI.COMM_WORLD.rank == root:
+            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
 
-        # Create globally reduced system with numpy
-        K = dolfinx_mpc.utils.create_transformation_matrix(V, mpc)
-
+        # Create globally reduced system
         A_org = dolfinx.fem.assemble_matrix(a)
         A_org.assemble()
-        A_org_np = dolfinx_mpc.utils.PETScMatrix_to_global_numpy(A_org)
-        reduced_A = np.matmul(np.matmul(K.T, A_org_np), K)
-
-        dolfinx_mpc.utils.compare_matrices(reduced_A, A_mpc_np, mpc)
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_mpc, mpc)
 
     # dolfinx.common.list_timings(MPI.COMM_WORLD,
     #                             [dolfinx.common.TimingType.wall])
