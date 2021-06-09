@@ -82,7 +82,8 @@ def assemble_matrix_cpp(form, constraint, bcs=[]):
     return A
 
 
-def assemble_matrix(form, constraint, bcs=[], A=None):
+def assemble_matrix(form, constraint, bcs=[], A=None,
+                    form_compiler_parameters={}, jit_parameters={}):
     """
     Assembles a ufl form given a multi point constraint and possible
     Dirichlet boundary conditions.
@@ -90,10 +91,7 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     """
 
     timer_matrix = Timer("~MPC: Assemble matrix")
-
-    # Get data from function space
-    assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
-    V = form.arguments()[0].ufl_function_space()
+    V = constraint.function_space()
     dofmap = V.dofmap
     dofs = dofmap.list.array
 
@@ -124,10 +122,13 @@ def assemble_matrix(form, constraint, bcs=[], A=None):
     x = V.mesh.geometry.x
 
     # Generate ufc_form
-    ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form)
+    ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form,
+                                          form_compiler_parameters=form_compiler_parameters,
+                                          jit_parameters=jit_parameters)
 
     # Generate matrix with MPC sparsity pattern
-    cpp_form = dolfinx.Form(form)._cpp_object
+    cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
+                            jit_parameters=jit_parameters)._cpp_object
 
     # Pack constants and coefficients
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
