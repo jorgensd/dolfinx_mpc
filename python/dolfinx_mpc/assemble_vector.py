@@ -17,12 +17,13 @@ Timer = dolfinx.common.Timer
 
 
 def assemble_vector(form, constraint,
-                    bcs=[numpy.array([]), numpy.array([])]):
+                    bcs=[numpy.array([]), numpy.array([])], b=None,
+                    form_compiler_parameters={}, jit_parameters={}):
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
     timer_vector = Timer("~MPC: Assemble vector")
     bc_dofs, bc_values = bcs
     V = form.arguments()[0].ufl_function_space()
-    # Unpack mesh and dofmap data
+    # Unpack mself._A, esh and dofmap data
     pos = V.mesh.geometry.dofmap.offsets
     x_dofs = V.mesh.geometry.dofmap.array
     x = V.mesh.geometry.x
@@ -42,12 +43,19 @@ def assemble_vector(form, constraint,
     mpc_data = (slaves_local, masters_local, coefficients, offsets,
                 slave_cells, cell_to_slave, c_to_s_off)
     # Get index map and ghost info
-    index_map = constraint.index_map()
-    vector = dolfinx.cpp.la.create_vector(index_map, block_size)
-    ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form)
+    if b is None:
+        index_map = constraint.index_map()
+        vector = dolfinx.cpp.la.create_vector(index_map, block_size)
+    else:
+        vector = b
+
+    ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form,
+                                          form_compiler_parameters=form_compiler_parameters,
+                                          jit_parameters=jit_parameters)
 
     # Pack constants and coefficients
-    cpp_form = dolfinx.Form(form)._cpp_object
+    cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
+                            jit_parameters=jit_parameters)._cpp_object
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
 
