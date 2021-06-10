@@ -254,7 +254,7 @@ def gather_PETScVector(vector, root=0):
 
 def compare_CSR(A, B, atol=1e-10):
     """ Compuare CSR matrices A and B """
-    diff = np.abs(np.abs(A - B))
+    diff = np.abs(A - B)
     assert(diff.max() < atol)
 
 
