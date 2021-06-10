@@ -140,7 +140,8 @@ def test_linearproblem(master_point):
 
     problem = dolfinx_mpc.LinearProblem(a, rhs, mpc, bcs=[],
                                         petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
-    uh = problem.solve()
+    for i in range(2):
+        uh = problem.solve()
 
     root = 0
     comm = mesh.mpi_comm()
