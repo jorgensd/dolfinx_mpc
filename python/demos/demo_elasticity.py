@@ -104,7 +104,7 @@ def demo_elasticity():
     solver.setOperators(A_org)
     u_ = dolfinx.Function(V)
     solver.solve(L_org, u_.vector)
-    dolfinx.cpp.la.scatter_forward(u_.x)
+    u_.x.scatter_forward()
     u_.name = "u_unconstrained"
     outfile.write_function(u_)
     outfile.close()

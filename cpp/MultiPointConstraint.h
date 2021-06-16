@@ -306,7 +306,9 @@ private:
     dolfinx::mesh::Topology topology = _V->mesh()->topology();
     dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
     auto [unused_indexmap, bs, o_dofmap] = dolfinx::fem::build_dofmap_data(
-        _V->mesh()->mpi_comm(), topology, layout);
+        _V->mesh()->mpi_comm(), topology, layout,
+        [](const dolfinx::graph::AdjacencyList<std::int32_t>& g)
+        { return dolfinx::graph::scotch::compute_gps(g, 2).first; });
     _dofmap = std::make_shared<dolfinx::fem::DofMap>(
         old_dofmap->element_dof_layout, _index_map, bs, o_dofmap, bs);
 

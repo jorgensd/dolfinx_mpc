@@ -159,7 +159,7 @@ def demo_periodic3D(celltype, out_periodic):
         solver.solve(L_org, u_.vector)
         it = solver.getIterationNumber()
     print(f"Unconstrained solver iterations: {it}")
-    dolfinx.cpp.la.scatter_forward(u_.x)
+    u_.x.scatter_forward()
     u_.name = "u_" + ext + "_unconstrained"
     out_periodic.write_function(u_, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 

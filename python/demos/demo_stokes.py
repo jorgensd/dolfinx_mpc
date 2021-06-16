@@ -111,7 +111,7 @@ def inlet_velocity_expression(x):
 inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
-dolfinx.cpp.la.scatter_forward(inlet_velocity.x)
+inlet_velocity.x.scatter_forward()
 W0 = W.sub(0)
 dofs = dolfinx.fem.locate_dofs_topological((W0, V), 1, inlet_facets)
 bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
