@@ -1,6 +1,7 @@
 # Changelog
 
 ## Dev
+- `dolfinx.cpp.la.scatter_forward(x)` is replaced by `x.scatter_forward()`
 - Internal updates to match DOLFINx main API
 - Slip condition constructor moved to C++ (Speedup for large problems)
 - Update GMSH code in demos to be compatible with [GMSH 4.8.4](https://gitlab.onelab.info/gmsh/gmsh/-/tags/gmsh_4_8_4).

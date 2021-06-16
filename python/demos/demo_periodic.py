@@ -138,7 +138,7 @@ solver.solve(L_org, u_.vector)
 
 it = solver.getIterationNumber()
 print("Unconstrained solver iterations {0:d}".format(it))
-dolfinx.cpp.la.scatter_forward(u_.x)
+u_.x.scatter_forward()
 u_.name = "u_unconstrained"
 outfile.write_function(u_)
 
