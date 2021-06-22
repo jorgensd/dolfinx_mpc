@@ -53,13 +53,8 @@ bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
 
 
-def PeriodicBoundary(x):
+def periodic_boundary(x):
     return np.isclose(x[0], 1)
-
-
-facets = dolfinx.mesh.locate_entities_boundary(
-    mesh, mesh.topology.dim - 1, PeriodicBoundary)
-mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
 
 
 def periodic_relation(x):
@@ -72,7 +67,7 @@ def periodic_relation(x):
 
 with dolfinx.common.Timer("~PERIODIC: Initialize MPC"):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_periodic_constraint(mt, 2, periodic_relation, bcs)
+    mpc.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_relation, bcs)
     mpc.finalize()
 
 # Define variational problem

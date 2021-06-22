@@ -63,7 +63,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
         periodic_mt = dolfinx.MeshTags(mesh, edim, edges, np.full(len(edges), 2, dtype=np.int32))
 
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint(periodic_mt, 2, periodic_relation, bcs, scale=0.5)
+        mpc.create_periodic_constraint_topological(periodic_mt, 2, periodic_relation, bcs, scale=0.5)
         mpc.finalize()
 
     # Create traction meshtag
