@@ -155,20 +155,18 @@ def test_surface_integral_dependency():
     def top(x):
         return np.isclose(x[1], 1)
     fdim = mesh.topology.dim - 1
-    top_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, fdim, top)
+    top_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, top)
 
     indices = np.array([], dtype=np.intc)
     values = np.array([], dtype=np.intc)
     markers = {3: top_facets}
     for key in markers.keys():
         indices = np.append(indices, markers[key])
-        values = np.append(values, np.full(len(markers[key]), key,
-                                           dtype=np.intc))
-
+        values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
+    sort = np.argsort(indices)
     mt = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim - 1,
-                               np.array(indices, dtype=np.intc),
-                               np.array(values, dtype=np.intc))
+                               np.array(indices[sort], dtype=np.intc),
+                               np.array(values[sort], dtype=np.intc))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
     g = dolfinx.Constant(mesh, [2, 1])
     h = dolfinx.Constant(mesh, [3, 2])
@@ -205,8 +203,8 @@ def test_surface_integral_dependency():
 
     # Generate reference matrices and unconstrained solution
     A_org = dolfinx.fem.assemble_matrix(a)
-
     A_org.assemble()
+
     L_org = dolfinx.fem.assemble_vector(rhs)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 

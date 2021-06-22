@@ -95,12 +95,21 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     # dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form, form_consts, form_coeffs)
     dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form)
 
+    # Check if we need facet permutations
+    # FIXME: access apply_dof_transformations here
+    e0 = cpp_form.function_spaces[0].element
+    needs_transformation_data = e0.needs_dof_transformations or cpp_form.needs_facet_permutations
+    cell_info = numpy.array([], dtype=numpy.uint32)
+    if needs_transformation_data:
+        V.mesh.topology.create_entity_permutations()
+        cell_info = V.mesh.topology.get_cell_permutation_info()
+    if e0.needs_dof_transformations:
+        raise NotImplementedError("Dof transformations not implemented")
     # Assemble over cells
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
-        permutation_info = V.mesh.topology.get_cell_permutation_info()
         timer = Timer("~MPC: Assemble vector (cells)")
         for i, id in enumerate(subdomain_ids):
             cell_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i].tabulate_tensor
@@ -108,7 +117,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                                (pos, x_dofs, x), form_coeffs, form_consts,
-                               permutation_info, dofs, block_size, num_dofs_per_element, mpc_data)
+                               cell_info, dofs, block_size, num_dofs_per_element, mpc_data)
         timer.stop()
 
     # Assemble exterior facet integrals
@@ -117,7 +126,6 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
-        permutation_info = V.mesh.topology.get_cell_permutation_info()
         facet_permutation_info = V.mesh.topology.get_facet_permutations()
         timer = Timer("MPC Assemble vector (exterior facets)")
         for i, id in enumerate(subdomain_ids):
@@ -127,7 +135,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
                 assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x),
-                                               form_coeffs, form_consts, (permutation_info, facet_permutation_info),
+                                               form_coeffs, form_consts, (cell_info, facet_permutation_info),
                                                dofs, block_size, num_dofs_per_element, mpc_data, num_facets_per_cell)
         timer.stop()
     timer_vector.stop()
@@ -173,7 +181,8 @@ def assemble_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
         b_local.fill(0.0)
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
                ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
-               ffi_fb(facet_perm), permutation_info[cell_index])
+               ffi_fb(facet_perm))
+        # FIXME: Here we need to add the apply_dof_transformation function
 
         # Modify global vector and local cell contributions
         b_local_copy = b_local.copy()
@@ -230,7 +239,8 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[PETSc.ScalarType]',
         b_local.fill(0.0)
         facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
-               ffi_fb(facet_index), ffi_fb(facet_perm), cell_perms[cell_index])
+               ffi_fb(facet_index), ffi_fb(facet_perm))
+        # FIXME: Here we need to add the apply_dof_transformation
 
         # Modify local contributions and add global MPC contributions
         b_local_copy = b_local.copy()

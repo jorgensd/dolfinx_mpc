@@ -21,6 +21,8 @@ class MultiPointConstraint;
 /// @param[in] a The bilinear from to assemble
 /// @param[in] bcs Boundary conditions to apply. For boundary condition
 ///  dofs the row and column are zeroed. The diagonal  entry is not set.
+/// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
+/// Dirichlet BC (default=1)
 void assemble_matrix(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const double*)>& mat_add_block,
@@ -29,7 +31,8 @@ void assemble_matrix(
     const dolfinx::fem::Form<double>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
-        bcs);
+        bcs,
+    const double diagval = 1.0);
 
 //-----------------------------------------------------------------------------
 /// Assemble bilinear form into a matrix
@@ -39,6 +42,8 @@ void assemble_matrix(
 /// @param[in] a The bilinear from to assemble
 /// @param[in] bcs Boundary conditions to apply. For boundary condition
 ///  dofs the row and column are zeroed. The diagonal  entry is not set.
+/// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
+/// Dirichlet BC (default=1)
 void assemble_matrix(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const std::complex<double>*)>&
@@ -51,6 +56,7 @@ void assemble_matrix(
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
-        bcs);
+        bcs,
+    const std::complex<double> diagval = 1.0);
 
 } // namespace dolfinx_mpc

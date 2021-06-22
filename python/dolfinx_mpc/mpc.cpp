@@ -116,11 +116,13 @@ void mpc(py::module& m)
            const std::shared_ptr<
                const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc,
            const std::vector<std::shared_ptr<
-               const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs)
+               const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
+           const PetscScalar diagval)
         {
           dolfinx_mpc::assemble_matrix(
               dolfinx::la::PETScMatrix::set_block_fn(A, ADD_VALUES),
-              dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc, bcs);
+              dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc, bcs,
+              diagval);
         });
 
   m.def(

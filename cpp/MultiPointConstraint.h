@@ -64,7 +64,6 @@ public:
         = std::make_shared<dolfinx::graph::AdjacencyList<T>>(coeffs, offsets);
     _owner_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
         owners, offsets);
-
     // Create new index map with all masters
     create_new_index_map();
   }
@@ -224,6 +223,7 @@ private:
     dolfinx::common::Timer timer("~MPC: Create new index map");
     MPI_Comm comm = _V->mesh()->mpi_comm();
     const dolfinx::fem::DofMap& dofmap = *(_V->dofmap());
+    std::shared_ptr<const dolfinx::fem::FiniteElement> element = _V->element();
 
     std::shared_ptr<const dolfinx::common::IndexMap> index_map
         = dofmap.index_map;
@@ -309,6 +309,23 @@ private:
         _V->mesh()->mpi_comm(), topology, layout,
         [](const dolfinx::graph::AdjacencyList<std::int32_t>& g)
         { return dolfinx::graph::scotch::compute_gps(g, 2).first; });
+
+    // If the element's DOF transformations are permutations, permute the DOF
+    // numbering on each cell
+    if (element->needs_dof_permutations())
+    {
+      const int D = topology.dim();
+      const int num_cells = topology.connectivity(D, 0)->num_nodes();
+      topology.create_entity_permutations();
+      const std::vector<std::uint32_t>& cell_info
+          = topology.get_cell_permutation_info();
+
+      const std::function<void(const xtl::span<std::int32_t>&, std::uint32_t)>
+          unpermute_dofs = element->get_dof_permutation_function(true, true);
+      for (std::int32_t cell = 0; cell < num_cells; ++cell)
+        unpermute_dofs(o_dofmap.links(cell), cell_info[cell]);
+    }
+
     _dofmap = std::make_shared<dolfinx::fem::DofMap>(
         old_dofmap->element_dof_layout, _index_map, bs, o_dofmap, bs);
 

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Dev
+- Addition of new demo `demo_periodic_gep.py` proposed and initally implemented by [fmonteghetti](https://github.com/fmonteghetti) using SLEPc for eigen-value problems. This demo illustrates the usage of the new `diagval` keyword argument in the `assemble_matrix` class. 
 - `dolfinx.cpp.la.scatter_forward(x)` is replaced by `x.scatter_forward()`
 - Internal updates to match DOLFINx main API
 - Slip condition constructor moved to C++ (Speedup for large problems)

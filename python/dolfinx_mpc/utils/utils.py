@@ -236,7 +236,7 @@ def gather_PETScMatrix(A: PETSc.Mat, root=0):
         for ai in ai_all:
             offsets = ai[1:] + ai_cum[-1]
             ai_cum.extend(offsets)
-        return scipy.sparse.csr_matrix((np.hstack(av_all), np.hstack(aj_all), ai_cum))
+        return scipy.sparse.csr_matrix((np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())
 
 
 def gather_PETScVector(vector, root=0):
