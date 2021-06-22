@@ -115,6 +115,7 @@ void modify_mpc_cell(
     }
   }
 } // namespace
+
 //-----------------------------------------------------------------------------
 template <typename T>
 void assemble_exterior_facets(
@@ -125,13 +126,19 @@ void assemble_exterior_facets(
                             const std::int32_t*, const T*)>& mat_add_values,
     const dolfinx::mesh::Mesh& mesh,
     const std::vector<std::int32_t>& active_facets,
+    const std::function<void(const xtl::span<T>&,
+                             const xtl::span<const std::uint32_t>&,
+                             std::int32_t, int)>& apply_dof_transformation,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, size_t bs0,
+    const std::function<
+        void(const xtl::span<T>&, const xtl::span<const std::uint32_t>&,
+             std::int32_t, int)>& apply_dof_transformation_to_transpose,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, size_t bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
-                             const std::uint8_t*, const std::uint32_t)>& kernel,
+                             const std::uint8_t*)>& kernel,
     const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
-    const std::vector<std::uint32_t>& cell_info,
+    const xtl::span<const std::uint32_t>& cell_info,
     const std::vector<std::uint8_t>& perms,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
 {
@@ -182,7 +189,10 @@ void assemble_exterior_facets(
   // Iterate over all facets
   const size_t num_dofs0 = dofmap0.links(0).size();
   const size_t num_dofs1 = dofmap1.links(0).size();
-  xt::xtensor<T, 2> Ae({bs0 * num_dofs0, bs1 * num_dofs1});
+  const std::uint32_t ndim0 = bs0 * num_dofs0;
+  const std::uint32_t ndim1 = bs1 * num_dofs1;
+  xt::xtensor<T, 2> Ae({ndim0, ndim1});
+  const xtl::span<T> _Ae(Ae);
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
 
   for (std::int32_t l = 0; l < active_facets.size(); ++l)
@@ -207,7 +217,11 @@ void assemble_exterior_facets(
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
     kernel(Ae.data(), coeffs.row(cells[0]).data(), constants.data(),
            coordinate_dofs.data(), &local_facet,
-           &perms[cells[0] * facets.size() + local_facet], cell_info[cells[0]]);
+           &perms[cells[0] * facets.size() + local_facet]);
+
+    apply_dof_transformation(_Ae, cell_info, cells[0], ndim1);
+    apply_dof_transformation_to_transpose(_Ae, cell_info, cells[0], ndim0);
+
     // Zero rows/columns for essential bcs
     xtl::span<const std::int32_t> dmap0 = dofmap0.links(cells[0]);
     xtl::span<const std::int32_t> dmap1 = dofmap1.links(cells[0]);
@@ -280,13 +294,19 @@ void assemble_cells_impl(
                             const std::int32_t*, const T*)>& mat_add_values,
     const dolfinx::mesh::Geometry& geometry,
     const std::vector<std::int32_t>& active_cells,
+    std::function<void(xtl::span<T>, const xtl::span<const std::uint32_t>,
+                       const std::int32_t, const int)>
+        apply_dof_transformation,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
+    std::function<void(xtl::span<T>, const xtl::span<const std::uint32_t>,
+                       const std::int32_t, const int)>
+        apply_dof_transformation_to_transpose,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
-                             const std::uint8_t*, const std::uint32_t)>& kernel,
+                             const std::uint8_t*)>& kernel,
     const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
-    const std::vector<std::uint32_t>& cell_info,
+    const xtl::span<const std::uint32_t>& cell_info,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
 {
   dolfinx::common::Timer timer("~MPC (C++): Assemble cells");
@@ -334,6 +354,7 @@ void assemble_cells_impl(
   const size_t ndim0 = num_dofs0 * bs0;
   const size_t ndim1 = num_dofs1 * bs1;
   xt::xtensor<T, 2> Ae({ndim0, ndim1});
+  const xtl::span<T> _Ae(Ae);
   for (std::int32_t l = 0; l < active_cells.size(); ++l)
   {
     // Get cell coordinates/geometry
@@ -347,7 +368,9 @@ void assemble_cells_impl(
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
     kernel(Ae.data(), coeffs.row(c).data(), constants.data(),
-           coordinate_dofs.data(), nullptr, nullptr, cell_info[c]);
+           coordinate_dofs.data(), nullptr, nullptr);
+    apply_dof_transformation(_Ae, cell_info, c, ndim1);
+    apply_dof_transformation_to_transpose(_Ae, cell_info, c, ndim0);
 
     // Zero rows/columns for essential bcs
     xtl::span<const int32_t> dofs0 = dofmap0.links(c);
@@ -444,22 +467,38 @@ void assemble_matrix_impl(
   // Prepare coefficients
   const dolfinx::array2d<T> coeffs = dolfinx::fem::pack_coefficients(a);
 
-  const bool needs_permutation_data = a.needs_permutation_data();
-  if (needs_permutation_data)
-    mesh->topology_mutable().create_entity_permutations();
-  const std::vector<std::uint32_t>& cell_info
-      = needs_permutation_data ? mesh->topology().get_cell_permutation_info()
-                               : std::vector<std::uint32_t>(num_cells);
+  std::shared_ptr<const dolfinx::fem::FiniteElement> element0
+      = a.function_spaces().at(0)->element();
+  std::shared_ptr<const dolfinx::fem::FiniteElement> element1
+      = a.function_spaces().at(1)->element();
+  std::function<void(xtl::span<T>, const xtl::span<const std::uint32_t>,
+                     const std::int32_t, const int)>
+      apply_dof_transformation = element0->get_dof_transformation_function<T>();
+  std::function<void(xtl::span<T>, const xtl::span<const std::uint32_t>,
+                     const std::int32_t, const int)>
+      apply_dof_transformation_to_transpose
+      = element1->get_dof_transformation_to_transpose_function<T>();
 
+  const bool needs_transformation_data
+      = element0->needs_dof_transformations()
+        or element1->needs_dof_transformations()
+        or a.needs_facet_permutations();
+  xtl::span<const std::uint32_t> cell_info;
+  if (needs_transformation_data)
+  {
+    mesh->topology_mutable().create_entity_permutations();
+    cell_info = xtl::span(mesh->topology().get_cell_permutation_info());
+  }
   for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i);
     const std::vector<std::int32_t>& active_cells
         = a.domains(dolfinx::fem::IntegralType::cell, i);
     assemble_cells_impl<T>(mat_add_block_values, mat_add_values,
-                           mesh->geometry(), active_cells, dofs0, bs0, dofs1,
-                           bs1, bc0, bc1, fn, coeffs, constants, cell_info,
-                           mpc);
+                           mesh->geometry(), active_cells,
+                           apply_dof_transformation, dofs0, bs0,
+                           apply_dof_transformation_to_transpose, dofs1, bs1,
+                           bc0, bc1, fn, coeffs, constants, cell_info, mpc);
   }
   if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
       or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
@@ -477,10 +516,11 @@ void assemble_matrix_impl(
       const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
       const std::vector<std::int32_t>& active_facets
           = a.domains(dolfinx::fem::IntegralType::exterior_facet, i);
-      assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
-                                  active_facets, dofs0, bs0, dofs1, bs1, bc0,
-                                  bc1, fn, coeffs, constants, cell_info, perms,
-                                  mpc);
+      assemble_exterior_facets<T>(
+          mat_add_block_values, mat_add_values, *mesh, active_facets,
+          apply_dof_transformation, dofs0, bs0,
+          apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn,
+          coeffs, constants, cell_info, perms, mpc);
     }
 
     const std::vector<int> c_offsets = a.coefficient_offsets();
@@ -506,7 +546,8 @@ void _assemble_matrix(
                             const std::int32_t*, const T*)>& mat_add,
     const dolfinx::fem::Form<T>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs)
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
+    const T diagval)
 {
   dolfinx::common::Timer timer_s("~MPC: Assembly (C++)");
 
@@ -542,12 +583,12 @@ void _assemble_matrix(
   assemble_matrix_impl<T>(mat_add_block, mat_add, a, dof_marker0, dof_marker1,
                           mpc);
 
-  // Add one on diagonal for slave dofs
+  // Add diagval on diagonal for slave dofs
   const xtl::span<const std::int32_t> slaves = mpc->slaves();
   const std::int32_t num_local_slaves = mpc->num_local_slaves();
   std::vector<std::int32_t> diag_dof(1);
   std::vector<T> diag_value(1);
-  diag_value[0] = 1;
+  diag_value[0] = diagval;
   for (std::int32_t i = 0; i < num_local_slaves; ++i)
   {
     diag_dof[0] = slaves[i];
@@ -564,9 +605,10 @@ void dolfinx_mpc::assemble_matrix(
     const dolfinx::fem::Form<double>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
-        bcs)
+        bcs,
+    const double diagval)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc, bcs);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc, bcs, diagval);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -581,7 +623,8 @@ void dolfinx_mpc::assemble_matrix(
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
-        bcs)
+        bcs,
+    const std::complex<double> diagval)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc, bcs);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc, bcs, diagval);
 }
