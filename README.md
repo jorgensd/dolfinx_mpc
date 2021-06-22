@@ -1,4 +1,6 @@
 # Multi-point constraints with FEniCS-X
+![CI status](https://github.com/jorgensd/dolfinx_mpc/actions/workflows/test_mpc.yml/badge.svg)
+
 Author: Jørgen S. Dokken
 
 This library contains an add-on to FEniCS_X enabling the possibilities

@@ -72,7 +72,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         facets = dolfinx.mesh.locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
         mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint(mt, 2, periodic_relation, bcs)
+        mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
         mpc.finalize()
 
     # Define variational problem

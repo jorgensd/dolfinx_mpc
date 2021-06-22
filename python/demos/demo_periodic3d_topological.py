@@ -76,7 +76,7 @@ def demo_periodic3D(celltype, out_periodic):
 
     with dolfinx.common.Timer("~Periodic: New init"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint(mt, 2, periodic_relation, bcs)
+        mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
         mpc.finalize()
 
     # Define variational problem

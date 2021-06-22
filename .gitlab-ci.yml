@@ -130,12 +130,12 @@ nightly-complex:
     - mkdir results
     - python3 demo_elasticity.py
     - mpirun -n 4 python3 demo_elasticity.py
-    - python3 demo_periodic.py
-    - mpirun -n 4 python3 demo_periodic.py
+    - python3 demo_periodic_geometrical.py
+    - mpirun -n 4 python3 demo_periodic_geometrical.py
     - python3 demo_stokes.py
     - mpirun -n 4 python3 demo_stokes.py
-    - python3 demo_periodic3d.py
-    - mpirun -n 4 python3 demo_periodic3d.py
+    - python3 demo_periodic3d_topological.py
+    - mpirun -n 4 python3 demo_periodic3d_topological.py
     - python3 demo_elasticity_disconnect_2D.py
     - mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
     - python3 demo_elasticity_disconnect.py
@@ -210,12 +210,12 @@ nightly-real:
     - mkdir results
     - python3 demo_elasticity.py
     - mpirun -n 4 python3 demo_elasticity.py
-    - python3 demo_periodic.py
-    - mpirun -n 4 python3 demo_periodic.py
+    - python3 demo_periodic_geometrical.py
+    - mpirun -n 4 python3 demo_periodic_geometrical.py
     - python3 demo_stokes.py
     - mpirun -n 4 python3 demo_stokes.py
-    - python3 demo_periodic3d.py
-    - mpirun -n 4 python3 demo_periodic3d.py
+    - python3 demo_periodic3d_topological.py
+    - mpirun -n 4 python3 demo_periodic3d_topological.py
     - python3 demo_elasticity_disconnect_2D.py
     - mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
     - python3 demo_elasticity_disconnect.py

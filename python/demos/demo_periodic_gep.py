@@ -238,7 +238,7 @@ def periodic_relation(x):
 
 
 mpc = dolfinx_mpc.MultiPointConstraint(V)
-mpc.create_periodic_constraint(mt, 2, periodic_relation, bcs)
+mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
 mpc.finalize()
 
 # Define variational problem

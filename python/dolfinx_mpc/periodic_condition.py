@@ -1,10 +1,45 @@
+from typing import Callable, List
+
+import dolfinx
 import numpy as np
-import dolfinx.fem
-import dolfinx.geometry
+from petsc4py import PETSc
+
 import dolfinx_mpc.cpp
 
 
-def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
+def create_periodic_condition_topological(V: dolfinx.FunctionSpace, mt: dolfinx.MeshTags, marker: int,
+                                          relation: Callable[[np.ndarray], np.ndarray], bcs: List[dolfinx.DirichletBC],
+                                          scale: PETSc.ScalarType):
+    """
+    Create periodic condition for all dofs in MeshTag with given marker:
+       u(x_i) = scale * u(relation(x_i))
+    for all x_i on marked entities.
+    """
+    slave_entities = mt.indices[mt.values == marker]
+    slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
+    return _create_periodic_condition(V, slave_blocks, relation, bcs, scale)
+
+
+def create_periodic_condition_geometrical(V: dolfinx.FunctionSpace, indicator: Callable[[np.ndarray], np.ndarray],
+                                          relation: Callable[[np.ndarray], np.ndarray],
+                                          bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType):
+    """
+    Create a periodic condition for all degrees of freedom's satisfying indicator(x):
+       u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
+    """
+    slave_blocks = dolfinx.fem.locate_dofs_geometrical(V, indicator)
+    return _create_periodic_condition(V, slave_blocks, relation, bcs, scale)
+
+
+def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarray,
+                               relation: Callable[[np.ndarray], np.ndarray],
+                               bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType):
+    """
+    Create a periodic condition condition on all input slave blocks,
+    x_i = x(slave_block)
+    x_j = x(relation(x_i))
+    u(x_i) = scale * u(x_j)
+    """
     tdim = V.mesh.topology.dim
     bs = V.dofmap.index_map_bs
     size_local = V.dofmap.index_map.size_local
@@ -12,8 +47,7 @@ def create_periodic_condition(V, mt, tag, relation, bcs, scale=1):
     imap = V.dofmap.index_map
     x = V.tabulate_dof_coordinates()
     comm = V.mesh.mpi_comm()
-    slave_entities = mt.indices[mt.values == tag]
-    slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
+
     # Filter out Dirichlet BC dofs
     bc_dofs = []
     for bc in bcs:

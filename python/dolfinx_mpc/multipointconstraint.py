@@ -1,5 +1,5 @@
 import warnings
-from typing import Callable
+from typing import Callable, List
 
 import dolfinx
 import numpy
@@ -8,7 +8,7 @@ from petsc4py import PETSc
 import dolfinx_mpc.cpp
 
 from .dictcondition import create_dictionary_constraint
-from .periodic_condition import create_periodic_condition
+from .periodic_condition import create_periodic_condition_topological, create_periodic_condition_geometrical
 
 
 class MultiPointConstraint():
@@ -122,31 +122,78 @@ class MultiPointConstraint():
              self.ghost_coeffs, self.ghost_masters, self.ghost_offsets,
              self.ghost_owners, self.ghost_slaves)
 
-    def create_periodic_constraint(self, meshtag: dolfinx.MeshTags, tag: int,
-                                   relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                   bcs: list([dolfinx.DirichletBC]), scale: float = 1):
+    def create_periodic_constraint_topological(self, meshtag: dolfinx.MeshTags, tag: int,
+                                               relation: Callable[[numpy.ndarray], numpy.ndarray],
+                                               bcs: list([dolfinx.DirichletBC]), scale: PETSc.ScalarType = 1):
         """
-        Create a periodic boundary condition (possibly scaled).
-        Input:
-            meshtag: MeshTag for entity to apply the periodic condition on
-            tag: Tag indicating which entities should be slaves
-            relation: Lambda function describing the geometrical relation
-            bcs: Dirichlet boundary conditions for the problem
-               (Periodic constraints will be ignored for these dofs)
-            scale: Float for scaling bc
+        Create periodic condition for all dofs in MeshTag with given marker:
+        u(x_i) = scale * u(relation(x_i))
+        for all x_i on marked entities.
+
+        Parameters
+        ==========
+        meshtag
+            MeshTag for entity to apply the periodic condition on
+        tag
+            Tag indicating which entities should be slaves
+        relation
+            Lambda-function describing the geometrical relation
+        bcs
+            Dirichlet boundary conditions for the problem
+            (Periodic constraints will be ignored for these dofs)
+        scale
+            Float for scaling bc
         """
-        slaves, masters, coeffs, owners, offsets = create_periodic_condition(
+        slaves, masters, coeffs, owners, offsets = create_periodic_condition_topological(
             self.V, meshtag, tag, relation, bcs, scale)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_slip_constraint(self, facet_marker: tuple([dolfinx.MeshTags, int]), normal: dolfinx.Function,
+    def create_periodic_constraint_geometrical(self, V: dolfinx.FunctionSpace,
+                                               indicator: Callable[[numpy.ndarray], numpy.ndarray],
+                                               relation: Callable[[numpy.ndarray], numpy.ndarray],
+                                               bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType = 1):
+        """
+        Create a periodic condition for all degrees of freedom's satisfying indicator(x):
+        u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
+
+        Parameters
+        ==========
+        indicator
+            Lambda-function to locate degrees of freedom that should be slaves
+        relation
+            Lambda-function describing the geometrical relation to master dofs
+        bcs
+            Dirichlet boundary conditions for the problem
+            (Periodic constraints will be ignored for these dofs)
+        scale
+            Float for scaling bc
+        """
+        slaves, masters, coeffs, owners, offsets = create_periodic_condition_geometrical(
+            self.V, indicator, relation, bcs, scale)
+        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+
+    def create_slip_constraint(self, facet_marker: tuple([dolfinx.MeshTags, int]), v: dolfinx.Function,
                                sub_space: dolfinx.FunctionSpace = None, sub_map: numpy.ndarray = numpy.array([]),
                                bcs: list([dolfinx.DirichletBC]) = []):
         """
-        Create a slip constraint dot(u,normal)=0 over the entities defined in a dolfinx.Meshtags
+        Create a slip constraint dot(u, v)=0 over the entities defined in a dolfinx.Meshtags
         marked with index i. normal is the normal vector defined as a vector function.
-        Example:
 
+        Parameters
+        ==========
+        facet_marker
+            Tuple containg the mesh tag and marker used to locate degrees of freedom that should be constrained
+        v
+            Dolfin function containing the directional vector to dot your slip condition (most commonly a normal vector)
+        sub_space
+           If the vector v is in a sub space of the multi point function space, supply the sub space
+        sub_map
+           Map from sub-space to parent space
+        bcs
+           List of Dirichlet BCs (slip conditions will be ignored on these dofs)
+
+        Example
+        =======
         Create constaint dot(u, n)=0 of all indices in mt marked with i
              create_slip_constaint((mt,i), n)
 
@@ -172,31 +219,37 @@ class MultiPointConstraint():
         else:
             W = [self.V._cpp_object, sub_space._cpp_object]
         mesh_tag, marker = facet_marker
-        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(W, mesh_tag, marker, normal._cpp_object,
+        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(W, mesh_tag, marker, v._cpp_object,
                                                              numpy.asarray(sub_map, dtype=numpy.int32), bcs)
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_general_constraint(self, slave_master_dict, subspace_slave=None, subspace_master=None):
         """
-        Input:
-            V - The function space
-            slave_master_dict - The dictionary.
-            subspace_slave - If using mixed or vector space,
-                            and only want to use dofs from
-                            a sub space as slave add index here
-            subspace_master - Subspace index for mixed or vector spaces
-        Example:
-            If the dof D located at [d0,d1] should be constrained to the dofs
-             E and F at [e0,e1] and [f0,f1] as
-            D = alpha E + beta F
-            the dictionary should be:
-                {np.array([d0, d1], dtype=np.float64).tobytes():
-                    {np.array([e0, e1], dtype=np.float64).tobytes(): alpha,
-                    np.array([f0, f1], dtype=np.float64).tobytes(): beta}}
+        Parameters
+        ==========
+        V
+            The function space
+        slave_master_dict
+            Nested dictionary, where the first key is the bit representing the slave dof's coordinate in the mesh.
+            The item of this key is a dictionary, where each key of this dictionary is the bit representation
+            of the master dof's coordinate, and the item the coefficient for the MPC equation.
+        subspace_slave
+            If using mixed or vector space, and only want to use dofs from a sub space as slave add index here
+        subspace_master
+            Subspace index for mixed or vector spaces
+
+        Example
+        =======
+        If the dof D located at [d0,d1] should be constrained to the dofs
+        E and F at [e0,e1] and [f0,f1] as
+        D = alpha E + beta F
+        the dictionary should be:
+            {numpy.array([d0, d1], dtype=numpy.float64).tobytes():
+                {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
+                numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
         """
-        slaves, masters, coeffs, owners, offsets\
-            = create_dictionary_constraint(
-                self.V, slave_master_dict, subspace_slave, subspace_master)
+        slaves, masters, coeffs, owners, offsets = create_dictionary_constraint(
+            self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def slaves(self):
@@ -235,7 +288,10 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.cell_to_slaves()
 
-    def create_sparsity_pattern(self, cpp_form):
+    def create_sparsity_pattern(self, cpp_form: dolfinx.cpp.fem.Form):
+        """
+        Create sparsity-pattern for MPC given a compiled DOLFINx form
+        """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.create_sparsity_pattern(cpp_form)
@@ -248,7 +304,7 @@ class MultiPointConstraint():
         else:
             return self.V_mpc
 
-    def backsubstitution(self, vector):
+    def backsubstitution(self, vector: PETSc.Vec):
         """
         For a given vector, empose the multi-point constraint by backsubstiution.
         I.e.
@@ -257,6 +313,4 @@ class MultiPointConstraint():
         # Unravel data from constraint
         with vector.localForm() as vector_local:
             self._cpp_object.backsubstitution(vector_local.array_w)
-
-        vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                           mode=PETSc.ScatterMode.FORWARD)
+        vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
