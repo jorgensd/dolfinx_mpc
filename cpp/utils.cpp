@@ -73,8 +73,10 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   xt::xtensor<double, 1> detJ = xt::empty<double>({X.shape(0)});
 
   // Prepare basis function data structures
-  xt::xtensor<double, 3> basis_reference_values(
-      {1, space_dimension, reference_value_size});
+  xt::xtensor<double, 4> tabulated_data(
+      {1, 1, space_dimension, reference_value_size});
+  auto reference_basis_values
+      = xt::view(tabulated_data, 0, xt::all(), xt::all(), xt::all());
   xt::xtensor<double, 3> basis_values(
       {static_cast<std::size_t>(1), space_dimension, value_size});
 
@@ -108,15 +110,15 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   cmap.pull_back(X, J, detJ, K, xp, coordinate_dofs);
 
   // Compute basis on reference element
-  element->evaluate_reference_basis(basis_reference_values, X);
+
+  element->tabulate(tabulated_data, X, 0);
 
   element->apply_dof_transformation(
-      xtl::span<double>(basis_reference_values.data(),
-                        basis_reference_values.size()),
+      xtl::span<double>(tabulated_data.data(), tabulated_data.size()),
       permutation_info[index], reference_value_size);
 
   // Push basis forward to physical element
-  element->transform_reference_basis(basis_values, basis_reference_values, J,
+  element->transform_reference_basis(basis_values, reference_basis_values, J,
                                      detJ, K);
 
   // Get the degrees of freedom for the current cell
