@@ -242,7 +242,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
   std::map<std::int32_t, std::set<int>> shared_indices
       = index_map->compute_shared_indices();
   MPI_Comm comm
-      = index_map->comm(dolfinx::common::IndexMap::Direction::symmetric);
+      = index_map->comm(dolfinx::common::IndexMap::Direction::forward);
 
   // Array of processors sending to the ghost_dofs
   std::set<std::int32_t> src_edges;
