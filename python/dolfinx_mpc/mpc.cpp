@@ -83,8 +83,13 @@ void mpc(py::module& m)
              return py::array_t<PetscScalar>(
                  coefficients.size(), coefficients.data(), py::cast(self));
            })
-      .def("create_sparsity_pattern", &dolfinx_mpc::MultiPointConstraint<
-                                          PetscScalar>::create_sparsity_pattern)
+      .def("create_sparsity_pattern",
+            [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
+               const dolfinx::fem::Form<PetscScalar>& a)
+            {
+                auto mpc_ptr = std::make_shared<dolfinx_mpc::MultiPointConstraint<PetscScalar>>(self);
+                return dolfinx_mpc::create_sparsity_pattern(a, mpc_ptr);
+            })
       .def_property_readonly(
           "num_local_slaves",
           &dolfinx_mpc::MultiPointConstraint<PetscScalar>::num_local_slaves)

@@ -140,10 +140,90 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
 }
 //-----------------------------------------------------------------------------
 std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
-    std::shared_ptr<dolfinx::fem::FunctionSpace> V)
+    std::shared_ptr<const dolfinx::fem::FunctionSpace> V)
 {
   return V->dofmap()->index_map->compute_shared_indices();
 };
+//-----------------------------------------------------------------------------
+dolfinx::la::SparsityPattern
+dolfinx_mpc::create_sparsity_pattern(
+    const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<
+      dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc)
+{
+  LOG(INFO) << "Generating MPC sparsity pattern";
+  dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
+  if (a.rank() != 2)
+  {
+    throw std::runtime_error(
+        "Cannot create sparsity pattern. Form is not a bilinear form");
+  }
+
+  /// Check that we are using the correct function-space in the bilinear
+  /// form otherwise the index map will be wrong
+  auto _V = mpc->function_space();
+
+  assert(a.function_spaces().at(0) == _V);
+  assert(a.function_spaces().at(1) == _V);
+  auto bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
+  auto bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
+  assert(bs0 == bs1);
+  const dolfinx::mesh::Mesh& mesh = *(a.mesh());
+
+  std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
+  new_maps[0] = mpc->index_map();
+  new_maps[1] = mpc->index_map();
+  std::array<int, 2> bs = {bs0, bs1};
+  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps, bs);
+
+  ///  Create and build sparsity pattern for original form. Should be
+  ///  equivalent to calling create_sparsity_pattern(Form a)
+  mpc->build_standard_pattern(pattern, a);
+
+  // Arrays replacing slave dof with master dof in sparsity pattern
+  const int& block_size = bs0;
+  // std::vector<PetscInt> master_for_slave(block_size);
+  // std::vector<PetscInt> master_for_other_slave(block_size);
+  std::vector<std::int32_t> master_block(1);
+  std::vector<std::int32_t> other_master_block(1);
+  for (std::int32_t i = 0; i < mpc->cell_to_slaves()->num_nodes(); ++i)
+  {
+    xtl::span<const int32_t> cell_dofs = mpc->dofmap()->cell_dofs(
+      mpc->slave_cells()[i]);
+    xtl::span<int32_t> slaves = mpc->cell_to_slaves()->links(i);
+
+    // Arrays for flattened master slave data
+    std::vector<std::int32_t> flattened_masters;
+    for (std::int32_t j = 0; j < slaves.size(); ++j)
+    {
+      auto local_masters = mpc->master_block_map()->links(slaves[j]);
+      for (std::int32_t k = 0; k < local_masters.size(); ++k)
+        flattened_masters.push_back(local_masters[k]);
+    }
+    // Remove duplicate master blocks
+    std::sort(flattened_masters.begin(), flattened_masters.end());
+    flattened_masters.erase(
+        std::unique(flattened_masters.begin(), flattened_masters.end()),
+        flattened_masters.end());
+
+    for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
+    {
+      master_block[0] = flattened_masters[j];
+      pattern.insert(tcb::make_span(master_block), cell_dofs);
+      pattern.insert(cell_dofs, tcb::make_span(master_block));
+      // Add sparsity pattern for all master dofs of any slave on this cell
+      for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
+      {
+        other_master_block[0] = flattened_masters[k];
+        pattern.insert(tcb::make_span(master_block),
+                        tcb::make_span(other_master_block));
+        pattern.insert(tcb::make_span(other_master_block),
+                        tcb::make_span(master_block));
+      }
+    }
+  }
+  return pattern;
+}
 //-----------------------------------------------------------------------------
 dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
@@ -153,7 +233,7 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   dolfinx::common::Timer timer("~MPC: Create Matrix");
 
   // Build sparsitypattern
-  dolfinx::la::SparsityPattern pattern = mpc->create_sparsity_pattern(a);
+  dolfinx::la::SparsityPattern pattern = create_sparsity_pattern(a, mpc);
 
   // Finalise communication
   dolfinx::common::Timer timer_s("~MPC: Assemble sparsity pattern");

@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include "MultiPointConstraint.h"
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/Function.h>
 #include <dolfinx/fem/FunctionSpace.h>
@@ -31,7 +30,19 @@ get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
 
 /// Given a function space, compute its shared entities
 std::map<std::int32_t, std::set<int>>
-compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
+compute_shared_indices(std::shared_ptr<const dolfinx::fem::FunctionSpace> V);
+
+/// Given a function space, compute its shared entities
+std::map<std::int32_t, std::set<int>>
+urgh(std::shared_ptr<const dolfinx::fem::FunctionSpace> V);
+
+/// Add sparsity pattern for multi-point constraints to existing
+/// sparsity pattern
+/// @param[in] a bi-linear form for the current variational problem
+/// (The one used to generate input sparsity-pattern).
+dolfinx::la::SparsityPattern create_sparsity_pattern(
+    const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc);
 
 dolfinx::la::PETScMatrix create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,

@@ -101,8 +101,6 @@ def assemble_matrix_cpp(form: ufl.form.Form, constraint: MultiPointConstraint, b
         Takes priority over all other parameter values.
 
     """
-    assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
-
     cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
                             jit_parameters=jit_parameters)._cpp_object
 

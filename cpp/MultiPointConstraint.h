@@ -67,86 +67,6 @@ public:
     // Create new index map with all masters
     create_new_index_map();
   }
-
-  /// Add sparsity pattern for multi-point constraints to existing
-  /// sparsity pattern
-  /// @param[in] a bi-linear form for the current variational problem
-  /// (The one used to generate input sparsity-pattern).
-  dolfinx::la::SparsityPattern
-  create_sparsity_pattern(const dolfinx::fem::Form<T>& a)
-  {
-    LOG(INFO) << "Generating MPC sparsity pattern";
-    dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
-    if (a.rank() != 2)
-    {
-      throw std::runtime_error(
-          "Cannot create sparsity pattern. Form is not a bilinear form");
-    }
-
-    /// Check that we are using the correct function-space in the bilinear
-    /// form otherwise the index map will be wrong
-
-    assert(a.function_spaces().at(0) == _V);
-    assert(a.function_spaces().at(1) == _V);
-    auto bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
-    auto bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
-    assert(bs0 == bs1);
-    const dolfinx::mesh::Mesh& mesh = *(a.mesh());
-
-    std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
-    new_maps[0] = _index_map;
-    new_maps[1] = _index_map;
-    std::array<int, 2> bs = {bs0, bs1};
-    dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps, bs);
-
-    ///  Create and build sparsity pattern for original form. Should be
-    ///  equivalent to calling create_sparsity_pattern(Form a)
-    build_standard_pattern(pattern, a);
-
-    // Arrays replacing slave dof with master dof in sparsity pattern
-    const int& block_size = bs0;
-    std::vector<PetscInt> master_for_slave(block_size);
-    std::vector<PetscInt> master_for_other_slave(block_size);
-    std::vector<std::int32_t> master_block(1);
-    std::vector<std::int32_t> other_master_block(1);
-    for (std::int32_t i = 0; i < _cell_to_slaves_map->num_nodes(); ++i)
-    {
-
-      xtl::span<const int32_t> cell_dofs = _dofmap->cell_dofs(_slave_cells[i]);
-      xtl::span<int32_t> slaves = _cell_to_slaves_map->links(i);
-
-      // Arrays for flattened master slave data
-      std::vector<std::int32_t> flattened_masters;
-      for (std::int32_t j = 0; j < slaves.size(); ++j)
-      {
-        auto local_masters = _master_block_map->links(slaves[j]);
-        for (std::int32_t k = 0; k < local_masters.size(); ++k)
-          flattened_masters.push_back(local_masters[k]);
-      }
-      // Remove duplicate master blocks
-      std::sort(flattened_masters.begin(), flattened_masters.end());
-      flattened_masters.erase(
-          std::unique(flattened_masters.begin(), flattened_masters.end()),
-          flattened_masters.end());
-
-      for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
-      {
-        master_block[0] = flattened_masters[j];
-        pattern.insert(tcb::make_span(master_block), cell_dofs);
-        pattern.insert(cell_dofs, tcb::make_span(master_block));
-        // Add sparsity pattern for all master dofs of any slave on this cell
-        for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
-        {
-          other_master_block[0] = flattened_masters[k];
-          pattern.insert(tcb::make_span(master_block),
-                         tcb::make_span(other_master_block));
-          pattern.insert(tcb::make_span(other_master_block),
-                         tcb::make_span(master_block));
-        }
-      }
-    }
-    return pattern;
-  };
   //-----------------------------------------------------------------------------
   /// Backsubstitute slave/master constraint for a given function
   void backsubstitution(xtl::span<T> vector)
@@ -187,6 +107,12 @@ public:
     return _master_local_map;
   }
 
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  master_block_map() const
+  {
+    return _master_block_map;
+  }
+
   /// Return map from slave to coefficients
   const std::vector<T>& coefficients() const { return _coeff_map->array(); }
 
@@ -207,12 +133,17 @@ public:
   const std::int32_t num_local_slaves() const { return _num_local_slaves; }
 
   /// Return constraint IndexMap
-  std::shared_ptr<const dolfinx::common::IndexMap> index_map()
+  std::shared_ptr<const dolfinx::common::IndexMap> index_map() const
   {
     return _index_map;
   }
 
-  std::shared_ptr<dolfinx::fem::DofMap> dofmap() { return _dofmap; }
+  std::shared_ptr<dolfinx::fem::DofMap> dofmap() const { return _dofmap; }
+
+  std::shared_ptr<const dolfinx::fem::FunctionSpace> function_space() const
+  {
+    return _V;
+  }
 
 private:
   /// Helper function for creating new index map
@@ -449,13 +380,13 @@ private:
     return std::make_pair(adj_ptr, std::make_pair(unique_cells, adj2_ptr));
   }
   //-----------------------------------------------------------------------------
-
+public:
   /// Append standard sparsity pattern for a given form to a pre-initialized
   /// pattern and a DofMap
   /// @param[in] pattern The sparsity pattern
   /// @param[in] a       The variational formulation
   void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
-                              const dolfinx::fem::Form<T>& a)
+                              const dolfinx::fem::Form<T>& a) const
   {
 
     dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
@@ -493,7 +424,7 @@ private:
     }
   };
   //-----------------------------------------------------------------------------
-
+private:
   // Original function space
   std::shared_ptr<const dolfinx::fem::FunctionSpace> _V;
   // Array including all slaves (local + ghosts)
