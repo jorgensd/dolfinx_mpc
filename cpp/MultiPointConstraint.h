@@ -380,50 +380,6 @@ private:
     return std::make_pair(adj_ptr, std::make_pair(unique_cells, adj2_ptr));
   }
   //-----------------------------------------------------------------------------
-public:
-  /// Append standard sparsity pattern for a given form to a pre-initialized
-  /// pattern and a DofMap
-  /// @param[in] pattern The sparsity pattern
-  /// @param[in] a       The variational formulation
-  void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
-                              const dolfinx::fem::Form<T>& a) const
-  {
-
-    dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
-    // Get dof maps
-    std::array<const std::reference_wrapper<const dolfinx::fem::DofMap>, 2>
-        dofmaps{*a.function_spaces().at(0)->dofmap(),
-                *a.function_spaces().at(1)->dofmap()};
-
-    // Get mesh
-    assert(a.mesh());
-    const dolfinx::mesh::Mesh& mesh = *(a.mesh());
-
-    if (a.integral_ids(dolfinx::fem::IntegralType::cell).size() > 0)
-    {
-      dolfinx::fem::sparsitybuild::cells(pattern, mesh.topology(),
-                                         {{dofmaps[0], dofmaps[1]}});
-    }
-
-    if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
-    {
-      mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
-      mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
-                                                  mesh.topology().dim());
-      dolfinx::fem::sparsitybuild::interior_facets(pattern, mesh.topology(),
-                                                   {{dofmaps[0], dofmaps[1]}});
-    }
-
-    if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
-    {
-      mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
-      mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
-                                                  mesh.topology().dim());
-      dolfinx::fem::sparsitybuild::exterior_facets(pattern, mesh.topology(),
-                                                   {{dofmaps[0], dofmaps[1]}});
-    }
-  };
-  //-----------------------------------------------------------------------------
 private:
   // Original function space
   std::shared_ptr<const dolfinx::fem::FunctionSpace> _V;

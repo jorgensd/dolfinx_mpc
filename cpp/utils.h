@@ -12,6 +12,7 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
+#include <dolfinx/fem/sparsitybuild.h>
 #include <xtensor/xfixed.hpp>
 #include <xtensor/xtensor.hpp>
 
@@ -32,14 +33,58 @@ get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
 std::map<std::int32_t, std::set<int>>
 compute_shared_indices(std::shared_ptr<const dolfinx::fem::FunctionSpace> V);
 
-/// Given a function space, compute its shared entities
-std::map<std::int32_t, std::set<int>>
-urgh(std::shared_ptr<const dolfinx::fem::FunctionSpace> V);
+/// Append standard sparsity pattern for a given form to a pre-initialized
+/// pattern and a DofMap
+/// @param[in] pattern The sparsity pattern
+/// @param[in] a       The variational formulation
+template <typename T>
+void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
+                            const dolfinx::fem::Form<T>& a)
+{
+  dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
+  // Get dof maps
+  std::array<const std::reference_wrapper<const dolfinx::fem::DofMap>, 2>
+      dofmaps{*a.function_spaces().at(0)->dofmap(),
+              *a.function_spaces().at(1)->dofmap()};
+
+  // Get mesh
+  assert(a.mesh());
+  const dolfinx::mesh::Mesh& mesh = *(a.mesh());
+
+  if (a.integral_ids(dolfinx::fem::IntegralType::cell).size() > 0)
+  {
+      dolfinx::fem::sparsitybuild::cells(pattern, mesh.topology(),
+                                          {{dofmaps[0], dofmaps[1]}});
+  }
+
+  if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
+  {
+      mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
+      mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
+                                                  mesh.topology().dim());
+      dolfinx::fem::sparsitybuild::interior_facets(pattern, mesh.topology(),
+                                                  {{dofmaps[0], dofmaps[1]}});
+  }
+
+  if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
+  {
+      mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
+      mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
+                                                  mesh.topology().dim());
+      dolfinx::fem::sparsitybuild::exterior_facets(pattern, mesh.topology(),
+                                                  {{dofmaps[0], dofmaps[1]}});
+  }
+};
 
 /// Add sparsity pattern for multi-point constraints to existing
 /// sparsity pattern
 /// @param[in] a bi-linear form for the current variational problem
 /// (The one used to generate input sparsity-pattern).
+dolfinx::la::SparsityPattern create_sparsity_pattern(
+    const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1);
+
 dolfinx::la::SparsityPattern create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc);
