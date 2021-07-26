@@ -201,7 +201,8 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
     # Create sparsity pattern and matrix if not supplied
     if A is None:
-        pattern = constraint.create_sparsity_pattern(cpp_form)
+        pattern = cpp.mpc.create_sparsity_pattern(
+            cpp_form, constraint._cpp_object)
         with Timer("~MPC: Assemble sparsity pattern"):
             pattern.assemble()
         with Timer("~MPC: Assemble matrix (Create matrix)"):

@@ -9,6 +9,7 @@ import typing
 import ufl
 from dolfinx import fem
 from dolfinx import cpp
+import dolfinx_mpc.cpp
 from petsc4py import PETSc
 from .assemble_matrix import assemble_matrix
 from .assemble_vector import assemble_vector
@@ -77,7 +78,7 @@ class LinearProblem():
                          jit_parameters=jit_parameters)._cpp_object
 
         # Create MPC matrix
-        pattern = self._mpc.create_sparsity_pattern(a_cpp)
+        pattern = dolfinx_mpc.cpp.mpc.create_sparsity_pattern(a_cpp, self._mpc._cpp_object)
         pattern.assemble()
         self._A = cpp.la.create_matrix(self._mpc.function_space().mesh.mpi_comm(), pattern)
 

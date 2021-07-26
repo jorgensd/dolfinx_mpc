@@ -83,13 +83,6 @@ void mpc(py::module& m)
              return py::array_t<PetscScalar>(
                  coefficients.size(), coefficients.data(), py::cast(self));
            })
-      .def("create_sparsity_pattern",
-            [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
-               const dolfinx::fem::Form<PetscScalar>& a)
-            {
-                auto mpc_ptr = std::make_shared<dolfinx_mpc::MultiPointConstraint<PetscScalar>>(self);
-                return dolfinx_mpc::create_sparsity_pattern(a, mpc_ptr);
-            })
       .def_property_readonly(
           "num_local_slaves",
           &dolfinx_mpc::MultiPointConstraint<PetscScalar>::num_local_slaves)
@@ -131,12 +124,40 @@ void mpc(py::module& m)
         });
 
   m.def(
+      "create_sparsity_pattern",
+      py::overload_cast<const dolfinx::fem::Form<PetscScalar>&,
+                        const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>
+                        >(&dolfinx_mpc::create_sparsity_pattern),
+      py::return_value_policy::take_ownership);
+  m.def(
+      "create_sparsity_pattern",
+      py::overload_cast<const dolfinx::fem::Form<PetscScalar>&,
+                        const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>,
+                        const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>
+                        >(&dolfinx_mpc::create_sparsity_pattern),
+      py::return_value_policy::take_ownership);
+  m.def(
       "create_matrix",
       [](const dolfinx::fem::Form<PetscScalar>& a,
          const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
              mpc)
       {
         auto A = dolfinx_mpc::create_matrix(a, mpc);
+        Mat _A = A.mat();
+        PetscObjectReference((PetscObject)_A);
+        return _A;
+      },
+      py::return_value_policy::take_ownership,
+      "Create a PETSc Mat for bilinear form.");
+  m.def(
+      "create_matrix",
+      [](const dolfinx::fem::Form<PetscScalar>& a,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
+             mpc0,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
+             mpc1)
+      {
+        auto A = dolfinx_mpc::create_matrix(a, mpc0, mpc1);
         Mat _A = A.mat();
         PetscObjectReference((PetscObject)_A);
         return _A;

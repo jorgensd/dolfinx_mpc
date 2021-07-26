@@ -288,14 +288,6 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.cell_to_slaves()
 
-    def create_sparsity_pattern(self, cpp_form: dolfinx.cpp.fem.Form):
-        """
-        Create sparsity-pattern for MPC given a compiled DOLFINx form
-        """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.create_sparsity_pattern(cpp_form)
-
     def function_space(self):
         if not self.finalized:
             warnings.warn(
