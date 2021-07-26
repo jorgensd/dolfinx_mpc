@@ -164,7 +164,7 @@ dolfinx_mpc::create_sparsity_pattern(
   /// Check that we are using the correct function-space in the bilinear
   /// form otherwise the index map will be wrong
   auto _V0 = mpc0->function_space();
-  auto _V1 = mpc0->function_space();
+  auto _V1 = mpc1->function_space();
 
   assert(a.function_spaces().at(0) == _V0);
   assert(a.function_spaces().at(1) == _V1);
@@ -181,18 +181,18 @@ dolfinx_mpc::create_sparsity_pattern(
 
   ///  Create and build sparsity pattern for original form. Should be
   ///  equivalent to calling create_sparsity_pattern(Form a)
-  // #TODO: refactor this
   dolfinx_mpc::build_standard_pattern(pattern, a);
 
   // Arrays replacing slave dof with master dof in sparsity pattern
   auto pattern_populater = [](
-    const auto& mpc, auto& pattern, const auto& pattern_inserter)->void
+    auto& pattern, const auto& mpc, const auto& mpc_off_axis,
+    const auto& pattern_inserter)->void
   {
     std::vector<std::int32_t> master_block(1);
     std::vector<std::int32_t> other_master_block(1);
     for (std::int32_t i = 0; i < mpc->cell_to_slaves()->num_nodes(); ++i)
     {
-      xtl::span<const int32_t> cell_dofs = mpc->dofmap()->cell_dofs(
+      xtl::span<const int32_t> cell_dofs = mpc_off_axis->dofmap()->cell_dofs(
         mpc->slave_cells()[i]);
       xtl::span<int32_t> slaves = mpc->cell_to_slaves()->links(i);
 
@@ -219,7 +219,7 @@ dolfinx_mpc::create_sparsity_pattern(
         {
           other_master_block[0] = flattened_masters[k];
           pattern_inserter(pattern,
-            tcb::make_span(master_block), tcb::make_span(other_master_block));
+            tcb::make_span(other_master_block), tcb::make_span(master_block));
         }
       }
     }
@@ -228,22 +228,43 @@ dolfinx_mpc::create_sparsity_pattern(
   if (mpc0 == mpc1)
   {
     // Only need to loop through once
-    pattern_populater(mpc0, pattern,
-      [](auto& pattern, const auto& dofs0, const auto& dofs1){
-        pattern.insert(dofs0, dofs1);
-        pattern.insert(dofs1, dofs0);
+    pattern_populater(pattern, mpc0, mpc1,
+      [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
+        std::string msg = "M dofs: ";
+        for (const auto dof : dofs_m)
+          msg += std::to_string(dof) + ", ";
+        msg += "\nS Dofs: ";
+        for (const auto dof : dofs_s)
+          msg += std::to_string(dof) + ", ";
+        std::cout << "populator rows/cols || " << msg << std::endl;
+        pattern.insert(dofs_m, dofs_s);
+        pattern.insert(dofs_s, dofs_m);
       });
   }
   else
   {
     // Potentially rectangular pattern needs each axis inserted separately
-    pattern_populater(mpc0, pattern,
-      [](auto& pattern, const auto& dofs0, const auto& dofs1){
-        pattern.insert(dofs0, dofs1);
+    pattern_populater(pattern, mpc0, mpc1,
+      [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
+        std::string msg = "M (row) dofs: ";
+        for (const auto dof : dofs_m)
+          msg += std::to_string(dof) + ", ";
+        msg += "\nS (col) Dofs: ";
+        for (const auto dof : dofs_s)
+          msg += std::to_string(dof) + ", ";
+        std::cout << "populator rows || " << msg << std::endl;
+        pattern.insert(dofs_m, dofs_s);
       });
-    pattern_populater(mpc1, pattern,
-      [](auto& pattern, const auto& dofs0, const auto& dofs1){
-        pattern.insert(dofs1, dofs0);
+    pattern_populater(pattern, mpc1, mpc0,
+      [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
+        std::string msg = "M (col) dofs: ";
+        for (const auto dof : dofs_m)
+          msg += std::to_string(dof) + ", ";
+        msg += "\nS (row) Dofs: ";
+        for (const auto dof : dofs_s)
+          msg += std::to_string(dof) + ", ";
+        std::cout << "populator cols || " << msg << std::endl;
+        pattern.insert(dofs_s, dofs_m);
       });
   }
 
@@ -261,13 +282,14 @@ dolfinx_mpc::create_sparsity_pattern(
 //-----------------------------------------------------------------------------
 dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1,
     const std::string& type)
 {
   dolfinx::common::Timer timer("~MPC: Create Matrix");
 
   // Build sparsitypattern
-  dolfinx::la::SparsityPattern pattern = create_sparsity_pattern(a, mpc);
+  dolfinx::la::SparsityPattern pattern = create_sparsity_pattern(a, mpc0, mpc1);
 
   // Finalise communication
   dolfinx::common::Timer timer_s("~MPC: Assemble sparsity pattern");
@@ -278,6 +300,14 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern, type);
 
   return A;
+}
+//-----------------------------------------------------------------------------
+dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
+    const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
+    const std::string& type)
+{
+  return dolfinx_mpc::create_matrix(a, mpc, mpc, type);
 }
 //-----------------------------------------------------------------------------
 std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(

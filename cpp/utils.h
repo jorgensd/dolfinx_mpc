@@ -91,6 +91,12 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
 
 dolfinx::la::PETScMatrix create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1,
+    const std::string& type = std::string());
+
+dolfinx::la::PETScMatrix create_matrix(
+    const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
     const std::string& type = std::string());
 /// Create neighborhood communicators from every processor with a slave dof on
