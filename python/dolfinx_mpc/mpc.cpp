@@ -117,9 +117,27 @@ void mpc(py::module& m)
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
            const PetscScalar diagval)
         {
+          // TODO: fix
+          const auto& mpc0 = mpc;
+          const auto& mpc1 = mpc;
           dolfinx_mpc::assemble_matrix(
               dolfinx::la::PETScMatrix::set_block_fn(A, ADD_VALUES),
-              dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc, bcs,
+              dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc0, mpc1, bcs,
+              diagval);
+        });
+  m.def("assemble_matrix",
+        [](Mat A, const dolfinx::fem::Form<PetscScalar>& a,
+           const std::shared_ptr<
+               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc0,
+           const std::shared_ptr<
+               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc1,
+           const std::vector<std::shared_ptr<
+               const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
+           const PetscScalar diagval)
+        {
+          dolfinx_mpc::assemble_matrix(
+              dolfinx::la::PETScMatrix::set_block_fn(A, ADD_VALUES),
+              dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc0, mpc1, bcs,
               diagval);
         });
 

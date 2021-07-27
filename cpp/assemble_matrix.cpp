@@ -45,13 +45,6 @@ void modify_mpc_cell(
       flattened_coeffs.push_back(local_coeffs[j]);
     }
   }
-  // Matrices used for master insertion
-  std::array<std::int32_t, 1> m0;
-  std::array<std::int32_t, 1> m1;
-  std::array<T, 1> Amaster;
-  xt::xarray<T> Arow(bs * num_dofs);
-  xt::xarray<T> Acol(bs * num_dofs);
-  xt::xtensor_fixed<T, xt::xshape<1>> Am0m1;
 
   // Create copy to use for distribution to master dofs
   xt::xtensor<T, 2> Ae_original = Ae;
@@ -60,9 +53,14 @@ void modify_mpc_cell(
   xt::xtensor<T, 2> Ae_stripped = xt::empty<T>({bs * num_dofs, bs * num_dofs});
   for (std::int32_t i = 0; i < bs * num_dofs; ++i)
     for (std::int32_t j = 0; j < bs * num_dofs; ++j)
-      Ae_stripped(i, j) = (!(is_slave[i] && is_slave[j])) * Ae(i, j);
+      Ae_stripped(i, j) = (is_slave[i] && is_slave[j]) ? 0 : Ae(i, j);
 
+  // Unroll dof blocks
   std::vector<std::int32_t> mpc_dofs(bs * dofs.size());
+  for (std::int32_t j = 0; j < dofs.size(); ++j)
+    for (std::int32_t k = 0; k < bs; ++k)
+      mpc_dofs[j * bs + k] = dofs[j] * bs + k;
+
   for (std::int32_t i = 0; i < flattened_slaves.size(); ++i)
   {
     const std::int32_t& local_index = flattened_slaves[i];
@@ -70,48 +68,33 @@ void modify_mpc_cell(
     const T& coeff = flattened_coeffs[i];
 
     // Remove contributions form Ae
-    xt::col(Ae, local_index) = xt::zeros<T>({num_dofs * bs});
+    xt::col(Ae, local_index).fill(0);
     xt::row(Ae, local_index).fill(0);
 
-    m0[0] = master;
-    Arow = coeff * xt::col(Ae_stripped, local_index);
-    Acol = coeff * xt::row(Ae_stripped, local_index);
-    Amaster[0] = coeff * coeff * Ae_original(local_index, local_index);
-    // Unroll dof blocks
-    for (std::int32_t j = 0; j < dofs.size(); ++j)
-      for (std::int32_t k = 0; k < bs; ++k)
-        mpc_dofs[j * bs + k] = dofs[j] * bs + k;
+    const xt::xarray<T> Arow = coeff * xt::col(Ae_stripped, local_index);
+    const xt::xarray<T> Acol = coeff * xt::row(Ae_stripped, local_index);
+    const T Amaster = coeff * coeff * Ae_original(local_index, local_index);
 
     // Insert modified entries
+    const auto mpc_dof_old = mpc_dofs[local_index]; // store old mpc value
     mpc_dofs[local_index] = master;
-    mat_set(bs * num_dofs, mpc_dofs.data(), 1, m0.data(), Arow.data());
-    mat_set(1, m0.data(), bs * num_dofs, mpc_dofs.data(), Acol.data());
-    mat_set(1, m0.data(), 1, m0.data(), Amaster.data());
+    mat_set(bs * num_dofs, mpc_dofs.data(), 1, &master, Arow.data());
+    mat_set(1, &master, bs * num_dofs, mpc_dofs.data(), Acol.data());
+    mat_set(1, &master, 1, &master, &Amaster);
+    mpc_dofs[local_index] = mpc_dof_old;
+
     // Loop through other masters on the same cell
     std::vector<std::int32_t> other_slaves(flattened_slaves.size() - 1);
     std::iota(std::begin(other_slaves), std::end(other_slaves), 0);
     if (i < flattened_slaves.size() - 1)
       other_slaves[i] = flattened_slaves.size() - 1;
-    for (auto j : other_slaves)
+    for (const auto j : other_slaves)
     {
       const std::int32_t& other_local_index = flattened_slaves[j];
       const std::int32_t& other_master = flattened_masters[j];
       const T& other_coeff = flattened_coeffs[j];
-      const T c0c1 = coeff * other_coeff;
-      m1[0] = other_master;
-
-      if (slaves_loc[i] != slaves_loc[j])
-      {
-        // Add contributions for masters on the same cell (different slave)
-        Am0m1(0) = c0c1 * Ae_original(local_index, other_local_index);
-        mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
-      }
-      else
-      {
-        // Add contributions for different masters of the same slave
-        Am0m1(0) = c0c1 * Ae_original(local_index, local_index);
-        mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
-      }
+      const T Am0m1 = coeff * other_coeff * Ae_original(local_index, other_local_index);
+      mat_set(1, &master, 1, &other_master, &Am0m1);
     }
   }
 } // namespace
@@ -140,8 +123,11 @@ void assemble_exterior_facets(
     const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
     const std::vector<std::uint8_t>& perms,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
+  // Account for this
+  const auto& mpc = mpc0;
 
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -307,9 +293,13 @@ void assemble_cells_impl(
                              const std::uint8_t*)>& kernel,
     const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
   dolfinx::common::Timer timer("~MPC (C++): Assemble cells");
+
+  // TODO: implement this
+  const auto& mpc = mpc0;
 
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -416,7 +406,7 @@ void assemble_cells_impl(
             if (bs0 * dofs0[j] + k == slaves[slave_indices[i]])
             {
               local_indices[i] = bs0 * j + k;
-              is_slave[j * bs0 + k] = true;
+              is_slave[bs0 * j + k] = true;
               break;
             }
           }
@@ -442,7 +432,8 @@ void assemble_matrix_impl(
                             const std::int32_t*, const T*)>& mat_add_values,
     const dolfinx::fem::Form<T>& a, const std::vector<bool>& bc0,
     const std::vector<bool>& bc1,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
   assert(mesh);
@@ -498,7 +489,8 @@ void assemble_matrix_impl(
                            mesh->geometry(), active_cells,
                            apply_dof_transformation, dofs0, bs0,
                            apply_dof_transformation_to_transpose, dofs1, bs1,
-                           bc0, bc1, fn, coeffs, constants, cell_info, mpc);
+                           bc0, bc1, fn, coeffs, constants, cell_info,
+                           mpc0, mpc1);
   }
   if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
       or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
@@ -520,7 +512,7 @@ void assemble_matrix_impl(
           mat_add_block_values, mat_add_values, *mesh, active_facets,
           apply_dof_transformation, dofs0, bs0,
           apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn,
-          coeffs, constants, cell_info, perms, mpc);
+          coeffs, constants, cell_info, perms, mpc0, mpc1);
     }
 
     const std::vector<int> c_offsets = a.coefficient_offsets();
@@ -545,7 +537,8 @@ void _assemble_matrix(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const T*)>& mat_add,
     const dolfinx::fem::Form<T>& a,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     const T diagval)
 {
@@ -581,8 +574,11 @@ void _assemble_matrix(
 
   // Assemble
   assemble_matrix_impl<T>(mat_add_block, mat_add, a, dof_marker0, dof_marker1,
-                          mpc);
+                          mpc0, mpc1);
 
+  // TODO account for this
+  const auto& mpc = mpc0;
+  
   // Add diagval on diagonal for slave dofs
   const xtl::span<const std::int32_t> slaves = mpc->slaves();
   const std::int32_t num_local_slaves = mpc->num_local_slaves();
@@ -603,12 +599,13 @@ void dolfinx_mpc::assemble_matrix(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const double*)>& mat_add,
     const dolfinx::fem::Form<double>& a,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     const double diagval)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc, bcs, diagval);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -620,11 +617,13 @@ void dolfinx_mpc::assemble_matrix(
         mat_add,
     const dolfinx::fem::Form<std::complex<double>>& a,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc,
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc1,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
     const std::complex<double> diagval)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc, bcs, diagval);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval);
 }
