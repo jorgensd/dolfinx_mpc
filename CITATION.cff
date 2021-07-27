@@ -1,0 +1,9 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Dokken
+    given-names: Jørgen Schartum
+    orcid: https://orcid.org/0000-0001-6489-8858
+title: "DOLFINx-MPC"
+version: 0.1.0
+date-released: 2021-05-11
