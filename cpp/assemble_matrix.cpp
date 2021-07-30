@@ -97,6 +97,143 @@ void modify_mpc_cell(
       mat_set(1, &master, 1, &other_master, &Am0m1);
     }
   }
+}
+}
+
+namespace
+{
+//-----------------------------------------------------------------------------
+template <typename T>
+void modify_mpc_cell_rect(
+    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
+                            const std::int32_t*, const T*)>& mat_set,
+    const std::array<int, 2> num_dofs, xt::xtensor<T, 2>& Ae,
+    const std::array<xtl::span<const int32_t>, 2>& dofs, std::array<int, 2> bs,
+    const std::array<xtl::span<const int32_t>, 2>& slave_indices,
+    const std::array<const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>&
+        masters,
+    const std::array<const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>& coeffs,
+    const std::array<std::vector<std::int32_t>, 2>& local_indices,
+    const std::array<std::vector<bool>, 2>& is_slave)
+{
+
+  // Arrays for flattened master slave data
+  std::array<std::vector<std::int32_t>, 2> flattened_masters;
+  std::array<std::vector<std::int32_t>, 2> flattened_slaves;
+  std::array<std::vector<std::int32_t>, 2> slaves_loc;
+  std::array<std::vector<T>, 2> flattened_coeffs;
+  for (int axis = 0; axis < 2; ++axis)
+  {
+    for (std::int32_t i = 0; i < slave_indices[axis].size(); ++i)
+    {
+      xtl::span<const std::int32_t> local_masters
+          = masters[axis]->links(slave_indices[axis][i]);
+      xtl::span<const T> local_coeffs = coeffs[axis]->links(slave_indices[axis][i]);
+
+      for (std::int32_t j = 0; j < local_masters.size(); ++j)
+      {
+        slaves_loc[axis].push_back(i);
+        flattened_slaves[axis].push_back(local_indices[axis][i]);
+        flattened_masters[axis].push_back(local_masters[j]);
+        flattened_coeffs[axis].push_back(local_coeffs[j]);
+      }
+    }
+  }
+
+  // Create copy to use for distribution to master dofs
+  const xt::xtensor<T, 2> Ae_original = Ae;
+  // Build matrix where all (slave_i, slave_j) entries are 0 for usage in row and
+  // column addition
+  xt::xtensor<T, 2> Ae_stripped = xt::empty<T>({bs[0] * num_dofs[0], bs[1] * num_dofs[1]});
+  for (std::int32_t i = 0; i < bs[0] * num_dofs[0]; ++i)
+    for (std::int32_t j = 0; j < bs[1] * num_dofs[1]; ++j)
+      Ae_stripped(i, j) = (is_slave[0][i] && is_slave[1][j]) ? 0 : Ae(i, j);
+
+  // Unroll dof blocks
+  std::array<std::vector<std::int32_t>, 2> mpc_dofs =
+    {std::vector<std::int32_t>(bs[0] * dofs[0].size()),
+     std::vector<std::int32_t>(bs[1] * dofs[1].size())};
+  for (int axis = 0; axis < 2; ++axis)
+    for (std::int32_t j = 0; j < dofs[axis].size(); ++j)
+      for (std::int32_t k = 0; k < bs[axis]; ++k)
+        mpc_dofs[axis][j * bs[axis] + k] = dofs[axis][j] * bs[axis] + k;
+
+  const std::array<const std::function<void(const std::int32_t&, const std::int32_t&, const T&)>, 2>
+    inserters = {
+      [&](const std::int32_t& local_index, const std::int32_t& master, const T& coeff)->void
+      {
+        xt::row(Ae, local_index).fill(0);
+        const xt::xarray<T> Acols = coeff * xt::row(Ae_stripped, local_index);
+        // const auto mpc_dof_old = mpc_dofs[1][local_index]; // store old mpc value
+        // mpc_dofs[1][local_index] = master;
+        mat_set(1, &master, bs[1] * num_dofs[1], mpc_dofs[1].data(), Acols.data());
+
+        // std::string msg = "";
+        // for (auto dof : mpc_dofs[1])
+        //   msg += std::to_string(dof) + ", ";
+
+        // mpc_dofs[1][local_index] = mpc_dof_old;
+        // std::cout << "inserting cols " << msg << " in row (" << master << ")";
+        // std::cout << Acols << std::endl;
+      },
+      [&](const std::int32_t& local_index, const std::int32_t& master, const T& coeff)->void
+      {
+        xt::col(Ae, local_index).fill(0);
+        const xt::xarray<T> Arows = coeff * xt::col(Ae_stripped, local_index);
+        // const auto mpc_dof_old = mpc_dofs[0][local_index]; // store old mpc value
+        // mpc_dofs[0][local_index] = master;
+        mat_set(bs[0] * num_dofs[0], mpc_dofs[0].data(), 1, &master, Arows.data());
+
+        // std::string msg = "";
+        // for (auto dof : mpc_dofs[0])
+        //   msg += std::to_string(dof) + ", ";
+
+        // mpc_dofs[0][local_index] = mpc_dof_old;
+
+
+        // std::cout << "inserting rows " << msg << " in col (" << master << ") ";
+        // std::cout << Arows << std::endl;
+      }
+    };
+
+  // Insert: (slave_i, :) rows to (master_i, :)
+  //         (:, slave_j) cols to (:, master_j)
+  for (int axis = 0; axis < 2; ++axis)
+  {
+    for (std::int32_t i = 0; i < flattened_slaves[axis].size(); ++i)
+    {
+      const std::int32_t& local_index = flattened_slaves[axis][i];
+      const std::int32_t& master = flattened_masters[axis][i];
+      const T& coeff = flattened_coeffs[axis][i];
+      inserters[axis](local_index, master, coeff);
+    }
+  }
+
+  // Insert the (slave_i, slave_j) contributions to (master_i, master_j)
+  for (std::int32_t i = 0; i < flattened_slaves[0].size(); ++i)
+  {
+    for (std::int32_t j = 0; j < flattened_slaves[1].size(); ++j)
+    {
+      const std::int32_t& local_index0 = flattened_slaves[0][i];
+      const std::int32_t& local_index1 = flattened_slaves[1][j];
+      const std::int32_t& master0 = flattened_masters[0][i];
+      const std::int32_t& master1 = flattened_masters[1][j];
+      const T& coeff0 = flattened_coeffs[0][i];
+      const T& coeff1 = flattened_coeffs[1][j];
+
+      // const auto mpc_dof_old0 = mpc_dofs[0][local_index0]; // store old mpc value
+      // const auto mpc_dof_old1 = mpc_dofs[1][local_index1]; // store old mpc value
+      // mpc_dofs[0][local_index0] = master0;
+      // mpc_dofs[1][local_index1] = master1;
+      const T Amaster = coeff0 * coeff1 * Ae_original(local_index0, local_index1);
+      mat_set(1, &master0, 1, &master1, &Amaster);
+      // mpc_dofs[0][local_index0] = mpc_dof_old0;
+      // mpc_dofs[1][local_index1] = mpc_dof_old1;
+
+      // std::cout << "inserting into (" << master0 << ", " << master1 << ")";
+      // std::cout << " from local (" << local_index0 << ", " << local_index1 << ")" << std::endl;
+    }
+  }
 } // namespace
 
 //-----------------------------------------------------------------------------
@@ -126,7 +263,7 @@ void assemble_exterior_facets(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
-  // Account for this
+  // TODO: Account for this
   const auto& mpc = mpc0;
 
   // Get MPC data
@@ -297,21 +434,22 @@ void assemble_cells_impl(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
   dolfinx::common::Timer timer("~MPC (C++): Assemble cells");
-
-  // TODO: implement this
-  const auto& mpc = mpc0;
-
+  
   // Get MPC data
-  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-      masters = mpc->masters_local();
-  const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coefficients
-      = mpc->coeffs();
-  const xtl::span<const std::int32_t> slaves = mpc->slaves();
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      masters = {mpc0->masters_local(), mpc1->masters_local()};
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
+      coefficients = {mpc0->coeffs(), mpc1->coeffs()};
+  const std::array<const xtl::span<const std::int32_t>, 2> 
+    slaves = {mpc0->slaves(), mpc1->slaves()};
 
-  xtl::span<const std::int32_t> slave_cells = mpc->slave_cells();
-  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
-      cell_to_slaves
-      = mpc->cell_to_slaves();
+  std::array<xtl::span<const std::int32_t>, 2>
+    slave_cells = {mpc0->slave_cells(), mpc1->slave_cells()};
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
   // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
@@ -322,17 +460,24 @@ void assemble_cells_impl(
   const xt::xtensor<double, 2>& x_g = geometry.x();
 
   // Compute local indices for slave cells
-  std::vector<bool> is_slave_cell(active_cells.size(), false);
-  std::vector<std::int32_t> slave_cell_index(active_cells.size(), -1);
-  for (std::int32_t i = 0; i < slave_cells.size(); ++i)
+  std::array<std::vector<bool>, 2> is_slave_cell = 
+    {std::vector<bool>(active_cells.size(), false),
+     std::vector<bool>(active_cells.size(), false)};
+  std::array<std::vector<std::int32_t>, 2> slave_cell_index
+    = {std::vector<std::int32_t>(active_cells.size(), -1),
+       std::vector<std::int32_t>(active_cells.size(), -1)};
+  for (std::int32_t j = 0; j < active_cells.size(); ++j)
   {
-    for (std::int32_t j = 0; j < active_cells.size(); ++j)
+    for (std::int32_t axis = 0; axis < 2; ++axis)
     {
-      if (slave_cells[i] == active_cells[j])
+      for (std::int32_t i = 0; i < slave_cells[axis].size(); ++i)
       {
-        is_slave_cell[j] = true;
-        slave_cell_index[j] = i;
-        break;
+        if (slave_cells[axis][i] == active_cells[j])
+        {
+          is_slave_cell[axis][j] = true;
+          slave_cell_index[axis][j] = i;
+          break;
+        }
       }
     }
   }
@@ -387,36 +532,46 @@ void assemble_cells_impl(
         }
       }
     }
-    if (is_slave_cell[l])
+
+    const std::array<int, 2> bs = {bs0, bs1};
+    const std::array<xtl::span<const int32_t>, 2> dofs = {dofs0, dofs1};
+    const std::array<int, 2> num_dofs = {num_dofs0, num_dofs1};
+    std::array<xtl::span<const int32_t>, 2> slave_indices;
+    std::array<std::vector<bool>, 2> is_slave = 
+      {std::vector<bool>(bs[0] * num_dofs[0], false),
+       std::vector<bool>(bs[1] * num_dofs[1], false)};
+    std::array<std::vector<std::int32_t>, 2> local_indices;
+
+    if (is_slave_cell[0][l] or is_slave_cell[1][l])
     {
-      // Assuming test and trial space has same number of dofs and dofs per
-      // cell
-      xtl::span<const int32_t> slave_indices
-          = cell_to_slaves->links(slave_cell_index[l]);
-      // Find local position of every slave
-      std::vector<bool> is_slave(bs0 * num_dofs0, false);
-      std::vector<std::int32_t> local_indices(slave_indices.size());
-      for (std::int32_t i = 0; i < slave_indices.size(); ++i)
+      for (int axis = 0; axis < 2; ++axis)
       {
-        bool found = false;
-        for (std::int32_t j = 0; j < dofs0.size(); ++j)
+        slave_indices[axis] = cell_to_slaves[axis]->links(slave_cell_index[axis][l]);
+        // Find local position of every slave
+        local_indices[axis] = std::vector<std::int32_t>(slave_indices[axis].size());
+
+        for (std::int32_t i = 0; i < slave_indices[axis].size(); ++i)
         {
-          for (std::int32_t k = 0; k < bs0; ++k)
+          bool found = false;
+          for (std::int32_t j = 0; j < dofs[axis].size(); ++j)
           {
-            if (bs0 * dofs0[j] + k == slaves[slave_indices[i]])
+            for (std::int32_t k = 0; k < bs[axis]; ++k)
             {
-              local_indices[i] = bs0 * j + k;
-              is_slave[bs0 * j + k] = true;
-              break;
+              if (bs[axis] * dofs[axis][j] + k == slaves[axis][slave_indices[axis][i]])
+              {
+                local_indices[axis][i] = bs[axis] * j + k;
+                is_slave[axis][bs[axis] * j + k] = true;
+                break;
+              }
             }
+            if (found)
+              break;
           }
-          if (found)
-            break;
         }
       }
-      modify_mpc_cell<T>(mat_add_values, num_dofs0, Ae, dofs0, bs0,
-                         slave_indices, masters, coefficients, local_indices,
-                         is_slave);
+      modify_mpc_cell_rect<T>(mat_add_values, num_dofs, Ae, dofs, bs,
+                              slave_indices, masters, coefficients, local_indices,
+                              is_slave);
     }
     mat_add_block_values(dofs0.size(), dofs0.data(), dofs1.size(), dofs1.data(),
                          Ae.data());
@@ -542,6 +697,9 @@ void _assemble_matrix(
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     const T diagval)
 {
+  assert(a.function_spaces().at(0) == mpc0->function_space());
+  assert(a.function_spaces().at(1) == mpc1->function_space());
+
   dolfinx::common::Timer timer_s("~MPC: Assembly (C++)");
 
   // Index maps for dof ranges
@@ -575,20 +733,14 @@ void _assemble_matrix(
   // Assemble
   assemble_matrix_impl<T>(mat_add_block, mat_add, a, dof_marker0, dof_marker1,
                           mpc0, mpc1);
-
-  // TODO account for this
-  const auto& mpc = mpc0;
   
   // Add diagval on diagonal for slave dofs
-  const xtl::span<const std::int32_t> slaves = mpc->slaves();
-  const std::int32_t num_local_slaves = mpc->num_local_slaves();
-  std::vector<std::int32_t> diag_dof(1);
-  std::vector<T> diag_value(1);
-  diag_value[0] = diagval;
-  for (std::int32_t i = 0; i < num_local_slaves; ++i)
+  if (mpc0->function_space() == mpc1->function_space())
   {
-    diag_dof[0] = slaves[i];
-    mat_add(1, diag_dof.data(), 1, diag_dof.data(), diag_value.data());
+    const xtl::span<const std::int32_t> slaves = mpc0->slaves();
+    const std::int32_t num_local_slaves = mpc0->num_local_slaves();
+    for (std::int32_t i = 0; i < num_local_slaves; ++i)
+      mat_add(1, &slaves[i], 1, &slaves[i], &diagval);
   }
 }
 } // namespace

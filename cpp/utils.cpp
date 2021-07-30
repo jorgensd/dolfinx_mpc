@@ -230,13 +230,6 @@ dolfinx_mpc::create_sparsity_pattern(
     // Only need to loop through once
     pattern_populater(pattern, mpc0, mpc1,
       [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
-        std::string msg = "M dofs: ";
-        for (const auto dof : dofs_m)
-          msg += std::to_string(dof) + ", ";
-        msg += "\nS Dofs: ";
-        for (const auto dof : dofs_s)
-          msg += std::to_string(dof) + ", ";
-        std::cout << "populator rows/cols || " << msg << std::endl;
         pattern.insert(dofs_m, dofs_s);
         pattern.insert(dofs_s, dofs_m);
       });
@@ -246,24 +239,10 @@ dolfinx_mpc::create_sparsity_pattern(
     // Potentially rectangular pattern needs each axis inserted separately
     pattern_populater(pattern, mpc0, mpc1,
       [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
-        std::string msg = "M (row) dofs: ";
-        for (const auto dof : dofs_m)
-          msg += std::to_string(dof) + ", ";
-        msg += "\nS (col) Dofs: ";
-        for (const auto dof : dofs_s)
-          msg += std::to_string(dof) + ", ";
-        std::cout << "populator rows || " << msg << std::endl;
         pattern.insert(dofs_m, dofs_s);
       });
     pattern_populater(pattern, mpc1, mpc0,
       [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
-        std::string msg = "M (col) dofs: ";
-        for (const auto dof : dofs_m)
-          msg += std::to_string(dof) + ", ";
-        msg += "\nS (row) Dofs: ";
-        for (const auto dof : dofs_s)
-          msg += std::to_string(dof) + ", ";
-        std::cout << "populator cols || " << msg << std::endl;
         pattern.insert(dofs_s, dofs_m);
       });
   }
