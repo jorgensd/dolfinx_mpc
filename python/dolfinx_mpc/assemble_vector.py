@@ -3,7 +3,7 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
-from typing import Tuple
+from typing import Tuple, List, Union
 
 import dolfinx
 import dolfinx.common
@@ -140,6 +140,59 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
         timer.stop()
     timer_vector.stop()
     return vector
+
+
+def _create_cpp_form(form, form_compiler_parameters, jit_parameters):
+    """Recursively look for ufl.Forms and convert to dolfinx.fem.Form, otherwise
+    return form argument
+    """
+    # TODO: Code reproduction, refactor this to another module
+    if isinstance(form, dolfinx.Form):
+        return form._cpp_object
+    elif isinstance(form, ufl.Form):
+        return dolfinx.Form(
+            form, form_compiler_parameters=form_compiler_parameters,
+            jit_parameters=jit_parameters)._cpp_object
+    elif isinstance(form, (tuple, list)):
+        return list(map(
+            lambda sub_form: _create_cpp_form(sub_form,
+                                              form_compiler_parameters,
+                                              jit_parameters), form))
+    return form
+
+
+def create_vector_nest(
+        L: List[Union[dolfinx.Form, dolfinx.cpp.fem.Form]],
+        constraint: List[MultiPointConstraint],
+        form_compiler_parameters={}, jit_parameters={}):
+    assert len(constraint) == len(L)
+
+    # TODO: refactor assemble vector/matrix into one file?
+    L = _create_cpp_form(L, form_compiler_parameters, jit_parameters)
+    b_ = [None for _ in range(len(L))]
+
+    for i, L_row in enumerate(L):
+        index_map = constraint[i].index_map()
+        block_size = L[i].function_spaces[0].dofmap.index_map_bs
+        b_[i] = dolfinx.cpp.la.create_vector(index_map, block_size)
+
+    b = PETSc.Vec().createNest(
+        b_, comm=constraint[0].function_space().mesh.mpi_comm())
+    return b
+
+
+def assemble_vector_nest(
+        b: PETSc.Vec,
+        L: List[Union[dolfinx.Form, dolfinx.cpp.fem.Form]],
+        constraint: Union[List[MultiPointConstraint]],
+        form_compiler_parameters={}, jit_parameters={}):
+    assert len(constraint) == len(L)
+
+    b_sub_vecs = b.getNestSubVecs()
+    for i, L_row in enumerate(L):
+        assemble_vector(L_row, constraint[i], b=b_sub_vecs[i],
+                        form_compiler_parameters=form_compiler_parameters,
+                        jit_parameters=jit_parameters)
 
 
 @numba.njit

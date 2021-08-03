@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import dolfinx
 import dolfinx.common
@@ -73,16 +73,20 @@ def pack_slave_facet_info_numba(active_facets: 'numpy.ndarray[numpy.int32]',
     return facet_info[:i, :]
 
 
-def assemble_matrix_cpp(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: List[dolfinx.fem.DirichletBC] = [],
-                        diagval: PETSc.ScalarType = 1, A: PETSc.Mat = None,
-                        form_compiler_parameters={}, jit_parameters={}):
+def assemble_matrix_cpp(
+        form: ufl.form.Form,
+        constraint: Union[MultiPointConstraint, List[MultiPointConstraint]],
+        bcs: List[dolfinx.fem.DirichletBC] = [],
+        diagval: PETSc.ScalarType = 1, A: PETSc.Mat = None,
+        form_compiler_parameters={}, jit_parameters={}):
     """
    Parameters
     ==========
     form
         The bilinear variational form
     constraint
-        The multi point constraint
+        The multi point constraint or list of two multi point constraints
+        corresponding to axis 0 and axis 1 of the matrix
     bcs
         List of Dirichlet boundary conditions
     diagval
@@ -104,13 +108,17 @@ def assemble_matrix_cpp(form: ufl.form.Form, constraint: MultiPointConstraint, b
     cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
                             jit_parameters=jit_parameters)._cpp_object
 
+    if not hasattr(constraint, "__len__"):
+        constraint = (constraint,)
+    constraint = tuple(map(lambda c: c._cpp_object, constraint))
+
     # Generate matrix with MPC sparsity pattern
     if A is None:
-        A = cpp.mpc.create_matrix(cpp_form, constraint._cpp_object)
+        A = cpp.mpc.create_matrix(cpp_form, *constraint)
     A.zeroEntries()
 
     # Assemble matrix in C++
-    cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, bcs, diagval)
+    cpp.mpc.assemble_matrix(A, cpp_form, *constraint, bcs, diagval)
 
     # Add one on diagonal for Dirichlet boundary conditions
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
@@ -121,6 +129,64 @@ def assemble_matrix_cpp(form: ufl.form.Form, constraint: MultiPointConstraint, b
     with dolfinx.common.Timer("~MPC: A.assemble()"):
         A.assemble()
     return A
+
+
+def _create_cpp_form(form, form_compiler_parameters, jit_parameters):
+    """Recursively look for ufl.Forms and convert to dolfinx.fem.Form, otherwise
+    return form argument
+    """
+    # TODO: Code reproduction, refactor this to another module
+    if isinstance(form, dolfinx.Form):
+        return form._cpp_object
+    elif isinstance(form, ufl.Form):
+        return dolfinx.Form(
+            form, form_compiler_parameters=form_compiler_parameters,
+            jit_parameters=jit_parameters)._cpp_object
+    elif isinstance(form, (tuple, list)):
+        return list(map(
+            lambda sub_form: _create_cpp_form(sub_form,
+                                              form_compiler_parameters,
+                                              jit_parameters), form))
+    return form
+
+
+def create_matrix_nest(
+        a: List[List[Union[dolfinx.Form, dolfinx.cpp.fem.Form]]],
+        constraint: Union[MultiPointConstraint, List[MultiPointConstraint]],
+        form_compiler_parameters={}, jit_parameters={}):
+    assert len(constraint) == len(a)
+
+    a = _create_cpp_form(a, form_compiler_parameters, jit_parameters)
+    A_ = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
+
+    for i, a_row in enumerate(a):
+        for j, a_block in enumerate(a_row):
+            if a[i][j] is None:
+                continue
+            A_[i][j] = cpp.mpc.create_matrix(
+                a[i][j], constraint[i]._cpp_object, constraint[j]._cpp_object)
+
+    A = PETSc.Mat().createNest(
+        A_, comm=constraint[0].function_space().mesh.mpi_comm())
+    return A
+
+
+def assemble_matrix_nest(
+        A: PETSc.Mat,
+        a: List[List[Union[dolfinx.Form, dolfinx.cpp.fem.Form]]],
+        constraint: Union[MultiPointConstraint, List[MultiPointConstraint]],
+        bcs: List[dolfinx.DirichletBC] = [],
+        diagval: PETSc.ScalarType = 1,
+        form_compiler_parameters={}, jit_parameters={}):
+    for i, a_row in enumerate(a):
+        for j, a_block in enumerate(a_row):
+            if a_block is not None:
+                Asub = A.getNestSubMatrix(i, j)
+                assemble_matrix_cpp(
+                    a_block, (constraint[i], constraint[j]),
+                    bcs=bcs, diagval=diagval, A=Asub,
+                    form_compiler_parameters=form_compiler_parameters,
+                    jit_parameters=jit_parameters)
 
 
 def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,

@@ -10,7 +10,9 @@
 import dolfinx_mpc.cpp
 
 # New local assemblies
-from .assemble_matrix import assemble_matrix, assemble_matrix_cpp
-from .assemble_vector import assemble_vector
+from .assemble_matrix import assemble_matrix, assemble_matrix_cpp, \
+    create_matrix_nest, assemble_matrix_nest
+from .assemble_vector import assemble_vector, create_vector_nest, \
+    assemble_vector_nest
 from .multipointconstraint import MultiPointConstraint
 from .problem import LinearProblem
