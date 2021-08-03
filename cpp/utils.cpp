@@ -170,7 +170,7 @@ dolfinx_mpc::create_sparsity_pattern(
   assert(a.function_spaces().at(1) == _V1);
   auto bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
   auto bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
-  assert(bs0 == bs1);
+
   const dolfinx::mesh::Mesh& mesh = *(a.mesh());
 
   std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
@@ -184,9 +184,9 @@ dolfinx_mpc::create_sparsity_pattern(
   dolfinx_mpc::build_standard_pattern(pattern, a);
 
   // Arrays replacing slave dof with master dof in sparsity pattern
-  auto pattern_populater = [](
+  auto pattern_populator = [](
     auto& pattern, const auto& mpc, const auto& mpc_off_axis,
-    const auto& pattern_inserter)->void
+    const auto& pattern_inserter, const auto& master_inserter)->void
   {
     std::vector<std::int32_t> master_block(1);
     std::vector<std::int32_t> other_master_block(1);
@@ -200,7 +200,7 @@ dolfinx_mpc::create_sparsity_pattern(
       std::vector<std::int32_t> flattened_masters;
       for (std::int32_t j = 0; j < slaves.size(); ++j)
       {
-        auto local_masters = mpc->master_block_map()->links(slaves[j]);
+        const auto local_masters = mpc->master_block_map()->links(slaves[j]);
         for (std::int32_t k = 0; k < local_masters.size(); ++k)
           flattened_masters.push_back(local_masters[k]);
       }
@@ -218,7 +218,7 @@ dolfinx_mpc::create_sparsity_pattern(
         for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
         {
           other_master_block[0] = flattened_masters[k];
-          pattern_inserter(pattern,
+          master_inserter(pattern,
             tcb::make_span(other_master_block), tcb::make_span(master_block));
         }
       }
@@ -228,23 +228,44 @@ dolfinx_mpc::create_sparsity_pattern(
   if (mpc0 == mpc1)
   {
     // Only need to loop through once
-    pattern_populater(pattern, mpc0, mpc1,
-      [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
+    const auto square_inserter = [](
+      auto& pattern, const auto& dofs_m, const auto& dofs_s)
+      {
         pattern.insert(dofs_m, dofs_s);
         pattern.insert(dofs_s, dofs_m);
-      });
+      };
+    pattern_populator(pattern, mpc0, mpc1,
+      square_inserter, square_inserter);
   }
   else
   {
+    const auto do_nothing_inserter = [](
+      auto& pattern, const auto& dofs_m, const auto& dofs_s){};
     // Potentially rectangular pattern needs each axis inserted separately
-    pattern_populater(pattern, mpc0, mpc1,
+    pattern_populator(pattern, mpc0, mpc1,
       [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
+        // std::string msg = " PI 01: inserting\n dofs_m: ";
+        // for (auto dof : dofs_m)
+        //   msg += std::to_string(dof) + ", ";
+        // msg += "\n dofs_s:";
+        // for (auto dof : dofs_s)
+        //   msg += std::to_string(dof) + ", ";
+        
+        // std::cout << msg << std::endl;
         pattern.insert(dofs_m, dofs_s);
-      });
-    pattern_populater(pattern, mpc1, mpc0,
+      }, do_nothing_inserter);
+    pattern_populator(pattern, mpc1, mpc0,
       [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
+        // std::string msg = " PI 10: inserting\n dofs_m: ";
+        // for (auto dof : dofs_m)
+        //   msg += std::to_string(dof) + ", ";
+        // msg += "\n dofs_s:";
+        // for (auto dof : dofs_s)
+        //   msg += std::to_string(dof) + ", ";
+        
+        // std::cout << msg << std::endl;
         pattern.insert(dofs_s, dofs_m);
-      });
+      }, do_nothing_inserter);
   }
 
   return pattern;
