@@ -528,7 +528,7 @@ void assemble_cells_impl(
         for (std::int32_t k = 0; k < bs1; ++k)
         {
           if (bc1[bs1 * dofs1[j] + k])
-            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({num_dofs1 * bs1});
+            xt::col(Ae, bs1 * j + k).fill(0);
         }
       }
     }
