@@ -550,6 +550,7 @@ void assemble_cells_impl(
               {
                 local_indices[axis][i] = bs[axis] * j + k;
                 is_slave[axis][bs[axis] * j + k] = true;
+                found = true;
                 break;
               }
             }
