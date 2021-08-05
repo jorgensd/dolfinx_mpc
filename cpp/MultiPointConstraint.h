@@ -380,7 +380,6 @@ private:
     return std::make_pair(adj_ptr, std::make_pair(unique_cells, adj2_ptr));
   }
   //-----------------------------------------------------------------------------
-private:
   // Original function space
   std::shared_ptr<const dolfinx::fem::FunctionSpace> _V;
   // Array including all slaves (local + ghosts)

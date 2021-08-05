@@ -164,6 +164,7 @@ void modify_mpc_cell_rect(
         xt::row(Ae, local_index).fill(0);
         const xt::xarray<T> Acols = coeff * xt::row(Ae_stripped, local_index);
         mat_set(1, &master, bs[1] * num_dofs[1], mpc_dofs[1].data(), Acols.data());
+      },
       [&](const std::int32_t& local_index, const std::int32_t& master, const T& coeff)->void
       {
         xt::col(Ae, local_index).fill(0);
