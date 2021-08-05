@@ -164,7 +164,9 @@ ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
 # Terms due to slip condition
 # Explained in for instance: https://arxiv.org/pdf/2001.10639.pdf
-# a00 -= ufl.inner(ufl.outer(n, n) * ufl.dot(T(u, p, mu), n), v) * ds
+a00 -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
+a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(
+    - p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
 L0 += ufl.inner(g_tau, v) * ds
 
 a = ((a00, a01),

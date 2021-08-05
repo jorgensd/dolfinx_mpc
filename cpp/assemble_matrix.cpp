@@ -25,7 +25,6 @@ void modify_mpc_cell(
     const std::vector<std::int32_t>& local_indices,
     const std::vector<bool>& is_slave)
 {
-
   // Arrays for flattened master slave data
   std::vector<std::int32_t> flattened_masters;
   std::vector<std::int32_t> flattened_slaves;
@@ -249,11 +248,11 @@ void assemble_exterior_facets(
     const std::function<void(const xtl::span<T>&,
                              const xtl::span<const std::uint32_t>&,
                              std::int32_t, int)>& apply_dof_transformation,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, size_t bs0,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
     const std::function<
         void(const xtl::span<T>&, const xtl::span<const std::uint32_t>&,
              std::int32_t, int)>& apply_dof_transformation_to_transpose,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, size_t bs1,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*)>& kernel,
@@ -263,20 +262,23 @@ void assemble_exterior_facets(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
-  // TODO: Account for this
-  const auto& mpc = mpc0;
+  dolfinx::common::Timer timer("~MPC (C++): Assemble exterior facets");
 
   // Get MPC data
-  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-      masters = mpc->masters_local();
-  const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coefficients
-      = mpc->coeffs();
-  const xtl::span<const std::int32_t> slaves = mpc->slaves();
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      masters = {mpc0->masters_local(), mpc1->masters_local()};
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
+      coefficients = {mpc0->coeffs(), mpc1->coeffs()};
+  const std::array<const xtl::span<const std::int32_t>, 2> 
+    slaves = {mpc0->slaves(), mpc1->slaves()};
 
-  xtl::span<const std::int32_t> slave_cells = mpc->slave_cells();
-  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
-      cell_to_slaves
-      = mpc->cell_to_slaves();
+  std::array<xtl::span<const std::int32_t>, 2>
+    slave_cells = {mpc0->slave_cells(), mpc1->slave_cells()};
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
   const int tdim = mesh.topology().dim();
 
@@ -289,8 +291,12 @@ void assemble_exterior_facets(
   const xt::xtensor<double, 2>& x_g = mesh.geometry().x();
 
   // Compute local indices for slave cells
-  std::vector<bool> is_slave_facet(active_facets.size(), false);
-  std::vector<std::int32_t> slave_cell_index(active_facets.size(), -1);
+  std::array<std::vector<bool>, 2> is_slave_facet =
+    {std::vector<bool>(active_facets.size(), false),
+     std::vector<bool>(active_facets.size(), false)};
+  std::array<std::vector<std::int32_t>, 2> slave_cell_index
+    = {std::vector<std::int32_t>(active_facets.size(), -1),
+       std::vector<std::int32_t>(active_facets.size(), -1)};
   auto f_to_c = mesh.topology().connectivity(tdim - 1, tdim);
   assert(f_to_c);
   auto c_to_f = mesh.topology().connectivity(tdim, tdim - 1);
@@ -300,24 +306,26 @@ void assemble_exterior_facets(
     const std::int32_t f = active_facets[i];
     xtl::span<const std::int32_t> cells = f_to_c->links(f);
     assert(cells.size() == 1);
-    for (std::int32_t j = 0; j < slave_cells.size(); ++j)
-      if (slave_cells[j] == cells[0])
-      {
-        is_slave_facet[i] = true;
-        slave_cell_index[i] = j;
-        break;
-      }
+    for (std::int32_t axis = 0; axis < 2; ++axis)
+    {
+      for (std::int32_t j = 0; j < slave_cells[axis].size(); ++j)
+        if (slave_cells[axis][j] == cells[0])
+        {
+          is_slave_facet[axis][i] = true;
+          slave_cell_index[axis][i] = j;
+          break;
+        }
+    }
   }
 
   // Iterate over all facets
-  const size_t num_dofs0 = dofmap0.links(0).size();
-  const size_t num_dofs1 = dofmap1.links(0).size();
+  std::vector<double> coordinate_dofs(3 * num_dofs_g);
+  const int num_dofs0 = dofmap0.links(0).size();
+  const int num_dofs1 = dofmap1.links(0).size();
   const std::uint32_t ndim0 = bs0 * num_dofs0;
   const std::uint32_t ndim1 = bs1 * num_dofs1;
   xt::xtensor<T, 2> Ae({ndim0, ndim1});
   const xtl::span<T> _Ae(Ae);
-  std::vector<double> coordinate_dofs(3 * num_dofs_g);
-
   for (std::int32_t l = 0; l < active_facets.size(); ++l)
   {
     const std::int32_t f = active_facets[l];
@@ -367,41 +375,53 @@ void assemble_exterior_facets(
         for (std::int32_t k = 0; k < bs1; ++k)
         {
           if (bc1[bs1 * dmap1[j] + k])
-            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({bs1 * num_dofs1});
+            xt::col(Ae, bs1 * j + k).fill(0);
         }
       }
     }
-    if (is_slave_facet[l])
+
+    const std::array<int, 2> bs = {bs0, bs1};
+    const std::array<xtl::span<const int32_t>, 2> dofs = {dmap0, dmap1};
+    const std::array<int, 2> num_dofs = {num_dofs0, num_dofs1};
+    std::array<xtl::span<const int32_t>, 2> slave_indices;
+    std::array<std::vector<bool>, 2> is_slave =
+      {std::vector<bool>(bs[0] * num_dofs[0], false),
+       std::vector<bool>(bs[1] * num_dofs[1], false)};
+    std::array<std::vector<std::int32_t>, 2> local_indices;
+
+    if (is_slave_facet[0][l] or is_slave_facet[1][l])
     {
-      // Assuming test and trial space has same number of dofs and dofs per
-      // cell
-      xtl::span<const std::int32_t> slave_indices
-          = cell_to_slaves->links(slave_cell_index[l]);
-      // Find local position of every slave
-      std::vector<bool> is_slave(num_dofs0, false);
-      std::vector<std::int32_t> local_indices(slave_indices.size());
-      for (std::int32_t i = 0; i < slave_indices.size(); ++i)
+      for (int axis = 0; axis < 2; ++axis)
       {
-        for (std::int32_t j = 0; j < dmap0.size(); ++j)
+        // Assuming test and trial space has same number of dofs and dofs per
+        // cell
+        slave_indices[axis] = cell_to_slaves[axis]->links(slave_cell_index[axis][l]);
+        // Find local position of every slave
+        local_indices[axis] = std::vector<std::int32_t>(slave_indices[axis].size());
+
+        for (std::int32_t i = 0; i < slave_indices[axis].size(); ++i)
         {
           bool found = false;
-          for (std::int32_t k = 0; k < bs0; ++k)
+          for (std::int32_t j = 0; j < dofs[axis].size(); ++j)
           {
-            if (bs0 * dmap0[j] + k == slaves[slave_indices[i]])
+            for (std::int32_t k = 0; k < bs[axis]; ++k)
             {
-              local_indices[i] = j * bs0 + k;
-              is_slave[j * bs0 + k] = true;
-              found = true;
-              break;
+              if (bs[axis] * dofs[axis][j] + k == slaves[axis][slave_indices[axis][i]])
+              {
+                local_indices[axis][i] = bs[axis] * j + k;
+                is_slave[axis][bs[axis] * j + k] = true;
+                found = true;
+                break;
+              }
             }
+            if (found)
+              break;
           }
-          if (found)
-            break;
         }
       }
-      modify_mpc_cell<T>(mat_add_values, num_dofs0, Ae, dmap0, bs0,
-                         slave_indices, masters, coefficients, local_indices,
-                         is_slave);
+      modify_mpc_cell_rect<T>(mat_add_values, num_dofs, Ae, dofs, bs,
+                              slave_indices, masters, coefficients, local_indices,
+                              is_slave);
     }
     mat_add_block_values(dmap0.size(), dmap0.data(), dmap1.size(), dmap1.data(),
                          Ae.data());
