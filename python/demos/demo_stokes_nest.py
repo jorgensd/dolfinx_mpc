@@ -200,7 +200,8 @@ P.assemble()
 ksp = PETSc.KSP().create(mesh.mpi_comm())
 ksp.setOperators(A, P)
 ksp.setMonitor(
-    lambda ctx, it, r: PETSc.Sys.Print(f"it {it:<4d}: b/b0 {r:<.3e}"))
+    lambda ctx, it, r: PETSc.Sys.Print(
+        f"Iteration: {it:>4d}, |r| = {r:.3e}"))
 ksp.setType("minres")
 ksp.setTolerances(rtol=1e-8)
 ksp.getPC().setType("fieldsplit")
