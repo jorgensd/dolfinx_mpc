@@ -225,7 +225,7 @@ dolfinx_mpc::create_sparsity_pattern(
     }
   };
 
-  if (mpc0 == mpc1)
+  if (mpc0 == mpc1) // TODO: should this be mpc0.function_space().contains(mpc1.function_space()) ?
   {
     // Only need to loop through once
     const auto square_inserter = [](
@@ -244,26 +244,10 @@ dolfinx_mpc::create_sparsity_pattern(
     // Potentially rectangular pattern needs each axis inserted separately
     pattern_populator(pattern, mpc0, mpc1,
       [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
-        // std::string msg = " PI 01: inserting\n dofs_m: ";
-        // for (auto dof : dofs_m)
-        //   msg += std::to_string(dof) + ", ";
-        // msg += "\n dofs_s:";
-        // for (auto dof : dofs_s)
-        //   msg += std::to_string(dof) + ", ";
-        
-        // std::cout << msg << std::endl;
         pattern.insert(dofs_m, dofs_s);
       }, do_nothing_inserter);
     pattern_populator(pattern, mpc1, mpc0,
       [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
-        // std::string msg = " PI 10: inserting\n dofs_m: ";
-        // for (auto dof : dofs_m)
-        //   msg += std::to_string(dof) + ", ";
-        // msg += "\n dofs_s:";
-        // for (auto dof : dofs_s)
-        //   msg += std::to_string(dof) + ", ";
-        
-        // std::cout << msg << std::endl;
         pattern.insert(dofs_s, dofs_m);
       }, do_nothing_inserter);
   }

@@ -163,35 +163,12 @@ void modify_mpc_cell_rect(
       {
         xt::row(Ae, local_index).fill(0);
         const xt::xarray<T> Acols = coeff * xt::row(Ae_stripped, local_index);
-        // const auto mpc_dof_old = mpc_dofs[1][local_index]; // store old mpc value
-        // mpc_dofs[1][local_index] = master;
         mat_set(1, &master, bs[1] * num_dofs[1], mpc_dofs[1].data(), Acols.data());
-
-        // std::string msg = "";
-        // for (auto dof : mpc_dofs[1])
-        //   msg += std::to_string(dof) + ", ";
-
-        // mpc_dofs[1][local_index] = mpc_dof_old;
-        // std::cout << "inserting cols " << msg << " in row (" << master << ")";
-        // std::cout << Acols << std::endl;
-      },
       [&](const std::int32_t& local_index, const std::int32_t& master, const T& coeff)->void
       {
         xt::col(Ae, local_index).fill(0);
         const xt::xarray<T> Arows = coeff * xt::col(Ae_stripped, local_index);
-        // const auto mpc_dof_old = mpc_dofs[0][local_index]; // store old mpc value
-        // mpc_dofs[0][local_index] = master;
         mat_set(bs[0] * num_dofs[0], mpc_dofs[0].data(), 1, &master, Arows.data());
-
-        // std::string msg = "";
-        // for (auto dof : mpc_dofs[0])
-        //   msg += std::to_string(dof) + ", ";
-
-        // mpc_dofs[0][local_index] = mpc_dof_old;
-
-
-        // std::cout << "inserting rows " << msg << " in col (" << master << ") ";
-        // std::cout << Arows << std::endl;
       }
     };
 
@@ -220,17 +197,8 @@ void modify_mpc_cell_rect(
       const T& coeff0 = flattened_coeffs[0][i];
       const T& coeff1 = flattened_coeffs[1][j];
 
-      // const auto mpc_dof_old0 = mpc_dofs[0][local_index0]; // store old mpc value
-      // const auto mpc_dof_old1 = mpc_dofs[1][local_index1]; // store old mpc value
-      // mpc_dofs[0][local_index0] = master0;
-      // mpc_dofs[1][local_index1] = master1;
       const T Amaster = coeff0 * coeff1 * Ae_original(local_index0, local_index1);
       mat_set(1, &master0, 1, &master1, &Amaster);
-      // mpc_dofs[0][local_index0] = mpc_dof_old0;
-      // mpc_dofs[1][local_index1] = mpc_dof_old1;
-
-      // std::cout << "inserting into (" << master0 << ", " << master1 << ")";
-      // std::cout << " from local (" << local_index0 << ", " << local_index1 << ")" << std::endl;
     }
   }
 } // namespace
