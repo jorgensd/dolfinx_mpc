@@ -153,16 +153,6 @@ void assemble_entity_impl(
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
-  const int tdim = mesh.topology().dim();
-
-  // Prepare cell geometry
-  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = mesh.geometry().dofmap();
-
-  // FIXME: Add proper interface for num coordinate dofs
-  const int num_dofs_g = x_dofmap.num_links(0);
-  const xt::xtensor<double, 2>& x_g = mesh.geometry().x();
-
   // Compute local indices for slave cells
   std::array<std::vector<bool>, 2> is_slave_entity =
     {std::vector<bool>(active_entities.size(), false),
@@ -188,7 +178,6 @@ void assemble_entity_impl(
   }
 
   // Iterate over all entities
-  std::vector<double> coordinate_dofs(3 * num_dofs_g);
   const int num_dofs0 = dofmap0.links(0).size();
   const int num_dofs1 = dofmap1.links(0).size();
   const std::uint32_t ndim0 = bs0 * num_dofs0;
@@ -290,8 +279,6 @@ void assemble_matrix_impl(
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
   assert(mesh);
   const int tdim = mesh->topology().dim();
-  const std::int32_t num_cells
-      = mesh->topology().connectivity(tdim, 0)->num_nodes();
 
   // Get dofmap data
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap0
@@ -400,8 +387,6 @@ void assemble_matrix_impl(
     auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
     assert(c_to_f);
 
-    const int facets_per_cell = dolfinx::mesh::cell_num_entities(
-        mesh->topology().cell_type(), tdim - 1);
     const std::vector<std::uint8_t>& perms
         = mesh->topology().get_facet_permutations();
 
@@ -450,12 +435,12 @@ void assemble_matrix_impl(
           fetch_cells, assemble_local_facet_matrix);
     }
 
-    const std::vector<int> c_offsets = a.coefficient_offsets();
+    // const std::vector<int> c_offsets = a.coefficient_offsets();
     for (int i : a.integral_ids(dolfinx::fem::IntegralType::interior_facet))
     {
-      const auto& fn = a.kernel(dolfinx::fem::IntegralType::interior_facet, i);
-      const std::vector<std::int32_t>& active_facets
-          = a.domains(dolfinx::fem::IntegralType::interior_facet, i);
+      // const auto& fn = a.kernel(dolfinx::fem::IntegralType::interior_facet, i);
+      // const std::vector<std::int32_t>& active_facets
+      //     = a.domains(dolfinx::fem::IntegralType::interior_facet, i);
       throw std::runtime_error("Not implemented yet");
 
       //   impl::assemble_interior_facets(
