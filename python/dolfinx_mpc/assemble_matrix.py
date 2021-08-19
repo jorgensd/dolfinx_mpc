@@ -228,15 +228,19 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
     e0 = cpp_form.function_spaces[0].element
     e1 = cpp_form.function_spaces[1].element
+
+    # Get dof transformations
     needs_transformation_data = e0.needs_dof_transformations or e1.needs_dof_transformations or \
         cpp_form.needs_facet_permutations
-    cell_info = numpy.array([], dtype=numpy.uint32)
+    cell_perms = numpy.array([], dtype=numpy.uint32)
     if needs_transformation_data:
         V.mesh.topology.create_entity_permutations()
-        cell_info = V.mesh.topology.get_cell_permutation_info()
+        cell_perms = V.mesh.topology.get_cell_permutation_info()
+    # FIXME: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
+    # to support more exotic elements
     if e0.needs_dof_transformations or e1.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
-    # FIXME: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
+
     if num_cell_integrals > 0:
         timer = Timer("~MPC: Assemble matrix (cells)")
         V.mesh.topology.create_entity_permutations()
@@ -244,22 +248,24 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
             cell_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i].tabulate_tensor
             active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
             assemble_slave_cells(A.handle, cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
-                                 (pos, x_dofs, x), form_coeffs, form_consts, cell_info, dofs,
+                                 (pos, x_dofs, x), form_coeffs, form_consts, cell_perms, dofs,
                                  block_size, num_dofs_per_element, mpc_data, is_bc)
         timer.stop()
-
     # Assemble over exterior facets
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
 
-    # Get cell orientation data
     if num_exterior_integrals > 0:
         timer = Timer("~MPC: Assemble matrix (ext. facet kernel)")
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
-        permutation_info = V.mesh.topology.get_cell_permutation_info()
-        facet_permutation_info = V.mesh.topology.get_facet_permutations()
-        perm = (permutation_info, facet_permutation_info)
+
+        # Get facet permutations if required
+        facet_perms = numpy.array([], dtype=numpy.uint8)
+
+        if cpp_form.needs_facet_permutations:
+            facet_perms = V.mesh.topology.get_facet_permutations()
+        perm = (cell_perms, cpp_form.needs_facet_permutations, facet_perms)
 
         for i, id in enumerate(subdomain_ids):
             facet_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i].tabulate_tensor
@@ -516,7 +522,7 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
     local_dofs = numpy.zeros(block_size * num_dofs_per_element, dtype=numpy.int32)
 
     # Permutation info
-    cell_perms, facet_perms = perm
+    cell_perms, needs_facet_perm, facet_perms = perm
 
     # Loop over all external facets that are active
     for i in range(facet_info.shape[0]):
@@ -532,7 +538,8 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
 
         # Assemble local matrix
         A_local.fill(0.0)
-        facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
+        if needs_facet_perm:
+            facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi.from_buffer(A_local), ffi.from_buffer(coeffs[cell_index, :]), ffi.from_buffer(consts),
                ffi.from_buffer(geometry), ffi.from_buffer(facet_index), ffi.from_buffer(facet_perm))
         # FIXME: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
