@@ -126,6 +126,8 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
+        # Get facet permutations if required
+        facet_perms = numpy.array([], dtype=numpy.uint8)
         if cpp_form.needs_facet_permutations:
             facet_perms = V.mesh.topology.get_facet_permutations()
         perm = (cell_perms, cpp_form.needs_facet_permutations, facet_perms)
@@ -215,8 +217,8 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[PETSc.ScalarType]',
     """Assemble additional MPC contributions for facets"""
     ffi_fb = ffi.from_buffer
 
-    cell_perms, facet_perms = permutation_info
-
+    # Unpack facet permutation info
+    cell_perms, needs_facet_perm, facet_perms = permutation_info
     facet_index = numpy.zeros(1, dtype=numpy.int32)
     facet_perm = numpy.zeros(1, dtype=numpy.uint8)
 
@@ -239,7 +241,8 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[PETSc.ScalarType]',
 
         # Compute local facet kernel
         b_local.fill(0.0)
-        facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
+        if needs_facet_perm:
+            facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm))
         # FIXME: Here we need to add the apply_dof_transformation
