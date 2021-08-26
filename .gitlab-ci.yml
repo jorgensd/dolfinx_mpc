@@ -10,7 +10,9 @@ fast-complex:
   variables:
     PETSC_ARCH: "linux-gnu-complex-32"
     PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/lib"
-
+    CC: mpicc
+    HDF5_MPI: "ON"
+    HDF5_DIR: "/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
   before_script:
     - flake8 .
     - export PETSC_ARCH="linux-gnu-complex-32"
@@ -23,6 +25,7 @@ fast-complex:
     - ninja -j3 install
     - cd ../python
     - pip3 install -e . --upgrade
+    - pip3 install --no-binary=h5py h5py
 
   script:
     - cd tests
@@ -68,6 +71,9 @@ fast-real:
   variables:
     PETSC_ARCH: "linux-gnu-real-32"
     PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/lib"
+    CC: mpicc
+    HDF5_MPI: "ON"
+    HDF5_DIR: "/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
   before_script:
     - flake8 .
     - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
@@ -79,6 +85,8 @@ fast-real:
     - ninja -j3 install
     - cd ../python
     - pip3 install -e . --upgrade
+    - pip3 install --no-binary=h5py h5py
+
 
   script:
     - cd tests

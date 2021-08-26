@@ -28,6 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install benchmark dependencies
+        run: | 
+          pip3 install --no-binary=h5py h5py
+
       - name: Install dolfinx_mpc (C++)
         run: |
           cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Developer cpp/
