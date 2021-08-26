@@ -1,6 +1,12 @@
 # Changelog
 
-## Dev
+## main
+- No changes
+
+## 0.3.0 (25.08.2021)
+- Minor internal changes
+
+## 0.2.0 (06.08.2021)
 - Add new MPC constraint: Periodic boundary condition constrained geometrically. See `demo_periodic_geometrical.py` for use-case.
 - New: `demo_periodic_gep.py` proposed and initally implemented by [fmonteghetti](https://github.com/fmonteghetti) using SLEPc for eigen-value problems. 
   This demo illustrates the usage of the new `diagval` keyword argument in the `assemble_matrix` class. 
