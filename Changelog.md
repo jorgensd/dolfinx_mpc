@@ -1,6 +1,7 @@
 # Changelog
 
-## Dev
+## v0.2.0 (06.07.2021)
+- Release compatible with  [DOLFINx v0.2.0](https://github.com/FEniCS/dolfinx/releases/tag/v0.2.0)
 - Add new MPC constraint: Periodic boundary condition constrained geometrically. See `demo_periodic_geometrical.py` for use-case.
 - New: `demo_periodic_gep.py` proposed and initally implemented by [fmonteghetti](https://github.com/fmonteghetti) using SLEPc for eigen-value problems. 
   This demo illustrates the usage of the new `diagval` keyword argument in the `assemble_matrix` class. 

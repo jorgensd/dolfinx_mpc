@@ -20,10 +20,10 @@ use PETSc matrices.
 
 # Installation
 
-Version 0.1.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
+Version 0.2.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
 and can be ran using
 ```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:0.1.0
+docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:v0.2.0
 ```
 
 To install the latest version (master branch), you need to install the latest release of [dolfinx](https://github.com/FEniCS/dolfinx).
