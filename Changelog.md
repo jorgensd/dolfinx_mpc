@@ -1,7 +1,7 @@
 # Changelog
 
 ## main
-- No changes
+- Updates to match dolfinx implementation of exterior facet integrals
 
 ## 0.3.0 (25.08.2021)
 - Minor internal changes
