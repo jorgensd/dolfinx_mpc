@@ -105,19 +105,25 @@ def assemble_matrix_cpp(
         Takes priority over all other parameter values.
 
     """
+    print("python making forms")
     cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
                             jit_parameters=jit_parameters)._cpp_object
 
+    print("getting constraints")
     if not hasattr(constraint, "__len__"):
         constraint = (constraint,)
     constraint = tuple(map(lambda c: c._cpp_object, constraint))
 
     # Generate matrix with MPC sparsity pattern
     if A is None:
+        print("creating matrix")
+        print(cpp_form.integral_ids(dolfinx.cpp.fem.IntegralType.cell))
         A = cpp.mpc.create_matrix(cpp_form, *constraint)
+    print("zeroing")
     A.zeroEntries()
 
     # Assemble matrix in C++
+    print("python about to assemble")
     cpp.mpc.assemble_matrix(A, cpp_form, *constraint, bcs, diagval)
 
     # Add one on diagonal for Dirichlet boundary conditions

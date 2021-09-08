@@ -43,22 +43,28 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 {
   dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
   // Get dof maps
+  std::cout << "getting dofmaps" << std::endl;
   std::array<const std::reference_wrapper<const dolfinx::fem::DofMap>, 2>
       dofmaps{*a.function_spaces().at(0)->dofmap(),
               *a.function_spaces().at(1)->dofmap()};
 
   // Get mesh
+  std::cout << "getting mesh" << std::endl;
   assert(a.mesh());
   const dolfinx::mesh::Mesh& mesh = *(a.mesh());
 
-  if (a.integral_ids(dolfinx::fem::IntegralType::cell).size() > 0)
+  std::cout << "looking for cell integrals" << std::endl;
+  if (a.num_integrals(dolfinx::fem::IntegralType::cell) > 0)
   {
+      std::cout << "found cell integrals and building" << std::endl;
       dolfinx::fem::sparsitybuild::cells(pattern, mesh.topology(),
                                           {{dofmaps[0], dofmaps[1]}});
   }
 
-  if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
+  std::cout << "looking for interior integrals" << std::endl;
+  if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   {
+      std::cout << "foun interior integrals and building" << std::endl;
       mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
       mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
                                                   mesh.topology().dim());
@@ -66,8 +72,10 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
                                                   {{dofmaps[0], dofmaps[1]}});
   }
 
-  if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
+  std::cout << "looking for exterior integrals" << std::endl;
+  if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0)
   {
+      std::cout << "foun exterior integrals and building" << std::endl;
       mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
       mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
                                                   mesh.topology().dim());

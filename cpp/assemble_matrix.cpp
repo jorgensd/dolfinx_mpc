@@ -116,7 +116,7 @@ void modify_mpc_cell_rect(
 } // namespace
 
 //-----------------------------------------------------------------------------
-template <typename T>
+template <typename T, typename U>
 void assemble_entity_impl(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const T*)>&
@@ -124,7 +124,7 @@ void assemble_entity_impl(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const T*)>& mat_add_values,
     const dolfinx::mesh::Mesh& mesh,
-    const std::vector<std::int32_t>& active_entities,
+    const std::vector<U>& active_entities,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
@@ -132,11 +132,12 @@ void assemble_entity_impl(
     const xtl::span<const std::uint32_t>& cell_info,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
-    const std::function<xtl::span<const std::int32_t>(const std::int32_t)> fetch_cells,
-    const std::function<void(xt::xtensor<T, 2>&, const std::int32_t)> assemble_local_element_matrix)
+    const std::function<const std::int32_t(const U&)> fetch_cells,
+    const std::function<void(xt::xtensor<T, 2>&, const U&)> assemble_local_element_matrix)
 {
   dolfinx::common::Timer timer("~MPC (C++): Assemble entity");
 
+  std::cout << "beginning assemble ent" << std::endl;
   // Get MPC data
   const std::array<
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
@@ -153,6 +154,9 @@ void assemble_entity_impl(
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
+  std::cout << "mpc collection done" << std::endl;
+
+  std::cout << "active entities size" << active_entities.size() << std::endl;
   // Compute local indices for slave cells
   std::array<std::vector<bool>, 2> is_slave_entity =
     {std::vector<bool>(active_entities.size(), false),
@@ -161,14 +165,15 @@ void assemble_entity_impl(
     = {std::vector<std::int32_t>(active_entities.size(), -1),
        std::vector<std::int32_t>(active_entities.size(), -1)};
 
+  std::cout << "looping over active entities" << std::endl;
   for (std::int32_t i = 0; i < active_entities.size(); ++i)
   {
-    const xtl::span<const std::int32_t> cells = fetch_cells(active_entities[i]);
-    assert(cells.size() == 1);
+  std::cout << "getting entitity" << i << std::endl;
+    const std::int32_t cell = fetch_cells(active_entities[i]);
     for (std::int32_t axis = 0; axis < 2; ++axis)
     {
       for (std::int32_t j = 0; j < slave_cells[axis].size(); ++j)
-        if (slave_cells[axis][j] == cells[0])
+        if (slave_cells[axis][j] == cell)
         {
           is_slave_entity[axis][i] = true;
           slave_cell_index[axis][i] = j;
@@ -177,6 +182,7 @@ void assemble_entity_impl(
     }
   }
 
+  std::cout << "pre it over all entities" << std::endl;
   // Iterate over all entities
   const int num_dofs0 = dofmap0.links(0).size();
   const int num_dofs1 = dofmap1.links(0).size();
@@ -186,12 +192,12 @@ void assemble_entity_impl(
   const xtl::span<T> _Ae(Ae);
   for (std::int32_t l = 0; l < active_entities.size(); ++l)
   {
-    const xtl::span<const std::int32_t> cells = fetch_cells(active_entities[l]);
+    const std::int32_t cell = fetch_cells(active_entities[l]);
     assemble_local_element_matrix(Ae, active_entities[l]);
 
     // Zero rows/columns for essential bcs
-    xtl::span<const std::int32_t> dmap0 = dofmap0.links(cells[0]);
-    xtl::span<const std::int32_t> dmap1 = dofmap1.links(cells[0]);
+    xtl::span<const std::int32_t> dmap0 = dofmap0.links(cell);
+    xtl::span<const std::int32_t> dmap1 = dofmap1.links(cell);
     if (!bc0.empty())
     {
       for (std::int32_t i = 0; i < num_dofs0; ++i)
@@ -276,6 +282,12 @@ void assemble_matrix_impl(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
+  std::string msg = "";
+  for (auto i : a.integral_ids(dolfinx::fem::IntegralType::cell))
+    msg += std::to_string(i) + ", ";
+  std::cout << "form has domains: " << msg << std::endl;
+  
+  std::cout << "started assemble_matrix_impl" << std::endl;
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
   assert(mesh);
   const int tdim = mesh->topology().dim();
@@ -315,6 +327,7 @@ void assemble_matrix_impl(
       apply_dof_transformation_to_transpose
       = element1->get_dof_transformation_to_transpose_function<T>();
 
+  std::cout << "prep cell geom" << std::endl;
   // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
       = mesh->geometry().dofmap();
@@ -332,67 +345,70 @@ void assemble_matrix_impl(
     cell_info = xtl::span(mesh->topology().get_cell_permutation_info());
   }
 
+  std::cout << "start ass" << std::endl;
   if (a.num_integrals(dolfinx::fem::IntegralType::cell) > 0)
   {
-    mesh->topology_mutable().create_connectivity(tdim, tdim);
-    auto c_to_c = mesh->topology().connectivity(tdim, tdim);
-    assert(c_to_c);
+    std::cout << "on a cell int" << std::endl;
+    const auto fetch_cells = [&](const std::int32_t& entity){
+      std::cout << "in fetch cells of cells" << std::endl;
+      return entity; };
 
     // Prepare assembly lambda
-    const auto fetch_cells = [&](const std::int32_t entity){ 
-      return c_to_c->links(entity); };
-
     for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
     {
+      std::cout << "Looking at domain" << i << std::endl;
       const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i);
 
       // Assembly lambda employing the form's kernel
       const auto assemble_local_cell_matrix = [&](
-        xt::xtensor<T, 2>& Ae, const std::int32_t entity)
+        xt::xtensor<T, 2>& Ae, const std::int32_t cell)
         {
-          const xtl::span<const std::int32_t> cells = fetch_cells(entity);
-          const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cells[0]);
+          const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
           const xt::xarray<double> coordinate_dofs(
             xt::view(x_g, xt::keep(x_dofs), xt::all()));
 
           // Tabulate tensor
           std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-          fn(Ae.data(), coeffs.row(cells[0]).data(), constants.data(),
+          fn(Ae.data(), coeffs.row(cell).data(), constants.data(),
                 coordinate_dofs.data(), nullptr, nullptr);
 
           // Apply any required transformations
           const xtl::span<T> _Ae(Ae);
-          apply_dof_transformation(_Ae, cell_info, cells[0], ndim1);
-          apply_dof_transformation_to_transpose(_Ae, cell_info, cells[0], ndim0);
+          apply_dof_transformation(_Ae, cell_info, cell, ndim1);
+          apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
         };
       
-      const std::vector<std::int32_t>& active_cells
-          = a.domains(dolfinx::fem::IntegralType::cell, i);
-      assemble_entity_impl<T>(
+      std::cout << "getting domains" << std::endl;
+      const std::vector<std::int32_t>& active_cells = a.cell_domains(i);
+      std::cout << "assembling entitiy" << active_cells.size() << std::endl;
+      assemble_entity_impl<T, std::int32_t>(
           mat_add_block_values, mat_add_values, *mesh, active_cells,
           dofs0, bs0, dofs1, bs1, bc0, bc1,
           coeffs, constants, cell_info, mpc0, mpc1,
           fetch_cells, assemble_local_cell_matrix);
     }
   }
+  std::cout << "done with cells. Onto facets" << std::endl;
   if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
       or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   {
     // Prepare facet connectivities
-    mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
-    mesh->topology_mutable().create_entity_permutations();
+    // mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
+    // mesh->topology_mutable().create_entity_permutations();
 
-    auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
-    assert(f_to_c);
-    auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
-    assert(c_to_f);
-
+    // auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
+    // assert(f_to_c);
+    // auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
+    // assert(c_to_f);
+    std::cout << "now do facet ass" << std::endl;
+    const int num_cell_facets
+        = dolfinx::mesh::cell_num_entities(mesh->topology().cell_type(), tdim - 1);
     const std::vector<std::uint8_t>& perms
         = mesh->topology().get_facet_permutations();
 
     // Prepare assembly lambdas
-    const auto fetch_cells = [&](const std::int32_t entity){ 
-      return f_to_c->links(entity); };
+    const auto fetch_cells = [](const std::pair<std::int32_t, int>& entity){ 
+      return entity.first; };
 
     // Assemble all the exterior facet subdomains
     for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
@@ -401,34 +417,35 @@ void assemble_matrix_impl(
 
       // Assembly lambda employing the form's kernel
       const auto assemble_local_facet_matrix = [&](
-        xt::xtensor<T, 2>& Ae, const std::int32_t entity)
+        xt::xtensor<T, 2>& Ae, const std::pair<std::int32_t, int>& entity)
         {
-          const xtl::span<const std::int32_t> cells = fetch_cells(entity);
-          const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cells[0]);
+          const std::int32_t cell = fetch_cells(entity);
+          const int local_facet = entity.second;
+          const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
           const xt::xarray<double> coordinate_dofs(
             xt::view(x_g, xt::keep(x_dofs), xt::all()));
 
-          // Get local index of facet with respect to the cell
-          const xtl::span<const std::int32_t> facets = c_to_f->links(cells[0]);
-          const auto* it = std::find(facets.data(), facets.data() + facets.size(), entity);
-          assert(it != (facets.data() + facets.size()));
-          const int local_facet = std::distance(facets.data(), it);
+          // // Get local index of facet with respect to the cell
+          // const xtl::span<const std::int32_t> facets = c_to_f->links(cells[0]);
+          // const auto* it = std::find(facets.data(), facets.data() + facets.size(), entity);
+          // assert(it != (facets.data() + facets.size()));
+          // const int local_facet = std::distance(facets.data(), it);
 
           // Tabulate tensor
           std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-          fn(Ae.data(), coeffs.row(cells[0]).data(), constants.data(),
+          fn(Ae.data(), coeffs.row(cell).data(), constants.data(),
                 coordinate_dofs.data(), &local_facet,
-                &perms[cells[0] * facets.size() + local_facet]);
+                &perms[cell * num_cell_facets + local_facet]);
 
           // Apply any required transformations
           const xtl::span<T> _Ae(Ae);
-          apply_dof_transformation(_Ae, cell_info, cells[0], ndim1);
-          apply_dof_transformation_to_transpose(_Ae, cell_info, cells[0], ndim0);
+          apply_dof_transformation(_Ae, cell_info, cell, ndim1);
+          apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
         };
 
-      const std::vector<std::int32_t>& active_facets
-          = a.domains(dolfinx::fem::IntegralType::exterior_facet, i);
-      assemble_entity_impl<T>(
+      const std::vector<std::pair<std::int32_t, int>>& active_facets
+          = a.exterior_facet_domains(i);
+      assemble_entity_impl<T, std::pair<std::int32_t, int>>(
           mat_add_block_values, mat_add_values, *mesh, active_facets,
           dofs0, bs0, dofs1, bs1, bc0, bc1,
           coeffs, constants, cell_info, mpc0, mpc1,

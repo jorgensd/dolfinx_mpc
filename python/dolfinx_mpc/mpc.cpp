@@ -118,6 +118,7 @@ void mpc(py::module& m)
            const PetscScalar diagval)
         {
           // TODO: fix
+          std::cout << "in the pybind layer1" << std::endl;
           const auto& mpc0 = mpc;
           const auto& mpc1 = mpc;
           dolfinx_mpc::assemble_matrix(
@@ -135,6 +136,7 @@ void mpc(py::module& m)
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
            const PetscScalar diagval)
         {
+          std::cout << "in the pybind layer2" << std::endl;
           dolfinx_mpc::assemble_matrix(
               dolfinx::la::PETScMatrix::set_block_fn(A, ADD_VALUES),
               dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc0, mpc1, bcs,
@@ -160,6 +162,11 @@ void mpc(py::module& m)
          const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
              mpc)
       {
+
+        std::string msg = "";
+        for (auto i : a.integral_ids(dolfinx::fem::IntegralType::cell))
+          msg += std::to_string(i) + ", ";
+        std::cout << "python layer square form has domains: " << msg << std::endl;
         auto A = dolfinx_mpc::create_matrix(a, mpc);
         Mat _A = A.mat();
         PetscObjectReference((PetscObject)_A);
@@ -175,6 +182,10 @@ void mpc(py::module& m)
          const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
              mpc1)
       {
+        std::string msg = "";
+        for (auto i : a.integral_ids(dolfinx::fem::IntegralType::cell))
+          msg += std::to_string(i) + ", ";
+        std::cout << "python layer rect form has domains: " << msg << std::endl;
         auto A = dolfinx_mpc::create_matrix(a, mpc0, mpc1);
         Mat _A = A.mat();
         PetscObjectReference((PetscObject)_A);
