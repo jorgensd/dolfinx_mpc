@@ -134,8 +134,8 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
         timer = Timer("MPC Assemble vector (exterior facets)")
         for i, id in enumerate(subdomain_ids):
             facet_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i].tabulate_tensor
-            active_facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
-            facet_info = pack_slave_facet_info(constraint, active_facets)
+            facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
+            facet_info = pack_slave_facet_info(facets, constraint.slave_cells())
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
                 assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x),
@@ -230,7 +230,7 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[PETSc.ScalarType]',
     slave_cells = mpc[4]
     for i in range(facet_info.shape[0]):
         # Extract cell index (local to process) and facet index (local to cell) for kernel
-        local_facet, slave_cell_index = facet_info[i]
+        slave_cell_index, local_facet = facet_info[i]
         cell_index = slave_cells[slave_cell_index]
         facet_index[0] = local_facet
 
