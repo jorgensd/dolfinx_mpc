@@ -1,4 +1,6 @@
-// Copyright (C) 2020 Jorgen S. Dokken
+// Copyright (C) 2020-2021 Jorgen S. Dokken
+//
+// Modified by Nathan Sime
 //
 // This file is part of DOLFINX_MPC
 //
@@ -129,11 +131,9 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   {
     for (int i = 0; i < space_dimension; ++i)
     {
+      const std::int32_t row = i * block_size + block;
       for (int j = 0; j < value_size; ++j)
-      {
-        basis_array(i * block_size + block, j * block_size + block)
-            = basis_values(0, i, j);
-      }
+        basis_array(row, j * block_size + block) = basis_values(0, i, j);
     }
   }
   return basis_array;
@@ -145,13 +145,10 @@ std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
   return V->dofmap()->index_map->compute_shared_indices();
 };
 //-----------------------------------------------------------------------------
-dolfinx::la::SparsityPattern
-dolfinx_mpc::create_sparsity_pattern(
+dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<
-      dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
-    const std::shared_ptr<
-      dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1)
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1)
 {
   LOG(INFO) << "Generating MPC sparsity pattern";
   dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
@@ -184,32 +181,55 @@ dolfinx_mpc::create_sparsity_pattern(
   dolfinx_mpc::build_standard_pattern(pattern, a);
 
   // Arrays replacing slave dof with master dof in sparsity pattern
-  auto pattern_populator = [](
-    auto& pattern, const auto& mpc, const auto& mpc_off_axis,
-    const auto& pattern_inserter, const auto& master_inserter)->void
+  auto pattern_populator
+      = [](dolfinx::la::SparsityPattern& pattern,
+           const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>
+               mpc,
+           const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>
+               mpc_off_axis,
+           const auto& pattern_inserter, const auto& master_inserter) -> void
   {
-    std::vector<std::int32_t> master_block(1);
-    std::vector<std::int32_t> other_master_block(1);
-    for (std::int32_t i = 0; i < mpc->cell_to_slaves()->num_nodes(); ++i)
+    // Data structures used for insert
+    std::array<std::int32_t, 1> master_block;
+    std::array<std::int32_t, 1> other_master_block;
+
+    // Map from cell index (local to mpc) to slave indices in the cell
+    const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+        cell_to_slaves = mpc->cell_to_slaves();
+    const std::vector<std::int32_t>& slave_cells = mpc->slave_cells();
+
+    // For each cell (local to process) having a slave, get all slaves in main
+    // constraint, and all dofs in off-axis constraint in the cell
+    for (std::int32_t i = 0; i < cell_to_slaves->num_nodes(); ++i)
     {
-      xtl::span<const int32_t> cell_dofs = mpc_off_axis->dofmap()->cell_dofs(
-        mpc->slave_cells()[i]);
-      xtl::span<int32_t> slaves = mpc->cell_to_slaves()->links(i);
+
+      xtl::span<int32_t> slaves = cell_to_slaves->links(i);
+      xtl::span<const int32_t> cell_dofs
+          = mpc_off_axis->dofmap()->cell_dofs(slave_cells[i]);
 
       // Arrays for flattened master slave data
+      // There are at least one master per slave
       std::vector<std::int32_t> flattened_masters;
-      for (std::int32_t j = 0; j < slaves.size(); ++j)
+      flattened_masters.reserve(slaves.size());
+
+      // For each slave find all master degrees of freedom and flatten them
+      const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+          master_block_map = mpc->master_block_map();
+      for (auto slave : slaves)
       {
-        const auto local_masters = mpc->master_block_map()->links(slaves[j]);
-        for (std::int32_t k = 0; k < local_masters.size(); ++k)
-          flattened_masters.push_back(local_masters[k]);
+        const xtl::span<std::int32_t> local_masters
+            = master_block_map->links(slave);
+        for (auto master : local_masters)
+          flattened_masters.push_back(master);
       }
+
       // Remove duplicate master blocks
       std::sort(flattened_masters.begin(), flattened_masters.end());
       flattened_masters.erase(
           std::unique(flattened_masters.begin(), flattened_masters.end()),
           flattened_masters.end());
 
+      // Loop over all masters and insert all cell dofs for each master
       for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
       {
         master_block[0] = flattened_masters[j];
@@ -218,48 +238,48 @@ dolfinx_mpc::create_sparsity_pattern(
         for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
         {
           other_master_block[0] = flattened_masters[k];
-          master_inserter(pattern,
-            tcb::make_span(other_master_block), tcb::make_span(master_block));
+          master_inserter(pattern, tcb::make_span(other_master_block),
+                          tcb::make_span(master_block));
         }
       }
     }
   };
 
-  if (mpc0 == mpc1) // TODO: should this be mpc0.function_space().contains(mpc1.function_space()) ?
+  if (mpc0 == mpc1) // TODO: should this be
+                    // mpc0.function_space().contains(mpc1.function_space()) ?
   {
     // Only need to loop through once
-    const auto square_inserter = [](
-      auto& pattern, const auto& dofs_m, const auto& dofs_s)
-      {
-        pattern.insert(dofs_m, dofs_s);
-        pattern.insert(dofs_s, dofs_m);
-      };
-    pattern_populator(pattern, mpc0, mpc1,
-      square_inserter, square_inserter);
+    const auto square_inserter
+        = [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
+    {
+      pattern.insert(dofs_m, dofs_s);
+      pattern.insert(dofs_s, dofs_m);
+    };
+    pattern_populator(pattern, mpc0, mpc1, square_inserter, square_inserter);
   }
   else
   {
-    const auto do_nothing_inserter = [](
-      auto& pattern, const auto& dofs_m, const auto& dofs_s){};
+    const auto do_nothing_inserter
+        = [](auto& pattern, const auto& dofs_m, const auto& dofs_s) {};
     // Potentially rectangular pattern needs each axis inserted separately
-    pattern_populator(pattern, mpc0, mpc1,
-      [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
-        pattern.insert(dofs_m, dofs_s);
-      }, do_nothing_inserter);
-    pattern_populator(pattern, mpc1, mpc0,
-      [](auto& pattern, const auto& dofs_m, const auto& dofs_s){
-        pattern.insert(dofs_s, dofs_m);
-      }, do_nothing_inserter);
+    pattern_populator(
+        pattern, mpc0, mpc1,
+        [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
+        { pattern.insert(dofs_m, dofs_s); },
+        do_nothing_inserter);
+    pattern_populator(
+        pattern, mpc1, mpc0,
+        [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
+        { pattern.insert(dofs_s, dofs_m); },
+        do_nothing_inserter);
   }
 
   return pattern;
 }
 //-----------------------------------------------------------------------------
-dolfinx::la::SparsityPattern
-dolfinx_mpc::create_sparsity_pattern(
+dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<
-      dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc)
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc)
 {
   return dolfinx_mpc::create_sparsity_pattern(a, mpc, mpc);
 }

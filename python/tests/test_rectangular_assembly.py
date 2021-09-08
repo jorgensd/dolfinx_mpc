@@ -21,26 +21,26 @@ def test_mixed_element(cell_type, ghost_mode):
                                   cell_type=cell_type, ghost_mode=ghost_mode)
 
     # Rotate the mesh to induce more interesting slip BCs
-    th = np.pi/4.0
+    th = np.pi / 4.0
     rot = np.array([[np.cos(th), -np.sin(th)],
                     [np.sin(th), np.cos(th)]])
     gdim = mesh.geometry.dim
-    mesh.geometry.x[:,:gdim] = (rot @ mesh.geometry.x[:,:gdim].T).T
+    mesh.geometry.x[:, :gdim] = (rot @ mesh.geometry.x[:, :gdim].T).T
 
     # Create the function space
     Ve = ufl.VectorElement("Lagrange", mesh.ufl_cell(), 2)
     Qe = ufl.FiniteElement("Lagrange", mesh.ufl_cell(), 1)
     V = dolfinx.FunctionSpace(mesh, Ve)
     Q = dolfinx.FunctionSpace(mesh, Qe)
-    W = dolfinx.FunctionSpace(mesh, Ve*Qe)
+    W = dolfinx.FunctionSpace(mesh, Ve * Qe)
 
     # Inlet velocity Dirichlet BC
     bc_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim-1, lambda x: np.isclose(x[0], 0.0))
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0))
     other_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim-1, lambda x: np.isclose(x[0], 1.0))
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0))
 
-    mt = dolfinx.MeshTags(mesh, mesh.topology.dim-1,
+    mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1,
                           other_facets, np.full_like(other_facets, 1))
 
     inlet_velocity = dolfinx.Function(V)
@@ -129,16 +129,16 @@ def test_mixed_element(cell_type, ghost_mode):
     n_approx = dolfinx_mpc.utils.create_normal_approximation(
         V, mt.indices[mt.values == 1])
     mpc_vq.create_slip_constraint((mt, 1), n_approx, sub_space=W.sub(0),
-                                 sub_map=V_to_W, bcs=bcs)
+                                  sub_map=V_to_W, bcs=bcs)
     mpc_vq.finalize()
 
     f = dolfinx.Constant(mesh, ((0, 0)))
     (u, p) = ufl.TrialFunctions(W)
     (v, q) = ufl.TestFunctions(W)
     a = (
-            ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-            - ufl.inner(p, ufl.div(v)) * ufl.dx
-            - ufl.inner(ufl.div(u), q) * ufl.dx
+        ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+        - ufl.inner(p, ufl.div(v)) * ufl.dx
+        - ufl.inner(ufl.div(u), q) * ufl.dx
     )
 
     L = ufl.inner(f, v) * ufl.dx + dolfinx.Constant(mesh, 0.0) * q * ufl.dx
@@ -178,9 +178,8 @@ def test_mixed_element(cell_type, ghost_mode):
         assert A.getType() == "nest"
         nrows, ncols = A.getNestSize()
         sub_A = [A.getNestSubMatrix(row, col)
-                    for row in range(nrows) for col in range(ncols)]
+                 for row in range(nrows) for col in range(ncols)]
         return sum(map(lambda A_: A_.norm()**2 if A_ else 0.0, sub_A))**0.5
-
 
     # -- Ensure monolithic and nest matrices are the same
     assert np.isclose(nest_matrix_norm(A_nest), A.norm())
