@@ -45,10 +45,7 @@ jobs:
 
       - name: Install FEniCS Python components (dolfinx)
         run: |
-          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build-basix -S ./basix
-          cmake --build build-basix
-          cmake --install build-basix
-          python3 -m pip install ./basix/python
+          python3 -m pip install git+https://github.com/FEniCS/basix.git
           python3 -m pip install git+https://github.com/FEniCS/ufl.git
           python3 -m pip install git+https://github.com/FEniCS/ffcx.git
       - name: Install dolfinx

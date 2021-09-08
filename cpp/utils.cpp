@@ -160,12 +160,7 @@ dolfinx_mpc::create_sparsity_pattern(
     throw std::runtime_error(
         "Cannot create sparsity pattern. Form is not a bilinear form");
   }
-  std::string msg = "";
-  for (auto i : a.integral_ids(dolfinx::fem::IntegralType::cell))
-    msg += std::to_string(i) + ", ";
-  std::cout << "aa form has domains: " << msg << std::endl;
-
-  std::cout << "Initialising sp build" << std::endl;
+  
   /// Check that we are using the correct function-space in the bilinear
   /// form otherwise the index map will be wrong
   auto _V0 = mpc0->function_space();
@@ -184,7 +179,6 @@ dolfinx_mpc::create_sparsity_pattern(
   std::array<int, 2> bs = {bs0, bs1};
   dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps, bs);
 
-  std::cout << "building standard sp" << std::endl;
   ///  Create and build sparsity pattern for original form. Should be
   ///  equivalent to calling create_sparsity_pattern(Form a)
   dolfinx_mpc::build_standard_pattern(pattern, a);
@@ -219,13 +213,11 @@ dolfinx_mpc::create_sparsity_pattern(
       for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
       {
         master_block[0] = flattened_masters[j];
-        std::cout << "pre pattern inserter" << std::endl;
         pattern_inserter(pattern, tcb::make_span(master_block), cell_dofs);
         // Add sparsity pattern for all master dofs of any slave on this cell
         for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
         {
           other_master_block[0] = flattened_masters[k];
-          std::cout << "pre master inserter" << std::endl;
           master_inserter(pattern,
             tcb::make_span(other_master_block), tcb::make_span(master_block));
         }
@@ -235,7 +227,6 @@ dolfinx_mpc::create_sparsity_pattern(
 
   if (mpc0 == mpc1) // TODO: should this be mpc0.function_space().contains(mpc1.function_space()) ?
   {
-  std::cout << "same mpc" << std::endl;
     // Only need to loop through once
     const auto square_inserter = [](
       auto& pattern, const auto& dofs_m, const auto& dofs_s)
@@ -248,7 +239,6 @@ dolfinx_mpc::create_sparsity_pattern(
   }
   else
   {
-  std::cout << "different mpc" << std::endl;
     const auto do_nothing_inserter = [](
       auto& pattern, const auto& dofs_m, const auto& dofs_s){};
     // Potentially rectangular pattern needs each axis inserted separately
@@ -271,7 +261,6 @@ dolfinx_mpc::create_sparsity_pattern(
     const std::shared_ptr<
       dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc)
 {
-  std::cout << "creating rect from sq sp" << std::endl;
   return dolfinx_mpc::create_sparsity_pattern(a, mpc, mpc);
 }
 //-----------------------------------------------------------------------------
@@ -284,23 +273,14 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   dolfinx::common::Timer timer("~MPC: Create Matrix");
 
   // Build sparsitypattern
-  std::cout << "Creating sp" << std::endl;
-
-  std::string msg = "";
-  for (auto i : a.integral_ids(dolfinx::fem::IntegralType::cell))
-    msg += std::to_string(i) + ", ";
-  std::cout << "form has domains: " << msg << std::endl;
-  
   dolfinx::la::SparsityPattern pattern = create_sparsity_pattern(a, mpc0, mpc1);
 
   // Finalise communication
   dolfinx::common::Timer timer_s("~MPC: Assemble sparsity pattern");
-  std::cout << "Assembling sp" << std::endl;
   pattern.assemble();
   timer_s.stop();
 
   // Initialize matrix
-  std::cout << "Init petsc mat" << std::endl;
   dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern, type);
 
   return A;

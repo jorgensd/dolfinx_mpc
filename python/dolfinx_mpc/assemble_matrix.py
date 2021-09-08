@@ -20,56 +20,25 @@ from .numba_setup import PETSc, ffi, mode, set_values_local, sink
 Timer = dolfinx.common.Timer
 
 
-def pack_slave_facet_info(mpc: MultiPointConstraint,
-                          active_facets: 'numpy.ndarray[numpy.int32]') -> 'numpy.ndarray[numpy.int32]':
+@numba.njit(fastmath=True, cache=True)
+def pack_slave_facet_info(facets: 'numpy.ndarray[numpy.int32, int]',
+                          slave_cells: 'numpy.ndarray[numpy.int32]'):
     """
-    Given an MPC and a set of active facets, return a two dimensional array, where the ith row corresponds to the
+    Given an MPC and a set of facets (cell index, local_facet_index), return a two dimensional array,
+    where the ith row corresponds to the
     ith facet that belongs to a slave cell.
     The first column is the location in the slave_cells array (from the MPC).
     Second column is the facet index (local to cell)
     """
-    t = Timer("~MPC: Pack facet info")
-    # Set up data required for exterior facet assembly
-    mesh = mpc.function_space().mesh
-    tdim = mesh.topology.dim
-    fdim = mesh.topology.dim - 1
-    # This connectivities has been computed by normal assembly
-    c_to_f = mesh.topology.connectivity(tdim, fdim)
-    f_to_c = mesh.topology.connectivity(fdim, tdim)
-    facet_info = pack_slave_facet_info_numba(active_facets,
-                                             (c_to_f.array, c_to_f.offsets),
-                                             (f_to_c.array, f_to_c.offsets), mpc.slave_cells())
-    t.stop()
-    return facet_info
-
-
-@numba.njit(fastmath=True, cache=True)
-def pack_slave_facet_info_numba(active_facets: 'numpy.ndarray[numpy.int32]',
-                                cell_to_facets: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
-                                facet_to_cells: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
-                                slave_cells: 'numpy.ndarray[numpy.int32]'):
-    """
-    Numba helper for packing slave facet info, facet index (local to cell)
-    and slave index (position in slave_cell)
-    """
-    facet_info = numpy.zeros((len(active_facets), 2), dtype=numpy.int32)
-    c_to_f_pos, c_to_f_offs = cell_to_facets
-    f_to_c_pos, f_to_c_offs = facet_to_cells
+    facet_info = numpy.zeros((len(facets), 2), dtype=numpy.int32)
     i = 0
-    for facet in active_facets:
+    for facet in facets:
         # Map facet to cells and check that it is an exterior facet
-        cells = f_to_c_pos[f_to_c_offs[facet]:f_to_c_offs[facet + 1]]
-        assert(len(cells) == 1)
-        # Find local position of cell in slave_cells
-        local_slave_cell_index = numpy.flatnonzero(slave_cells == cells[0])
+        local_slave_cell_index = numpy.flatnonzero(slave_cells == facet[0])
         if len(local_slave_cell_index) > 0:
-            # Find local facet index (local to cell)
-            local_facets = c_to_f_pos[c_to_f_offs[cells[0]]: c_to_f_offs[cells[0] + 1]]
-            local_index = numpy.flatnonzero(local_facets == facet)[0]
             # Store tuple [cell_index (local to slave_cells) facet_index (local to cell)]
-            facet_info[i, :] = [local_index, local_slave_cell_index[0]]
+            facet_info[i, :] = [local_slave_cell_index[0], facet[1]]
             i += 1
-
     return facet_info[:i, :]
 
 
@@ -80,7 +49,7 @@ def assemble_matrix_cpp(
         diagval: PETSc.ScalarType = 1, A: PETSc.Mat = None,
         form_compiler_parameters={}, jit_parameters={}):
     """
-   Parameters
+    Parameters
     ==========
     form
         The bilinear variational form
@@ -340,8 +309,9 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
         for i, id in enumerate(subdomain_ids):
             facet_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i].tabulate_tensor
-            active_facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
-            facet_info = pack_slave_facet_info(constraint, active_facets)
+            facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
+            facet_info = pack_slave_facet_info(facets, constraint.slave_cells())
+
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             assemble_exterior_slave_facets(A.handle, facet_kernel, (pos, x_dofs, x), form_coeffs, form_consts,
                                            perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, is_bc,
@@ -597,8 +567,8 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
 
     # Loop over all external facets that are active
     for i in range(facet_info.shape[0]):
-        # Get facet index (local to cell) and cell index (local to process)
-        local_facet, slave_cell_index = facet_info[i]
+        #  Get cell index (local to process) and facet index (local to cell)
+        slave_cell_index, local_facet = facet_info[i]
         cell_index = slave_cells[slave_cell_index]
 
         # Get mesh geometry
