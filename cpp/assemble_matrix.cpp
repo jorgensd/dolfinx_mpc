@@ -136,7 +136,8 @@ void assemble_exterior_facets(
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*)>& kernel,
-    const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
+    const xtl::span<const T> coeffs, int cstride,
+    const std::vector<T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
     const std::function<std::uint8_t(std::size_t)>& get_perm,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
@@ -206,7 +207,7 @@ void assemble_exterior_facets(
     // Tabulate tensor
     std::uint8_t perm = get_perm(cell * num_cell_facets + local_facet);
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-    kernel(Ae.data(), coeffs.row(cell).data(), constants.data(),
+    kernel(Ae.data(), coeffs.data() + cell * cstride, constants.data(),
            coordinate_dofs.data(), &local_facet, &perm);
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
@@ -294,7 +295,8 @@ void assemble_cells_impl(
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*)>& kernel,
-    const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
+    const xtl::span<const T>& coeffs, int cstride,
+    const std::vector<T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
 {
@@ -356,7 +358,7 @@ void assemble_cells_impl(
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-    kernel(Ae.data(), coeffs.row(c).data(), constants.data(),
+    kernel(Ae.data(), coeffs.data() + c * cstride, constants.data(),
            coordinate_dofs.data(), nullptr, nullptr);
     apply_dof_transformation(_Ae, cell_info, c, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info, c, ndim0);
@@ -454,7 +456,7 @@ void assemble_matrix_impl(
   const std::vector<T> constants = pack_constants(a);
 
   // Prepare coefficients
-  const dolfinx::array2d<T> coeffs = dolfinx::fem::pack_coefficients(a);
+  const auto coeffs = dolfinx::fem::pack_coefficients(a);
 
   std::shared_ptr<const dolfinx::fem::FiniteElement> element0
       = a.function_spaces().at(0)->element();
@@ -482,11 +484,11 @@ void assemble_matrix_impl(
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i);
     const std::vector<std::int32_t>& active_cells = a.cell_domains(i);
-    assemble_cells_impl<T>(mat_add_block_values, mat_add_values,
-                           mesh->geometry(), active_cells,
-                           apply_dof_transformation, dofs0, bs0,
-                           apply_dof_transformation_to_transpose, dofs1, bs1,
-                           bc0, bc1, fn, coeffs, constants, cell_info, mpc);
+    assemble_cells_impl<T>(
+        mat_add_block_values, mat_add_values, mesh->geometry(), active_cells,
+        apply_dof_transformation, dofs0, bs0,
+        apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn,
+        coeffs.first, coeffs.second, constants, cell_info, mpc);
   }
   if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
       or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
@@ -512,11 +514,11 @@ void assemble_matrix_impl(
       const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
       const std::vector<std::pair<std::int32_t, int>>& facets
           = a.exterior_facet_domains(i);
-      assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
-                                  facets, apply_dof_transformation, dofs0, bs0,
-                                  apply_dof_transformation_to_transpose, dofs1,
-                                  bs1, bc0, bc1, fn, coeffs, constants,
-                                  cell_info, get_perm, mpc);
+      assemble_exterior_facets<T>(
+          mat_add_block_values, mat_add_values, *mesh, facets,
+          apply_dof_transformation, dofs0, bs0,
+          apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn,
+          coeffs.first, coeffs.second, constants, cell_info, get_perm, mpc);
     }
 
     const std::vector<int> c_offsets = a.coefficient_offsets();

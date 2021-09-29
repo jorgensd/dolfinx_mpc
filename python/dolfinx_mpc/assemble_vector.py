@@ -91,9 +91,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Assemble vector with all entries
-    # FIXME: Replace once https://github.com/FEniCS/dolfinx/pull/1564 is merged
-    # dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form, form_consts, form_coeffs)
-    dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form)
+    dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form, form_consts, form_coeffs)
 
     # Check if we need facet permutations
     # FIXME: access apply_dof_transformations here
