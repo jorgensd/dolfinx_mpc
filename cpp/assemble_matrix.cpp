@@ -145,8 +145,6 @@ void assemble_entity_impl(
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
-    const std::function<void(T*, const T*, const T*, const double*, const int*,
-                             const std::uint8_t*)>& kernel,
     const xtl::span<const T> coeffs, int cstride,
     const std::vector<T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
@@ -377,7 +375,7 @@ void assemble_matrix_impl(
 
           // Tabulate tensor
           std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-          fn(Ae.data(), coeffs.row(cell).data(), constants.data(),
+          fn(Ae.data(), coeffs.first.data() + cell*coeffs.second, constants.data(),
                 coordinate_dofs.data(), nullptr, nullptr);
 
           // Apply any required transformations
@@ -390,7 +388,7 @@ void assemble_matrix_impl(
       assemble_entity_impl<T, std::int32_t>(
           mat_add_block_values, mat_add_values, *mesh, active_cells,
           dofs0, bs0, dofs1, bs1, bc0, bc1,
-          coeffs, constants, cell_info, mpc0, mpc1,
+          coeffs.first, coeffs.second, constants, cell_info, mpc0, mpc1,
           fetch_cells, assemble_local_cell_matrix);
     }
   }
@@ -434,7 +432,7 @@ void assemble_matrix_impl(
           // Tabulate tensor
           std::uint8_t perm = get_perm(cell * num_cell_facets + local_facet);
           std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-          fn(Ae.data(), coeffs.row(cell).data(), constants.data(),
+          fn(Ae.data(), coeffs.first.data() + cell*coeffs.second, constants.data(),
                 coordinate_dofs.data(), &local_facet, &perm);
 
           // Apply any required transformations
@@ -448,7 +446,7 @@ void assemble_matrix_impl(
       assemble_entity_impl<T, std::pair<std::int32_t, int>>(
           mat_add_block_values, mat_add_values, *mesh, active_facets,
           dofs0, bs0, dofs1, bs1, bc0, bc1,
-          coeffs, constants, cell_info, mpc0, mpc1,
+          coeffs.first, coeffs.second, constants, cell_info, mpc0, mpc1,
           fetch_cells, assemble_local_facet_matrix);
     }
 
