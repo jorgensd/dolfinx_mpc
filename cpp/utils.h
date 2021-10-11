@@ -137,4 +137,18 @@ create_average_normal(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
 void create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
                                  const xtl::span<const std::int32_t>& entities,
                                  xtl::span<PetscScalar> vector);
+
+/// Compute the dot product u . v
+/// @param u The first vector. It must has size 3.
+/// @param v The second vector. It must has size 3.
+/// @return The dot product `u . v`. The type will be the same as value size of
+/// u.
+template <typename U, typename V>
+typename U::value_type dot(const U& u, const V& v)
+{
+  assert(u.size() == 3);
+  assert(v.size() == 3);
+  return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+}
+
 } // namespace dolfinx_mpc

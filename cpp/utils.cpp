@@ -12,7 +12,6 @@
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/MPI.h>
 #include <dolfinx/common/Timer.h>
-#include <dolfinx/common/array2d.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
@@ -28,7 +27,6 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
-#include <xtensor-blas/xlinalg.hpp>
 #include <xtensor.hpp>
 #include <xtl/xspan.hpp>
 
@@ -487,11 +485,12 @@ xt::xtensor_fixed<double, xt::xshape<3>> dolfinx_mpc::create_average_normal(
   for (std::int32_t i = 1; i < normals.shape(0); ++i)
   {
     normal_i = xt::row(normals, i);
-    auto sign = xt::linalg::dot(normal, normal_i)
-                / xt::abs(xt::linalg::dot(normal, normal_i));
-    normal += sign[0] * normal_i;
+    double n_ni = dot(normal, normal_i);
+    auto sign = n_ni / std::abs(n_ni);
+    normal += sign * normal_i;
   }
-  normal /= std::sqrt(xt::linalg::dot(normal, normal)[0]);
+  double n_n = dot(normal, normal);
+  normal /= std::sqrt(n_n);
   return normal;
 };
 //-----------------------------------------------------------------------------

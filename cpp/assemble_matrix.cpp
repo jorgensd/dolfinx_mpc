@@ -145,7 +145,10 @@ void assemble_entity_impl(
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<bool>& bc0, const std::vector<bool>& bc1,
-    const dolfinx::array2d<T>& coeffs, const std::vector<T>& constants,
+    const std::function<void(T*, const T*, const T*, const double*, const int*,
+                             const std::uint8_t*)>& kernel,
+    const xtl::span<const T> coeffs, int cstride,
+    const std::vector<T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
@@ -323,7 +326,7 @@ void assemble_matrix_impl(
   const std::vector<T> constants = pack_constants(a);
 
   // Prepare coefficients
-  const dolfinx::array2d<T> coeffs = dolfinx::fem::pack_coefficients(a);
+  const auto coeffs = dolfinx::fem::pack_coefficients(a);
 
   std::shared_ptr<const dolfinx::fem::FiniteElement> element0
       = a.function_spaces().at(0)->element();

@@ -247,9 +247,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
     # Assemble the matrix with all entries
     with Timer("~MPC: Assemble unconstrained matrix"):
-        # dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, bcs)
-        # FIXME: Replace once https://github.com/FEniCS/dolfinx/pull/1564 is merged
-        dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, bcs)
+        dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, bcs, False)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size()
