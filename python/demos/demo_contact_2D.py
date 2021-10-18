@@ -60,7 +60,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     r_matrix = dolfinx_mpc.utils.rotation_matrix([0, 0, 1], theta)
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
-    g = dolfinx.Constant(mesh, g_vec[:2])
+    g = dolfinx.Constant(mesh, PETSc.ScalarType(g_vec[:2]))
 
     def bottom_corner(x):
         return np.isclose(x, [[0], [0], [0]]).all(axis=0)
@@ -73,7 +73,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     bcs = [bc_bottom]
 
     # Elasticity parameters
-    E = 1.0e3
+    E = PETSc.ScalarType(1.0e3)
     nu = 0
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -87,7 +87,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * ufl.dx + ufl.inner(g, v) * ds
+    rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0))), v) * ufl.dx + ufl.inner(g, v) * ds
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)

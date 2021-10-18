@@ -32,7 +32,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
   const int rank = dolfinx::MPI::rank(comm);
 
   // Create view of v as xtensor
-  const std::vector<PetscScalar>& v_vec = v->x()->array();
+  const tcb::span<const PetscScalar>& v_vec = v->x()->array();
   std::array<std::size_t, 1> shape = {v_vec.size()};
   auto v_xt = xt::adapt(v_vec.data(), v_vec.size(), xt::no_ownership(), shape);
 

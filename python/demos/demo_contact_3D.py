@@ -70,7 +70,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
 
-    g = dolfinx.Constant(mesh, g_vec)
+    g = dolfinx.Constant(mesh, PETSc.ScalarType(g_vec))
 
     def top_v(x):
         values = np.empty((3, x.shape[1]))
@@ -88,7 +88,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = 1.0e3
+    E = PETSc.ScalarType(1.0e3)
     nu = 0
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -103,7 +103,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
     # NOTE: Traction deactivated until we have a way of fixing nullspace
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx
+    rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * ufl.dx
     + ufl.inner(g, v) * ds
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)

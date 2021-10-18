@@ -46,8 +46,8 @@ def test_cell_domains():
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
-    c1 = dolfinx.Constant(mesh, 2)
-    c2 = dolfinx.Constant(mesh, 10)
+    c1 = dolfinx.Constant(mesh, PETSc.ScalarType(2))
+    c2 = dolfinx.Constant(mesh, PETSc.ScalarType(10))
 
     dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
     a = c1 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(1) +\
@@ -55,7 +55,7 @@ def test_cell_domains():
         + 0.01 * ufl.inner(u, v) * dx(1)
 
     rhs = ufl.inner(x[1], v) * dx(1) + \
-        ufl.inner(dolfinx.Constant(mesh, 1), v) * dx(2)
+        ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType(1)), v) * dx(2)
 
     # Generate reference matrices
     A_org = dolfinx.fem.assemble_matrix(a)

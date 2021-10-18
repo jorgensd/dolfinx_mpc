@@ -2,6 +2,9 @@
 
 ## main
 - Updates to match dolfinx implementation of exterior facet integrals
+- Updated user-interface of `dolfinx.Constant`, explicitly casting scalar-type with `PETSc.ScalarType`.
+- Various internal changes to handle new `dolfinx.DirichletBC` without class inheritance
+- Various internal changes to handle new way of JIT-compliation of `dolfinx::fem::Form_{scalar_type}`
 
 ## 0.3.0 (25.08.2021)
 - Minor internal changes

@@ -1,5 +1,5 @@
 import warnings
-from typing import Callable, List
+from typing import Callable, List, Union
 
 import dolfinx
 import numpy
@@ -7,8 +7,19 @@ from petsc4py import PETSc
 
 import dolfinx_mpc.cpp
 
+from dolfinx.cpp.fem import (Form_complex128 as Form_C,
+                             Form_float64 as Form_R)
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition_topological, create_periodic_condition_geometrical
+
+
+def cpp_dirichletbc(bc):
+    """Unwrap Dirichlet BC objects as cpp objects"""
+    if isinstance(bc, dolfinx.DirichletBC):
+        return bc._cpp_object
+    elif isinstance(bc, (tuple, list)):
+        return list(map(lambda sub_bc: cpp_dirichletbc(sub_bc), bc))
+    return bc
 
 
 class MultiPointConstraint():
@@ -220,7 +231,8 @@ class MultiPointConstraint():
             W = [self.V._cpp_object, sub_space._cpp_object]
         mesh_tag, marker = facet_marker
         mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(W, mesh_tag, marker, v._cpp_object,
-                                                             numpy.asarray(sub_map, dtype=numpy.int32), bcs)
+                                                             numpy.asarray(sub_map, dtype=numpy.int32),
+                                                             cpp_dirichletbc(bcs))
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_general_constraint(self, slave_master_dict, subspace_slave=None, subspace_master=None):
@@ -288,7 +300,7 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.cell_to_slaves()
 
-    def create_sparsity_pattern(self, cpp_form: dolfinx.cpp.fem.Form):
+    def create_sparsity_pattern(self, cpp_form: Union[Form_C, Form_R]):
         """
         Create sparsity-pattern for MPC given a compiled DOLFINx form
         """

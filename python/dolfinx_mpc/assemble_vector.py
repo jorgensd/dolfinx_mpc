@@ -77,6 +77,11 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     else:
         vector = b
 
+    # If using DOLFINx complex build, scalar type in form_compiler parameters must be updated
+    is_complex = numpy.issubdtype(PETSc.ScalarType, numpy.complexfloating)
+    if is_complex:
+        form_compiler_parameters["scalar_type"] = "double _Complex"
+
     # Compile ufc form for Python assembly
     ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form,
                                           form_compiler_parameters=form_compiler_parameters,
@@ -106,11 +111,12 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     # Assemble over cells
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
+    nptype = "complex128" if is_complex else "float64"
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
         timer = Timer("~MPC: Assemble vector (cells)")
         for i, id in enumerate(subdomain_ids):
-            cell_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i].tabulate_tensor
+            cell_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
             active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
@@ -131,7 +137,8 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
         perm = (cell_perms, cpp_form.needs_facet_permutations, facet_perms)
         timer = Timer("MPC Assemble vector (exterior facets)")
         for i, id in enumerate(subdomain_ids):
-            facet_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i].tabulate_tensor
+            facet_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i],
+                                   f"tabulate_tensor_{nptype}")
             facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
             facet_info = pack_slave_facet_info(facets, constraint.slave_cells())
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))

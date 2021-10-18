@@ -139,9 +139,9 @@ v = ufl.TestFunction(V)
 dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
 a = ufl.inner(sigma(u), ufl.grad(v)) * dx
 x = ufl.SpatialCoordinate(mesh)
-rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * dx
-rhs += ufl.inner(dolfinx.Constant(mesh, (0.01, 0.02, 0)), v) * dx(outer_tag)
-rhs += ufl.inner(ufl.as_vector((0, 0, -9.81e-2)), v) * dx(inner_tag)
+rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
+rhs += ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0.01, 0.02, 0))), v) * dx(outer_tag)
+rhs += ufl.inner(ufl.as_vector(PETSc.ScalarType((0, 0, -9.81e-2))), v) * dx(inner_tag)
 
 
 owning_processor, bc_dofs = dolfinx_mpc.utils.determine_closest_block(V, -np.array([-r2, 0, 0]))
