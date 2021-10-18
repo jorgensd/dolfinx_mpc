@@ -73,7 +73,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   std::vector<std::int64_t> m_block_glob(1);
 
   // Vector holder normal coefficients
-  const std::vector<PetscScalar>& normal_array = nh->x()->array();
+  tcb::span<const PetscScalar> normal_array = nh->x()->array();
 
   // Determine which dof should be a slave dof (based on max component of
   // normal vector normal vector)

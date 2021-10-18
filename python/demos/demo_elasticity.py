@@ -37,7 +37,7 @@ def demo_elasticity():
     v = ufl.TestFunction(V)
 
     # Elasticity parameters
-    E = 1.0e4
+    E = PETSc.ScalarType(1.0e4)
     nu = 0.0
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))

@@ -26,8 +26,8 @@ def test_pipeline(master_point):
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    d = dolfinx.Constant(mesh, 1.5)
-    c = dolfinx.Constant(mesh, 2)
+    d = dolfinx.Constant(mesh, PETSc.ScalarType(1.5))
+    c = dolfinx.Constant(mesh, PETSc.ScalarType(2))
     x = ufl.SpatialCoordinate(mesh)
     f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     g = dolfinx.Function(V)
@@ -107,8 +107,8 @@ def test_linearproblem(master_point):
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    d = dolfinx.Constant(mesh, 1.5)
-    c = dolfinx.Constant(mesh, 2)
+    d = dolfinx.Constant(mesh, PETSc.ScalarType(1.5))
+    c = dolfinx.Constant(mesh, PETSc.ScalarType(2))
     x = ufl.SpatialCoordinate(mesh)
     f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     g = dolfinx.Function(V)

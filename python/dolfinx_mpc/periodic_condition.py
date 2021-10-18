@@ -51,7 +51,7 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
     # Filter out Dirichlet BC dofs
     bc_dofs = []
     for bc in bcs:
-        bc_indices, _ = bc.dof_indices()
+        bc_indices, _ = bc._cpp_object.dof_indices()
         bc_dofs.extend(bc_indices)
     slave_blocks = slave_blocks[np.isin(slave_blocks, bc_dofs, invert=True)]
     num_local_blocks = len(slave_blocks[slave_blocks < size_local])

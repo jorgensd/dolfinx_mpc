@@ -84,7 +84,7 @@ v = ufl.TestFunction(V)
 dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
 a = ufl.inner(sigma(u), ufl.grad(v)) * dx
 x = ufl.SpatialCoordinate(mesh)
-rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * dx
+rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx
 
 
 def push(x):

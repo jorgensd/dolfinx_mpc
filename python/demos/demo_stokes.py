@@ -146,7 +146,7 @@ def T(u, p, mu):
 # --------------------------Variational problem---------------------------
 # Traditional terms
 mu = 1
-f = dolfinx.Constant(mesh, ((0, 0)))
+f = dolfinx.Constant(mesh, PETSc.ScalarType(((0, 0))))
 (u, p) = ufl.TrialFunctions(W)
 (v, q) = ufl.TestFunctions(W)
 a = (2 * mu * ufl.inner(sym_grad(u), sym_grad(v))
@@ -156,7 +156,7 @@ L = ufl.inner(f, v) * ufl.dx
 
 # No prescribed shear stress
 n = ufl.FacetNormal(mesh)
-g_tau = tangential_proj(dolfinx.Constant(mesh, ((0, 0), (0, 0))) * n, n)
+g_tau = tangential_proj(dolfinx.Constant(mesh, PETSc.ScalarType(((0, 0), (0, 0)))) * n, n)
 ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
 # Terms due to slip condition

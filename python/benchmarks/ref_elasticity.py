@@ -71,13 +71,13 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     mt = dolfinx.MeshTags(mesh, fdim, t_facets, facet_values)
 
     # Elasticity parameters
-    E = 1.0e4
+    E = PETSc.ScalarType(1.0e4)
     nu = 0.1
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
-    g = dolfinx.Constant(mesh, (0, 0, -1e2))
+    g = dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, -1e2)))
     x = ufl.SpatialCoordinate(mesh)
-    f = dolfinx.Constant(mesh, 1e4) * \
+    f = dolfinx.Constant(mesh, PETSc.ScalarType(1e4)) * \
         ufl.as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
 
     # Stress computation

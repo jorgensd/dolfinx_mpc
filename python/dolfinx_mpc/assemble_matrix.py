@@ -14,7 +14,7 @@ import numpy
 import ufl
 from dolfinx_mpc import cpp
 
-from .multipointconstraint import MultiPointConstraint
+from .multipointconstraint import MultiPointConstraint, cpp_dirichletbc
 from .numba_setup import PETSc, ffi, mode, set_values_local, sink
 
 Timer = dolfinx.common.Timer
@@ -81,13 +81,14 @@ def assemble_matrix_cpp(form: ufl.form.Form, constraint: MultiPointConstraint, b
     A.zeroEntries()
 
     # Assemble matrix in C++
-    cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, bcs, diagval)
+    cpp_bc = cpp_dirichletbc(bcs)
+    cpp.mpc.assemble_matrix(A, cpp_form, constraint._cpp_object, cpp_bc, diagval)
 
     # Add one on diagonal for Dirichlet boundary conditions
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
-        dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], bcs, diagval)
+        dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_bc, diagval)
 
     with dolfinx.common.Timer("~MPC: A.assemble()"):
         A.assemble()
@@ -149,13 +150,18 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     num_dofs_local = (dofmap.index_map.size_local + dofmap.index_map.num_ghosts) * dofmap.index_map_bs
     is_bc = numpy.zeros(num_dofs_local, dtype=bool)
     if len(bcs) > 0:
-        for bc in bcs:
+        for bc in cpp_dirichletbc(bcs):
             is_bc[bc.dof_indices()[0]] = True
 
     # Get data from mesh
     pos = V.mesh.geometry.dofmap.offsets
     x_dofs = V.mesh.geometry.dofmap.array
     x = V.mesh.geometry.x
+
+    # If using DOLFINx complex build, scalar type in form_compiler parameters must be updated
+    is_complex = numpy.issubdtype(PETSc.ScalarType, numpy.complexfloating)
+    if is_complex:
+        form_compiler_parameters["scalar_type"] = "double _Complex"
 
     # Generate ufc_form
     ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form,
@@ -181,7 +187,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
     # Assemble the matrix with all entries
     with Timer("~MPC: Assemble unconstrained matrix"):
-        dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, bcs, False)
+        dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, cpp_dirichletbc(bcs), False)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size()
@@ -208,16 +214,18 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     if e0.needs_dof_transformations or e1.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
 
+    nptype = "complex128" if is_complex else "float64"
     if num_cell_integrals > 0:
         timer = Timer("~MPC: Assemble matrix (cells)")
         V.mesh.topology.create_entity_permutations()
         for i, id in enumerate(subdomain_ids):
-            cell_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i].tabulate_tensor
+            cell_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
             active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
             assemble_slave_cells(A.handle, cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                                  (pos, x_dofs, x), form_coeffs, form_consts, cell_perms, dofs,
                                  block_size, num_dofs_per_element, mpc_data, is_bc)
         timer.stop()
+
     # Assemble over exterior facets
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
@@ -235,7 +243,8 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
         perm = (cell_perms, cpp_form.needs_facet_permutations, facet_perms)
 
         for i, id in enumerate(subdomain_ids):
-            facet_kernel = ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i].tabulate_tensor
+            facet_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)
+                                   [i], f"tabulate_tensor_{nptype}")
             facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
             facet_info = pack_slave_facet_info(facets, constraint.slave_cells())
 
@@ -254,7 +263,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
         if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
             A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
             A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
-            dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], bcs, diagval)
+            dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_dirichletbc(bcs), diagval)
 
     with Timer("~MPC: Assemble matrix (Finalize matrix)"):
         A.assemble()
@@ -302,7 +311,7 @@ def assemble_slave_cells(A: int,
     pos, x_dofmap, x = mesh
 
     # Empty arrays mimicking Nullpointers
-    facet_index = numpy.zeros(0, dtype=numpy.int32)
+    facet_index = numpy.zeros(0, dtype=numpy.intc)
     facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
     # NOTE: All cells are assumed to be of the same type
@@ -322,8 +331,10 @@ def assemble_slave_cells(A: int,
 
         # Assemble local contributions
         A_local.fill(0.0)
+
         kernel(ffi_fb(A_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm))
+
         # FIXME: Here we need to apply dof transformations
 
         # Local dof position

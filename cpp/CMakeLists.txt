@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.10)
 #------------------------------------------------------------------------------
 # Set project name and version number
 
-project(DOLFINX_MPC VERSION 2019.2.9.99)
+project(DOLFINX_MPC VERSION "0.3.1.0")
 
 #------------------------------------------------------------------------------
 # Set CMake options, see `cmake --help-policy CMP000x`

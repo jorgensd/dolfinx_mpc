@@ -82,7 +82,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     # Note there should be a better way to do this
     # Create sparsity pattern only for constraint + bc
     cpp_form = dolfinx.Form(a)._cpp_object
-    pattern = dolfinx.cpp.fem.create_sparsity_pattern(cpp_form)
+    pattern = dolfinx.fem.create_sparsity_pattern(cpp_form)
     pattern.insert_diagonal(deac_blocks)
     pattern.assemble()
     u_0 = dolfinx.Function(V)
@@ -95,12 +95,12 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     # Assemble the matrix with all entries
     form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
     form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
-    dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, [bc_deac])
+    dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, [bc_deac._cpp_object])
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
         dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0],
-                                        [bc_deac], 1.0)
+                                        [bc_deac._cpp_object], 1.0)
     A.assemble()
 
     b = dolfinx.fem.assemble_vector(L)

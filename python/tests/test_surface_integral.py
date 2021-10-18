@@ -40,14 +40,14 @@ def test_surface_integrals():
     mt = dolfinx.mesh.MeshTags(mesh, fdim, top_facets, 3)
 
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    g = dolfinx.Constant(mesh, (0, -9.81e2))
+    g = dolfinx.Constant(mesh, PETSc.ScalarType((0, -9.81e2)))
 
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
 
     # Elasticity parameters
-    E = 1.0e4
+    E = PETSc.ScalarType(1.0e4)
     nu = 0.0
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -61,7 +61,7 @@ def test_surface_integrals():
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0)), v) * ufl.dx\
+    rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0))), v) * ufl.dx\
         + ufl.inner(g, v) * ds
 
     # Setup LU solver
@@ -168,8 +168,8 @@ def test_surface_integral_dependency():
                                np.array(indices[sort], dtype=np.intc),
                                np.array(values[sort], dtype=np.intc))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
-    g = dolfinx.Constant(mesh, [2, 1])
-    h = dolfinx.Constant(mesh, [3, 2])
+    g = dolfinx.Constant(mesh, PETSc.ScalarType((2, 1)))
+    h = dolfinx.Constant(mesh, PETSc.ScalarType((3, 2)))
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)

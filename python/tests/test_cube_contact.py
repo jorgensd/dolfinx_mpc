@@ -210,7 +210,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = 1.0e3
+    E = PETSc.ScalarType(1.0e3)
     nu = 0
     mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -224,8 +224,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(dolfinx.Constant(mesh, (0, 0, 0)), v) * ufl.dx
-
+    rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * ufl.dx
     # Create LU solver
     solver = PETSc.KSP().create(comm)
     solver.setType("preonly")
