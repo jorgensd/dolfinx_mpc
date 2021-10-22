@@ -10,6 +10,7 @@ import dolfinx.common
 import dolfinx.log
 import numba
 import numpy
+from numpy.core.shape_base import block
 import ufl
 
 from .assemble_matrix import pack_slave_facet_info
@@ -32,7 +33,9 @@ def lift_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
                mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
                           'numpy.ndarray[PETSc.ScalarType]', 'numpy.ndarray[numpy.int32]',
                           'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                          'numpy.ndarray[numpy.int32]', 'numpy.ndarray[PETSc.ScalarType]']):
+                          'numpy.ndarray[numpy.int32]'],
+               const_loc: 'numpy.ndarray[bool]',
+               mpc_const: 'numpy.ndarray[PETSc.ScalarType]'):
     """Assemble additional MPC contributions for cell integrals"""
     ffi_fb = ffi.from_buffer
 
@@ -40,15 +43,12 @@ def lift_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
     facet_index = numpy.zeros(0, dtype=numpy.int32)
     facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
-    # Determine which slaves are in this cell,
-    # and which global index they have in 1D arrays
-    cecell_to_slave[cell_to_slave_offset[slave_cell_index]:
-                    cell_to_slave_offset[slave_cell_index + 1]]
-
     # Unpack mesh data
     pos, x_dofmap, x = mesh
 
     geometry = numpy.zeros((pos[1] - pos[0], 3))
+    A_local = numpy.zeros((block_size * num_dofs_per_element,
+                           block_size * num_dofs_per_element), dtype=PETSc.ScalarType)
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=PETSc.ScalarType)
 
     for slave_cell_index, cell_index in enumerate(active_cells):
@@ -59,11 +59,21 @@ def lift_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
         geometry[:, :] = x[x_dofmap[cell:cell + num_vertices]]
 
         # Assemble local element vector
+        A_local.fill(0.0)
         b_local.fill(0.0)
-        kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
+        kernel(ffi_fb(A_local), ffi_fb(coeffs[cell_index, :]),
                ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
                ffi_fb(facet_perm))
         # FIXME: Here we need to add the apply_dof_transformation function
+
+        # Compute matrix vector product of A d where d is the mpc constants
+        for j in range(num_dofs_per_element):
+            for k in range(block_size):
+                dof = block_size * dofmap[num_dofs_per_element * cell_index + j] + k
+                val = mpc_const[dof]
+                if const_loc[dof]:
+                    for m in range(num_dofs_per_element * block_size):
+                        b_local[m] -= A_local[m, block_size * j + k] * val
 
         # Modify global vector and local cell contributions
         b_local_copy = b_local.copy()
@@ -72,7 +82,7 @@ def lift_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
         for j in range(num_dofs_per_element):
             for k in range(block_size):
                 position = dofmap[num_dofs_per_element * cell_index + j] * block_size + k
-                b[position] += (b_local[j * block_size + k] - b_local_copy[j * block_size + k])
+                b[position] += b_local[j * block_size + k]
 
 
 def apply_lifting(b: PETSc.Vec, a: ufl.form.Form, constraint: MultiPointConstraint,
@@ -95,9 +105,17 @@ def apply_lifting(b: PETSc.Vec, a: ufl.form.Form, constraint: MultiPointConstrai
     slaves_local = constraint.slaves()
     masters_local = masters.array
     offsets = masters.offsets
-    constants = constraint.consts
+
+    # Pack MPC constant values
+    mpc_range = V.dofmap.index_map_bs * (V.dofmap.index_map.size_local + V.dofmap.index_map.num_ghosts)
+    mpc_values = numpy.zeros(mpc_range, dtype=PETSc.ScalarType)
+    mpc_values[slaves_local] = constraint.consts
+    # FIXME: Here we should do something clever to identify which slaves has to be lifted (i.e. has a non-zero d)
+    mpc_loc = numpy.zeros(mpc_range, dtype=bool)
+    mpc_loc[slaves_local] = True
+
     mpc_data = (slaves_local, masters_local, coefficients, offsets,
-                slave_cells, cell_to_slave, c_to_s_off, constants)
+                slave_cells, cell_to_slave, c_to_s_off)
     # If using DOLFINx complex build, scalar type in form_compiler parameters must be updated
     is_complex = numpy.issubdtype(PETSc.ScalarType, numpy.complexfloating)
     if is_complex:
@@ -126,6 +144,7 @@ def apply_lifting(b: PETSc.Vec, a: ufl.form.Form, constraint: MultiPointConstrai
         cell_perms = V.mesh.topology.get_cell_permutation_info()
     if e0.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
+
     # Lift cells integrals
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
@@ -139,7 +158,7 @@ def apply_lifting(b: PETSc.Vec, a: ufl.form.Form, constraint: MultiPointConstrai
             with b.localForm() as b:
                 lift_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                            (pos, x_dofs, x), form_coeffs, form_consts,
-                           cell_perms, dofs, block_size, num_dofs_per_element, mpc_data)
+                           cell_perms, dofs, block_size, num_dofs_per_element, mpc_data, mpc_loc, mpc_values)
         timer.stop()
 
 
