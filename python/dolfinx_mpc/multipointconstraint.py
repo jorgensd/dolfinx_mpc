@@ -43,6 +43,7 @@ class MultiPointConstraint():
         self.ghost_owners = []
         self.offsets = [0]
         self.ghost_offsets = [0]
+        self.consts = []
         self.V = V
         self.finalized = False
 
