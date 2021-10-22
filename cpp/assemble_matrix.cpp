@@ -317,8 +317,6 @@ void assemble_interior_facets_impl(
 {
   dolfinx::common::Timer timer("~MPC (C++): Assemble interior facet");
 
-    std::cout << "here A-1" << std::endl;
-
   // // Get MPC data
   const std::array<
       const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>,
@@ -330,7 +328,6 @@ void assemble_interior_facets_impl(
   const std::array<const xtl::span<const std::int32_t>, 2> slaves
       = {mpc0->slaves(), mpc1->slaves()};
 
-    std::cout << "here A-2" << std::endl;
   std::array<xtl::span<const std::int32_t>, 2> slave_cells
       = {mpc0->slave_cells(), mpc1->slave_cells()};
   const std::array<
@@ -351,7 +348,6 @@ void assemble_interior_facets_impl(
       = {std::vector<std::int32_t>(active_entities.size(), -1),
          std::vector<std::int32_t>(active_entities.size(), -1)};
 
-    std::cout << "here A-3" << std::endl;
   for (std::int32_t i = 0; i < active_entities.size(); ++i)
   {
     const std::int32_t cell0 = std::get<0>(active_entities[i]);
@@ -380,7 +376,6 @@ void assemble_interior_facets_impl(
     }
   }
   
-    std::cout << "here A-4" << std::endl;
   // Temporaries for joint dofmaps
   std::vector<std::int32_t> dmapjoint0, dmapjoint1;
 
@@ -405,26 +400,20 @@ void assemble_interior_facets_impl(
   const std::uint32_t ndim1 = bs1 * num_dofs1;
   std::vector<T> Ae;
   
-    std::cout << "here A-5" << std::endl;
   for (std::int32_t l = 0; l < active_entities.size(); ++l)
   {
-    std::cout << "here A-6" << std::endl;
     const std::array<std::int32_t, 2> cell
         = {std::get<0>(active_entities[l]), std::get<2>(active_entities[l])};
-    std::cout << "here A-6A" << std::endl;
     const std::array<int, 2> local_facet
         = {std::get<1>(active_entities[l]), std::get<3>(active_entities[l])};
 
-    std::cout << "here A-7" << std::endl;
     const std::array<xtl::span<const std::int32_t>, 2> x_dofs
         = {x_dofmap.links(cell[0]), x_dofmap.links(cell[1])};
-    std::cout << "here A-8" << std::endl;
     const xt::xtensor<double, 2> coordinate_dofs = 
       xt::concatenate(xt::xtuple(
         xt::xarray<double>(xt::view(x_g, xt::keep(x_dofs[0]), xt::all())),
         xt::xarray<double>(xt::view(x_g, xt::keep(x_dofs[1]), xt::all()))));
 
-    std::cout << "here A" << std::endl;
 
     // Get dof maps for cells and pack
     xtl::span<const std::int32_t> dmap0_cell0 = fulldofmap0.cell_dofs(cell[0]);
@@ -457,7 +446,6 @@ void assemble_interior_facets_impl(
                   std::next(coeff_array.begin(), offsets[i + 1] + offsets[i]));
     }
 
-    std::cout << "here B" << std::endl;
     const int num_rows = bs0 * dmapjoint0.size();
     const int num_cols = bs1 * dmapjoint1.size();
 
@@ -480,7 +468,6 @@ void assemble_interior_facets_impl(
         = _Ae.subspan(bs1 * dmap1_cell0.size(),
                       num_rows * num_cols - bs1 * dmap1_cell0.size());
 
-    std::cout << "here C" << std::endl;
 
     // Need to apply DOF transformations for parts of the matrix due to cell 0
     // and cell 1. For example, if the space has 3 DOFs, then Ae will be 6 by 6
@@ -524,7 +511,6 @@ void assemble_interior_facets_impl(
       }
     }
 
-    std::cout << "here D" << std::endl;
     const std::array<int, 2> bs = {bs0, bs1};
     const std::array<xtl::span<const int32_t>, 2> dofs = {dmapjoint0, dmapjoint1};
     const std::array<int, 2> num_dofs = {num_rows, num_cols};
@@ -533,7 +519,6 @@ void assemble_interior_facets_impl(
         = {std::vector<bool>(ndim0, false), std::vector<bool>(ndim1, false)};
     std::array<std::vector<std::int32_t>, 2> local_indices;
 
-    std::cout << "here E" << std::endl;
     bool modify_Ae = false;
     if (is_slave_entity0[0][l] or is_slave_entity0[1][l])
     {
@@ -796,7 +781,6 @@ void assemble_matrix_impl(
     else
       get_perm = [](std::size_t) { return 0; };
 
-    std::cout << "pre interior" << std::endl;
     for (int i : a.integral_ids(dolfinx::fem::IntegralType::interior_facet))
     {
       const std::vector<std::tuple<std::int32_t, int, std::int32_t, int>>& active_facets
