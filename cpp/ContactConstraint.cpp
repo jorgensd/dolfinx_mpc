@@ -47,14 +47,11 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyz
-  std::pair<std::shared_ptr<dolfinx::fem::FunctionSpace>,
-            std::vector<std::int32_t>>
-      V0_pair = V->sub({0})->collapse();
-  auto [V0, map] = V0_pair;
+  auto [V0, map] = V->sub({0})->collapse();
 
   std::array<std::vector<std::int32_t>, 2> slave_blocks
-      = dolfinx::fem::locate_dofs_topological(
-          {*V->sub({0}).get(), *V0.get()}, fdim, tcb::make_span(slave_facets));
+      = dolfinx::fem::locate_dofs_topological({*V->sub({0}).get(), V0}, fdim,
+                                              tcb::make_span(slave_facets));
   for (std::size_t i = 0; i < slave_blocks[0].size(); ++i)
     slave_blocks[0][i] /= block_size;
 
@@ -919,13 +916,11 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
 
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyz
-  std::pair<std::shared_ptr<dolfinx::fem::FunctionSpace>,
-            std::vector<std::int32_t>>
-      V0_pair = V->sub({0})->collapse();
-  auto [V0, map] = V0_pair;
+
+  auto [V0, map] = V->sub({0})->collapse();
   std::array<std::vector<std::int32_t>, 2> slave_blocks
-      = dolfinx::fem::locate_dofs_topological(
-          {*V->sub({0}).get(), *V0.get()}, fdim, tcb::make_span(slave_facets));
+      = dolfinx::fem::locate_dofs_topological({*V->sub({0}).get(), V0}, fdim,
+                                              tcb::make_span(slave_facets));
   for (std::size_t i = 0; i < slave_blocks[0].size(); ++i)
     slave_blocks[0][i] /= block_size;
 

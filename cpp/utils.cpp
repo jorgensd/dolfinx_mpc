@@ -64,12 +64,6 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   const size_t value_size = element->value_size() / block_size;
   const size_t space_dimension = element->space_dimension() / block_size;
 
-  // Create data structures for Jacobian info
-  xt::xtensor<double, 2> X = xt::empty<double>({(size_t)1, tdim});
-  xt::xtensor<double, 3> J = xt::empty<double>({X.shape(0), gdim, tdim});
-  xt::xtensor<double, 3> K = xt::empty<double>({X.shape(0), tdim, gdim});
-  xt::xtensor<double, 1> detJ = xt::empty<double>({X.shape(0)});
-
   // Prepare basis function data structures
   xt::xtensor<double, 4> tabulated_data(
       {1, 1, space_dimension, reference_value_size});
@@ -104,11 +98,49 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   for (int j = 0; j < gdim; ++j)
     xp(0, j) = x[j];
 
-  // Compute reference coordinates X, and J, detJ and K
-  cmap.pull_back(X, J, detJ, K, xp, coordinate_dofs);
+  // -- Lambda function for affine pull-backs
+  auto pull_back_affine
+      = [&cmap, tdim,
+         X0 = xt::xtensor<double, 2>(xt::zeros<double>({std::size_t(1), tdim})),
+         data = xt::xtensor<double, 4>(cmap.tabulate_shape(1, 1)),
+         dphi = xt::xtensor<double, 2>({tdim, cmap.tabulate_shape(1, 1)[2]})](
+            auto&& X, const auto& cell_geometry, auto&& J, auto&& K,
+            const auto& x) mutable
+  {
+    cmap.tabulate(1, X0, data);
+    dphi = xt::view(data, xt::range(1, tdim + 1), 0, xt::all(), 0);
+    cmap.compute_jacobian(dphi, cell_geometry, J);
+    cmap.compute_jacobian_inverse(J, K);
+    cmap.pull_back_affine(X, K, cmap.x0(cell_geometry), x);
+  };
+  // FIXME: Move initialization out of J, detJ, K out of function
+  xt::xtensor<double, 2> dphi;
+  xt::xtensor<double, 2> X({1, tdim});
+  xt::xtensor<double, 3> J = xt::zeros<double>({std::size_t(1), gdim, tdim});
+  xt::xtensor<double, 3> K = xt::zeros<double>({std::size_t(1), tdim, gdim});
+  xt::xtensor<double, 1> detJ = xt::zeros<double>({1});
+  xt::xtensor<double, 4> phi(cmap.tabulate_shape(1, 1));
+  if (cmap.is_affine())
+  {
+    J.fill(0);
+    pull_back_affine(X, coordinate_dofs, xt::view(J, 0, xt::all(), xt::all()),
+                     xt::view(K, 0, xt::all(), xt::all()), xp);
+    detJ[0] = cmap.compute_jacobian_determinant(
+        xt::view(J, 0, xt::all(), xt::all()));
+  }
+  else
+  {
+    cmap.pull_back_nonaffine(X, xp, coordinate_dofs);
+    cmap.tabulate(1, X, phi);
+    dphi = xt::view(phi, xt::range(1, tdim + 1), 0, xt::all(), 0);
+    J.fill(0);
+    auto _J = xt::view(J, 0, xt::all(), xt::all());
+    cmap.compute_jacobian(dphi, coordinate_dofs, _J);
+    cmap.compute_jacobian_inverse(_J, xt::view(K, 0, xt::all(), xt::all()));
+    detJ[0] = cmap.compute_jacobian_determinant(_J);
+  }
 
   // Compute basis on reference element
-
   element->tabulate(tabulated_data, X, 0);
 
   element->apply_dof_transformation(
