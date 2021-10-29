@@ -18,6 +18,7 @@
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/SlipConstraint.h>
 #include <dolfinx_mpc/assemble_matrix.h>
+#include <dolfinx_mpc/assemble_vector.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>
 #include <petscmat.h>
@@ -175,6 +176,18 @@ void mpc(py::module& m)
               dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc, bcs,
               diagval);
         });
+  m.def(
+      "assemble_vector",
+      [](py::array_t<PetscScalar, py::array::c_style> b,
+         const dolfinx::fem::Form<PetscScalar>& L,
+         const std::shared_ptr<
+             const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc)
+      {
+        dolfinx_mpc::assemble_vector(xtl::span(b.mutable_data(), b.size()), L,
+                                     mpc);
+      },
+      py::arg("b"), py::arg("L"), py::arg("mpc"),
+      "Assemble linear form into an existing vector");
 
   m.def(
       "create_matrix",

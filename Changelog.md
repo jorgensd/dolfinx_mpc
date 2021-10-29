@@ -1,6 +1,7 @@
 # Changelog
 
 ## main
+- Add `assemble_vector_cpp`, a C++ implementation of the mpc vector assembly. It is more efficient than the numba counterpart.
 - **API**:
   - The `mpc_data` is fully rewritten, now the data is accessible as properties `slaves`, `masters`, `owners`, `coeffs` and `offsets`.
   - The `MultiPointConstraint` class has been rewritten, with the following functions changing

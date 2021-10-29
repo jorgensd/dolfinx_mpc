@@ -41,6 +41,11 @@ def test_mpc_assembly(master_point, degree, celltype):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
+    with dolfinx.common.Timer("~Test: Assemble vector (C++)"):
+        b_cpp = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
+    b_cpp.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    assert np.allclose(b.array, b_cpp.array)
+
     # Reduce system with global matrix K after assembly
     L_org = dolfinx.fem.assemble_vector(rhs)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
