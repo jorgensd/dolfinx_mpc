@@ -66,8 +66,9 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         out_x[1] = x[1]
         out_x[2] = x[2]
         return out_x
+    num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
 
-    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Create MultiPoint Constraint")
+    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Create MultiPoint Constraint {num_dofs}")
     with dolfinx.common.Timer("~Periodic: Initialize periodic constraint"):
         facets = dolfinx.mesh.locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
         mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
@@ -88,12 +89,15 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     rhs = ufl.inner(f, v) * ufl.dx
 
     # Assemble LHS and RHS with multi-point constraint
+
     dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Assemble matrix")
-    with dolfinx.common.Timer("~Periodic: Assemble matrix"):
+    with dolfinx.common.Timer(f"~Periodic {r_lvl}: Assemble matrix"):
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    with dolfinx.common.Timer(f"~Periodic {r_lvl}: Assemble matrix (cached)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
     dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Assembling vector")
-    with dolfinx.common.Timer("~Periodic: Assemble vector (Total time)"):
+    with dolfinx.common.Timer(f"~Periodic: {r_lvl} Assemble vector (Total time)"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     # Apply boundary conditions
@@ -179,7 +183,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
 if __name__ == "__main__":
     # Set Argparser defaults
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref", help="Number of spatial refinements")
     parser.add_argument("--degree", default=1, type=np.int8, dest="degree", help="CG Function space degree")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf", help="XDMF-output of function (Default false)")

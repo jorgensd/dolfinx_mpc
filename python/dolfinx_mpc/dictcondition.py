@@ -2,6 +2,7 @@ import typing
 
 import numpy as np
 import dolfinx.fem as fem
+from petsc4py import PETSc
 
 
 def close_to(point):
@@ -188,14 +189,12 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
         coeffs.extend(owned_slaves[slave_index]["coeffs"])
         offsets.append(len(masters))
 
-    # Flatten slaves (ghosts)
-    ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners, ghost_offsets = [], [], [], [], [0]
-
     for slave_index in slaves_ghost.keys():
-        ghost_slaves.append(slaves_ghost[slave_index])
-        ghost_masters.extend(ghosted_slaves[slave_index]["masters"])
-        ghost_owners.extend(ghosted_slaves[slave_index]["owners"])
-        ghost_coeffs.extend(ghosted_slaves[slave_index]["coeffs"])
-        ghost_offsets.append(len(ghost_masters))
-    return ((slaves, ghost_slaves), (masters, ghost_masters), (coeffs, ghost_coeffs), (owners, ghost_owners),
-            (offsets, ghost_offsets))
+        slaves.append(slaves_ghost[slave_index])
+        masters.extend(ghosted_slaves[slave_index]["masters"])
+        owners.extend(ghosted_slaves[slave_index]["owners"])
+        coeffs.extend(ghosted_slaves[slave_index]["coeffs"])
+        offsets.append(len(masters))
+    return (np.asarray(slaves, dtype=np.int32), np.asarray(masters, dtype=np.int64),
+            np.asarray(coeffs, dtype=PETSc.ScalarType), np.asarray(owners, dtype=np.int32),
+            np.asarray(offsets, dtype=np.int32))

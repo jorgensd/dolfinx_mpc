@@ -120,7 +120,7 @@ def visualize_periodic():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--elasticity", action="store_true",
                         dest="elasticity", default=False,
                         help="Visualize iterations for elasticity")

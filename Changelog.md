@@ -1,10 +1,19 @@
 # Changelog
 
 ## main
-- Updates to match dolfinx implementation of exterior facet integrals
-- Updated user-interface of `dolfinx.Constant`, explicitly casting scalar-type with `PETSc.ScalarType`.
-- Various internal changes to handle new `dolfinx.DirichletBC` without class inheritance
-- Various internal changes to handle new way of JIT-compliation of `dolfinx::fem::Form_{scalar_type}`
+- **API**:
+  - The `mpc_data` is fully rewritten, now the data is accessible as properties `slaves`, `masters`, `owners`, `coeffs` and `offsets`.
+  - The `MultiPointConstraint` class has been rewritten, with the following functions changing
+    - The `add_constraint` function now only accept single arrays of data, instead of tuples of (owned, ghost) data.
+    - `slave_cells` does now longer exist as it can be gotten implicitly from `cell_to_slaves`.
+
+- **Performance**:
+  - The C++ assembler has been fully rewritten and has a "Insert number" speed-up for the `demo_contact_3D.py` with `XXX` dofs.
+- **DOLFINX API-changes**:
+  - Updates to match dolfinx implementation of exterior facet integrals
+  - Updated user-interface of `dolfinx.Constant`, explicitly casting scalar-type with `PETSc.ScalarType`.
+  - Various internal changes to handle new `dolfinx.DirichletBC` without class inheritance
+  - Various internal changes to handle new way of JIT-compliation of `dolfinx::fem::Form_{scalar_type}`
 
 ## 0.3.0 (25.08.2021)
 - Minor internal changes

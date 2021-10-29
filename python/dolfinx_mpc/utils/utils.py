@@ -164,31 +164,30 @@ def gather_transformation_matrix(constraint, root=0):
     block_size = V.dofmap.index_map_bs
     num_local_slaves = constraint.num_local_slaves()
     # Gather all global_slaves
+    slaves = constraint.slaves()[:num_local_slaves]
     if num_local_slaves > 0:
-        local_blocks = constraint.slaves()[: num_local_slaves] // block_size
-        local_rems = constraint.slaves()[: num_local_slaves] % block_size
+        local_blocks = slaves // block_size
+        local_rems = slaves % block_size
         glob_slaves = imap.local_to_global(local_blocks) * block_size + local_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
-
-    global_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
-    masters = constraint.masters_local().array
+    all_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
+    masters = constraint.masters().array
     master_blocks = masters // block_size
     master_rems = masters % block_size
-    coeffs = constraint.coefficients()
-    offsets = constraint.masters_local().offsets
-
+    coeffs = constraint.coefficients()[0]
+    offsets = constraint.masters().offsets
     # Create sparse K matrix
     K_val, rows, cols = [], [], []
     # Add local contributions to K from local slaves
-    for local_index, slave in enumerate(glob_slaves):
-        masters_index = (imap.local_to_global(master_blocks[offsets[local_index]: offsets[local_index + 1]])
-                         * block_size + master_rems[offsets[local_index]: offsets[local_index + 1]])
-        coeffs_index = coeffs[offsets[local_index]: offsets[local_index + 1]]
+    for slave, global_slave in zip(slaves, glob_slaves):
+        masters_index = (imap.local_to_global(master_blocks[offsets[slave]: offsets[slave + 1]])
+                         * block_size + master_rems[offsets[slave]: offsets[slave + 1]])
+        coeffs_index = coeffs[offsets[slave]: offsets[slave + 1]]
         for master, coeff in zip(masters_index, coeffs_index):
-            count = sum(master > global_slaves)
+            count = sum(master > all_slaves)
             K_val.append(coeff)
-            rows.append(slave)
+            rows.append(global_slave)
             cols.append(master - count)
 
     # Add identity for all dofs on diagonal
@@ -199,7 +198,7 @@ def gather_transformation_matrix(constraint, root=0):
         if not is_slave[i]:
             K_val.append(1)
             rows.append(dof)
-            cols.append(dof - sum(dof > global_slaves))
+            cols.append(dof - sum(dof > all_slaves))
 
     # Gather K to root
     K_vals = MPI.COMM_WORLD.gather(np.asarray(K_val, dtype=PETSc.ScalarType), root=root)
@@ -224,7 +223,7 @@ def petsc_to_local_CSR(A: PETSc.Mat, mpc: dolfinx_mpc.MultiPointConstraint):
     return A_csr[global_indices[:, None], global_indices]
 
 
-def gather_PETScMatrix(A: PETSc.Mat, root=0):
+def gather_PETScMatrix(A: PETSc.Mat, root=0) -> scipy.sparse.csr_matrix:
     """
     Given a distributed PETSc matrix, gather in on process 'root' in
     a scipy CSR matrix
@@ -241,7 +240,7 @@ def gather_PETScMatrix(A: PETSc.Mat, root=0):
         return scipy.sparse.csr_matrix((np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())
 
 
-def gather_PETScVector(vector, root=0):
+def gather_PETScVector(vector, root=0) -> np.ndarray:
     """
     Gather a PETScVector from different processors on
     process 'root' as an numpy array
@@ -255,7 +254,7 @@ def gather_PETScVector(vector, root=0):
 
 
 def compare_CSR(A, B, atol=1e-10):
-    """ Compuare CSR matrices A and B """
+    """ Compare CSR matrices A and B """
     diff = np.abs(A - B)
     assert(diff.max() < atol)
 
@@ -279,7 +278,6 @@ def compare_MPC_LHS(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
     # Get global slaves
     glob_slaves = gather_slaves_global(mpc)
     A_mpc_csr = gather_PETScMatrix(A_mpc, root=root)
-
     if MPI.COMM_WORLD.rank == root:
         KTAK = K.T * A_csr * K
 
@@ -458,11 +456,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     block_size = V.dofmap.index_map_bs
     imap = V.dofmap.index_map
     # Output structures
-    local_slaves, ghost_slaves = [], []
-    local_masters, ghost_masters = [], []
-    local_coeffs, ghost_coeffs = [], []
-    local_owners, ghost_owners = [], []
-    local_offsets, ghost_offsets = [], []
+    slaves, masters, coeffs, owners, offsets = [], [], [], [], []
     # Information required to handle vector as input
     zero_indices, slave_index = None, None
     if vector is not None:
@@ -472,20 +466,20 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         assert(len(slave_block) == 1)
         slave_block_g = imap.local_to_global(slave_block)[0]
         if vector is None:
-            local_slaves = np.arange(slave_block[0] * block_size, slave_block[0]
-                                     * block_size + block_size, dtype=np.int32)
+            slaves = np.arange(slave_block[0] * block_size, slave_block[0]
+                               * block_size + block_size, dtype=np.int32)
         else:
             assert(len(vector) == block_size)
             # Check for input vector (Should be of same length as number of slaves)
             # All entries should not be zero
             assert(not np.isin(slave_index, zero_indices))
             # Check vector for zero contributions
-            local_slaves = np.array([slave_block[0] * block_size + slave_index], dtype=np.int32)
+            slaves = np.array([slave_block[0] * block_size + slave_index], dtype=np.int32)
             for i in range(block_size):
                 if i != slave_index and not np.isin(i, zero_indices):
-                    local_masters.append(slave_block_g * block_size + i)
-                    local_owners.append(slave_proc)
-                    local_coeffs.append(-vector[i] / vector[slave_index])
+                    masters.append(slave_block_g * block_size + i)
+                    owners.append(slave_proc)
+                    coeffs.append(-vector[i] / vector[slave_index])
 
     global_masters = None
     if is_master_proc:
@@ -502,17 +496,17 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     if is_master_proc and is_slave_proc:
         # If slaves and masters are on the same processor finalize local work
         if vector is None:
-            local_masters = masters_as_glob
-            local_owners = np.full(len(local_masters), master_proc, dtype=np.int32)
-            local_coeffs = np.ones(len(local_masters), dtype=PETSc.ScalarType)
-            local_offsets = np.arange(0, len(local_masters) + 1, dtype=np.int32)
+            masters = masters_as_glob
+            owners = np.full(len(masters), master_proc, dtype=np.int32)
+            coeffs = np.ones(len(masters), dtype=PETSc.ScalarType)
+            offsets = np.arange(0, len(masters) + 1, dtype=np.int32)
         else:
             for i in range(len(masters_as_glob)):
                 if not np.isin(i, zero_indices):
-                    local_masters.append(masters_as_glob[i])
-                    local_owners.append(master_proc)
-                    local_coeffs.append(vector[i] / vector[slave_index])
-            local_offsets = [0, len(local_masters)]
+                    masters.append(masters_as_glob[i])
+                    owners.append(master_proc)
+                    coeffs.append(vector[i] / vector[slave_index])
+            offsets = [0, len(masters)]
     else:
         # Send/Recv masters from other processor
         if is_master_proc:
@@ -521,16 +515,16 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             global_masters = MPI.COMM_WORLD.recv(source=master_proc, tag=10)
             for i, master in enumerate(global_masters):
                 if not np.isin(i, zero_indices):
-                    local_masters.append(master)
-                    local_owners.append(master_proc)
+                    masters.append(master)
+                    owners.append(master_proc)
                     if vector is None:
-                        local_coeffs.append(1)
+                        coeffs.append(1)
                     else:
-                        local_coeffs.append(vector[i] / vector[slave_index])
+                        coeffs.append(vector[i] / vector[slave_index])
             if vector is None:
-                local_offsets = np.arange(0, len(local_slaves) + 1, dtype=np.int32)
+                offsets = np.arange(0, len(slaves) + 1, dtype=np.int32)
             else:
-                local_offsets = np.array([0, len(local_masters)], dtype=np.int32)
+                offsets = np.array([0, len(masters)], dtype=np.int32)
             if slave_block[0] in shared_indices.keys():
                 ghost_processors = list(shared_indices[slave_block[0]])
 
@@ -538,14 +532,15 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)
     if is_slave_proc:
         for proc in ghost_processors:
-            MPI.COMM_WORLD.send(slave_block_g * block_size + local_slaves %
+            MPI.COMM_WORLD.send(slave_block_g * block_size + slaves %
                                 block_size, dest=proc, tag=20 + proc)
-            MPI.COMM_WORLD.send(local_coeffs, dest=proc, tag=30 + proc)
-            MPI.COMM_WORLD.send(local_owners, dest=proc, tag=40 + proc)
-            MPI.COMM_WORLD.send(local_masters, dest=proc, tag=50 + proc)
-            MPI.COMM_WORLD.send(local_offsets, dest=proc, tag=60 + proc)
+            MPI.COMM_WORLD.send(coeffs, dest=proc, tag=30 + proc)
+            MPI.COMM_WORLD.send(owners, dest=proc, tag=40 + proc)
+            MPI.COMM_WORLD.send(masters, dest=proc, tag=50 + proc)
+            MPI.COMM_WORLD.send(offsets, dest=proc, tag=60 + proc)
 
     # Receive data for ghost slaves
+    ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners, ghost_offsets = [], [], [], [], []
     if np.isin(MPI.COMM_WORLD.rank, ghost_processors):
         # Convert recieved slaves to the corresponding ghost index
         recv_slaves = MPI.COMM_WORLD.recv(source=slave_proc, tag=20 + MPI.COMM_WORLD.rank)
@@ -563,8 +558,12 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         for i, slave in enumerate(recv_slaves):
             idx = np.argwhere(ghost_dofs == slave)[0, 0]
             ghost_slaves[i] = local_size * block_size + idx
-    return (local_slaves, ghost_slaves), (local_masters, ghost_masters), (local_coeffs, ghost_coeffs),\
-        (local_owners, ghost_owners), (local_offsets, ghost_offsets)
+    slaves = np.asarray(np.append(slaves, ghost_slaves), dtype=np.int32)
+    masters = np.asarray(np.append(masters, ghost_masters), dtype=np.int64)
+    coeffs = np.asarray(np.append(coeffs, ghost_coeffs), dtype=np.int32)
+    owners = np.asarray(np.append(owners, ghost_owners), dtype=np.int32)
+    offsets = np.asarray(np.append(offsets, ghost_offsets), dtype=np.int32)
+    return slaves, masters, coeffs, owners, offsets
 
 
 def create_normal_approximation(V, facets):

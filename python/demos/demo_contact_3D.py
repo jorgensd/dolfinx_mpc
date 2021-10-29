@@ -124,8 +124,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     with dolfinx.common.Timer(f"~~Contact: Assemble matrix ({num_dofs})"):
-        # A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+        A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+        # A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 
     with dolfinx.common.Timer(f"~~Contact: Assemble vector ({num_dofs})"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
@@ -217,7 +217,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--res", default=0.1, type=np.float64, dest="res", help="Resolution of Mesh")
     parser.add_argument("--theta", default=np.pi / 3, type=np.float64, dest="theta",
                         help="Rotation angle around axis [1, 1, 0]")

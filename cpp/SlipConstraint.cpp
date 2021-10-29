@@ -64,11 +64,6 @@ mpc_data dolfinx_mpc::create_slip_condition(
   std::vector<PetscScalar> coeffs;
   std::vector<std::int32_t> owners;
   std::vector<std::int32_t> offsets(1, 0);
-  std::vector<std::int32_t> ghost_slaves;
-  std::vector<std::int64_t> ghost_masters;
-  std::vector<PetscScalar> ghost_coeffs;
-  std::vector<std::int32_t> ghost_owners;
-  std::vector<std::int32_t> ghost_offsets(1, 0);
 
   // Get all degrees of freedom in the vector sub-space on the given facets
   std::vector<std::int32_t> entity_dofs = dolfinx::fem::locate_dofs_topological(
@@ -140,35 +135,20 @@ mpc_data dolfinx_mpc::create_slip_condition(
         std::div_t div = std::div(parent_masters[i], W_bs);
         pair_m[i] = pair_m[i] * W_bs + div.rem;
       }
-      if (parent_slave < W_local_size * W_bs)
-      {
-        slaves.push_back(parent_slave);
-        masters.insert(masters.end(), pair_m.begin(), pair_m.end());
-        coeffs.insert(coeffs.end(), pair_c.begin(), pair_c.end());
-        offsets.push_back(masters.size());
-        owners.insert(owners.end(), pair_o.begin(), pair_o.end());
-      }
-      else
-      {
-        ghost_slaves.push_back(parent_slave);
-        ghost_masters.insert(ghost_masters.end(), pair_m.begin(), pair_m.end());
-        ghost_coeffs.insert(ghost_coeffs.end(), pair_c.begin(), pair_c.end());
-        ghost_offsets.push_back(ghost_masters.size());
-        ghost_owners.insert(ghost_owners.end(), pair_o.begin(), pair_o.end());
-      }
+      slaves.push_back(parent_slave);
+      masters.insert(masters.end(), pair_m.begin(), pair_m.end());
+      coeffs.insert(coeffs.end(), pair_c.begin(), pair_c.end());
+      offsets.push_back(masters.size());
+      owners.insert(owners.end(), pair_o.begin(), pair_o.end());
     }
   }
 
   mpc_data data;
-  data.local_slaves = slaves;
-  data.ghost_slaves = ghost_slaves;
-  data.local_masters = masters;
-  data.ghost_masters = ghost_masters;
-  data.local_offsets = offsets;
-  data.ghost_offsets = ghost_offsets;
-  data.local_owners = owners;
-  data.ghost_owners = ghost_owners;
-  data.local_coeffs = coeffs;
-  data.ghost_coeffs = ghost_coeffs;
+  data.slaves = slaves;
+
+  data.masters = masters;
+  data.offsets = offsets;
+  data.owners = owners;
+  data.coeffs = coeffs;
   return data;
 };

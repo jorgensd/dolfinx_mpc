@@ -330,7 +330,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--theta", default=np.pi / 3, type=np.float64,
                         dest="theta", help="Rotation angle around axis [1, 1, 0]")
     parser.add_argument("--ref", default=0, type=np.int32,

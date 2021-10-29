@@ -186,13 +186,12 @@ def test_surface_integral_dependency():
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, 1, 1)
     mpc.finalize()
-
+    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
+        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
     with dolfinx.common.Timer("~TEST: Assemble matrix old"):
         A = dolfinx_mpc.assemble_matrix(a, mpc)
     with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc)
-    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
-        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
 
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
@@ -211,9 +210,8 @@ def test_surface_integral_dependency():
     root = 0
     comm = mesh.mpi_comm()
     with dolfinx.common.Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, Acpp, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
-
         A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
         A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
 
