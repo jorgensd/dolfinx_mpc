@@ -1,3 +1,9 @@
+# Copyright (C) 2021 Jørgen Schartum Dokken
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    LGPL-3.0-or-later
+
 import gmsh
 import numpy
 from mpi4py import MPI

@@ -252,9 +252,9 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
 
     dolfinx_mpc.utils.log_info("Assemble matrix")
     with dolfinx.common.Timer(f"{num_dofs}: Assemble-matrix (C++)"):
-        A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer(f"{num_dofs}: Assemble-vector (C++)"):
-        b = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)

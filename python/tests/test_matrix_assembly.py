@@ -4,24 +4,26 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
+import dolfinx
+import dolfinx.log
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import ufl
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
-
-import dolfinx
-import dolfinx.log
 
 root = 0
 
 
+@pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
 @pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
                                       dolfinx.cpp.mesh.CellType.triangle])
-def test_mpc_assembly(master_point, degree, celltype):
+def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: F811
+    assemble_matrix, _ = get_assemblers
 
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 5, 3, celltype)
@@ -42,19 +44,9 @@ def test_mpc_assembly(master_point, degree, celltype):
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
-    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
-        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
-
-    with dolfinx.common.Timer("~TEST: Assemble matrix C++"):
-        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
+        A_mpc = assemble_matrix(a, mpc)
 
     with dolfinx.common.Timer("~TEST: Compare with numpy"):
-        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
-        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A_mpc, root=root)
-        if MPI.COMM_WORLD.rank == root:
-            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
-
         # Create globally reduced system
         A_org = dolfinx.fem.assemble_matrix(a)
         A_org.assemble()
@@ -62,11 +54,13 @@ def test_mpc_assembly(master_point, degree, celltype):
 
 
 # Check if ordering of connected dofs matter
+@pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
 @pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.triangle,
                                       dolfinx.cpp.mesh.CellType.quadrilateral])
-def test_slave_on_same_cell(master_point, degree, celltype):
+def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # noqa: F811
+    assemble_matrix, _ = get_assemblers
 
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 1, 8, celltype)
@@ -89,23 +83,13 @@ def test_slave_on_same_cell(master_point, degree, celltype):
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
-    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
-        A_mpc = dolfinx_mpc.assemble_matrix(a, mpc)
-
-    with dolfinx.common.Timer("~TEST: Assemble matrix C++"):
-        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
+        A_mpc = assemble_matrix(a, mpc)
 
     with dolfinx.common.Timer("~TEST: Compare with numpy"):
-        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
-        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A_mpc, root=root)
-        if MPI.COMM_WORLD.rank == root:
-            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
-
         # Create globally reduced system
         A_org = dolfinx.fem.assemble_matrix(a)
         A_org.assemble()
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_mpc, mpc)
 
-    # dolfinx.common.list_timings(MPI.COMM_WORLD,
-    #                             [dolfinx.common.TimingType.wall])
+    dolfinx.common.list_timings(MPI.COMM_WORLD,
+                                [dolfinx.common.TimingType.wall])

@@ -15,11 +15,11 @@ import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import pytest
+import scipy.sparse.linalg
 import ufl
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
-import scipy.sparse.linalg
-
 
 theta = np.pi / 5
 
@@ -162,8 +162,10 @@ def generate_hex_boxes():
     return (mesh, ft)
 
 
+@pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("nonslip", [True, False])
-def test_cube_contact(generate_hex_boxes, nonslip):
+def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F811
+    assemble_matrix, assemble_vector = get_assemblers
     comm = MPI.COMM_WORLD
     root = 0
     # Generate mesh
@@ -245,26 +247,13 @@ def test_cube_contact(generate_hex_boxes, nonslip):
     mpc.finalize()
 
     with dolfinx.common.Timer("~TEST: Assemble bilinear form"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("~TEST: Assemble bilinear form (cached)"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("~TEST: Assemble bilinear form (C++)"):
-        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+        A = assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
-    with dolfinx.common.Timer("~TEST: Assemble vector (cached)"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+        b = assemble_vector(rhs, mpc)
 
     fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
-
-    with dolfinx.common.Timer("~TEST: Assemble vector (C++)"):
-        b_cpp = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
-    dolfinx.fem.apply_lifting(b_cpp, [a], [bcs])
-    b_cpp.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b_cpp, bcs)
-    assert np.allclose(b.array, b_cpp.array)
 
     with dolfinx.common.Timer("~MPC: Solve"):
         solver.setOperators(A)
@@ -299,8 +288,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
         # Generate reference matrices and unconstrained solution
         L_org = fem.assemble_vector(rhs)
         fem.apply_lifting(L_org, [a], [bcs])
-        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                          mode=PETSc.ScatterMode.REVERSE)
+        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(L_org, bcs)
 
     with dolfinx.common.Timer("~TEST: Compare"):
@@ -321,11 +309,5 @@ def test_cube_contact(generate_hex_boxes, nonslip):
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
-
-        # Compare python and C++ assembly
-        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
-        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
-        if MPI.COMM_WORLD.rank == root:
-            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
 
     dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])

@@ -7,8 +7,7 @@ from petsc4py import PETSc
 
 import dolfinx_mpc.cpp
 
-from dolfinx.cpp.fem import (Form_complex128 as Form_C,
-                             Form_float64 as Form_R)
+from dolfinx.cpp.fem import (Form_complex128 as Form_C, Form_float64 as Form_R)
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition_topological, create_periodic_condition_geometrical
 

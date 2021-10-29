@@ -7,9 +7,10 @@
 
 # flake8: noqa
 
-
+from .test import (get_assemblers, gather_PETScVector, gather_PETScMatrix, compare_MPC_LHS,
+                   compare_MPC_RHS, gather_transformation_matrix, compare_CSR)
 from .utils import (rotation_matrix, facet_normal_approximation,
-                    gather_PETScVector, gather_PETScMatrix, compare_MPC_LHS, log_info, rigid_motions_nullspace,
-                    determine_closest_block, compare_MPC_RHS, create_normal_approximation,
-                    gather_transformation_matrix, compare_CSR, create_point_to_point_constraint)
+                    log_info, rigid_motions_nullspace,
+                    determine_closest_block, create_normal_approximation,
+                    create_point_to_point_constraint)
 from .io import (read_from_msh, gmsh_model_to_mesh)

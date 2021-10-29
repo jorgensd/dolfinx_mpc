@@ -4,21 +4,25 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-import numpy as np
-import pytest
-from petsc4py import PETSc
-from mpi4py import MPI
 import dolfinx
 import dolfinx_mpc
 import dolfinx_mpc.utils
+import numpy as np
+import pytest
 import ufl
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
+from mpi4py import MPI
+from petsc4py import PETSc
 
 
+@pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
 @pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
                                       dolfinx.cpp.mesh.CellType.triangle])
-def test_mpc_assembly(master_point, degree, celltype):
+def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: F811
+
+    _, assemble_vector = get_assemblers
 
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 3, 5, celltype)
@@ -38,13 +42,8 @@ def test_mpc_assembly(master_point, degree, celltype):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
-    b = dolfinx_mpc.assemble_vector(rhs, mpc)
+    b = assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-
-    with dolfinx.common.Timer("~Test: Assemble vector (C++)"):
-        b_cpp = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
-    b_cpp.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    assert np.allclose(b.array, b_cpp.array)
 
     # Reduce system with global matrix K after assembly
     L_org = dolfinx.fem.assemble_vector(rhs)

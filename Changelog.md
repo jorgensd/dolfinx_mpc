@@ -1,8 +1,9 @@
 # Changelog
 
 ## main
-- Add `assemble_vector_cpp`, a C++ implementation of the mpc vector assembly. It is more efficient than the numba counterpart.
 - **API**:
+  - New default assembler: The default for `assemble_matrix` and `assemble_vector` is now C++ implementations. The numba implementations can be accessed through the submodule `dolfinx_mpc.numba`.
+  - New submodule: `dolfinx_mpc.numba`. This module contains the `assemble_matrix` and `assemble_vector` that uses numba.
   - The `mpc_data` is fully rewritten, now the data is accessible as properties `slaves`, `masters`, `owners`, `coeffs` and `offsets`.
   - The `MultiPointConstraint` class has been rewritten, with the following functions changing
     - The `add_constraint` function now only accept single arrays of data, instead of tuples of (owned, ghost) data.

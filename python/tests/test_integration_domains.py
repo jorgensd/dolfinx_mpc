@@ -4,22 +4,25 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
-
+import dolfinx
+import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
+import pytest
+import scipy.sparse.linalg
 import ufl
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
-import scipy.sparse.linalg
-import dolfinx
-import dolfinx.io
 
 
-def test_cell_domains():
+@pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
+def test_cell_domains(get_assemblers):  # noqa: F811
     """
     Periodic MPC conditions over integral with different cell subdomains
     """
+    assemble_matrix, assemble_vector = get_assemblers
     N = 5
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 15, N)
@@ -75,20 +78,10 @@ def test_cell_domains():
 
     # Setup MPC system
     with dolfinx.common.Timer("~TEST: Assemble matrix old"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc)
-    with dolfinx.common.Timer("~TEST: Assemble matrix (cached)"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc)
-    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
-        Acpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc)
-
+        A = assemble_matrix(a, mpc)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+        b = assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-
-    with dolfinx.common.Timer("~TEST: Assemble vector (C++)"):
-        b_cpp = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
-    b_cpp.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    assert np.allclose(b.array, b_cpp.array)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
@@ -123,9 +116,4 @@ def test_cell_domains():
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
-
-        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(Acpp, root=root)
-        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
-        if MPI.COMM_WORLD.rank == root:
-            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
     dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
