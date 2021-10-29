@@ -251,14 +251,14 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     dolfinx_mpc.utils.log_info(f"Num dofs: {num_dofs}")
 
     dolfinx_mpc.utils.log_info("Assemble matrix")
-    with dolfinx.common.Timer(f"{num_dofs}: Assemble-matrix"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    dolfinx_mpc.utils.log_info("Assemble vector")
-    with dolfinx.common.Timer(f"{num_dofs}: Assemble-vector"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
-        fem.apply_lifting(b, [a], [bcs])
-        b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        fem.set_bc(b, bcs)
+    with dolfinx.common.Timer(f"{num_dofs}: Assemble-matrix (C++)"):
+        A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
+    with dolfinx.common.Timer(f"{num_dofs}: Assemble-vector (C++)"):
+        b = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
+    dolfinx.fem.apply_lifting(b, [a], [bcs])
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(b, bcs)
+    dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
 
     # Solve Linear problem
     opts = PETSc.Options()
@@ -313,8 +313,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
             print(f"#Dofs: {num_dofs}", file=results_file)
             print(f"#Slaves: {num_slaves}", file=results_file)
             print(f"#Iterations: {it}", file=results_file)
-        operations = ["Solve", "Assemble-matrix", "MPC-init", "Contact-constraint", "FacetNormal",
-                      "Assemble-vector", "Backsubstitution"]
+        operations = ["Solve", "Assemble-matrix (C++)", "MPC-init", "Contact-constraint", "FacetNormal",
+                      "Assemble-vector (C++)", "Backsubstitution"]
         if comm.rank == 0:
             print("Operation  #Calls Avg Min Max", file=results_file)
         for op in operations:

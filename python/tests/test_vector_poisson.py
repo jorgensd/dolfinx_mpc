@@ -68,9 +68,20 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
+    with dolfinx.common.Timer("~TEST: Assemble vector (cached)"):
+        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
+
+    with dolfinx.common.Timer("~TEST: Assemble vector (C++)"):
+        b_cpp = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
+    dolfinx.fem.apply_lifting(b_cpp, [a], [bcs])
+    b_cpp.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.fem.set_bc(b_cpp, bcs)
+    assert np.allclose(b.array, b_cpp.array)
+
     solver.setOperators(A)
     uh = b.copy()
     uh.set(0)

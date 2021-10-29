@@ -78,15 +78,22 @@ nightly-complex:
   variables:
     PETSC_DIR: "/usr/local/petsc"
     PETSC_ARCH: "linux-gnu-complex-32"
+    DOLFINX_CMAKE_BUILD_TYPE: "Release"
+    DOLFINX_CMAKE_CXX_FLAGS: "-Ofast -march=native -g -Wall -Werror -pedantic"
+
   before_script:
     - flake8 .
-    - export PETSC_ARCH="linux-gnu-complex-32"
+    - echo $PETSC_ARCH
     - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
     - export HDF5_MPI="ON"
     - export CC=mpicc
     - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
     - pip3 install --no-cache-dir --no-binary=h5py h5py
-    - pip3 install git+https://github.com/FEniCS/basix.git --upgrade
+    - git clone https://github.com/FEniCS/basix.git
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS  -B build-dir -S ./basix/cpp
+    - cmake --build build-dir --parallel 3
+    - cmake --install build-dir
+    - BUILD_TYPE=$DOLFINX_CMAKE_BUILD_TYPE CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS pip3 install ./basix/python
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
@@ -153,6 +160,9 @@ nightly-real:
   variables:
     PETSC_DIR: "/usr/local/petsc"
     PETSC_ARCH: "linux-gnu-real-32"
+    DOLFINX_CMAKE_BUILD_TYPE: "Release"
+    DOLFINX_CMAKE_CXX_FLAGS: "-Ofast -march=native -g -Wall -Werror -pedantic"
+
   before_script:
     - flake8 .
     - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
@@ -160,7 +170,11 @@ nightly-real:
     - export CC=mpicc
     - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
     - pip3 install --no-cache-dir --no-binary=h5py h5py
-    - pip3 install git+https://github.com/FEniCS/basix.git --upgrade
+    - git clone https://github.com/FEniCS/basix.git
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS  -B build-dir -S ./basix/cpp
+    - cmake --build build-dir --parallel 3
+    - cmake --install build-dir
+    - BUILD_TYPE=$DOLFINX_CMAKE_BUILD_TYPE CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS pip3 install ./basix/python
     - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
     - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
     - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
