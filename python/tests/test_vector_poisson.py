@@ -12,15 +12,19 @@ import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
 
 
+@pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("Nx", [4])
 @pytest.mark.parametrize("Ny", [2, 3])
 @pytest.mark.parametrize("slave_space", [0, 1])
 @pytest.mark.parametrize("master_space", [0, 1])
-def test_vector_possion(Nx, Ny, slave_space, master_space):
+def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # noqa: F811
+
+    assemble_matrix, assemble_vector = get_assemblers
     # Create mesh and function space
     mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
 
@@ -61,26 +65,13 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     mpc.finalize()
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
-        A_cpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
-
+        A = assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble vector"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
-
-    with dolfinx.common.Timer("~TEST: Assemble vector (cached)"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     dolfinx.fem.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
-
-    with dolfinx.common.Timer("~TEST: Assemble vector (C++)"):
-        b_cpp = dolfinx_mpc.assemble_vector_cpp(rhs, mpc)
-    dolfinx.fem.apply_lifting(b_cpp, [a], [bcs])
-    b_cpp.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b_cpp, bcs)
-    assert np.allclose(b.array, b_cpp.array)
 
     solver.setOperators(A)
     uh = b.copy()
@@ -102,11 +93,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     root = 0
     comm = mesh.mpi_comm()
     with dolfinx.common.Timer("~TEST: Compare"):
-        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(A_cpp, root=root)
-        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
-        if MPI.COMM_WORLD.rank == root:
-            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_cpp, mpc, root=root)
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process

@@ -166,17 +166,17 @@ for i in axis:
         r0_point[i] = s * r0
         r1_point[i] = s * r1
 
-        with dolfinx.common.Timer("~Contact: Create node-node constraint"):
+        with dolfinx.common.Timer("~DEMO: Create node-node constraint"):
             sl, ms, co, ow, off = dolfinx_mpc.utils.create_point_to_point_constraint(V, r1_point, r0_point)
-        with dolfinx.common.Timer("~Contact: Add data and finialize MPC"):
+        with dolfinx.common.Timer("~DEMO: Add data and finialize MPC"):
             mpc.add_constraint(V, sl, ms, co, ow, off)
 
 mpc.finalize()
 null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
 num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
-with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(num_dofs)):
-    A = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
-with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(num_dofs)):
+with dolfinx.common.Timer("~DEMO: Assemble matrix ({0:d})".format(num_dofs)):
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+with dolfinx.common.Timer("~DEMO: Assemble vector ({0:d})".format(num_dofs)):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
 fem.apply_lifting(b, [a], [bcs])
