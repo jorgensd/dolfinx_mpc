@@ -33,68 +33,45 @@ class MultiPointConstraint():
         """
         Initial multi point constraint for a given function space.
         """
-        self.local_slaves = []
-        self.ghost_slaves = []
-        self.local_masters = []
-        self.ghost_masters = []
-        self.local_coeffs = []
-        self.ghost_coeffs = []
-        self.local_owners = []
-        self.ghost_owners = []
-        self.offsets = [0]
-        self.ghost_offsets = [0]
+        self._slaves = numpy.array([], dtype=numpy.int32)
+        self._masters = numpy.array([], dtype=numpy.int64)
+        self._coeffs = numpy.array([], dtype=PETSc.ScalarType)
+        self._owners = numpy.array([], dtype=numpy.int32)
+        self._offsets = numpy.array([0], dtype=numpy.int32)
         self.V = V
         self.finalized = False
 
-    def add_constraint(self, V: dolfinx.FunctionSpace, slaves: tuple([list, list]),
-                       masters: tuple([list, list]), coeffs: tuple([list, list]),
-                       owners: tuple([list, list]), offsets: tuple([list, list])):
+    def add_constraint(self, V: dolfinx.FunctionSpace, slaves_: "numpy.ndarray[numpy.int32]",
+                       masters_: "numpy.ndarray[numpy.int64]", coeffs_: "numpy.ndarray[PETSc.ScalarType]",
+                       owners_: "numpy.ndarray[numpy.int32]", offsets_: "numpy.ndarray[numpy.int32]"):
         """
         Add new constraint given by numpy arrays.
         Input:
             V: The function space for the constraint
-            slaves: Tuple of arrays. First tuple contains the local index of slaves on this process.
-                    The second tuple contains the local index of ghosted slaves on this process.
-            masters: Tuple of arrays. First tuple contains the local index of masters on this process.
-                    The second tuple contains the local index of ghosted masters on this process.
-                    As a single slave can have multiple master indices, they should be sorted such
-                    that they follow the offset tuples.
-            coeffs: Tuple of arrays. The coefficients for each master.
-            owners: Tuple of arrays containing the index for the process each master is owned by.
-            offsets: Tuple of arrays indicating the location in the masters array for the i-th slave
+            slaves_: List of all slave dofs (using local dof numbering) on this process
+            masters_: List of all master dofs (using global dof numbering) on this process
+            coeffs_: The coefficients corresponding to each master.
+            owners_: The process each master is owned by.
+            offsets_: Array indicating the location in the masters array for the i-th slave
                     in the slaves arrays. I.e.
-                    local_masters_of_owned_slave[i] = masters[0][offsets[0][i]:offsets[0][i+1]]
-                    ghost_masters_of_ghost_slave[i] = masters[1][offsets[1][i]:offsets[1][i+1]]
+                    masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
+
         """
         assert(V == self.V)
         if self.finalized:
             raise RuntimeError("MultiPointConstraint has already been finalized")
-        local_slaves, ghost_slaves = slaves
-        local_masters, ghost_masters = masters
-        local_coeffs, ghost_coeffs = coeffs
-        local_owners, ghost_owners = owners
-        local_offsets, ghost_offsets = offsets
-        if len(local_slaves) > 0:
-            self.offsets.extend(offset + len(self.local_masters)
-                                for offset in local_offsets[1:])
-            self.local_slaves.extend(local_slaves)
-            self.local_masters.extend(local_masters)
-            self.local_coeffs.extend(local_coeffs)
-            self.local_owners.extend(local_owners)
-        if len(ghost_slaves) > 0:
-            self.ghost_offsets.extend(offset + len(self.ghost_masters)
-                                      for offset in ghost_offsets[1:])
-            self.ghost_slaves.extend(ghost_slaves)
-            self.ghost_masters.extend(ghost_masters)
-            self.ghost_coeffs.extend(ghost_coeffs)
-            self.ghost_owners.extend(ghost_owners)
+
+        if len(slaves_) > 0:
+            self._offsets = numpy.append(self._offsets, offsets_[1:] + len(self._masters))
+            self._slaves = numpy.append(self._slaves, slaves_)
+            self._masters = numpy.append(self._masters, masters_)
+            self._coeffs = numpy.append(self._coeffs, coeffs_)
+            self._owners = numpy.append(self._owners, owners_)
 
     def add_constraint_from_mpc_data(self, V: dolfinx.FunctionSpace, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
         if self.finalized:
             raise RuntimeError("MultiPointConstraint has already been finalized")
-        self.add_constraint(V, mpc_data.get_slaves(), mpc_data.get_masters(),
-                            mpc_data.get_coeffs(), mpc_data.get_owners(),
-                            mpc_data.get_offsets())
+        self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs, mpc_data.owners, mpc_data.offsets)
 
     def finalize(self):
         """
@@ -104,34 +81,17 @@ class MultiPointConstraint():
         """
         if self.finalized:
             raise RuntimeError("MultiPointConstraint has already been finalized")
-        num_local_slaves = len(self.local_slaves)
-        num_local_masters = len(self.local_masters)
-        slaves = self.local_slaves
-        masters = self.local_masters
-        coeffs = self.local_coeffs
-        owners = self.local_owners
-        offsets = self.offsets
-        # Merge local and ghost arrays
-        if len(self.ghost_slaves) > 0:
-            ghost_offsets = [g_offset + num_local_masters for g_offset in self.ghost_offsets[1:]]
-            slaves.extend(self.ghost_slaves)
-            masters.extend(self.ghost_masters)
-            coeffs.extend(self.ghost_coeffs)
-            owners.extend(self.ghost_owners)
-            offsets.extend(ghost_offsets)
+
         # Initialize C++ object and create slave->cell maps
         self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-            self.V._cpp_object, slaves, num_local_slaves, masters, coeffs, owners, offsets)
-        # Add masters and compute new index maps
+            self.V._cpp_object, self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
+
         # Replace function space
-        V_cpp = dolfinx.cpp.fem.FunctionSpace(self.V.mesh, self.V.element, self._cpp_object.dofmap())
+        V_cpp = dolfinx.cpp.fem.FunctionSpace(self.V.mesh, self.V.element, self._cpp_object.dofmap)
         self.V_mpc = dolfinx.FunctionSpace(None, self.V.ufl_element(), V_cpp)
         self.finalized = True
         # Delete variables that are no longer required
-        del (self.local_slaves, self.local_masters,
-             self.local_coeffs, self.local_owners, self.offsets,
-             self.ghost_coeffs, self.ghost_masters, self.ghost_offsets,
-             self.ghost_owners, self.ghost_slaves)
+        del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
     def create_periodic_constraint_topological(self, meshtag: dolfinx.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
@@ -264,15 +224,20 @@ class MultiPointConstraint():
             self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
+    def is_slave(self):
+        if not self.finalized:
+            raise RuntimeError("MultiPointConstraint has not been finalized")
+        return self._cpp_object.is_slave
+
     def slaves(self):
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.slaves()
+        return self._cpp_object.slaves
 
-    def masters_local(self):
+    def masters(self):
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.masters_local()
+        return self._cpp_object.masters
 
     def coefficients(self):
         if not self.finalized:
@@ -288,17 +253,12 @@ class MultiPointConstraint():
     def index_map(self):
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.index_map()
-
-    def slave_cells(self):
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.slave_cells()
+        return self._cpp_object.index_map
 
     def cell_to_slaves(self):
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.cell_to_slaves()
+        return self._cpp_object.cell_to_slaves
 
     def create_sparsity_pattern(self, cpp_form: Union[Form_C, Form_R]):
         """
@@ -306,7 +266,7 @@ class MultiPointConstraint():
         """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.create_sparsity_pattern(cpp_form)
+        return dolfinx_mpc.cpp.mpc.create_sparsity_pattern(cpp_form, self._cpp_object)
 
     def function_space(self):
         if not self.finalized:

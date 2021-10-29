@@ -219,15 +219,14 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
         coeffs.extend(constraint_data[dof]["coeffs"])
         owners.extend(constraint_data[dof]["owners"])
         offsets.append(len(masters))
-
-    ghost_slaves, ghost_masters, ghost_coeffs, ghost_owners, ghost_offsets = [], [], [], [], [0]
+    # Add in ghost data
     for dof in ghost_dofs.keys():
-        ghost_slaves.append(dof)
-        ghost_masters.extend(ghost_dofs[dof]["masters"])
-        ghost_coeffs.extend(ghost_dofs[dof]["coeffs"])
-        ghost_owners.extend(ghost_dofs[dof]["owners"])
-        ghost_offsets.append(len(ghost_masters))
+        slaves.append(dof)
+        masters.extend(ghost_dofs[dof]["masters"])
+        coeffs.extend(ghost_dofs[dof]["coeffs"])
+        owners.extend(ghost_dofs[dof]["owners"])
+        offsets.append(len(masters))
 
-    return ((slaves, ghost_slaves), (masters, ghost_masters),
-            (coeffs, ghost_coeffs), (owners, ghost_owners),
-            (offsets, ghost_offsets))
+    return (np.asarray(slaves, dtype=np.int32), np.asarray(masters, dtype=np.int64),
+            np.asarray(coeffs, dtype=PETSc.ScalarType), np.asarray(owners, dtype=np.int32),
+            np.asarray(offsets, dtype=np.int32))

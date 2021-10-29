@@ -17,100 +17,118 @@ void modify_mpc_cell(
                             const std::int32_t*, const T*)>& mat_set,
     const int num_dofs, xt::xtensor<T, 2>& Ae,
     const xtl::span<const int32_t>& dofs, int bs,
-    const xtl::span<const int32_t>& slave_indices,
+    const xtl::span<const int32_t>& slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
         masters,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coeffs,
-    const std::vector<std::int32_t>& local_indices,
-    const std::vector<bool>& is_slave)
+    const std::vector<std::int8_t>& is_slave)
 {
 
-  // Arrays for flattened master slave data
-  std::vector<std::int32_t> flattened_masters;
-  std::vector<std::int32_t> flattened_slaves;
-  std::vector<std::int32_t> slaves_loc;
-  std::vector<T> flattened_coeffs;
-  for (std::int32_t i = 0; i < slave_indices.size(); ++i)
-  {
-    xtl::span<const std::int32_t> local_masters
-        = masters->links(slave_indices[i]);
-    xtl::span<const T> local_coeffs = coeffs->links(slave_indices[i]);
-
-    for (std::int32_t j = 0; j < local_masters.size(); ++j)
+  // Locate which local dofs are slave dofs and compute the local index of the
+  // slave
+  std::vector<std::int32_t> local_index0(slaves.size());
+  std::int32_t num_flattened_masters = 0;
+  for (std::int32_t i = 0; i < num_dofs; i++)
+    for (std::int32_t j = 0; j < bs; j++)
     {
-      slaves_loc.push_back(i);
-      flattened_slaves.push_back(local_indices[i]);
-      flattened_masters.push_back(local_masters[j]);
-      flattened_coeffs.push_back(local_coeffs[j]);
+      const std::int32_t slave = dofs[i] * bs + j;
+      if (is_slave[slave])
+      {
+        auto it = std::find(slaves.begin(), slaves.end(), slave);
+        const std::int32_t slave_index = std::distance(slaves.begin(), it);
+        local_index0[slave_index] = i * bs + j;
+        num_flattened_masters += masters->links(slave).size();
+      }
     }
-  }
-  // Matrices used for master insertion
-  std::array<std::int32_t, 1> m0;
-  std::array<std::int32_t, 1> m1;
-  std::array<T, 1> Amaster;
-  xt::xarray<T> Arow(bs * num_dofs);
-  xt::xarray<T> Acol(bs * num_dofs);
-  xt::xtensor_fixed<T, xt::xshape<1>> Am0m1;
-
   // Create copy to use for distribution to master dofs
   xt::xtensor<T, 2> Ae_original = Ae;
   // Build matrix where all slave-slave entries are 0 for usage to row and
   // column addition
   xt::xtensor<T, 2> Ae_stripped = xt::empty<T>({bs * num_dofs, bs * num_dofs});
-  for (std::int32_t i = 0; i < bs * num_dofs; ++i)
-    for (std::int32_t j = 0; j < bs * num_dofs; ++j)
-      Ae_stripped(i, j) = (!(is_slave[i] && is_slave[j])) * Ae(i, j);
 
-  std::vector<std::int32_t> mpc_dofs(bs * dofs.size());
-  for (std::int32_t i = 0; i < flattened_slaves.size(); ++i)
+  // Strip Ae of all entries where both i and j are slaves
+  for (std::int32_t i = 0; i < num_dofs; i++)
+    for (std::int32_t b = 0; b < bs; b++)
+    {
+      bool is_slave0 = is_slave[dofs[i] * bs + b];
+      for (std::int32_t j = 0; j < num_dofs; j++)
+        for (std::int32_t c = 0; c < bs; c++)
+        {
+          bool is_slave1 = is_slave[dofs[j] * bs + c];
+          Ae_stripped(i * bs + b, j * bs + c)
+              = (!(is_slave0 && is_slave1)) * Ae(i * bs + b, j * bs + c);
+        }
+    }
+
+  // Flatten slaves, masters and coeffs for efficient modification of the
+  // matrices
+  std::vector<std::int32_t> flattened_masters;
+  flattened_masters.reserve(num_flattened_masters);
+  std::vector<std::int32_t> flattened_slaves;
+  flattened_slaves.reserve(num_flattened_masters);
+  std::vector<T> flattened_coeffs;
+  flattened_coeffs.reserve(num_flattened_masters);
+  for (std::size_t i = 0; i < slaves.size(); i++)
   {
-    const std::int32_t& local_index = flattened_slaves[i];
-    const std::int32_t& master = flattened_masters[i];
-    const T& coeff = flattened_coeffs[i];
+    auto _masters = masters->links(slaves[i]);
+    auto _coeffs = coeffs->links(slaves[i]);
+    for (std::int32_t j = 0; j < _masters.size(); j++)
+    {
+      flattened_slaves.push_back(local_index0[i]);
+      flattened_masters.push_back(_masters[j]);
+      flattened_coeffs.push_back(_coeffs[j]);
+    }
+  }
+  assert(num_flattened_masters = flattened_masters.size());
+  // Data structures used for insertion of master contributions
+  std::array<std::int32_t, 1> m0;
+  std::array<std::int32_t, 1> m1;
+  std::array<T, 1> Amaster;
+  xt::xarray<T> Arow(bs * num_dofs);
+  xt::xarray<T> Acol(bs * num_dofs);
+  std::array<T, 1> Am0m1;
+  std::vector<std::int32_t> mpc_dofs(bs * dofs.size());
+  std::array<std::int32_t, 2> couple_indices;
+  std::array<T, 2> couple_coeffs;
+  // Loop over each master
+  for (std::int32_t i = 0; i < num_flattened_masters; ++i)
+  {
+    couple_indices[0] = flattened_slaves[i];
+    couple_coeffs[0] = flattened_coeffs[i];
 
     // Remove contributions form Ae
-    xt::col(Ae, local_index) = xt::zeros<T>({num_dofs * bs});
-    xt::row(Ae, local_index).fill(0);
+    xt::col(Ae, couple_indices[0]) = xt::zeros<T>({num_dofs * bs});
+    xt::row(Ae, couple_indices[0]).fill(0);
 
-    m0[0] = master;
-    Arow = coeff * xt::col(Ae_stripped, local_index);
-    Acol = coeff * xt::row(Ae_stripped, local_index);
-    Amaster[0] = coeff * coeff * Ae_original(local_index, local_index);
+    m0[0] = flattened_masters[i];
+    Arow = couple_coeffs[0] * xt::col(Ae_stripped, couple_indices[0]);
+    Acol = couple_coeffs[0] * xt::row(Ae_stripped, couple_indices[0]);
+    Amaster[0] = couple_coeffs[0] * couple_coeffs[0]
+                 * Ae_original(couple_indices[0], couple_indices[0]);
+
     // Unroll dof blocks
     for (std::int32_t j = 0; j < dofs.size(); ++j)
       for (std::int32_t k = 0; k < bs; ++k)
         mpc_dofs[j * bs + k] = dofs[j] * bs + k;
 
     // Insert modified entries
-    mpc_dofs[local_index] = master;
+    mpc_dofs[couple_indices[0]] = flattened_masters[i];
     mat_set(bs * num_dofs, mpc_dofs.data(), 1, m0.data(), Arow.data());
     mat_set(1, m0.data(), bs * num_dofs, mpc_dofs.data(), Acol.data());
     mat_set(1, m0.data(), 1, m0.data(), Amaster.data());
-    // Loop through other masters on the same cell
-    std::vector<std::int32_t> other_slaves(flattened_slaves.size() - 1);
-    std::iota(std::begin(other_slaves), std::end(other_slaves), 0);
-    if (i < flattened_slaves.size() - 1)
-      other_slaves[i] = flattened_slaves.size() - 1;
-    for (auto j : other_slaves)
-    {
-      const std::int32_t& other_local_index = flattened_slaves[j];
-      const std::int32_t& other_master = flattened_masters[j];
-      const T& other_coeff = flattened_coeffs[j];
-      const T c0c1 = coeff * other_coeff;
-      m1[0] = other_master;
 
-      if (slaves_loc[i] != slaves_loc[j])
-      {
-        // Add contributions for masters on the same cell (different slave)
-        Am0m1(0) = c0c1 * Ae_original(local_index, other_local_index);
-        mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
-      }
-      else
-      {
-        // Add contributions for different masters of the same slave
-        Am0m1(0) = c0c1 * Ae_original(local_index, local_index);
-        mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
-      }
+    // Loop through other masters on the same cell and add in contribution
+    for (std::int32_t j = 0; j < num_flattened_masters; j++)
+    {
+      if (i == j)
+        continue;
+
+      couple_indices[1] = flattened_slaves[j];
+      couple_coeffs[1] = flattened_coeffs[j];
+      m1[0] = flattened_masters[j];
+      Am0m1[0] = couple_coeffs[0] * couple_coeffs[1]
+                 * Ae_original(couple_indices[0], couple_indices[1]);
+      mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
     }
   }
 } // namespace
@@ -145,42 +163,24 @@ void assemble_exterior_facets(
 
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-      masters = mpc->masters_local();
+      masters = mpc->masters();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coefficients
-      = mpc->coeffs();
-  const xtl::span<const std::int32_t> slaves = mpc->slaves();
-
-  xtl::span<const std::int32_t> slave_cells = mpc->slave_cells();
+      = mpc->coefficients();
+  const std::vector<std::int32_t>& slaves = mpc->slaves();
+  const std::vector<std::int8_t>& is_slave = mpc->is_slave();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
       cell_to_slaves
       = mpc->cell_to_slaves();
 
+  // Get mesh data
   const int tdim = mesh.topology().dim();
   const int num_cell_facets
       = dolfinx::mesh::cell_num_entities(mesh.topology().cell_type(), tdim - 1);
-
-  // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
       = mesh.geometry().dofmap();
-
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
   const xt::xtensor<double, 2>& x_g = mesh.geometry().x();
-
-  // Compute local indices for slave cells
-  std::vector<bool> is_slave_facet(facets.size(), false);
-  std::vector<std::int32_t> slave_cell_index(facets.size(), -1);
-  for (std::int32_t i = 0; i < facets.size(); ++i)
-  {
-    const std::int32_t cell = facets[i].first;
-    for (std::int32_t j = 0; j < slave_cells.size(); ++j)
-      if (slave_cells[j] == cell)
-      {
-        is_slave_facet[i] = true;
-        slave_cell_index[i] = j;
-        break;
-      }
-  }
 
   // Iterate over all facets
   const size_t num_dofs0 = dofmap0.links(0).size();
@@ -226,7 +226,6 @@ void assemble_exterior_facets(
         }
       }
     }
-
     if (!bc1.empty())
     {
       for (std::int32_t j = 0; j < num_dofs1; ++j)
@@ -238,37 +237,16 @@ void assemble_exterior_facets(
         }
       }
     }
-    if (is_slave_facet[l])
+
+    // Modify local element matrix Ae and insert contributions into master
+    // locations
+    if (cell_to_slaves->num_links(cell) > 0)
     {
+      xtl::span<const std::int32_t> slave_indices = cell_to_slaves->links(cell);
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
-      xtl::span<const std::int32_t> slave_indices
-          = cell_to_slaves->links(slave_cell_index[l]);
-      // Find local position of every slave
-      std::vector<bool> is_slave(num_dofs0, false);
-      std::vector<std::int32_t> local_indices(slave_indices.size());
-      for (std::int32_t i = 0; i < slave_indices.size(); ++i)
-      {
-        for (std::int32_t j = 0; j < dmap0.size(); ++j)
-        {
-          bool found = false;
-          for (std::int32_t k = 0; k < bs0; ++k)
-          {
-            if (bs0 * dmap0[j] + k == slaves[slave_indices[i]])
-            {
-              local_indices[i] = j * bs0 + k;
-              is_slave[j * bs0 + k] = true;
-              found = true;
-              break;
-            }
-          }
-          if (found)
-            break;
-        }
-      }
       modify_mpc_cell<T>(mat_add_values, num_dofs0, Ae, dmap0, bs0,
-                         slave_indices, masters, coefficients, local_indices,
-                         is_slave);
+                         slave_indices, masters, coefficients, is_slave);
     }
     mat_add_block_values(dmap0.size(), dmap0.data(), dmap1.size(), dmap1.data(),
                          Ae.data());
@@ -304,12 +282,11 @@ void assemble_cells_impl(
 
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-      masters = mpc->masters_local();
+      masters = mpc->masters();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coefficients
-      = mpc->coeffs();
-  const xtl::span<const std::int32_t> slaves = mpc->slaves();
+      = mpc->coefficients();
+  const std::vector<std::int8_t>& is_slave = mpc->is_slave();
 
-  xtl::span<const std::int32_t> slave_cells = mpc->slave_cells();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
       cell_to_slaves
       = mpc->cell_to_slaves();
@@ -322,22 +299,6 @@ void assemble_cells_impl(
   const int num_dofs_g = x_dofmap.num_links(0);
   const xt::xtensor<double, 2>& x_g = geometry.x();
 
-  // Compute local indices for slave cells
-  std::vector<bool> is_slave_cell(active_cells.size(), false);
-  std::vector<std::int32_t> slave_cell_index(active_cells.size(), -1);
-  for (std::int32_t i = 0; i < slave_cells.size(); ++i)
-  {
-    for (std::int32_t j = 0; j < active_cells.size(); ++j)
-    {
-      if (slave_cells[i] == active_cells[j])
-      {
-        is_slave_cell[j] = true;
-        slave_cell_index[j] = i;
-        break;
-      }
-    }
-  }
-
   // Iterate over active cells
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
   const int num_dofs0 = dofmap0.links(0).size();
@@ -346,10 +307,9 @@ void assemble_cells_impl(
   const size_t ndim1 = num_dofs1 * bs1;
   xt::xtensor<T, 2> Ae({ndim0, ndim1});
   const xtl::span<T> _Ae(Ae);
-  for (std::int32_t l = 0; l < active_cells.size(); ++l)
+  for (auto c : active_cells)
   {
     // Get cell coordinates/geometry
-    const std::int32_t c = active_cells[l];
     xtl::span<const int32_t> x_dofs = x_dofmap.links(c);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
@@ -388,36 +348,15 @@ void assemble_cells_impl(
         }
       }
     }
-    if (is_slave_cell[l])
+    // Modify local element matrix Ae and insert contributions into master
+    // locations
+    if (cell_to_slaves->num_links(c) > 0)
     {
+      xtl::span<const int32_t> slaves = cell_to_slaves->links(c);
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
-      xtl::span<const int32_t> slave_indices
-          = cell_to_slaves->links(slave_cell_index[l]);
-      // Find local position of every slave
-      std::vector<bool> is_slave(bs0 * num_dofs0, false);
-      std::vector<std::int32_t> local_indices(slave_indices.size());
-      for (std::int32_t i = 0; i < slave_indices.size(); ++i)
-      {
-        bool found = false;
-        for (std::int32_t j = 0; j < dofs0.size(); ++j)
-        {
-          for (std::int32_t k = 0; k < bs0; ++k)
-          {
-            if (bs0 * dofs0[j] + k == slaves[slave_indices[i]])
-            {
-              local_indices[i] = bs0 * j + k;
-              is_slave[j * bs0 + k] = true;
-              break;
-            }
-          }
-          if (found)
-            break;
-        }
-      }
-      modify_mpc_cell<T>(mat_add_values, num_dofs0, Ae, dofs0, bs0,
-                         slave_indices, masters, coefficients, local_indices,
-                         is_slave);
+      modify_mpc_cell<T>(mat_add_values, num_dofs0, Ae, dofs0, bs0, slaves,
+                         masters, coefficients, is_slave);
     }
     mat_add_block_values(dofs0.size(), dofs0.data(), dofs1.size(), dofs1.data(),
                          Ae.data());
@@ -583,7 +522,7 @@ void _assemble_matrix(
                           mpc);
 
   // Add diagval on diagonal for slave dofs
-  const xtl::span<const std::int32_t> slaves = mpc->slaves();
+  const std::vector<std::int32_t>& slaves = mpc->slaves();
   const std::int32_t num_local_slaves = mpc->num_local_slaves();
   std::vector<std::int32_t> diag_dof(1);
   std::vector<T> diag_value(1);

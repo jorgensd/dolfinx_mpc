@@ -16,37 +16,11 @@ typedef struct mpc_data mpc_data;
 
 struct mpc_data
 {
-  std::vector<std::int32_t> local_slaves;
-  std::vector<std::int32_t> ghost_slaves;
-  std::vector<std::int64_t> local_masters;
-  std::vector<std::int64_t> ghost_masters;
-  std::vector<PetscScalar> local_coeffs;
-  std::vector<PetscScalar> ghost_coeffs;
-  std::vector<std::int32_t> local_offsets;
-  std::vector<std::int32_t> ghost_offsets;
-  std::vector<std::int32_t> local_owners;
-  std::vector<std::int32_t> ghost_owners;
-
-  std::pair<std::vector<std::int32_t>, std::vector<std::int32_t>> get_slaves()
-  {
-    return std::make_pair(local_slaves, ghost_slaves);
-  };
-  std::pair<std::vector<std::int64_t>, std::vector<std::int64_t>> get_masters()
-  {
-    return std::make_pair(local_masters, ghost_masters);
-  };
-  std::pair<std::vector<PetscScalar>, std::vector<PetscScalar>> get_coeffs()
-  {
-    return std::make_pair(local_coeffs, ghost_coeffs);
-  };
-  std::pair<std::vector<std::int32_t>, std::vector<std::int32_t>> get_offsets()
-  {
-    return std::make_pair(local_offsets, ghost_offsets);
-  };
-  std::pair<std::vector<std::int32_t>, std::vector<std::int32_t>> get_owners()
-  {
-    return std::make_pair(local_owners, ghost_owners);
-  };
+  std::vector<std::int32_t> slaves;
+  std::vector<std::int64_t> masters;
+  std::vector<PetscScalar> coeffs;
+  std::vector<std::int32_t> offsets;
+  std::vector<std::int32_t> owners;
 };
 
 /// Create a slip contact condition between two sets of facets

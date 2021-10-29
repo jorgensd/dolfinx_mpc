@@ -21,23 +21,30 @@ Timer = dolfinx.common.Timer
 
 
 @numba.njit(fastmath=True, cache=True)
+def extract_slave_cells(cell_offset):
+    """ From an offset determine which entries are nonzero"""
+    slave_cells = numpy.zeros(len(cell_offset) - 1, dtype=numpy.int32)
+    c = 0
+    for cell in range(len(cell_offset) - 1):
+        num_cells = cell_offset[cell + 1] - cell_offset[cell]
+        if num_cells > 0:
+            slave_cells[c] = cell
+            c += 1
+    return slave_cells[:c]
+
+
+@numba.njit(fastmath=True, cache=True)
 def pack_slave_facet_info(facets: 'numpy.ndarray[numpy.int32, int]',
                           slave_cells: 'numpy.ndarray[numpy.int32]'):
     """
-    Given an MPC and a set of facets (cell index, local_facet_index), return a two dimensional array,
-    where the ith row corresponds to the
-    ith facet that belongs to a slave cell.
-    The first column is the location in the slave_cells array (from the MPC).
-    Second column is the facet index (local to cell)
+    Given an MPC and a set of facets (cell index, local_facet_index),
+    compress the set to those that only contain slave cells
     """
     facet_info = numpy.zeros((len(facets), 2), dtype=numpy.int32)
     i = 0
     for facet in facets:
-        # Map facet to cells and check that it is an exterior facet
-        local_slave_cell_index = numpy.flatnonzero(slave_cells == facet[0])
-        if len(local_slave_cell_index) > 0:
-            # Store tuple [cell_index (local to slave_cells) facet_index (local to cell)]
-            facet_info[i, :] = [local_slave_cell_index[0], facet[1]]
+        if sum(slave_cells == facet[0]) > 0:
+            facet_info[i, :] = [facet[0], facet[1]]
             i += 1
     return facet_info[:i, :]
 
@@ -132,19 +139,15 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     dofmap = V.dofmap
     dofs = dofmap.list.array
 
-    # Unravel data from MPC
-    slave_cells = constraint.slave_cells()
-    coefficients = constraint.coefficients()
-    masters = constraint.masters_local()
-    slave_cell_to_dofs = constraint.cell_to_slaves()
-    cell_to_slave = slave_cell_to_dofs.array
-    c_to_s_off = slave_cell_to_dofs.offsets
-    slaves_local = constraint.slaves()
-    num_local_slaves = constraint.num_local_slaves()
-
-    masters_local = masters.array
-    offsets = masters.offsets
-    mpc_data = (slaves_local, masters_local, coefficients, offsets, slave_cells, cell_to_slave, c_to_s_off)
+    # Pack MPC data for numba kernels
+    coefficients = constraint.coefficients()[0]
+    masters_adj = constraint.masters()
+    c_to_s_adj = constraint.cell_to_slaves()
+    cell_to_slave = c_to_s_adj.array
+    c_to_s_off = c_to_s_adj.offsets
+    is_slave = constraint.is_slave()
+    mpc_data = (masters_adj.array, coefficients, masters_adj.offsets, cell_to_slave, c_to_s_off, is_slave)
+    slave_cells = extract_slave_cells(c_to_s_off)
 
     # Create 1D bc indicator for matrix assembly
     num_dofs_local = (dofmap.index_map.size_local + dofmap.index_map.num_ghosts) * dofmap.index_map_bs
@@ -178,6 +181,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
     # Create sparsity pattern and matrix if not supplied
     if A is None:
+
         pattern = constraint.create_sparsity_pattern(cpp_form)
         with Timer("~MPC: Assemble sparsity pattern"):
             pattern.assemble()
@@ -246,8 +250,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
             facet_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)
                                    [i], f"tabulate_tensor_{nptype}")
             facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
-            facet_info = pack_slave_facet_info(facets, constraint.slave_cells())
-
+            facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             assemble_exterior_slave_facets(A.handle, facet_kernel, (pos, x_dofs, x), form_coeffs, form_consts,
                                            perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, is_bc,
@@ -255,7 +258,9 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
         timer.stop()
 
     # Add mpc entries on diagonal
-    add_diagonal(A.handle, slaves_local[:num_local_slaves], diagval)
+    slaves = constraint.slaves()
+    num_local_slaves = constraint.num_local_slaves()
+    add_diagonal(A.handle, slaves[:num_local_slaves], diagval)
 
     with Timer("~MPC: Assemble matrix (diagonal handling)"):
         # Add one on diagonal for diriclet bc and slave dofs
@@ -298,10 +303,10 @@ def assemble_slave_cells(A: int,
                          dofmap: 'numpy.ndarray[numpy.int32]',
                          block_size: int,
                          num_dofs_per_element: int,
-                         mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                                    'numpy.ndarray[PETSc.ScalarType]', 'numpy.ndarray[numpy.int32]',
+                         mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[PETSc.ScalarType]',
                                     'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                                    'numpy.ndarray[numpy.int32]'], is_bc: 'numpy.ndarray[numpy.bool_]'):
+                                    'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
+                         is_bc: 'numpy.ndarray[numpy.bool_]'):
     """
     Assemble MPC contributions for cell integrals
     """
@@ -319,27 +324,27 @@ def assemble_slave_cells(A: int,
 
     A_local = numpy.zeros((block_size * num_dofs_per_element, block_size
                            * num_dofs_per_element), dtype=PETSc.ScalarType)
+    masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
 
     # Loop over all cells
     local_dofs = numpy.zeros(block_size * num_dofs_per_element, dtype=numpy.int32)
-    for slave_cell_index, cell_index in enumerate(active_cells):
-        num_vertices = pos[cell_index + 1] - pos[cell_index]
+    for cell in active_cells:
+        num_vertices = pos[cell + 1] - pos[cell]
+        geom_dofs = pos[cell]
 
         # Compute vertices of cell from mesh data
-        cell = pos[cell_index]
-        geometry[:, :] = x[x_dofmap[cell:cell + num_vertices]]
+        geometry[:, :] = x[x_dofmap[geom_dofs:geom_dofs + num_vertices]]
 
         # Assemble local contributions
         A_local.fill(0.0)
-
-        kernel(ffi_fb(A_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
+        kernel(ffi_fb(A_local), ffi_fb(coeffs[cell, :]), ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm))
 
         # FIXME: Here we need to apply dof transformations
 
         # Local dof position
         local_blocks = dofmap[num_dofs_per_element
-                              * cell_index: num_dofs_per_element * cell_index + num_dofs_per_element]
+                              * cell: num_dofs_per_element * cell + num_dofs_per_element]
 
         # Remove all contributions for dofs that are in the Dirichlet bcs
         for j in range(num_dofs_per_element):
@@ -351,18 +356,8 @@ def assemble_slave_cells(A: int,
         A_local_copy = A_local.copy()
 
         # Find local position of slaves
-        (slaves_local, masters_local, coefficients, offsets, slave_cells, cell_to_slave, c_to_s_off) = mpc
-        slave_indices = cell_to_slave[c_to_s_off[slave_cell_index]: c_to_s_off[slave_cell_index + 1]]
-        num_slaves = len(slave_indices)
-        local_indices = numpy.full(num_slaves, -1, dtype=numpy.int32)
-        is_slave = numpy.full(block_size * num_dofs_per_element, False, dtype=numpy.bool_)
-        for i in range(num_slaves):
-            for j in range(num_dofs_per_element):
-                for k in range(block_size):
-                    if local_blocks[j] * block_size + k == slaves_local[slave_indices[i]]:
-                        local_indices[i] = j * block_size + k
-                        is_slave[j * block_size + k] = True
-        mpc_cell = (slave_indices, masters_local, coefficients, offsets, local_indices, is_slave)
+        slaves = c_to_s[c_to_s_off[cell]: c_to_s_off[cell + 1]]
+        mpc_cell = (slaves, masters, coefficients, offsets, is_slave)
         modify_mpc_cell(A, num_dofs_per_element, block_size, A_local, local_blocks, mpc_cell)
 
         # Remove already assembled contribution to matrix
@@ -387,32 +382,49 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
                     local_blocks: 'numpy.ndarray[numpy.int32]',
                     mpc_cell: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
                                     'numpy.ndarray[PETSc.ScalarType]', 'numpy.ndarray[numpy.int32]',
-                                    'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.bool_]']):
+                                    'numpy.ndarray[numpy.int8]']):
     """
     Given an element matrix Ae, modify the contributions to respect the MPCs, and add contributions to appropriate
     places in the global matrix A.
     """
-    (slave_indices, masters, coeffs, offsets, local_indices, is_slave) = mpc_cell
-    # Flatten slave->master structure to 1D arrays
-    flattened_masters = []
-    flattened_slaves = []
-    slaves_loc = []
-    flattened_coeffs = []
-    for i in range(len(slave_indices)):
-        local_masters = masters[offsets[slave_indices[i]]: offsets[slave_indices[i] + 1]]
-        local_coeffs = coeffs[offsets[slave_indices[i]]: offsets[slave_indices[i] + 1]]
-        slaves_loc.extend([i, ] * len(local_masters))
-        flattened_slaves.extend([local_indices[i], ] * len(local_masters))
-        flattened_masters.extend(local_masters)
-        flattened_coeffs.extend(local_coeffs)
+    slaves, masters, coefficients, offsets, is_slave = mpc_cell
 
-    # Create element matrix stripped of slave entries
+    # Locate which local dofs are slave dofs and compute the local index of the slave
+    # Additionally count the number of masters we will needed in the flattened structures
+    local_index0 = numpy.empty(len(slaves), dtype=numpy.int32)
+    num_flattened_masters = 0
+    for i in range(num_dofs):
+        for j in range(block_size):
+            slave = local_blocks[i] * block_size + j
+            if is_slave[slave]:
+                location = numpy.flatnonzero(slaves == slave)[0]
+                local_index0[location] = i * block_size + j
+                num_flattened_masters += offsets[slave + 1] - offsets[slave]
+    # Strip a copy of Ae of all columns and rows belonging to a slave
     Ae_original = numpy.copy(Ae)
     Ae_stripped = numpy.zeros((block_size * num_dofs, block_size * num_dofs), dtype=PETSc.ScalarType)
-    for i in range(block_size * num_dofs):
-        for j in range(block_size * num_dofs):
-            Ae_stripped[i, j] = (not (is_slave[i] and is_slave[j])) * Ae_original[i, j]
-
+    for i in range(num_dofs):
+        for b in range(block_size):
+            is_slave0 = is_slave[local_blocks[i] * block_size + b]
+            for j in range(num_dofs):
+                for c in range(block_size):
+                    is_slave1 = is_slave[local_blocks[j] * block_size + c]
+                    Ae_stripped[i * block_size + b, j * block_size
+                                + c] = (not (is_slave0 and is_slave1)) * Ae_original[i * block_size + b,
+                                                                                     j * block_size + c]
+    flattened_masters = numpy.zeros(num_flattened_masters, dtype=numpy.int32)
+    flattened_slaves = numpy.zeros(num_flattened_masters, dtype=numpy.int32)
+    flattened_coeffs = numpy.zeros(num_flattened_masters, dtype=PETSc.ScalarType)
+    c = 0
+    for i, slave in enumerate(slaves):
+        local_masters = masters[offsets[slave]: offsets[slave + 1]]
+        local_coeffs = coefficients[offsets[slave]: offsets[slave + 1]]
+        num_masters = len(local_masters)
+        for j in range(num_masters):
+            flattened_slaves[c + j] = local_index0[i]
+            flattened_masters[c + j] = local_masters[j]
+            flattened_coeffs[c + j] = local_coeffs[j]
+        c += num_masters
     m0 = numpy.zeros(1, dtype=numpy.int32)
     m1 = numpy.zeros(1, dtype=numpy.int32)
     Am0m1 = numpy.zeros((1, 1), dtype=PETSc.ScalarType)
@@ -420,9 +432,8 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
     Acol = numpy.zeros((1, block_size * num_dofs), dtype=PETSc.ScalarType)
     mpc_dofs = numpy.zeros(block_size * num_dofs, dtype=numpy.int32)
 
-    num_masters = len(flattened_masters)
     ffi_fb = ffi.from_buffer
-    for i in range(num_masters):
+    for i in range(num_flattened_masters):
         local_index = flattened_slaves[i]
         master = flattened_masters[i]
         coeff = flattened_coeffs[i]
@@ -446,12 +457,10 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
         ierr_master = set_values_local(A, 1, ffi_fb(m0), 1, ffi_fb(m0), ffi_fb(Am0m1), mode)
         assert(ierr_master == 0)
 
-        # Create[0, ...., N]\[i]
-        other_masters = numpy.arange(0, num_masters - 1, dtype=numpy.int32)
         # Add contributions for other masters relating to slaves on the given cell
-        if i < num_masters - 1:
-            other_masters[i] = num_masters - 1
-        for j in other_masters:
+        for j in range(num_flattened_masters):
+            if i == j:
+                continue
             other_local_index = flattened_slaves[j]
             other_master = flattened_masters[j]
             other_coeff = flattened_coeffs[j]
@@ -474,15 +483,14 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
                                    block_size: int,
                                    num_dofs_per_element: int,
                                    facet_info: 'numpy.ndarray[numpy.int32]',
-                                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                                              'numpy.ndarray[PETSc.ScalarType]', 'numpy.ndarray[numpy.int32]',
+                                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[PETSc.ScalarType]',
                                               'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                                              'numpy.ndarray[numpy.int32]'],
+                                              'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
                                    is_bc: 'numpy.ndarray[numpy.bool_]',
                                    num_facets_per_cell: int):
     """Assemble MPC contributions over exterior facet integrals"""
-    # Unpack MPC data structures
-    (slaves_local, masters_local, coefficients, offsets, slave_cells, cell_to_slave, c_to_s_off) = mpc
+    # Unpack mpc data
+    masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
 
     # Mesh data
     pos, x_dofmap, x = mesh
@@ -497,7 +505,6 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
     # Numpy data used in facet loop
     A_local = numpy.zeros((num_dofs_per_element * block_size,
                            num_dofs_per_element * block_size), dtype=PETSc.ScalarType)
-    is_slave = numpy.full(block_size * num_dofs_per_element, False, dtype=numpy.bool_)
     local_dofs = numpy.zeros(block_size * num_dofs_per_element, dtype=numpy.int32)
 
     # Permutation info
@@ -506,9 +513,7 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
     # Loop over all external facets that are active
     for i in range(facet_info.shape[0]):
         #  Get cell index (local to process) and facet index (local to cell)
-        slave_cell_index, local_facet = facet_info[i]
-        cell_index = slave_cells[slave_cell_index]
-
+        cell_index, local_facet = facet_info[i]
         # Get mesh geometry
         cell = pos[cell_index]
         facet_index[0] = local_facet
@@ -534,20 +539,9 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
                     A_local[j * block_size + k, :] = 0
                     A_local[:, j * block_size + k] = 0
 
-        # Find local position of slaves
         A_local_copy = A_local.copy()
-
-        slave_indices = cell_to_slave[c_to_s_off[slave_cell_index]: c_to_s_off[slave_cell_index + 1]]
-        num_slaves = len(slave_indices)
-        local_indices = numpy.full(num_slaves, -1, dtype=numpy.int32)
-        is_slave[:] = False
-        for i in range(num_slaves):
-            for j in range(num_dofs_per_element):
-                for k in range(block_size):
-                    if local_blocks[j] * block_size + k == slaves_local[slave_indices[i]]:
-                        local_indices[i] = j * block_size + k
-                        is_slave[j * block_size + k] = True
-        mpc_cell = (slave_indices, masters_local, coefficients, offsets, local_indices, is_slave)
+        slaves = c_to_s[c_to_s_off[cell_index]: c_to_s_off[cell_index + 1]]
+        mpc_cell = (slaves, masters, coefficients, offsets, is_slave)
         modify_mpc_cell(A, num_dofs_per_element, block_size, A_local, local_blocks, mpc_cell)
 
         # Remove already assembled contribution to matrix

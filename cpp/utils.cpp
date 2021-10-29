@@ -25,6 +25,7 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
+#include <numeric>
 #include <xtensor.hpp>
 #include <xtl/xspan.hpp>
 
@@ -183,7 +184,7 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   dolfinx::common::Timer timer("~MPC: Create Matrix");
 
   // Build sparsitypattern
-  dolfinx::la::SparsityPattern pattern = mpc->create_sparsity_pattern(a);
+  dolfinx::la::SparsityPattern pattern = create_sparsity_pattern(a, mpc);
 
   // Finalise communication
   dolfinx::common::Timer timer_s("~MPC: Assemble sparsity pattern");
@@ -397,4 +398,92 @@ void dolfinx_mpc::create_normal_approximation(
     const int& block = div.rem;
     vector[pair.first] = normal[block];
   }
+};
+//-----------------------------------------------------------------------------
+dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
+    const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc)
+{
+  LOG(INFO) << "Generating MPC sparsity pattern";
+  dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
+  if (a.rank() != 2)
+  {
+    throw std::runtime_error(
+        "Cannot create sparsity pattern. Form is not a bilinear form");
+  }
+
+  // Extract function space and index map from mpc
+  std::shared_ptr<const dolfinx::fem::FunctionSpace> V = mpc->org_space();
+  std::shared_ptr<const dolfinx::common::IndexMap> index_map = mpc->index_map();
+  std::shared_ptr<dolfinx::fem::DofMap> dofmap = mpc->dofmap();
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+      cell_to_slaves = mpc->cell_to_slaves();
+  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters
+      = mpc->masters();
+
+  /// Check that we are using the correct function-space in the bilinear
+  /// form otherwise the index map will be wrong
+  assert(a.function_spaces().at(0) == V);
+  assert(a.function_spaces().at(1) == V);
+  auto bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
+  auto bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
+  assert(bs0 == bs1);
+  const dolfinx::mesh::Mesh& mesh = *(a.mesh());
+
+  std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> new_maps;
+  new_maps[0] = index_map;
+  new_maps[1] = index_map;
+  std::array<int, 2> bs = {bs0, bs1};
+  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps, bs);
+
+  LOG(INFO) << "Build standard pattern\n";
+  ///  Create and build sparsity pattern for original form. Should be
+  ///  equivalent to calling create_sparsity_pattern(Form a)
+  build_standard_pattern<PetscScalar>(pattern, a);
+  LOG(INFO) << "Build new pattern\n";
+
+  // Arrays replacing slave dof with master dof in sparsity pattern
+  const int& block_size = bs0;
+  std::vector<PetscInt> master_for_slave(block_size);
+  std::vector<PetscInt> master_for_other_slave(block_size);
+  std::vector<std::int32_t> master_block(1);
+  std::vector<std::int32_t> other_master_block(1);
+  for (std::int32_t c = 0; c < cell_to_slaves->num_nodes(); ++c)
+  {
+    // Only add sparsity pattern changes for cells that actually has slaves
+    if (cell_to_slaves->num_links(c) > 0)
+    {
+      auto cell_dofs = dofmap->cell_dofs(c);
+      auto slaves = cell_to_slaves->links(c);
+
+      // Arrays for flattened master slave data
+      std::vector<std::int32_t> flattened_masters;
+      for (auto slave : slaves)
+      {
+        auto local_masters = masters->links(slave);
+        for (auto master : local_masters)
+        {
+          const std::div_t div = std::div(master, bs0);
+          flattened_masters.push_back(div.quot);
+        }
+      }
+      // Insert for each master block
+      for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
+      {
+        master_block[0] = flattened_masters[j];
+        pattern.insert(tcb::make_span(master_block), cell_dofs);
+        pattern.insert(cell_dofs, tcb::make_span(master_block));
+        // Add sparsity pattern for all master dofs of any slave on this cell
+        for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
+        {
+          other_master_block[0] = flattened_masters[k];
+          pattern.insert(tcb::make_span(master_block),
+                         tcb::make_span(other_master_block));
+          pattern.insert(tcb::make_span(other_master_block),
+                         tcb::make_span(master_block));
+        }
+      }
+    }
+  }
+  return pattern;
 };

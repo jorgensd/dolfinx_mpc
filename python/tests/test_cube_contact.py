@@ -243,6 +243,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
 
     mpc.add_constraint_from_mpc_data(V, mpc_data)
     mpc.finalize()
+
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (old)"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer("~TEST: Assemble bilinear form (cached)"):
@@ -252,8 +253,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
 
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
     fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                  mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
     with dolfinx.common.Timer("~MPC: Solve"):
@@ -262,8 +262,7 @@ def test_cube_contact(generate_hex_boxes, nonslip):
         uh.set(0)
         solver.solve(b, uh)
 
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                   mode=PETSc.ScatterMode.FORWARD)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
 
     # Write solution to file

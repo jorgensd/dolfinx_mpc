@@ -62,6 +62,8 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
 
     with dolfinx.common.Timer("~TEST: Assemble matrix"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    with dolfinx.common.Timer("~TEST: Assemble matrix (C++)"):
+        A_cpp = dolfinx_mpc.assemble_matrix_cpp(a, mpc, bcs=bcs)
 
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
@@ -89,7 +91,11 @@ def test_vector_possion(Nx, Ny, slave_space, master_space):
     root = 0
     comm = mesh.mpi_comm()
     with dolfinx.common.Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
+        A_mpc_cpp = dolfinx_mpc.utils.gather_PETScMatrix(A_cpp, root=root)
+        A_mpc_python = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
+        if MPI.COMM_WORLD.rank == root:
+            dolfinx_mpc.utils.compare_CSR(A_mpc_cpp, A_mpc_python)
+        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_cpp, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process

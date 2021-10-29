@@ -328,23 +328,12 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
     // Serial assumptions
     std::vector<std::int32_t> owners(masters_out.size());
-    std::fill(owners.begin(), owners.end(), 1);
-    std::vector<std::int32_t> gs(0);
-    std::vector<std::int64_t> gm(0);
-    std::vector<PetscScalar> gc(0);
-    std::vector<std::int32_t> go(0);
-    std::vector<std::int32_t> goff(1);
-    std::fill(goff.begin(), goff.end(), 0);
-    mpc.local_slaves = local_slaves;
-    mpc.ghost_slaves = gs;
-    mpc.local_masters = masters_out;
-    mpc.ghost_masters = gm;
-    mpc.local_offsets = offsets_out;
-    mpc.ghost_offsets = goff;
-    mpc.local_owners = owners;
-    mpc.ghost_owners = go;
-    mpc.local_coeffs = coeffs_out;
-    mpc.ghost_coeffs = gc;
+    std::fill(owners.begin(), owners.end(), 0);
+    mpc.slaves = local_slaves;
+    mpc.masters = masters_out;
+    mpc.offsets = offsets_out;
+    mpc.owners = owners;
+    mpc.coeffs = coeffs_out;
 
     return mpc;
   }
@@ -829,7 +818,6 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
     ghost_offsets.insert(ghost_offsets.end(), inc_offset.begin(),
                          inc_offset.end());
   }
-
   std::vector<std::int64_t> masters_out;
   std::vector<PetscScalar> coeffs_out;
   std::vector<std::int32_t> owners_out;
@@ -846,8 +834,26 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
                       local_owners[i].end());
   }
 
-  // Map Ghost data
+  // Extend local data with ghost entries
+  const std::int32_t num_loc_slaves = local_slaves.size();
+  const std::int32_t num_local_masters = masters.size();
   const std::int32_t num_ghost_slaves = in_ghost_slaves.size();
+  const std::int32_t num_ghost_masters = in_ghost_masters.size();
+  masters_out.reserve(num_local_masters + num_ghost_masters);
+  coeffs_out.reserve(num_local_masters + num_ghost_masters);
+  owners_out.reserve(num_local_masters + num_ghost_masters);
+  offsets_out.reserve(num_local_masters + num_ghost_masters + 1);
+  for (std::size_t i = 0; i < num_ghost_slaves; i++)
+  {
+    for (std::size_t j = ghost_offsets[i]; j < ghost_offsets[i + 1]; j++)
+    {
+      masters_out.push_back(in_ghost_masters[j]);
+      owners_out.push_back(in_ghost_owners[j]);
+      coeffs_out.push_back(in_ghost_coeffs[j]);
+    }
+    offsets_out.push_back(masters_out.size());
+  }
+  // Map ghosted slaves to local index
   std::vector<std::int64_t> in_ghost_block(num_ghost_slaves);
   std::vector<std::int64_t> in_ghost_rem(num_ghost_slaves);
   for (std::int32_t i = 0; i < num_ghost_slaves; ++i)
@@ -860,23 +866,18 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   std::vector<std::int32_t> in_ghost_block_loc(in_ghost_block.size());
   imap->global_to_local(in_ghost_block, in_ghost_block_loc);
-  std::vector<std::int32_t> in_ghost_slaves_loc(num_ghost_slaves);
+  local_slaves.resize(num_loc_slaves + num_ghost_slaves);
   for (std::int32_t i = 0; i < num_ghost_slaves; ++i)
   {
-    in_ghost_slaves_loc[i]
+    local_slaves[num_loc_slaves + i]
         = in_ghost_block_loc[i] * block_size + in_ghost_rem[i];
   }
 
-  mpc.local_slaves = local_slaves;
-  mpc.ghost_slaves = in_ghost_slaves_loc;
-  mpc.local_masters = masters_out;
-  mpc.ghost_masters = in_ghost_masters;
-  mpc.local_offsets = offsets_out;
-  mpc.ghost_offsets = ghost_offsets;
-  mpc.local_owners = owners_out;
-  mpc.ghost_owners = in_ghost_owners;
-  mpc.local_coeffs = coeffs_out;
-  mpc.ghost_coeffs = in_ghost_coeffs;
+  mpc.slaves = local_slaves;
+  mpc.masters = masters_out;
+  mpc.offsets = offsets_out;
+  mpc.owners = owners_out;
+  mpc.coeffs = coeffs_out;
   timer.stop();
   return mpc;
 }
@@ -1136,27 +1137,13 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
         offsets_out.push_back(masters_out.size());
       }
     }
-
-    // Serial assumptions
     std::vector<std::int32_t> owners(masters_out.size());
-    std::fill(owners.begin(), owners.end(), 1);
-    std::vector<std::int32_t> gs(0);
-    std::vector<std::int64_t> gm(0);
-    std::vector<PetscScalar> gc(0);
-    std::vector<std::int32_t> go(0);
-    std::vector<std::int32_t> goff(1);
-    std::fill(goff.begin(), goff.end(), 0);
-    mpc.local_slaves = slaves;
-    mpc.ghost_slaves = gs;
-    mpc.local_masters = masters_out;
-    mpc.ghost_masters = gm;
-    mpc.local_offsets = offsets_out;
-    mpc.ghost_offsets = goff;
-    mpc.local_owners = owners;
-    mpc.ghost_owners = go;
-    mpc.local_coeffs = coeffs_out;
-    mpc.ghost_coeffs = gc;
-
+    std::fill(owners.begin(), owners.end(), 0);
+    mpc.slaves = slaves;
+    mpc.masters = masters_out;
+    mpc.offsets = offsets_out;
+    mpc.owners = owners;
+    mpc.coeffs = coeffs_out;
     return mpc;
   }
 
@@ -1705,9 +1692,28 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
                         local_owners[slave].end());
     }
   }
+  // Extend local data with ghost entries
+  const std::int32_t num_loc_slaves = slaves.size();
+  const std::int32_t num_local_masters = masters.size();
+  const std::int32_t num_ghost_slaves = in_ghost_slaves.size();
+  const std::int32_t num_ghost_masters = in_ghost_masters.size();
+  masters.reserve(num_local_masters + num_ghost_masters);
+  coeffs_out.reserve(num_local_masters + num_ghost_masters);
+  owners_out.reserve(num_local_masters + num_ghost_masters);
+  offsets.reserve(num_local_masters + num_ghost_masters + 1);
+  for (std::size_t i = 0; i < num_ghost_slaves; i++)
+  {
+    for (std::size_t j = ghost_offsets[i]; j < ghost_offsets[i + 1]; j++)
+    {
+      masters.push_back(in_ghost_masters[j]);
+      owners_out.push_back(in_ghost_owners[j]);
+      coeffs_out.push_back(in_ghost_coeffs[j]);
+    }
+    offsets.push_back(masters.size());
+  }
 
   // Map Ghost data
-  const std::int32_t num_ghost_slaves = in_ghost_slaves.size();
+
   std::vector<std::int64_t> in_ghost_block(num_ghost_slaves);
   std::vector<std::int64_t> in_ghost_rem(num_ghost_slaves);
   for (std::int32_t i = 0; i < num_ghost_slaves; ++i)
@@ -1720,22 +1726,17 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
 
   std::vector<std::int32_t> in_ghost_block_loc(in_ghost_block.size());
   imap->global_to_local(in_ghost_block, in_ghost_block_loc);
-  std::vector<std::int32_t> in_ghost_slaves_loc(num_ghost_slaves);
+  slaves.resize(num_loc_slaves + num_ghost_slaves);
   for (std::int32_t i = 0; i < num_ghost_slaves; ++i)
   {
-    in_ghost_slaves_loc[i]
+    slaves[num_loc_slaves + i]
         = in_ghost_block_loc[i] * block_size + in_ghost_rem[i];
   }
-  mpc.local_slaves = slaves;
-  mpc.ghost_slaves = in_ghost_slaves_loc;
-  mpc.local_masters = masters;
-  mpc.ghost_masters = in_ghost_masters;
-  mpc.local_offsets = offsets;
-  mpc.ghost_offsets = ghost_offsets;
-  mpc.local_owners = owners_out;
-  mpc.ghost_owners = in_ghost_owners;
-  mpc.local_coeffs = coeffs_out;
-  mpc.ghost_coeffs = in_ghost_coeffs;
+  mpc.slaves = slaves;
+  mpc.masters = masters;
+  mpc.offsets = offsets;
+  mpc.owners = owners_out;
+  mpc.coeffs = coeffs_out;
   timer.stop();
   return mpc;
 }
