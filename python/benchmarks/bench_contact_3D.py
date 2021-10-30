@@ -237,15 +237,14 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if noslip:
         with dolfinx.common.Timer(f"{num_dofs}: Contact-constraint"):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt, 4, 9)
+            mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
         with dolfinx.common.Timer(f"{num_dofs}: FacetNormal"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
         with dolfinx.common.Timer(f"{num_dofs}: Contact-constraint"):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
     with dolfinx.common.Timer(f"{num_dofs}: MPC-init"):
-        mpc.add_constraint_from_mpc_data(V, mpc_data)
         mpc.finalize()
     null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
     dolfinx_mpc.utils.log_info(f"Num dofs: {num_dofs}")

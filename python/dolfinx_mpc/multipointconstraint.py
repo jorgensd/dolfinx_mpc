@@ -1,5 +1,10 @@
-import warnings
-from typing import Callable, List, Union
+# Copyright (C) 2020-2021 Jørgen S. Dokken
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    LGPL-3.0-or-later
+
+from typing import Callable, List, Union, Dict
 
 import dolfinx
 import numpy
@@ -7,7 +12,7 @@ from petsc4py import PETSc
 
 import dolfinx_mpc.cpp
 
-from dolfinx.cpp.fem import (Form_complex128 as Form_C, Form_float64 as Form_R)
+from dolfinx.cpp.fem import Form_complex128 as Form_C, Form_float64 as Form_R
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition_topological, create_periodic_condition_geometrical
 
@@ -30,7 +35,7 @@ class MultiPointConstraint():
 
     def __init__(self, V: dolfinx.fem.FunctionSpace):
         """
-        Initial multi point constraint for a given function space.
+        Initialize the multi point constraint for a given function space.
         """
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
@@ -45,15 +50,22 @@ class MultiPointConstraint():
                        owners_: "numpy.ndarray[numpy.int32]", offsets_: "numpy.ndarray[numpy.int32]"):
         """
         Add new constraint given by numpy arrays.
-        Input:
-            V: The function space for the constraint
-            slaves_: List of all slave dofs (using local dof numbering) on this process
-            masters_: List of all master dofs (using global dof numbering) on this process
-            coeffs_: The coefficients corresponding to each master.
-            owners_: The process each master is owned by.
-            offsets_: Array indicating the location in the masters array for the i-th slave
-                    in the slaves arrays. I.e.
-                    masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
+        Parameters
+        ----------
+            V
+                The function space for the constraint
+            slaves_
+                List of all slave dofs (using local dof numbering) on this process
+            masters_
+                List of all master dofs (using global dof numbering) on this process
+            coeffs_
+                The coefficients corresponding to each master.
+            owners_
+                The process each master is owned by.
+            offsets_
+                Array indicating the location in the masters array for the i-th slave
+                in the slaves arrays. I.e.
+                masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
 
         """
         assert(V == self.V)
@@ -68,15 +80,18 @@ class MultiPointConstraint():
             self._owners = numpy.append(self._owners, owners_)
 
     def add_constraint_from_mpc_data(self, V: dolfinx.FunctionSpace, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
+        """
+        Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
+        """
         if self.finalized:
             raise RuntimeError("MultiPointConstraint has already been finalized")
         self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs, mpc_data.owners, mpc_data.offsets)
 
     def finalize(self):
         """
-        Finalizes a multi point constraint by adding all constraints together,
-        locating slave cells and building a new index map with
-        additional ghosts
+        Finializes the multi point constraint. After this function is called, no new constraints can be added
+        to the constraint. This function creates a map from the cells (local to index) to the slave degrees of
+        freedom and builds a new index map and function space where unghosted master dofs are added as ghosts.
         """
         if self.finalized:
             raise RuntimeError("MultiPointConstraint has already been finalized")
@@ -101,7 +116,7 @@ class MultiPointConstraint():
         for all x_i on marked entities.
 
         Parameters
-        ==========
+        ----------
         meshtag
             MeshTag for entity to apply the periodic condition on
         tag
@@ -123,11 +138,11 @@ class MultiPointConstraint():
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType = 1):
         """
-        Create a periodic condition for all degrees of freedom's satisfying indicator(x):
+        Create a periodic condition for all degrees of freedom whose physical location satisfies indicator(x)
         u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
 
         Parameters
-        ==========
+        ----------
         indicator
             Lambda-function to locate degrees of freedom that should be slaves
         relation
@@ -150,7 +165,7 @@ class MultiPointConstraint():
         marked with index i. normal is the normal vector defined as a vector function.
 
         Parameters
-        ==========
+        ----------
         facet_marker
             Tuple containg the mesh tag and marker used to locate degrees of freedom that should be constrained
         v
@@ -163,7 +178,7 @@ class MultiPointConstraint():
            List of Dirichlet BCs (slip conditions will be ignored on these dofs)
 
         Example
-        =======
+        -------
         Create constaint dot(u, n)=0 of all indices in mt marked with i
              create_slip_constaint((mt,i), n)
 
@@ -194,10 +209,11 @@ class MultiPointConstraint():
                                                              cpp_dirichletbc(bcs))
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_general_constraint(self, slave_master_dict, subspace_slave=None, subspace_master=None):
+    def create_general_constraint(self, slave_master_dict: Dict[bytes, Dict[bytes, float]],
+                                  subspace_slave: int = None, subspace_master: int = None):
         """
         Parameters
-        ==========
+        ----------
         V
             The function space
         slave_master_dict
@@ -210,7 +226,7 @@ class MultiPointConstraint():
             Subspace index for mixed or vector spaces
 
         Example
-        =======
+        -------
         If the dof D located at [d0,d1] should be constrained to the dofs
         E and F at [e0,e1] and [f0,f1] as
         D = alpha E + beta F
@@ -223,38 +239,122 @@ class MultiPointConstraint():
             self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def is_slave(self):
+    def create_contact_slip_condition(self, meshtags: dolfinx.MeshTags, slave_marker: int, master_marker: int,
+                                      normal: dolfinx.Function):
+        """
+        Create a slip condition between two sets of facets marker with individual markers.
+        The interfaces should be within machine precision of eachother, but the vertices does not need to align.
+        The condition created is dot(u_s, normal_s) = dot(u_m, normal_m) where s stands for the restriction to the
+        slave facets, m to the master facets.
+
+        Parameters
+        ----------
+        meshtags
+            The meshtags of the set of facets to tie together
+        slave_marker
+            The marker of the slave facets
+        master_marker
+            The marker of the master facets
+        normal
+            The function used in the dot-product of the constraint
+        """
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
+            self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object)
+        self.add_constraint_from_mpc_data(self.V, mpc_data)
+
+    def create_contact_inelastic_condition(self, meshtags: dolfinx.MeshTags, slave_marker: int, master_marker: int):
+        """
+        Create a contact inelastic condition between two sets of facets marker with individual markers.
+        The interfaces should be within machine precision of eachother, but the vertices does not need to align.
+        The condition created is u_s = u_m where s stands for the restriction to the
+        slave facets, m to the master facets.
+
+        Parameters
+        ----------
+        meshtags
+            The meshtags of the set of facets to tie together
+        slave_marker
+            The marker of the slave facets
+        master_marker
+            The marker of the master facets
+        """
+        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
+            self.V._cpp_object, meshtags, slave_marker, master_marker)
+        self.add_constraint_from_mpc_data(self.V, mpc_data)
+
+    def is_slave(self) -> numpy.ndarray:
+        """
+        Returns a vector of integers where the ith entry indicates if a degree of freedom (local to process) is a slave.
+        """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.is_slave
 
     def slaves(self):
+        """
+        Returns the degrees of freedom for all slaves local to process
+        """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.slaves
 
     def masters(self):
+        """
+        Returns an `dolfinx.cpp.graph.AdjacencyList_int32` whose ith node corresponds to
+        a degree of freedom (local to process), and links the corresponding master dofs (local to process).
+
+        Example
+        -------
+        masters = mpc.masters()
+        masters_of_dof_i = masters.links(i)
+        """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.masters
 
     def coefficients(self):
+        """
+        Returns a vector containing the coefficients for the constraint, and the corresponding offsets
+        for the ith degree of freedom.
+
+        Example
+        -------
+        coeffs, offsets = mpc.coefficients()
+        coeffs_of_slave_i = coeffs[offsets[i]:offsets[i+1]]
+        """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.coefficients()
 
     def num_local_slaves(self):
+        """
+        Return the number of slaves owned by the current process.
+        """
+        if not self.finalized:
+            raise RuntimeError("MultiPointConstraint has not been finalized")
         if self.finalized:
             return self._cpp_object.num_local_slaves
-        else:
-            return len(self.local_slaves)
 
     def index_map(self):
+        """
+        Return the index map where all master degrees of freedom for slaves on the process
+        has an local index as a ghost.
+        """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.index_map
 
     def cell_to_slaves(self):
+        """
+        Returns an `dolfinx.cpp.graph.AdjacencyList_int32` whose ith node corresponds to
+        the ith cell (local to process), and links the corresponding slave degrees of
+        freedom in the cell (local to process).
+
+        Example
+        -------
+        cell_to_slaves = mpc.cell_to_slaves()
+        slaves_in_cell_i = cell_to_slaves.links(i)
+        """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.cell_to_slaves
@@ -262,24 +362,35 @@ class MultiPointConstraint():
     def create_sparsity_pattern(self, cpp_form: Union[Form_C, Form_R]):
         """
         Create sparsity-pattern for MPC given a compiled DOLFINx form
+
+        Parameters
+        ----------
+        cpp_form
+            The form
         """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return dolfinx_mpc.cpp.mpc.create_sparsity_pattern(cpp_form, self._cpp_object)
 
     def function_space(self):
+        """
+        Return the function space for the multi-point constraint with the updated index map
+        """
         if not self.finalized:
-            warnings.warn(
-                "Returning original function space for MultiPointConstraint")
-            return self.V
+            raise RuntimeError("MultiPointConstraint has not been finalized")
         else:
             return self.V_mpc
 
     def backsubstitution(self, vector: PETSc.Vec):
         """
-        For a given vector, empose the multi-point constraint by backsubstiution.
-        I.e.
-        u[slave] += sum(coeff*u[master] for (coeff, master) in zip(slave.coeffs, slave.masters)
+        For a vector, impose the multi-point constraint by backsubstiution.
+        This function is used after solving the reduced problem to obtain the values
+        at the slave degrees of freedom
+
+        Parameters
+        ----------
+        vector
+            The input vector
         """
         # Unravel data from constraint
         with vector.localForm() as vector_local:

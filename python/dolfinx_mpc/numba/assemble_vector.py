@@ -3,19 +3,25 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
+
 from typing import Tuple
 
 import dolfinx
 import dolfinx.common
 import dolfinx.log
-import numba
 import numpy
 import ufl
-from .assemble_matrix import pack_slave_facet_info, extract_slave_cells
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
-from .numba_setup import PETSc, ffi
+from petsc4py import PETSc
+
+import numba
+
+from .helpers import extract_slave_cells, pack_slave_facet_info
+from .numba_setup import initialize_petsc
 
 Timer = dolfinx.common.Timer
+
+ffi, _ = initialize_petsc()
 
 
 def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PETSc.Vec = None,
@@ -24,7 +30,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     Assemble a linear form into vector b.
 
     Parameters
-    ==========
+    ----------
     form
         The bilinear variational form
     constraint

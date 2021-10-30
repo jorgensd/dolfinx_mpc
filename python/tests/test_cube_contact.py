@@ -237,13 +237,12 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     if nonslip:
         with dolfinx.common.Timer("~Contact: Create non-elastic constraint"):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt, 4, 9)
+            mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
-            mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(V._cpp_object, mt, 4, 9, nh._cpp_object)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
-    mpc.add_constraint_from_mpc_data(V, mpc_data)
     mpc.finalize()
 
     with dolfinx.common.Timer("~TEST: Assemble bilinear form"):

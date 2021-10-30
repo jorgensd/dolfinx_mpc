@@ -4,6 +4,9 @@
 #
 # SPDX-License-Identifier:    LGPL-3.0-or-later
 
+__all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_MPC_LHS", "compare_MPC_RHS",
+           "gather_transformation_matrix", "compare_CSR"]
+
 import pytest
 import numpy as np
 from mpi4py import MPI
@@ -11,9 +14,6 @@ from petsc4py import PETSc
 import scipy.sparse
 import dolfinx_mpc
 import dolfinx.common
-
-__all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_MPC_LHS", "compare_MPC_RHS",
-           "gather_transformation_matrix", "compare_CSR"]
 
 
 @pytest.fixture
@@ -36,10 +36,9 @@ def get_assemblers(request):
                            + "Options are 'numba' or 'C++'")
 
 
-def gather_slaves_global(constraint):
+def _gather_slaves_global(constraint):
     """
-    Given a multi point constraint,
-    return slaves for all processors with global dof numbering
+    Given a multi point constraint, return slaves for all processors with global dof numbering
     """
     imap = constraint.index_map()
     num_local_slaves = constraint.num_local_slaves()
@@ -156,7 +155,7 @@ def gather_PETScMatrix(A: PETSc.Mat, root=0) -> scipy.sparse.csr_matrix:
         return scipy.sparse.csr_matrix((np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())
 
 
-def gather_PETScVector(vector, root=0) -> np.ndarray:
+def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:
     """
     Gather a PETScVector from different processors on
     process 'root' as an numpy array
@@ -169,7 +168,7 @@ def gather_PETScVector(vector, root=0) -> np.ndarray:
     return numpy_vec
 
 
-def compare_CSR(A, B, atol=1e-10):
+def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-10):
     """ Compare CSR matrices A and B """
     diff = np.abs(A - B)
     assert(diff.max() < atol)
@@ -192,7 +191,7 @@ def compare_MPC_LHS(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
     A_csr = gather_PETScMatrix(A_org, root=root)
 
     # Get global slaves
-    glob_slaves = gather_slaves_global(mpc)
+    glob_slaves = _gather_slaves_global(mpc)
     A_mpc_csr = gather_PETScMatrix(A_mpc, root=root)
     if MPI.COMM_WORLD.rank == root:
         KTAK = K.T * A_csr * K
@@ -212,7 +211,7 @@ def compare_MPC_RHS(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.Mult
     """
     Compare an unconstrained RHS with an MPC rhs.
     """
-    glob_slaves = gather_slaves_global(constraint)
+    glob_slaves = _gather_slaves_global(constraint)
     b_org_np = dolfinx_mpc.utils.gather_PETScVector(b_org, root=root)
     b_np = dolfinx_mpc.utils.gather_PETScVector(b, root=root)
     K = gather_transformation_matrix(constraint, root=root)

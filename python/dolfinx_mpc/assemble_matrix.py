@@ -20,10 +20,13 @@ Timer = dolfinx.common.Timer
 
 def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: List[dolfinx.fem.DirichletBC] = [],
                     diagval: PETSc.ScalarType = 1, A: PETSc.Mat = None,
-                    form_compiler_parameters={}, jit_parameters={}):
+                    form_compiler_parameters={}, jit_parameters={}) -> PETSc.Mat:
     """
+    Assemble a bi-linear form into a PETSc matrix with corresponding multi point constraints and Dirichlet boundary
+    conditions.
+
     Parameters
-    ==========
+    ----------
     form
         The bilinear variational form
     constraint
@@ -45,6 +48,10 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: 
         See `python/dolfinx/jit.py` for all available parameters.
         Takes priority over all other parameter values.
 
+    Returns
+    -------
+    PETSc.Mat
+        The assembled bi-linear form
     """
     assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
 

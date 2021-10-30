@@ -19,10 +19,10 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
                     b: PETSc.Vec = None,
                     form_compiler_parameters={}, jit_parameters={}) -> PETSc.Vec:
     """
-    Assemble a linear form into vector b.
+    Assemble a linear form into vector b with corresponding multi point constraint
 
     Parameters
-    ==========
+    ----------
     form
         The linear form
     constraint
@@ -39,6 +39,10 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
         See `python/dolfinx/jit.py` for all available parameters.
         Takes priority over all other parameter values.
 
+    Returns
+    -------
+    PETSc.Vec
+        The assembled linear form
     """
 
     cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
@@ -47,9 +51,9 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
     if b is None:
         b = dolfinx.cpp.la.create_vector(constraint.V_mpc.dofmap.index_map,
                                          constraint.V.dofmap.index_map_bs)
+    t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)
-        t = Timer("~MPC: Assemble vector (C++)")
         dolfinx_mpc.cpp.mpc.assemble_vector(b_local, cpp_form, constraint._cpp_object)
-        t.stop()
+    t.stop()
     return b
