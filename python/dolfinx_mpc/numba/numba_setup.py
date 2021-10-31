@@ -22,7 +22,9 @@ from petsc4py import PETSc
 
 def initialize_petsc():
     """
-    Initialize petsc and CFFI for usage in numba
+    Initialize petsc and CFFI for usage in numba.
+
+    :returns: The FFI instance and the function to set local values in a PETSc matrix.
     """
     # Get details of PETSc install
     petsc_dir = PETSc_get_config()['PETSC_DIR']
@@ -151,5 +153,9 @@ def initialize_petsc():
 
 @numba.njit
 def sink(*args):
-    # See https://github.com/numba/numba/issues/4036 for why we need 'sink'
+    """
+    Function that avoids buffer data being deleted to early, see:
+    https://github.com/numba/numba/issues/4036 for details
+    """
+
     pass

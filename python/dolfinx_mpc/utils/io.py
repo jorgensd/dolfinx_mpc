@@ -9,22 +9,26 @@ import numpy
 from mpi4py import MPI
 from dolfinx.cpp.io import perm_gmsh, extract_local_entities
 from dolfinx.cpp.graph import AdjacencyList_int32
-from dolfinx.cpp.mesh import to_type, cell_entity_type
+from dolfinx.cpp.mesh import to_type, cell_entity_type, Mesh
 from dolfinx.mesh import create_mesh, create_meshtags
 from dolfinx.io import ufl_mesh_from_gmsh
 from dolfinx.io import extract_gmsh_geometry, extract_gmsh_topology_and_markers
 
 
-def read_from_msh(filename: str, cell_data=False, facet_data=False, gdim=None):
+def read_from_msh(filename: str, cell_data=False, facet_data=False, gdim=3) -> Mesh:
     """
     Reads a mesh from a msh-file and returns the dolfin-x mesh.
-    Input:
-        filename: Name of msh file
-        cell_data: Boolean, True of a mesh tag for cell data should be returned
-                   (Default: False)
-        facet_data: Boolean, True if a mesh tag for facet data should be
-                    returned (Default: False)
-        gdim: Geometrical dimension of problem (Default: 3)
+
+    Parameters
+    ----------
+    filename
+        Name of msh file
+    cell_data
+        Boolean, True if a mesh tag for cell data should be returned
+    facet_data
+        Boolean, True if a mesh tag for facet data should be returned
+    gdim
+        Geometrical dimension of problem
     """
     if MPI.COMM_WORLD.rank == 0:
         # Check if gmsh is already initialized
@@ -45,19 +49,21 @@ def read_from_msh(filename: str, cell_data=False, facet_data=False, gdim=None):
     return output
 
 
-def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
+def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=3):
     """
     Given a GMSH model, create a DOLFIN-X mesh and MeshTags.
-        model: The GMSH model
-        cell_data: Boolean, True of a mesh tag for cell data should be returned
-                   (Default: False)
-        facet_data: Boolean, True if a mesh tag for facet data should be
-                    returned (Default: False)
-        gdim: Geometrical dimension of problem (Default: 3)
-    """
 
-    if gdim is None:
-        gdim = 3
+    Parameters
+    ----------
+    model
+        The GMSH model
+    cell_data
+        Boolean, True of a mesh tag for cell data should be returned
+    facet_data
+        Boolean, True if a mesh tag for facet data should be returned
+    gdim
+        Geometrical dimension of model
+    """
 
     if MPI.COMM_WORLD.rank == 0:
         # Get mesh geometry
