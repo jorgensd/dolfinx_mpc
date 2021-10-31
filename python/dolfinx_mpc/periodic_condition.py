@@ -12,7 +12,7 @@ def create_periodic_condition_topological(V: dolfinx.FunctionSpace, mt: dolfinx.
                                           scale: PETSc.ScalarType):
     """
     Create periodic condition for all dofs in MeshTag with given marker:
-       u(x_i) = scale * u(relation(x_i))
+    :math:`u(x_i) = scale * u(relation(x_i))`
     for all x_i on marked entities.
     """
     slave_entities = mt.indices[mt.values == marker]
@@ -25,7 +25,7 @@ def create_periodic_condition_geometrical(V: dolfinx.FunctionSpace, indicator: C
                                           bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType):
     """
     Create a periodic condition for all degrees of freedom's satisfying indicator(x):
-       u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
+    :math:`u(x_i) = scale * u(relation(x_i))` for all :math:`x_i` where :math:`indicator(x_i) = True`
     """
     slave_blocks = dolfinx.fem.locate_dofs_geometrical(V, indicator)
     return _create_periodic_condition(V, slave_blocks, relation, bcs, scale)

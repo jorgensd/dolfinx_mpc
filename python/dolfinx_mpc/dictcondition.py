@@ -24,17 +24,20 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
                                  typing.Dict[bytes, typing.Dict[bytes, float]],
                                  subspace_slave: int = None, subspace_master: int = None):
     """
-    Returns a multi point constraint for a given function space
-    and dictionary constraint.
+    Returns a multi point constraint for a given function space and dictionary constraint.
+
     Parameters
     ----------
     V
         The function space
+
     slave_master_dict
         The dictionary.
+
     subspace_slave
         If using mixed or vector space, and only want to use dofs from
         a sub space as slave add index here.
+
     subspace_master
         Subspace index for mixed or vector spaces
 
@@ -44,9 +47,12 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
     F at [e0,e1] and [f0,f1] as
     D = alpha E + beta F
     the dictionary should be:
-    {np.array([d0, d1], dtype=numpy.float64).tobytes():
-     {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
-      numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
+
+    .. code-block:: python
+
+       {np.array([d0, d1], dtype=numpy.float64).tobytes():
+        {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
+         numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
     """
     dfloat = np.float64
     comm = V.mesh.mpi_comm()
