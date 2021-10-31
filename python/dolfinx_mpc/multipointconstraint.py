@@ -257,7 +257,7 @@ class MultiPointConstraint():
         """
         Create a slip condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
-        The condition created is :math:`dot(u_s, normal_s) = dot(u_m, normal_m)` where :math:`s` stands for the 
+        The condition created is :math:`dot(u_s, normal_s) = dot(u_m, normal_m)` where :math:`s` stands for the
         restriction to the slave facets, :math:`m` to the master facets.
 
         Parameters

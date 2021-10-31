@@ -10,7 +10,7 @@ import numpy
 
 @numba.njit(fastmath=True, cache=True)
 def extract_slave_cells(cell_offset: "numpy.ndarray[numpy.int32]") -> "numpy.ndarray[numpy.int32]":
-    """ 
+    """
     From an offset determine which entries are nonzero.
     Parameters
     ----------
@@ -44,7 +44,7 @@ def pack_slave_facet_info(facets: 'numpy.ndarray[numpy.int32, int]',
     Parameters
     ----------
     facets
-       Array of tuples `(cell_index, facet_index)` where `cell_index` is local to process, 
+       Array of tuples `(cell_index, facet_index)` where `cell_index` is local to process,
        `facet_index` is local to cell.
     cells
        List of cells
