@@ -204,6 +204,15 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 def add_diagonal(A: int, dofs: 'numpy.ndarray[numpy.int32]', diagval: PETSc.ScalarType = 1):
     """
     Insert value on diagonal of matrix for given dofs.
+
+    Parameters
+    ----------
+    A
+        The handle of the PETSc-matrix.
+    dofs
+        List of degrees of freedom to insert value at
+    diagval
+        Value to insert at the diagonal
     """
     ffi_fb = ffi.from_buffer
     dof_list = numpy.zeros(1, dtype=numpy.int32)
@@ -233,6 +242,43 @@ def assemble_slave_cells(A: int,
                          is_bc: 'numpy.ndarray[numpy.bool_]'):
     """
     Assemble MPC contributions for cell integrals
+
+    Parameters
+    ----------
+    A
+        Handle of the PETSc-matrix
+    kernel
+        The integration kernel
+    active cells
+        Array of cells to integrate over (indices are local to process).
+    mesh
+        Triplet `(offsets, dofs, geometry)` describing the mesh geometry, where the nodes
+        in the :math:`ith` cell is described by
+
+        .. code-block:: python
+
+           mesh_nodes = geometry[dofs[offsets[cell:cell+1]]]
+    coeffs
+        Two-dimensional array of coefficients to pass to the kernel. Shape `(num_cells, num_coeffs)`.
+    consts
+        Array with constants to pass to the kernel
+    permutation_info
+        Triplet `(cell_perms, needs_facet_perm, facet_perms)` of flattened permutation info, where
+        `cell_perms` is of length `num_cells`, `needs_facet_perm` is a bool, `facet_perms` is of length
+        `num_cells` x `num_facets_per_cell`. Each entry is in `cell_perms` is an usigned
+        32 bit integer, while `facet_perms` is an unsigned 8 bit integer.
+    dofmap
+        The dofmap of the function space. Size `num_cells` x `num_dofs_per_element`.
+    block_size
+        The block size of the function space, which is used to expand the dofmap
+    num_dofs_per_element
+        Number of degrees of freedom per element
+    mpc
+        All mpc data packed as flat arrays. See the `dolfinx_mpc.MultiPointConstraint` class
+        for more information about what the input is.
+    is_bc
+        Array of bools indicating if a dof is in a Dirichlet boundary condition and should therefore
+        be ignored during assembly.
     """
     ffi_fb = ffi.from_buffer
 
@@ -310,6 +356,21 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
     """
     Given an element matrix Ae, modify the contributions to respect the MPCs, and add contributions to appropriate
     places in the global matrix A.
+
+    Parameters
+    ----------
+    A
+        The handle of the PETSc matrix
+    num_dofs
+        The number of degrees of freedom per cell (not blocked)
+    block_size
+        The block size of the degrees of freedom
+    Ae
+        The local element matrix containing entries from integration
+    local_blocks
+        The dof map from the local indices in Ae to the global blocked dofmap
+    mpc_cell
+        Collection of data from `dolfinx_mpc.MultiPointConstraint` used to modify `Ae`.
     """
     slaves, masters, coefficients, offsets, is_slave = mpc_cell
 
@@ -412,7 +473,49 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
                                               'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
                                    is_bc: 'numpy.ndarray[numpy.bool_]',
                                    num_facets_per_cell: int):
-    """Assemble MPC contributions over exterior facet integrals"""
+    """
+    Assemble MPC contributions over exterior facet integrals into a matrix
+
+    Parameters
+    ----------
+    A
+        Handle of the PETSc-matrix
+    kernel
+        The integration kernel
+    mesh
+        Triplet `(offsets, dofs, geometry)` describing the mesh geometry, where the nodes
+        in the :math:`ith` cell is described by
+
+        .. code-block:: python
+
+           mesh_nodes = geometry[dofs[offsets[cell:cell+1]]]
+    coeffs
+        Two-dimensional array of coefficients to pass to the kernel. Shape `(num_cells, num_coeffs)`.
+    consts
+        Array with constants to pass to the kernel
+    perm
+        Triplet `(cell_perms, needs_facet_perm, facet_perms)` of flattened permutation info, where
+        `cell_perms` is of length `num_cells`, `needs_facet_perm` is a bool, `facet_perms` is of length
+        `num_cells` x `num_facets_per_cell`. Each entry is in `cell_perms` is an usigned
+        32 bit integer, while `facet_perms` is an unsigned 8 bit integer.
+    dofmap
+        The dofmap of the function space. Size `num_cells` x `num_dofs_per_element`.
+    block_size
+        The block size of the function space, which is used to expand the dofmap
+    num_dofs_per_element
+        Number of degrees of freedom per element
+    facet_info
+        Array of tuples `(cell_index, facet_index)` where `cell_index` is local to process,
+        `facet_index` is local to cell. This is the set of facets we integrate over
+    mpc
+        All mpc data packed as flat arrays. See the `dolfinx_mpc.MultiPointConstraint` class
+        for more information about what the input is.
+    is_bc
+        Array of bools indicating if a dof is in a Dirichlet boundary condition and should therefore
+        be ignored during assembly.
+    num_facets_per_cell
+        The number of facets per cell
+    """
     # Unpack mpc data
     masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
 
