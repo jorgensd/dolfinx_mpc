@@ -11,13 +11,6 @@ This can be used to for instance enforce slip conditions strongly. To
 add multi-point constraints, we eliminate the "slave" degrees of freedom
 on an element level, keeping the symmetry of the original system.
 
-The custom assembler is written in python, using numba for just in time
-compilation.
-
-This library is dependent on C++ code, which does local modifications to
-dolfinx::la::SparsityPattern and dolfinx::common::IndexMap to be able to
-use PETSc matrices.
-
 # Installation
 
 Version 0.1.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
@@ -35,3 +28,6 @@ cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dir ../cpp/
 ninja -j3 install -C build-dir
 pip3 install python/. --upgrade
 ```
+
+# Documentation
+Documentation will soon be released
