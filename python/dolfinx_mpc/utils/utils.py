@@ -6,6 +6,7 @@
 
 from contextlib import ExitStack
 
+from typing import List, Tuple
 import dolfinx_mpc.cpp
 import numpy as np
 import ufl
@@ -25,8 +26,17 @@ __all__ = ["rotation_matrix", "facet_normal_approximation", "log_info", "rigid_m
 
 
 def rotation_matrix(axis, angle):
-    # See https://en.wikipedia.org/wiki/Rotation_matrix,
-    # Subsection: Rotation_matrix_from_axis_and_angle.
+    """
+    Create a rotation matrix for rotation around an axis with a given angle
+    See https://en.wikipedia.org/wiki/Rotation_matrix#Rotation_matrix_from_axis_and_angle
+
+    Parameters
+    ----------
+    axis
+       Three dimensional vector describing the rotation axis
+    angle
+       The rotation angle
+    """
     if np.isclose(np.inner(axis, axis), 1):
         n_axis = axis
     else:
@@ -42,7 +52,22 @@ def rotation_matrix(axis, angle):
     return np.sin(angle) * axis_x + id + outer
 
 
-def facet_normal_approximation(V, mt, mt_id, tangent=False):
+def facet_normal_approximation(V: dolfinx.FunctionSpace, mt: dolfinx.MeshTags,
+                               mt_id: int, tangent: bool = False):
+    """
+    Approximate the facet normal by projecting it into the function space for a set of facets
+
+    Parameters
+    ----------
+    V
+        The function space to project into
+    mt
+        The `dolfinx.Meshtags` containing facet markers
+    mt_id
+        The id for the facets in `mt` we want to represent the normal at
+    tangent
+        To approximate the tangent to the facet set this flag to `True`.
+    """
     timer = dolfinx.common.Timer("~MPC: Facet normal projection")
     comm = V.mesh.mpi_comm()
     n = ufl.FacetNormal(V.mesh)
@@ -117,21 +142,37 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     return nh
 
 
-def log_info(message):
+def log_info(message: str):
     """
     Wrapper for logging a simple string on the zeroth communicator
-    Reverting the log level
+    and resetting log level after sending message
+
+    Parameters
+    ----------
+    message
+        The message to print
     """
     old_level = dolfinx.log.get_log_level()
     if MPI.COMM_WORLD.rank == 0:
         dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        message)
+        dolfinx.log.log(dolfinx.log.LogLevel.INFO, message)
         dolfinx.log.set_log_level(old_level)
 
 
-def rigid_motions_nullspace(V):
-    """Function to build nullspace for 2D/3D elasticity"""
+def rigid_motions_nullspace(V: dolfinx.FunctionSpace) -> PETSc.NullSpace:
+    """
+    Build nullspace for 2D/3D elasticity. The nullspace are
+    the translations and rotations.
+
+    Parameters
+    ----------
+    V
+        The function space
+    Returns
+    -------
+    PETSc.NullSpace
+        The PETSc nullspace
+    """
 
     # Get geometric dim
     gdim = V.mesh.geometry.dim
@@ -177,9 +218,22 @@ def rigid_motions_nullspace(V):
     return nsp
 
 
-def determine_closest_block(V, point):
+def determine_closest_block(V, point) -> Tuple[int, List[np.int32]]:
     """
-    Determine the closest dofs (in a single block) to a point and the distance
+    Determine the closest dofs (in a single block) to a point.
+
+    Parameters
+    ----------
+    V
+        The function space
+    point
+        The point
+
+    Returns
+    -------
+    Tuple[int, List[np.int32]]
+        A tuple whose first entry is which rank owns the degree of freedom,
+        and the second entry is the degree of freedom (not expanded by block size).
     """
     # Create boundingboxtree of cells connected to boundary facets
     tdim = V.mesh.topology.dim
@@ -252,7 +306,24 @@ def determine_closest_block(V, point):
         return owning_processor, []
 
 
-def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
+def create_point_to_point_constraint(V: dolfinx.FunctionSpace, slave_point, master_point,
+                                     vector=None):
+    """
+    Creates a constraint between to points `p1` and `p2`, `dof_at_p1 = dof_at_p2`
+
+    Parameters
+    ----------
+    V
+        The function space
+    slave_point
+        The first point p1
+    master_point
+        The second point p2
+    vector
+        If vector is supplied the constraint is `dot(dofs_at_p1, vector)=dot(dofs_at_p2, vector)`
+
+
+    """
     # Determine which processor owns the dof closest to the slave and master point
     slave_proc, slave_block = determine_closest_block(V, slave_point)
     master_proc, master_block = determine_closest_block(V, master_point)
@@ -372,10 +443,17 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     return slaves, masters, coeffs, owners, offsets
 
 
-def create_normal_approximation(V, facets):
+def create_normal_approximation(V:dolfinx.FunctionSpace, facets):
     """
     Creates a normal approximation for the dofs in the closure of the attached facets.
-    Where a dof is attached to multiple facets, an average is computed
+    Where a dof is attached to multiple facets, an average is computed.
+
+    Parameters
+    ----------
+    V
+        The function space
+    facets
+        List of facets (indices local to process)
     """
     n = dolfinx.Function(V)
     with n.vector.localForm() as vector:
