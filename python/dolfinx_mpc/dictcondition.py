@@ -28,25 +28,25 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
     and dictionary constraint.
     Parameters
     ----------
-        V
-            The function space
-        slave_master_dict
-            The dictionary.
-        subspace_slave
-            If using mixed or vector space, and only want to use dofs from
-            a sub space as slave add index here.
-        subspace_master
-            Subspace index for mixed or vector spaces
+    V
+        The function space
+    slave_master_dict
+        The dictionary.
+    subspace_slave
+        If using mixed or vector space, and only want to use dofs from
+        a sub space as slave add index here.
+    subspace_master
+        Subspace index for mixed or vector spaces
 
     Example
     -------
-        If the dof D located at [d0,d1] should be constrained to the dofs E and
-        F at [e0,e1] and [f0,f1] as
-        D = alpha E + beta F
-        the dictionary should be:
-        {np.array([d0, d1], dtype=numpy.float64).tobytes():
-            {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
-             numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
+    If the dof D located at [d0,d1] should be constrained to the dofs E and
+    F at [e0,e1] and [f0,f1] as
+    D = alpha E + beta F
+    the dictionary should be:
+    {np.array([d0, d1], dtype=numpy.float64).tobytes():
+     {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
+      numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
     """
     dfloat = np.float64
     comm = V.mesh.mpi_comm()
