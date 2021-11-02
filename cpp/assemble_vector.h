@@ -3,6 +3,8 @@
 // This file is part of DOLFINX_MPC
 //
 // SPDX-License-Identifier:    LGPL-3.0-or-later
+
+#pragma once
 #include "MultiPointConstraint.h"
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>

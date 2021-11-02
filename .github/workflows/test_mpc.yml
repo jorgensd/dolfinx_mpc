@@ -1,4 +1,4 @@
-name: Test Python assemblers
+name: Test DOLFINx-MPC
 
 on:
   # Trigger tests on push
@@ -12,13 +12,15 @@ jobs:
   build:
     if: "!(contains(github.event.head_commit.message, '[ci skip]') || contains(github.event.head_commit.message, '[skip ci]'))"
     runs-on: ubuntu-20.04
-    # container: dolfinx/dolfinx
-    # steps:
-    #   - uses: actions/checkout@v2
     container: dolfinx/dev-env
+
+    strategy:
+      matrix:
+        petsc_arch: [real, complex]
+
     env:
       CC: mpicc
-      PETSC_ARCH: linux-gnu-real-32
+      PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-32"
       OMPI_ALLOW_RUN_AS_ROOT: 1
       OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
       OMPI_MCA_rmaps_base_oversubscribe: 1
@@ -28,27 +30,35 @@ jobs:
       OMPI_MCA_hwloc_base_binding_policy: none
       HDF5_MPI: "ON"
       HDF5_DIR: "/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
+      MPC_BUILD_MODE: "Debug"
+      MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
+      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.8/dist-packages:/usr/local/lib"
+      LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
+
     steps:
       - uses: actions/checkout@v2
 
-      - name: Get Basix and install
+      - name: Install h5py
+        run: |
+          pip3 install --no-cache-dir --no-binary=h5py h5py
+
+      - name: Get Basix
         uses: actions/checkout@v2
         with:
           path: ./basix
           repository: FEniCS/basix
           ref: main
 
-      - name: Install h5py
+      - name: Install UFL, Basix, FFCx
         run: |
-          export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
-          pip3 install --no-cache-dir --no-binary=h5py h5py
-
-      - name: Install FEniCS Python components (dolfinx)
-        run: |
-          python3 -m pip install git+https://github.com/FEniCS/basix.git
+          cmake -G Ninja -B build-basix -DCMAKE_BUILD_TYPE="Release" -S ./basix/cpp/
+          cmake --build build-basix --parallel 3
+          cmake --install build-basix
+          BUILD_TYPE="Release" pip3 install ./basix/python
           python3 -m pip install git+https://github.com/FEniCS/ufl.git
           python3 -m pip install git+https://github.com/FEniCS/ffcx.git
-      - name: Install dolfinx
+
+      - name: Get DOLFINx
         uses: actions/checkout@v2
         with:
           path: ./dolfinx
@@ -56,33 +66,36 @@ jobs:
           ref: main
 
       - name: Configure C++ (dolfinx)
-        run: cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dolfinx -S ./dolfinx/cpp/
+        run: |
+          cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
 
       - name: Build and install C++ library (dolfinx)
         run: |
           cmake --build build-dolfinx
           cmake --install build-dolfinx
-      - name: Build Python interface (dolfinx)
-        run: python3 -m pip -v install ./dolfinx/python/
 
-      - name: Install custom assemblers (C++)
+      - name: Build Python interface (dolfinx)
+        run: BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
+
+      - name: Install DOLFINx-MPC (C++)
         run: |
-          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Developer cpp/
-          ninja -C build-dir install
-      - name: Install custom assemblers
-        run: python3 -m pip -v install python/
+          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
+          cmake --build build-dir --parallel 3
+          cmake --install build-dir
+
+      - name: Install DOLFINx-MPC (Python)
+        run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/
 
       - name: Flake8 code
         run: flake8 python/
 
       - name: Run tests and demos
         run: |
-          cd python/tests
-          python3 -m pytest . -vs
-          mpirun -n 2 python3 -m pytest .
-          mpirun -n 3 python3 -m pytest .
-          mpirun -n 4 python3 -m pytest .
-          cd ../benchmarks
+          python3 -m pytest python/tests -vs
+          mpirun -n 2 python3 -m pytest python/tests
+          mpirun -n 3 python3 -m pytest python/tests
+          mpirun -n 4 python3 -m pytest python/tests
+          cd python/benchmarks
           mkdir results
           mkdir meshes
           mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --gamg --timings

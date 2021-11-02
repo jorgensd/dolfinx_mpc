@@ -54,7 +54,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
 
   // Extract slave_facets
   std::vector<std::int32_t> slave_facets;
-  for (std::int32_t i = 0; i < meshtags.indices().size(); ++i)
+  for (std::size_t i = 0; i < meshtags.indices().size(); ++i)
     if (meshtags.values()[i] == marker)
       slave_facets.push_back(meshtags.indices()[i]);
 
@@ -126,11 +126,11 @@ mpc_data dolfinx_mpc::create_slip_condition(
       std::vector<std::int64_t> pair_m(parent_masters.size());
       // Convert local parent dof to local parent block
       std::vector<std::int32_t> parent_blocks(parent_masters);
-      for (std::int32_t i = 0; i < parent_blocks.size(); ++i)
+      for (std::size_t i = 0; i < parent_blocks.size(); ++i)
         parent_blocks[i] /= W_bs;
       W_imap->local_to_global(parent_blocks, pair_m);
       // Convert global parent block to the dofs
-      for (std::int32_t i = 0; i < parent_masters.size(); ++i)
+      for (std::size_t i = 0; i < parent_masters.size(); ++i)
       {
         std::div_t div = std::div(parent_masters[i], W_bs);
         pair_m[i] = pair_m[i] * W_bs + div.rem;
@@ -151,4 +151,4 @@ mpc_data dolfinx_mpc::create_slip_condition(
   data.owners = owners;
   data.coeffs = coeffs;
   return data;
-};
+}
