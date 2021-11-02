@@ -50,7 +50,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     """
 
     dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
-    timer_vector = Timer("~MPC: Assemble vector")
+    timer_vector = Timer("~MPC: Assemble vector (numba)")
 
     # Unpack Function space data
     V = form.arguments()[0].ufl_function_space()
@@ -114,7 +114,6 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     nptype = "complex128" if is_complex else "float64"
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
-        timer = Timer("~MPC: Assemble vector (cells)")
         for i, id in enumerate(subdomain_ids):
             cell_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
             active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
@@ -122,7 +121,6 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                                (pos, x_dofs, x), form_coeffs, form_consts,
                                cell_perms, dofs, block_size, num_dofs_per_element, mpc_data)
-        timer.stop()
 
     # Assemble exterior facet integrals
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
@@ -135,7 +133,6 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
         if cpp_form.needs_facet_permutations:
             facet_perms = V.mesh.topology.get_facet_permutations()
         perm = (cell_perms, cpp_form.needs_facet_permutations, facet_perms)
-        timer = Timer("MPC Assemble vector (exterior facets)")
         for i, id in enumerate(subdomain_ids):
             facet_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i],
                                    f"tabulate_tensor_{nptype}")
@@ -146,7 +143,6 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
                 assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x),
                                                form_coeffs, form_consts, perm,
                                                dofs, block_size, num_dofs_per_element, mpc_data, num_facets_per_cell)
-        timer.stop()
     timer_vector.stop()
     return vector
 

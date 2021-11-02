@@ -1,4 +1,4 @@
-fast-complex:
+quick-tests:
   stage: test
   tags:
     - docker
@@ -8,63 +8,32 @@ fast-complex:
   image:
     name: dolfinx/dolfinx
     entrypoint: [""]
+  parallel:
+    matrix:
+      - PETSC_TYPE: ["real", "complex"]
+
   variables:
-    PETSC_ARCH: "linux-gnu-complex-32"
-    PYTHONPATH: "/usr/local/dolfinx-complex/lib/python3.8/dist-packages:/usr/local/lib"
+    PETSC_ARCH: "linux-gnu-${PETSC_TYPE}-32"
+    DOLFINX_DIR: "dolfinx-${PETSC_TYPE}"
+    PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.8/dist-packages:/usr/local/lib"
+    LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
+    MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
+    MPC_CMAKE_BUILD_TYPE: "Release"
 
   before_script:
     - flake8 .
-    - export PETSC_ARCH="linux-gnu-complex-32"
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/local/dolfinx-complex/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
-    - export PATH="/usr/local/dolfinx-complex/bin:$PATH"
-    - export PKG_CONFIG_PATH="/usr/local/dolfinx-complex/lib/pkgconfig:$PKG_CONFIG_PATH"
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE=${MPC_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}"  -B build-dir -S ./cpp
+    - cmake --build build-dir --parallel 3
+    - cmake --install build-dir
+    - BUILD_TYPE=$MPC_CMAKE_BUILD_TYPE CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" pip3 install ./python
 
   script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
+    - python3 -m pytest python/tests
+    - mpirun -n 2 python3 -m pytest python/tests
+    - mpirun -n 3 python3 -m pytest python/tests
+    - mpirun -n 4 python3 -m pytest python/tests
 
-fast-real:
-  stage: test
-  tags:
-    - docker
-  except:
-    - master
-    - schedules
-  image:
-    name: dolfinx/dolfinx
-    entrypoint: [""]
-  variables:
-    PETSC_ARCH: "linux-gnu-real-32"
-    PYTHONPATH: "/usr/local/dolfinx-real/lib/python3.8/dist-packages:/usr/local/lib"
-  before_script:
-    - flake8 .
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/local/dolfinx-real/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
-    - export PATH="/usr/local/dolfinx-real/bin:$PATH"
-    - export PKG_CONFIG_PATH="/usr/local/dolfinx-real/lib/pkgconfig:$PKG_CONFIG_PATH"
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
-
-  script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
-
-nightly-complex:
+run-demos:
   stage: test
   only:
     - schedules
@@ -75,136 +44,49 @@ nightly-complex:
   image:
     name: dolfinx/dev-env
     entrypoint: [""]
+  parallel:
+    matrix:
+      - PETSC_TYPE: ["real", "complex"]
   variables:
-    PETSC_DIR: "/usr/local/petsc"
-    PETSC_ARCH: "linux-gnu-complex-32"
-    DOLFINX_CMAKE_BUILD_TYPE: "Release"
-    DOLFINX_CMAKE_CXX_FLAGS: "-Ofast -march=native -g -Wall -Werror -pedantic"
+    PETSC_ARCH: "linux-gnu-${PETSC_TYPE}-32"
+    DOLFINX_DIR: "dolfinx-${PETSC_TYPE}"
+    PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.8/dist-packages:/usr/local/lib"
+    LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
+    MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
+    MPC_BUILD_MODE: "Debug"
+    CC: "mpicc"
+    HDF5_MPI: "ON"
+    HDF5_DIR: "/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
 
   before_script:
-    - flake8 .
-    - echo $PETSC_ARCH
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-complex-32/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
-    - export HDF5_MPI="ON"
-    - export CC=mpicc
-    - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
+    - flake8 python/
     - pip3 install --no-cache-dir --no-binary=h5py h5py
     - git clone https://github.com/FEniCS/basix.git
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS  -B build-dir -S ./basix/cpp
+    - cmake -G Ninja -B build-basix -DCMAKE_BUILD_TYPE="Release" -S ./basix/cpp/
+    - cmake --build build-basix --parallel 3
+    - cmake --install build-basix
+    - BUILD_TYPE="Release" pip3 install ./basix/python
+    - python3 -m pip install git+https://github.com/FEniCS/ufl.git
+    - python3 -m pip install git+https://github.com/FEniCS/ffcx.git
+    - git clone https://github.com/fenics/dolfinx.git
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
+    - cmake --build build-dolfinx
+    - cmake --install build-dolfinx
+    - BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
+    - cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
     - cmake --build build-dir --parallel 3
     - cmake --install build-dir
-    - BUILD_TYPE=$DOLFINX_CMAKE_BUILD_TYPE CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS pip3 install ./basix/python
-    - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
-    - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
-    - git clone https://github.com/fenics/dolfinx.git
-    - cd dolfinx
-    - mkdir build
-    - cd build
-    - cmake -G Ninja ../cpp
-    - ninja ${MAKEFLAGS} install
-    - cd ../python
-    - source /usr/local/lib/dolfinx/dolfinx.conf
-    - pip3 install .
-    - cd ../../
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
+    - BUILD_TYPE="${MPC_BUILD_MODE}" CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/
 
   script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
-    - cd ../benchmarks
+    - python3 -m pytest python/tests
+    - mpirun -n 2 python3 -m pytest python/tests
+    - mpirun -n 3 python3 -m pytest python/tests
+    - mpirun -n 4 python3 -m pytest python/tests
+    - cd python/benchmarks
     - mkdir results
     - mkdir meshes
     - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --gamg --timings
-    - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
-    - mpirun -n 4 python3 bench_contact_3D.py
-    - cd ../demos
-    - mkdir meshes
-    - mkdir results
-    - python3 demo_elasticity.py
-    - mpirun -n 4 python3 demo_elasticity.py
-    - python3 demo_periodic_geometrical.py
-    - mpirun -n 4 python3 demo_periodic_geometrical.py
-    - python3 demo_stokes.py
-    - mpirun -n 4 python3 demo_stokes.py
-    - python3 demo_periodic3d_topological.py
-    - mpirun -n 4 python3 demo_periodic3d_topological.py
-    - python3 demo_elasticity_disconnect_2D.py
-    - mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
-    - python3 demo_elasticity_disconnect.py
-    - mpirun -n 4 python3 demo_elasticity_disconnect.py
-    - make contact2D-serial
-    - make contact2D-parallel
-    - make contact3D-serial
-    - make contact3D-parallel
-
-nightly-real:
-  stage: test
-  only:
-    - schedules
-    - master
-    - merge_requests
-  tags:
-    - docker
-  image:
-    name: dolfinx/dev-env
-    entrypoint: [""]
-  variables:
-    PETSC_DIR: "/usr/local/petsc"
-    PETSC_ARCH: "linux-gnu-real-32"
-    DOLFINX_CMAKE_BUILD_TYPE: "Release"
-    DOLFINX_CMAKE_CXX_FLAGS: "-Ofast -march=native -g -Wall -Werror -pedantic"
-
-  before_script:
-    - flake8 .
-    - export LD_LIBRARY_PATH="/usr/local/petsc/linux-gnu-real-32/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/:$LD_LIBRARY_PATH"
-    - export HDF5_MPI="ON"
-    - export CC=mpicc
-    - export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
-    - pip3 install --no-cache-dir --no-binary=h5py h5py
-    - git clone https://github.com/FEniCS/basix.git
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=${DOLFINX_CMAKE_BUILD_TYPE} -DCMAKE_CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS  -B build-dir -S ./basix/cpp
-    - cmake --build build-dir --parallel 3
-    - cmake --install build-dir
-    - BUILD_TYPE=$DOLFINX_CMAKE_BUILD_TYPE CXX_FLAGS=$DOLFINX_CMAKE_CXX_FLAGS pip3 install ./basix/python
-    - pip3 install git+https://github.com/FEniCS/ufl.git --upgrade
-    - pip3 install git+https://github.com/FEniCS/ffcx.git --upgrade
-    - rm -rf /usr/local/include/dolfin /usr/local/include/dolfin.h
-    - git clone https://github.com/fenics/dolfinx.git
-    - cd dolfinx
-    - mkdir build
-    - cd build
-    - cmake -G Ninja ../cpp
-    - ninja ${MAKEFLAGS} install
-    - cd ../python
-    - source /usr/local/lib/dolfinx/dolfinx.conf
-    - pip3 install .
-    - cd ../../
-    - mkdir -p build
-    - cd build
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer ../cpp/
-    - ninja -j3 install
-    - cd ../python
-    - pip3 install -e . --upgrade
-
-  script:
-    - cd tests
-    - python3 -m pytest .
-    - mpirun -n 2 python3 -m pytest .
-    - mpirun -n 3 python3 -m pytest .
-    - mpirun -n 4 python3 -m pytest .
-    - cd ../benchmarks
-    - mkdir results
-    - mkdir meshes
-    - mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --boomeramg --timings
     - mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
     - mpirun -n 4 python3 bench_contact_3D.py
     - cd ../demos

@@ -14,7 +14,6 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
-#include <xtensor/xfixed.hpp>
 #include <xtensor/xtensor.hpp>
 
 namespace dolfinx_mpc
@@ -118,7 +117,7 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     dolfinx::fem::sparsitybuild::exterior_facets(pattern, mesh.topology(),
                                                  {{dofmaps[0], dofmaps[1]}});
   }
-};
+}
 
 /// Add sparsity pattern for multi-point constraints to existing
 /// sparsity pattern
@@ -141,5 +140,4 @@ typename U::value_type dot(const U& u, const V& v)
   assert(v.size() == 3);
   return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
 }
-
 } // namespace dolfinx_mpc

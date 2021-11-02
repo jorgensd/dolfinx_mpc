@@ -57,7 +57,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
         Takes priority over all other parameter values.
 
     """
-    timer_matrix = Timer("~MPC: Assemble matrix")
+    timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 
     V = constraint.function_space()
     dofmap = V.dofmap
@@ -107,15 +107,12 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     if A is None:
 
         pattern = constraint.create_sparsity_pattern(cpp_form)
-        with Timer("~MPC: Assemble sparsity pattern"):
-            pattern.assemble()
-        with Timer("~MPC: Assemble matrix (Create matrix)"):
-            A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
+        pattern.assemble()
+        A = dolfinx.cpp.la.create_matrix(V.mesh.mpi_comm(), pattern)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
-    with Timer("~MPC: Assemble unconstrained matrix"):
-        dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, cpp_dirichletbc(bcs), False)
+    dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, cpp_dirichletbc(bcs), False)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size()
@@ -144,7 +141,6 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
     nptype = "complex128" if is_complex else "float64"
     if num_cell_integrals > 0:
-        timer = Timer("~MPC: Assemble matrix (cells)")
         V.mesh.topology.create_entity_permutations()
         for i, id in enumerate(subdomain_ids):
             cell_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
@@ -152,14 +148,12 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
             assemble_slave_cells(A.handle, cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                                  (pos, x_dofs, x), form_coeffs, form_consts, cell_perms, dofs,
                                  block_size, num_dofs_per_element, mpc_data, is_bc)
-        timer.stop()
 
     # Assemble over exterior facets
     subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
 
     if num_exterior_integrals > 0:
-        timer = Timer("~MPC: Assemble matrix (ext. facet kernel)")
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
 
@@ -179,23 +173,20 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
             assemble_exterior_slave_facets(A.handle, facet_kernel, (pos, x_dofs, x), form_coeffs, form_consts,
                                            perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, is_bc,
                                            num_facets_per_cell)
-        timer.stop()
 
     # Add mpc entries on diagonal
     slaves = constraint.slaves()
     num_local_slaves = constraint.num_local_slaves()
     add_diagonal(A.handle, slaves[:num_local_slaves], diagval)
 
-    with Timer("~MPC: Assemble matrix (diagonal handling)"):
-        # Add one on diagonal for diriclet bc and slave dofs
-        # NOTE: In the future one could use a constant in the DirichletBC
-        if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-            A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
-            A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
-            dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_dirichletbc(bcs), diagval)
+    # Add one on diagonal for diriclet bc and slave dofs
+    # NOTE: In the future one could use a constant in the DirichletBC
+    if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
+        A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
+        A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
+        dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_dirichletbc(bcs), diagval)
 
-    with Timer("~MPC: Assemble matrix (Finalize matrix)"):
-        A.assemble()
+    A.assemble()
     timer_matrix.stop()
     return A
 

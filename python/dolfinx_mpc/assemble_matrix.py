@@ -73,6 +73,5 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: 
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
         dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_bc, diagval)
 
-    with dolfinx.common.Timer("~MPC: A.assemble()"):
-        A.assemble()
+    A.assemble()
     return A
