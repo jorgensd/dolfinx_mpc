@@ -27,7 +27,7 @@ void modify_mpc_cell(
   // Locate which local dofs are slave dofs and compute the local index of the
   // slave
   std::vector<std::int32_t> local_index0(slaves.size());
-  std::int32_t num_flattened_masters = 0;
+  std::size_t num_flattened_masters = 0;
   for (std::int32_t i = 0; i < num_dofs; i++)
     for (std::int32_t j = 0; j < bs; j++)
     {
@@ -60,6 +60,19 @@ void modify_mpc_cell(
         }
     }
 
+  // Zero out slave entries in element matrix
+  const int ndim0 = bs * num_dofs;
+  const int ndim1 = bs * num_dofs;
+  for (std::size_t i = 0; i < local_index0.size(); i++)
+  {
+    const int dof = local_index0[i];
+    // Zero slave row
+    std::fill_n(std::next(Ae.begin(), ndim1 * dof), ndim1, 0.0);
+    // Zero slave column
+    for (int row = 0; row < ndim0; ++row)
+      Ae[row * ndim1 + dof] = 0.0;
+  }
+
   // Flatten slaves, masters and coeffs for efficient modification of the
   // matrices
   std::vector<std::int32_t> flattened_masters;
@@ -72,63 +85,51 @@ void modify_mpc_cell(
   {
     auto _masters = masters->links(slaves[i]);
     auto _coeffs = coeffs->links(slaves[i]);
-    for (std::int32_t j = 0; j < _masters.size(); j++)
+    for (std::size_t j = 0; j < _masters.size(); j++)
     {
       flattened_slaves.push_back(local_index0[i]);
       flattened_masters.push_back(_masters[j]);
       flattened_coeffs.push_back(_coeffs[j]);
     }
   }
-  assert(num_flattened_masters = flattened_masters.size());
+  assert(num_flattened_masters == flattened_masters.size());
   // Data structures used for insertion of master contributions
-  std::array<std::int32_t, 1> m0;
-  std::array<std::int32_t, 1> m1;
-  std::array<T, 1> Amaster;
-  xt::xarray<T> Arow(bs * num_dofs);
-  xt::xarray<T> Acol(bs * num_dofs);
-  std::array<T, 1> Am0m1;
-  std::vector<std::int32_t> mpc_dofs(bs * dofs.size());
-  std::array<std::int32_t, 2> couple_indices;
-  std::array<T, 2> couple_coeffs;
+  std::array<std::int32_t, 1> row;
+  std::array<std::int32_t, 1> col;
+  std::array<T, 1> A0;
+  xt::xarray<T> Arow(ndim0);
+  xt::xarray<T> Acol(ndim1);
+  std::vector<std::int32_t> unrolled_dofs(ndim0);
   // Loop over each master
-  for (std::int32_t i = 0; i < num_flattened_masters; ++i)
+  for (std::size_t i = 0; i < num_flattened_masters; ++i)
   {
-    couple_indices[0] = flattened_slaves[i];
-    couple_coeffs[0] = flattened_coeffs[i];
-
-    // Remove contributions form Ae
-    xt::col(Ae, couple_indices[0]) = xt::zeros<T>({num_dofs * bs});
-    xt::row(Ae, couple_indices[0]).fill(0);
-
-    m0[0] = flattened_masters[i];
-    Arow = couple_coeffs[0] * xt::col(Ae_stripped, couple_indices[0]);
-    Acol = couple_coeffs[0] * xt::row(Ae_stripped, couple_indices[0]);
-    Amaster[0] = couple_coeffs[0] * couple_coeffs[0]
-                 * Ae_original(couple_indices[0], couple_indices[0]);
+    Arow = flattened_coeffs[i] * xt::col(Ae_stripped, flattened_slaves[i]);
+    Acol = flattened_coeffs[i] * xt::row(Ae_stripped, flattened_slaves[i]);
+    A0[0] = flattened_coeffs[i] * flattened_coeffs[i]
+            * Ae_original(flattened_slaves[i], flattened_slaves[i]);
 
     // Unroll dof blocks
-    for (std::int32_t j = 0; j < dofs.size(); ++j)
+    for (std::int32_t j = 0; j < num_dofs; ++j)
       for (std::int32_t k = 0; k < bs; ++k)
-        mpc_dofs[j * bs + k] = dofs[j] * bs + k;
+        unrolled_dofs[j * bs + k] = dofs[j] * bs + k;
 
     // Insert modified entries
-    mpc_dofs[couple_indices[0]] = flattened_masters[i];
-    mat_set(bs * num_dofs, mpc_dofs.data(), 1, m0.data(), Arow.data());
-    mat_set(1, m0.data(), bs * num_dofs, mpc_dofs.data(), Acol.data());
-    mat_set(1, m0.data(), 1, m0.data(), Amaster.data());
+    row[0] = flattened_masters[i];
+    unrolled_dofs[flattened_slaves[i]] = flattened_masters[i];
+    mat_set(int(ndim0), unrolled_dofs.data(), 1, row.data(), Arow.data());
+    mat_set(1, row.data(), int(ndim1), unrolled_dofs.data(), Acol.data());
+    mat_set(1, row.data(), 1, row.data(), A0.data());
 
     // Loop through other masters on the same cell and add in contribution
-    for (std::int32_t j = 0; j < num_flattened_masters; j++)
+    for (std::size_t j = 0; j < num_flattened_masters; j++)
     {
       if (i == j)
         continue;
 
-      couple_indices[1] = flattened_slaves[j];
-      couple_coeffs[1] = flattened_coeffs[j];
-      m1[0] = flattened_masters[j];
-      Am0m1[0] = couple_coeffs[0] * couple_coeffs[1]
-                 * Ae_original(couple_indices[0], couple_indices[1]);
-      mat_set(1, m0.data(), 1, m1.data(), Am0m1.data());
+      col[0] = flattened_masters[j];
+      A0[0] = flattened_coeffs[i] * flattened_coeffs[j]
+              * Ae_original(flattened_slaves[i], flattened_slaves[j]);
+      mat_set(1, row.data(), 1, col.data(), A0.data());
     }
   }
 } // namespace
@@ -166,7 +167,6 @@ void assemble_exterior_facets(
       masters = mpc->masters();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coefficients
       = mpc->coefficients();
-  const std::vector<std::int32_t>& slaves = mpc->slaves();
   const std::vector<std::int8_t>& is_slave = mpc->is_slave();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
       cell_to_slaves
@@ -191,7 +191,7 @@ void assemble_exterior_facets(
   const xtl::span<T> _Ae(Ae);
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
 
-  for (std::int32_t l = 0; l < facets.size(); ++l)
+  for (std::size_t l = 0; l < facets.size(); ++l)
   {
 
     const std::int32_t cell = facets[l].first;
@@ -217,23 +217,32 @@ void assemble_exterior_facets(
     xtl::span<const std::int32_t> dmap1 = dofmap1.links(cell);
     if (!bc0.empty())
     {
-      for (std::int32_t i = 0; i < num_dofs0; ++i)
+      for (std::size_t i = 0; i < num_dofs0; ++i)
       {
-        for (std::int32_t k = 0; k < bs0; ++k)
+        for (std::size_t k = 0; k < bs0; ++k)
         {
           if (bc0[bs0 * dmap0[i] + k])
-            xt::row(Ae, bs0 * i + k).fill(0);
+          {
+            // Zero row bs0 * i + k
+            const int row = bs0 * i + k;
+            std::fill_n(std::next(Ae.begin(), ndim1 * row), ndim1, 0.0);
+          }
         }
       }
     }
     if (!bc1.empty())
     {
-      for (std::int32_t j = 0; j < num_dofs1; ++j)
+      for (std::size_t j = 0; j < num_dofs1; ++j)
       {
-        for (std::int32_t k = 0; k < bs1; ++k)
+        for (std::size_t k = 0; k < bs1; ++k)
         {
           if (bc1[bs1 * dmap1[j] + k])
-            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({bs1 * num_dofs1});
+          {
+            // Zero column bs1 * j + k
+            const int col = bs1 * j + k;
+            for (std::uint32_t row = 0; row < ndim0; ++row)
+              Ae[row * ndim1 + col] = 0.0;
+          }
         }
       }
     }
@@ -278,8 +287,6 @@ void assemble_cells_impl(
     const xtl::span<const std::uint32_t>& cell_info,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
 {
-  dolfinx::common::Timer timer("~MPC (C++): Assemble cells");
-
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       masters = mpc->masters();
@@ -377,8 +384,6 @@ void assemble_matrix_impl(
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
   assert(mesh);
   const int tdim = mesh->topology().dim();
-  const std::int32_t num_cells
-      = mesh->topology().connectivity(tdim, 0)->num_nodes();
 
   // Get dofmap data
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap0
@@ -435,8 +440,6 @@ void assemble_matrix_impl(
     mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
     mesh->topology_mutable().create_entity_permutations();
 
-    const int facets_per_cell = dolfinx::mesh::cell_num_entities(
-        mesh->topology().cell_type(), tdim - 1);
     std::function<std::uint8_t(std::size_t)> get_perm;
     if (a.needs_facet_permutations())
     {
@@ -460,19 +463,8 @@ void assemble_matrix_impl(
           coeffs.first, coeffs.second, constants, cell_info, get_perm, mpc);
     }
 
-    const std::vector<int> c_offsets = a.coefficient_offsets();
-    for (int i : a.integral_ids(dolfinx::fem::IntegralType::interior_facet))
-    {
-      const auto& fn = a.kernel(dolfinx::fem::IntegralType::interior_facet, i);
-      const std::vector<std::tuple<std::int32_t, int, std::int32_t, int>>&
-          active_facets
-          = a.interior_facet_domains(i);
+    if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
       throw std::runtime_error("Not implemented yet");
-
-      //   impl::assemble_interior_facets(
-      //       mat_set_values, *mesh, active_facets, *dofmap0, *dofmap1, bc0,
-      //       bc1, fn, coeffs, c_offsets, constants, cell_info, perms);
-    }
   }
 }
 //-----------------------------------------------------------------------------
@@ -487,7 +479,7 @@ void _assemble_matrix(
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     const T diagval)
 {
-  dolfinx::common::Timer timer_s("~MPC: Assembly (C++)");
+  dolfinx::common::Timer timer("~MPC: Assemble matrix (C++)");
 
   // Index maps for dof ranges
   std::shared_ptr<const dolfinx::common::IndexMap> map0
@@ -532,6 +524,7 @@ void _assemble_matrix(
     diag_dof[0] = slaves[i];
     mat_add(1, diag_dof.data(), 1, diag_dof.data(), diag_value.data());
   }
+  timer.stop();
 }
 } // namespace
 //-----------------------------------------------------------------------------

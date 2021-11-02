@@ -5,29 +5,7 @@
 // SPDX-License-Identifier:    LGPL-3.0-or-later
 
 #include "utils.h"
-#include "MultiPointConstraint.h"
-#include <array>
-#include <dolfinx/common/IndexMap.h>
-#include <dolfinx/common/MPI.h>
-#include <dolfinx/common/Timer.h>
-#include <dolfinx/fem/CoordinateElement.h>
-#include <dolfinx/fem/DirichletBC.h>
-#include <dolfinx/fem/DofMap.h>
-#include <dolfinx/fem/FiniteElement.h>
-#include <dolfinx/fem/Form.h>
-#include <dolfinx/fem/Function.h>
-#include <dolfinx/fem/FunctionSpace.h>
-#include <dolfinx/geometry/utils.h>
-#include <dolfinx/graph/AdjacencyList.h>
-#include <dolfinx/la/PETScMatrix.h>
-#include <dolfinx/la/SparsityPattern.h>
-#include <dolfinx/la/utils.h>
-#include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/Mesh.h>
-#include <dolfinx/mesh/utils.h>
-#include <numeric>
-#include <xtensor.hpp>
-#include <xtl/xspan.hpp>
 
 using namespace dolfinx_mpc;
 
@@ -36,7 +14,6 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::array<double, 3>& x, const int index)
 {
-
   // Get mesh
   assert(V);
   assert(V->mesh());
@@ -89,14 +66,14 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
 
   // Get cell geometry (coordinate dofs)
   auto x_dofs = x_dofmap.links(index);
-  for (int i = 0; i < num_dofs_g; ++i)
+  for (std::size_t i = 0; i < num_dofs_g; ++i)
   {
     auto coord = xt::row(x_g, x_dofs[i]);
-    for (int j = 0; j < gdim; ++j)
+    for (std::size_t j = 0; j < gdim; ++j)
       coordinate_dofs(i, j) = coord[j];
   }
   xt::xtensor<double, 2> xp({1, gdim});
-  for (int j = 0; j < gdim; ++j)
+  for (std::size_t j = 0; j < gdim; ++j)
     xp(0, j) = x[j];
 
   // -- Lambda function for affine pull-backs
@@ -152,15 +129,12 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   element->transform_reference_basis(basis_values, reference_basis_values, J,
                                      detJ, K);
 
-  // Get the degrees of freedom for the current cell
-  auto dofs = dofmap->cell_dofs(index);
-
   // Expand basis values for each dof
-  for (int block = 0; block < block_size; ++block)
+  for (std::size_t block = 0; block < block_size; ++block)
   {
-    for (int i = 0; i < space_dimension; ++i)
+    for (std::size_t i = 0; i < space_dimension; ++i)
     {
-      for (int j = 0; j < value_size; ++j)
+      for (std::size_t j = 0; j < value_size; ++j)
       {
         basis_array(i * block_size + block, j * block_size + block)
             = basis_values(0, i, j);
@@ -174,7 +148,7 @@ std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V)
 {
   return V->dofmap()->index_map->compute_shared_indices();
-};
+}
 //-----------------------------------------------------------------------------
 dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
@@ -225,18 +199,17 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
                MPI_UINT8_T, comm);
 
   // Create communicator with edges slaves (sources) -> masters (destinations)
-  MPI_Comm slaves_to_master = MPI_COMM_NULL;
   std::vector<std::int32_t> source_edges;
   std::vector<std::int32_t> dest_edges;
   // If current rank owns masters add all slaves as source edges
   if (procs_with_masters[rank] == 1)
-    for (std::size_t i = 0; i < mpi_size; ++i)
+    for (int i = 0; i < mpi_size; ++i)
       if ((i != rank) && (procs_with_slaves[i] == 1))
         source_edges.push_back(i);
 
   // If current rank owns a slave add all masters as destinations
   if (procs_with_slaves[rank] == 1)
-    for (std::size_t i = 0; i < mpi_size; ++i)
+    for (int i = 0; i < mpi_size; ++i)
       if ((i != rank) && (procs_with_masters[i] == 1))
         dest_edges.push_back(i);
   std::array comms{MPI_COMM_NULL, MPI_COMM_NULL};
@@ -312,7 +285,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
                                  MPI_INFO_NULL, false, &comm_loc);
 
   return comm_loc;
-};
+}
 //-----------------------------------------------------------------------------
 std::map<std::int32_t, std::vector<std::int32_t>>
 dolfinx_mpc::create_dof_to_facet_map(
@@ -333,7 +306,7 @@ dolfinx_mpc::create_dof_to_facet_map(
   std::map<std::int32_t, std::vector<std::int32_t>> dofs_to_facets;
 
   // For each facet, find which dofs is on the given facet
-  for (std::int32_t i = 0; i < facets.size(); ++i)
+  for (std::size_t i = 0; i < facets.size(); ++i)
   {
     auto cell = f_to_c->links(facets[i]);
     assert(cell.size() == 1);
@@ -346,7 +319,7 @@ dolfinx_mpc::create_dof_to_facet_map(
     auto cell_blocks = dofmap->cell_dofs(cell[0]);
     auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
         tdim - 1, local_facet);
-    for (std::int32_t j = 0; j < closure_blocks.size(); ++j)
+    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
     {
       for (int block = 0; block < element_bs; ++block)
       {
@@ -356,7 +329,7 @@ dolfinx_mpc::create_dof_to_facet_map(
     }
   }
   return dofs_to_facets;
-};
+}
 //-----------------------------------------------------------------------------
 xt::xtensor_fixed<double, xt::xshape<3>> dolfinx_mpc::create_average_normal(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dof,
@@ -367,7 +340,7 @@ xt::xtensor_fixed<double, xt::xshape<3>> dolfinx_mpc::create_average_normal(
       = dolfinx::mesh::cell_normals(*V->mesh(), dim, entities);
   xt::xtensor_fixed<double, xt::xshape<3>> normal = xt::row(normals, 0);
   xt::xtensor_fixed<double, xt::xshape<3>> normal_i;
-  for (std::int32_t i = 1; i < normals.shape(0); ++i)
+  for (std::size_t i = 1; i < normals.shape(0); ++i)
   {
     normal_i = xt::row(normals, i);
     double n_ni = dot(normal, normal_i);
@@ -377,7 +350,7 @@ xt::xtensor_fixed<double, xt::xshape<3>> dolfinx_mpc::create_average_normal(
   double n_n = dot(normal, normal);
   normal /= std::sqrt(n_n);
   return normal;
-};
+}
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::create_normal_approximation(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V,
@@ -398,7 +371,7 @@ void dolfinx_mpc::create_normal_approximation(
     const int& block = div.rem;
     vector[pair.first] = normal[block];
   }
-};
+}
 //-----------------------------------------------------------------------------
 dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
@@ -468,13 +441,13 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
         }
       }
       // Insert for each master block
-      for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
+      for (std::size_t j = 0; j < flattened_masters.size(); ++j)
       {
         master_block[0] = flattened_masters[j];
         pattern.insert(tcb::make_span(master_block), cell_dofs);
         pattern.insert(cell_dofs, tcb::make_span(master_block));
         // Add sparsity pattern for all master dofs of any slave on this cell
-        for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
+        for (std::size_t k = j + 1; k < flattened_masters.size(); ++k)
         {
           other_master_block[0] = flattened_masters[k];
           pattern.insert(tcb::make_span(master_block),
@@ -486,4 +459,4 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
     }
   }
   return pattern;
-};
+}

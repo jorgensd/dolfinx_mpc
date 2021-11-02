@@ -40,9 +40,9 @@ void modify_mpc_vec(
   // Get local index of slaves in cell
   std::vector<std::int32_t> local_index(slaves.size());
   std::int32_t dof;
-  for (std::size_t i = 0; i < num_dofs; i++)
+  for (std::int32_t i = 0; i < num_dofs; i++)
   {
-    for (std::size_t j = 0; j < bs; j++)
+    for (std::int32_t j = 0; j < bs; j++)
     {
       dof = cell_blocks[i] * bs + j;
       if (is_slave[dof])
@@ -111,7 +111,7 @@ void _assemble_entities_impl(
   const xtl::span<T> _be_copy(be_copy);
 
   // Assemble over all entities
-  for (std::int32_t e = 0; e < active_entities.size(); ++e)
+  for (std::size_t e = 0; e < active_entities.size(); ++e)
   {
     // Assemble into element vector
     assemble_local_element_vector(_be, active_entities[e]);
@@ -152,9 +152,6 @@ void _assemble_vector(
   assert(dofmap);
   const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
   const int bs = dofmap->bs();
-
-  const int num_dofs = dofs.links(0).size();
-  const std::uint32_t ndim = bs * num_dofs;
 
   // Prepare constants & coefficients
   const std::vector<T> constants = pack_constants(L);

@@ -6,7 +6,7 @@
 
 #include "ContactConstraint.h"
 #include <dolfinx/fem/DirichletBC.h>
-#include <dolfinx/fem/Function.h>
+#include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/mesh/MeshTags.h>
 namespace dolfinx_mpc
 {
