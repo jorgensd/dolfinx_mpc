@@ -67,7 +67,7 @@ def demo_elasticity():
     with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
-        dolfinx.fem.apply_lifting(b, [a], [bcs])
+        dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
         b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         dolfinx.fem.set_bc(b, bcs)
 
@@ -83,7 +83,7 @@ def demo_elasticity():
     mpc.backsubstitution(uh)
 
     # Write solution to file
-    u_h = dolfinx.Function(mpc.function_space())
+    u_h = dolfinx.Function(mpc.function_space)
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc"
     outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity.xdmf", "w")
@@ -133,16 +133,16 @@ def demo_elasticity():
     master_owner = None
     master_data = None
     slave_owner = None
-    if mpc.num_local_slaves() > 0:
+    if mpc.num_local_slaves > 0:
         slave_owner = MPI.COMM_WORLD.rank
-        bs = mpc.function_space().dofmap.index_map_bs
-        slave = mpc.slaves()[0]
+        bs = mpc.function_space.dofmap.index_map_bs
+        slave = mpc.slaves[0]
         print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}"
               .format(uh.array[slave], u_.vector.array[slave]))
         master_owner = mpc._cpp_object.owners.links(slave)[0]
-        _masters = mpc.masters()
+        _masters = mpc.masters
         master = _masters.links(slave)[0]
-        glob_master = mpc.index_map().local_to_global([master // bs])[0]
+        glob_master = mpc.function_space.dofmap.index_map.local_to_global([master // bs])[0]
         coeffs, offs = mpc.coefficients()
         master_data = [glob_master * bs + master % bs,
                        coeffs[offs[slave]:offs[slave + 1]][0]]
@@ -160,9 +160,9 @@ def demo_elasticity():
             master_owner = master
             break
     if slave_owner != master_owner and MPI.COMM_WORLD.rank == master_owner:
-        bs = mpc.function_space().dofmap.index_map_bs
+        bs = mpc.function_space.dofmap.index_map_bs
         in_data = MPI.COMM_WORLD.recv(source=MPI.ANY_SOURCE, tag=1)
-        l2g = mpc.index_map().global_indices()
+        l2g = mpc.function_space.dofmap.index_map.global_indices()
         l_index = np.flatnonzero(l2g == in_data[0] // bs)[0]
         print("Master*Coeff (on other proc): {0:.5e}"
               .format(uh.array[l_index * bs + in_data[0] % bs] * in_data[1]))

@@ -35,7 +35,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     else:
         N = 3
         mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                    dolfinx.cpp.mesh.CellType.hexahedron)
+                                    dolfinx.mesh.CellType.hexahedron)
     for i in range(r_lvl):
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
         N *= 2
@@ -43,7 +43,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
             mesh = dolfinx.mesh.refine(mesh, redistribute=True)
         else:
             mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                        dolfinx.cpp.mesh.CellType.hexahedron)
+                                        dolfinx.mesh.CellType.hexahedron)
         # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
     N = degree * N
     fdim = mesh.topology.dim - 1

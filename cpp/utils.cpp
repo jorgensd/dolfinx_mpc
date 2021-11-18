@@ -6,13 +6,95 @@
 
 #include "utils.h"
 #include <dolfinx/mesh/Mesh.h>
+#include <dolfinx/mesh/utils.h>
+#include <xtensor/xcomplex.hpp>
 
 using namespace dolfinx_mpc;
+
+namespace
+{
+
+/// Create a map from each dof (block) found on the set of facets topologically,
+/// to the connecting facets
+/// @param[in] V The function space
+/// @param[in] dim The dimension of the entities
+/// @param[in] entities The list of entities
+/// @returns The map from each block (local + ghost) to the set of facets
+dolfinx::graph::AdjacencyList<std::int32_t>
+create_block_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
+                          std::int32_t dim,
+                          const xtl::span<const std::int32_t>& entities)
+{
+  const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
+  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
+  std::shared_ptr<const dolfinx::common::IndexMap> imap = dofmap->index_map;
+  const std::int32_t tdim = mesh->topology().dim();
+  // Locate all dofs for each facet
+  mesh->topology_mutable().create_connectivity(dim, tdim);
+  mesh->topology_mutable().create_connectivity(tdim, dim);
+  auto e_to_c = mesh->topology().connectivity(dim, tdim);
+  auto c_to_e = mesh->topology().connectivity(tdim, dim);
+
+  const std::int32_t num_dofs = imap->size_local() + imap->num_ghosts();
+  std::vector<std::int32_t> num_facets_per_dof(num_dofs);
+
+  // Count how many facets each dof on process relates to
+  std::vector<std::int32_t> local_indices(entities.size());
+  std::vector<std::int32_t> cells(entities.size());
+  for (std::size_t i = 0; i < entities.size(); ++i)
+  {
+    auto cell = e_to_c->links(entities[i]);
+    assert(cell.size() == 1);
+    cells[i] = cell[0];
+
+    // Get local index of facet with respect to the cell
+    auto cell_entities = c_to_e->links(cell[0]);
+    const auto* it
+        = std::find(cell_entities.data(),
+                    cell_entities.data() + cell_entities.size(), entities[i]);
+    assert(it != (cell_entities.data() + cell_entities.size()));
+    const int local_entity = std::distance(cell_entities.data(), it);
+    local_indices[i] = local_entity;
+    auto cell_blocks = dofmap->cell_dofs(cell[0]);
+    auto closure_blocks
+        = dofmap->element_dof_layout->entity_closure_dofs(dim, local_entity);
+    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
+    {
+      const int dof = cell_blocks[closure_blocks[j]];
+      num_facets_per_dof[dof]++;
+    }
+  }
+
+  // Compute offsets
+  std::vector<std::int32_t> offsets(num_dofs + 1);
+  offsets[0] = 0;
+  std::partial_sum(num_facets_per_dof.begin(), num_facets_per_dof.end(),
+                   offsets.begin() + 1);
+  // Reuse data structure for insertion
+  std::fill(num_facets_per_dof.begin(), num_facets_per_dof.end(), 0);
+
+  // Create dof->entities map
+  std::vector<std::int32_t> data(offsets.back());
+  for (std::size_t i = 0; i < entities.size(); ++i)
+  {
+    auto cell_blocks = dofmap->cell_dofs(cells[i]);
+    auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
+        dim, local_indices[i]);
+    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
+    {
+      const int dof = cell_blocks[closure_blocks[j]];
+      data[offsets[dof] + num_facets_per_dof[dof]++] = entities[i];
+    }
+  }
+  return dolfinx::graph::AdjacencyList<std::int32_t>(data, offsets);
+}
+
+} // namespace
 
 //-----------------------------------------------------------------------------
 xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    const std::array<double, 3>& x, const int index)
+    const xt::xtensor<double, 2>& x, const int index)
 {
   // Get mesh
   assert(V);
@@ -20,6 +102,8 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
   const size_t gdim = mesh->geometry().dim();
   const size_t tdim = mesh->topology().dim();
+  assert(x.shape(0) == 1);
+  assert(x.shape(1) == gdim);
 
   // Get geometry data
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
@@ -126,8 +210,7 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
       permutation_info[index], reference_value_size);
 
   // Push basis forward to physical element
-  element->transform_reference_basis(basis_values, reference_basis_values, J,
-                                     detJ, K);
+  element->push_forward(basis_values, reference_basis_values, J, detJ, K);
 
   // Expand basis values for each dof
   for (std::size_t block = 0; block < block_size; ++block)
@@ -236,9 +319,9 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
 }
 //-----------------------------------------------------------------------------
 MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
-    std::vector<std::int32_t>& local_dofs,
-    std::vector<std::int32_t>& ghost_dofs,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map, int block_size)
+    std::vector<std::int32_t>& local_blocks,
+    std::vector<std::int32_t>& ghost_blocks,
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map)
 {
   // Get data from IndexMap
   const std::vector<std::int32_t>& ghost_owners = index_map->ghost_owner_rank();
@@ -255,19 +338,15 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
-  for (auto dof : local_dofs)
+  for (auto block : local_blocks)
   {
-    std::int32_t block = dof / block_size;
-
     const std::set<int> procs = shared_indices[block];
     for (auto proc : procs)
       dst_edges.insert(proc);
   }
 
-  for (auto dof : ghost_dofs)
+  for (auto block : ghost_blocks)
   {
-    std::int32_t block = dof / block_size;
-
     const std::int32_t proc = ghost_owners[block - size_local];
     src_edges.insert(proc);
   }
@@ -287,91 +366,73 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
   return comm_loc;
 }
 //-----------------------------------------------------------------------------
-std::map<std::int32_t, std::vector<std::int32_t>>
-dolfinx_mpc::create_dof_to_facet_map(
-    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-    const xtl::span<const std::int32_t>& facets)
+dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
+    std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dim,
+    const xtl::span<const std::int32_t>& entities)
 {
 
-  const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
-  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
-  const int element_bs = dofmap->element_dof_layout->block_size();
-  const std::int32_t tdim = mesh->topology().dim();
-  // Locate all dofs for each facet
-  mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
-  mesh->topology_mutable().create_connectivity(tdim, tdim - 1);
-  auto f_to_c = mesh->topology().connectivity(tdim - 1, tdim);
-  auto c_to_f = mesh->topology().connectivity(tdim, tdim - 1);
-  // Initialize empty map for the dofs located topologically
-  std::map<std::int32_t, std::vector<std::int32_t>> dofs_to_facets;
+  dolfinx::graph::AdjacencyList<std::int32_t> block_to_entities
+      = create_block_to_facet_map(V, dim, entities);
 
-  // For each facet, find which dofs is on the given facet
-  for (std::size_t i = 0; i < facets.size(); ++i)
+  // Create normal vector function and get local span
+  dolfinx::fem::Function<PetscScalar> nh(V);
+  Vec n_local;
+  VecGhostGetLocalForm(nh.vector(), &n_local);
+  PetscInt n = 0;
+  VecGetSize(n_local, &n);
+  PetscScalar* array = nullptr;
+  VecGetArray(n_local, &array);
+  xtl::span<PetscScalar> _n(array, n);
+
+  const std::int32_t bs = V->dofmap()->index_map_bs();
+  xt::xtensor_fixed<double, xt::xshape<3>> normal;
+  for (std::int32_t i = 0; i < block_to_entities.num_nodes(); i++)
   {
-    auto cell = f_to_c->links(facets[i]);
-    assert(cell.size() == 1);
-    // Get local index of facet with respect to the cell
-    auto cell_facets = c_to_f->links(cell[0]);
-    const auto* it = std::find(
-        cell_facets.data(), cell_facets.data() + cell_facets.size(), facets[i]);
-    assert(it != (cell_facets.data() + cell_facets.size()));
-    const int local_facet = std::distance(cell_facets.data(), it);
-    auto cell_blocks = dofmap->cell_dofs(cell[0]);
-    auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
-        tdim - 1, local_facet);
-    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
+    auto ents = block_to_entities.links(i);
+    if (ents.size() == 0)
+      continue;
+    // Sum all normal for entities
+    xt::xtensor<double, 2> normals
+        = dolfinx::mesh::cell_normals(*V->mesh(), dim, ents);
+
+    auto n_0 = xt::row(normals, 0);
+    normal = n_0;
+    for (std::size_t i = 1; i < normals.shape(0); ++i)
     {
-      for (int block = 0; block < element_bs; ++block)
-      {
-        const int dof = element_bs * cell_blocks[closure_blocks[j]] + block;
-        dofs_to_facets[dof].push_back(facets[i]);
-      }
+      // Align direction of normal vectors
+      double n_ni = dot(n_0, xt::row(normals, i));
+      auto sign = n_ni / std::abs(n_ni);
+      normal += sign * xt::row(normals, i);
+    }
+    for (std::int32_t j = 0; j < bs; j++)
+    {
+      _n[i * bs + j] = normal[j];
     }
   }
-  return dofs_to_facets;
-}
-//-----------------------------------------------------------------------------
-xt::xtensor_fixed<double, xt::xshape<3>> dolfinx_mpc::create_average_normal(
-    std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dof,
-    std::int32_t dim, const xtl::span<const std::int32_t>& entities)
-{
-  assert(entities.size() > 0);
-  xt::xtensor<double, 2> normals
-      = dolfinx::mesh::cell_normals(*V->mesh(), dim, entities);
-  xt::xtensor_fixed<double, xt::xshape<3>> normal = xt::row(normals, 0);
-  xt::xtensor_fixed<double, xt::xshape<3>> normal_i;
-  for (std::size_t i = 1; i < normals.shape(0); ++i)
+  // Receive normals from other processes with dofs on the facets
+  VecGhostUpdateBegin(nh.vector(), ADD_VALUES, SCATTER_REVERSE);
+  VecGhostUpdateEnd(nh.vector(), ADD_VALUES, SCATTER_REVERSE);
+  // Normalize nh
+  auto imap = V->dofmap()->index_map;
+  std::int32_t num_blocks = imap->size_local();
+  for (std::int32_t i = 0; i < num_blocks; i++)
   {
-    normal_i = xt::row(normals, i);
-    double n_ni = dot(normal, normal_i);
-    auto sign = n_ni / std::abs(n_ni);
-    normal += sign * normal_i;
+    PetscScalar acc = 0;
+    for (std::int32_t j = 0; j < bs; j++)
+      acc += _n[i * bs + j] * _n[i * bs + j];
+    if (std::sqrt(xt::norm(acc)) > 1e-10)
+    {
+      acc = std::sqrt(xt::norm(acc));
+      for (std::int32_t j = 0; j < bs; j++)
+        _n[i * bs + j] /= acc;
+    }
   }
-  double n_n = dot(normal, normal);
-  normal /= std::sqrt(n_n);
-  return normal;
-}
-//-----------------------------------------------------------------------------
-void dolfinx_mpc::create_normal_approximation(
-    std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-    const xtl::span<const std::int32_t>& entities,
-    xtl::span<PetscScalar> vector)
-{
-  const std::int32_t tdim = V->mesh()->topology().dim();
-  const std::int32_t block_size = V->dofmap()->index_map_bs();
 
-  std::map<std::int32_t, std::vector<std::int32_t>> facets_to_dofs
-      = create_dof_to_facet_map(V, entities);
-  for (auto const& pair : facets_to_dofs)
-  {
-    xt::xtensor_fixed<double, xt::xshape<3>> normal = create_average_normal(
-        V, pair.first, tdim - 1,
-        xtl::span<const std::int32_t>(pair.second.data(), pair.second.size()));
-    const std::div_t div = std::div(pair.first, block_size);
-    const int& block = div.rem;
-    vector[pair.first] = normal[block];
-  }
+  VecGhostUpdateBegin(nh.vector(), INSERT_VALUES, SCATTER_FORWARD);
+  VecGhostUpdateEnd(nh.vector(), INSERT_VALUES, SCATTER_FORWARD);
+  return nh;
 }
+
 //-----------------------------------------------------------------------------
 dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
@@ -386,9 +447,10 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
   }
 
   // Extract function space and index map from mpc
-  std::shared_ptr<const dolfinx::fem::FunctionSpace> V = mpc->org_space();
-  std::shared_ptr<const dolfinx::common::IndexMap> index_map = mpc->index_map();
-  std::shared_ptr<dolfinx::fem::DofMap> dofmap = mpc->dofmap();
+  std::shared_ptr<const dolfinx::fem::FunctionSpace> V = mpc->function_space();
+  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
+  std::shared_ptr<const dolfinx::common::IndexMap> index_map
+      = dofmap->index_map;
   const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
       cell_to_slaves = mpc->cell_to_slaves();
   const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> masters
@@ -396,8 +458,6 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
 
   /// Check that we are using the correct function-space in the bilinear
   /// form otherwise the index map will be wrong
-  assert(a.function_spaces().at(0) == V);
-  assert(a.function_spaces().at(1) == V);
   auto bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
   auto bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
   assert(bs0 == bs1);
@@ -446,7 +506,8 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
         master_block[0] = flattened_masters[j];
         pattern.insert(tcb::make_span(master_block), cell_dofs);
         pattern.insert(cell_dofs, tcb::make_span(master_block));
-        // Add sparsity pattern for all master dofs of any slave on this cell
+        // Add sparsity pattern for all master dofs of any slave on this
+        // cell
         for (std::size_t k = j + 1; k < flattened_masters.size(); ++k)
         {
           other_master_block[0] = flattened_masters[k];

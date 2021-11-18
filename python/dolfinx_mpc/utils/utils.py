@@ -196,12 +196,19 @@ def determine_closest_block(V, point):
     midpoint_tree = dolfinx.cpp.geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest
-    closest_midpoint_facet, R_init = dolfinx.geometry.compute_closest_entity(midpoint_tree, point, V.mesh)
-    closest_cell, R = dolfinx.geometry.compute_closest_entity(bb_tree, point, V.mesh, R_init)
+
+    closest_cell = dolfinx.geometry.compute_closest_entity(
+        bb_tree, midpoint_tree, V.mesh, np.reshape(point, (1, 3)))[0]
 
     # Set distance high if cell is not owned
-    if cell_imap.size_local <= closest_cell:
+    if cell_imap.size_local < closest_cell or closest_cell == -1:
         R = 1e5
+    else:
+        # Get cell geometry
+        p = V.mesh.geometry.x
+        entities = dolfinx.cpp.mesh.entities_to_geometry(V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False)
+        R = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, p[entities[0]]))
+
     # Find processor with cell closest to point
     global_distances = MPI.COMM_WORLD.allgather(R)
     owning_processor = np.argmin(global_distances)
@@ -372,14 +379,27 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     return slaves, masters, coeffs, owners, offsets
 
 
-def create_normal_approximation(V, facets):
+def create_normal_approximation(V: dolfinx.FunctionSpace, mt: dolfinx.MeshTags, value: int):
     """
-    Creates a normal approximation for the dofs in the closure of the attached facets.
-    Where a dof is attached to multiple facets, an average is computed
+    Creates a normal approximation for the dofs in the closure of the attached entities.
+    Where a dof is attached to entities facets, an average is computed
+
+    Parameters
+    ----------
+    V
+        The function space
+    mt
+        The meshtag containing the indices
+    value
+        Value for the entities in the mesh tag to compute normal on
+    Returns
+    -------
+    nh
+        The normal vector
     """
-    n = dolfinx.Function(V)
-    with n.vector.localForm() as vector:
-        vector.set(0)
-        dolfinx_mpc.cpp.mpc.create_normal_approximation(V._cpp_object, facets, vector.array_w)
-    n.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    return n
+    dim = mt.dim
+    entities = mt.indices[mt.values == value]
+    nh = dolfinx.Function(V)
+    n_cpp = dolfinx_mpc.cpp.mpc.create_normal_approximation(V._cpp_object, dim, entities)
+    nh._cpp_object = n_cpp
+    return nh

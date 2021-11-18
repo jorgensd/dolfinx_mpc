@@ -7,7 +7,7 @@
 import gmsh
 import numpy
 from mpi4py import MPI
-from dolfinx.cpp.io import perm_gmsh, extract_local_entities
+from dolfinx.cpp.io import perm_gmsh, distribute_entity_data
 from dolfinx.cpp.graph import AdjacencyList_int32
 from dolfinx.cpp.mesh import to_type, cell_entity_type
 from dolfinx.mesh import create_mesh, create_meshtags
@@ -115,7 +115,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
     mesh = create_mesh(MPI.COMM_WORLD, cells, x[:, :gdim], ufl_domain)
     # Create MeshTags for cells
     if cell_data:
-        local_entities, local_values = extract_local_entities(mesh, mesh.topology.dim, cells, cell_values)
+        local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim, cells, cell_values)
         mesh.topology.create_connectivity(mesh.topology.dim, 0)
         adj = AdjacencyList_int32(local_entities)
         ct = create_meshtags(mesh, mesh.topology.dim, adj, numpy.int32(local_values))
@@ -128,7 +128,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         facet_type = cell_entity_type(to_type(str(ufl_domain.ufl_cell())), mesh.topology.dim - 1, 0)
         gmsh_facet_perm = perm_gmsh(facet_type, num_facet_nodes)
         marked_facets = numpy.asarray(marked_facets[:, gmsh_facet_perm], dtype=numpy.int32)
-        local_entities, local_values = extract_local_entities(mesh, mesh.topology.dim - 1, marked_facets, facet_values)
+        local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim - 1, marked_facets, facet_values)
         mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
         adj = AdjacencyList_int32(local_entities)
         ft = create_meshtags(mesh, mesh.topology.dim - 1, adj, numpy.int32(local_values))

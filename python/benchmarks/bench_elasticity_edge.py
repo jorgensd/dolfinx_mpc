@@ -29,7 +29,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
     N = 3
     for i in range(r_lvl):
         N *= 2
-    ct = dolfinx.cpp.mesh.CellType.tetrahedron if tetra else dolfinx.cpp.mesh.CellType.hexahedron
+    ct = dolfinx.mesh.CellType.tetrahedron if tetra else dolfinx.mesh.CellType.hexahedron
     mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
     # Get number of unknowns on each edge
 
@@ -104,11 +104,11 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     # Create nullspace for elasticity problem and assign to matrix
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
@@ -164,7 +164,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
         d_set = out_hdf5.get("num_dofs")
         d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("num_slaves")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = mpc.num_local_slaves()
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = mpc.num_local_slaves
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
     if info:
@@ -172,7 +172,7 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
 
     if xdmf:
         # Write solution to file
-        u_h = dolfinx.Function(mpc.function_space())
+        u_h = dolfinx.Function(mpc.function_space)
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
         fname = f"results/bench_elasticity_edge_{r_lvl}.xdmf"

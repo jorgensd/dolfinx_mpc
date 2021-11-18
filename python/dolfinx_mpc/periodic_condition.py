@@ -63,42 +63,41 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
     cell_map = V.mesh.topology.index_map(tdim)
     [cmin, cmax] = cell_map.local_range
     master_coordinates = relation(x[slave_blocks].T).T
+    master_procs = dolfinx.geometry.compute_collisions(global_tree, master_coordinates)
+    possible_local_cells = dolfinx.geometry.compute_collisions(tree, master_coordinates)
+    verified_candidates = dolfinx.geometry.compute_colliding_cells(V.mesh, possible_local_cells, master_coordinates)
+    del possible_local_cells
 
     constraint_data = {slave * bs + j: {} for slave in slave_blocks[:num_local_blocks] for j in range(bs)}
     remaining_slaves = list(constraint_data.keys())
 
     num_remaining = len(remaining_slaves)
     search_data = {}
-    for (slave_block, master_coordinate) in zip(slave_blocks[:num_local_blocks], master_coordinates):
+    for i, (slave_block, master_coordinate) in enumerate(zip(slave_blocks[:num_local_blocks], master_coordinates)):
         for block_idx in range(bs):
             slave_dof = slave_block * bs + block_idx
-            procs = [0]
-            if comm.size > 1:
-                procs = dolfinx.geometry.compute_collisions_point(global_tree, master_coordinate)
+            procs = master_procs.links(i)
 
             # Check if masters can be local
             search_globally = True
             masters_, coeffs_, owners_ = [], [], []
             if comm.rank in procs:
-                possible_cells = dolfinx.geometry.compute_collisions_point(tree, master_coordinate)
-                if len(possible_cells) > 0:
-                    glob_cells = cell_map.local_to_global(possible_cells)
-                    is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
-                    verified_candidate = dolfinx.cpp.geometry.select_colliding_cells(
-                        V.mesh, list(possible_cells[is_owned]), master_coordinate, 1)
-                    if len(verified_candidate) > 0:
-                        basis_values = dolfinx_mpc.cpp.mpc.get_basis_functions(
-                            V._cpp_object, master_coordinate, verified_candidate[0])
-                        cell_blocks = V.dofmap.cell_dofs(verified_candidate[0])
-                        for local_idx, block in enumerate(cell_blocks):
-                            for rem in range(bs):
-                                if not np.isclose(basis_values[local_idx * bs + rem, block_idx], 0):
-                                    if block < size_local:
-                                        owners_.append(comm.rank)
-                                    else:
-                                        owners_.append(ghost_owners[block - size_local])
-                                    masters_.append(imap.local_to_global([block])[0] * bs + rem)
-                                    coeffs_.append(scale * basis_values[local_idx * bs + rem, block_idx])
+                verified_candidate = verified_candidates.links(i)
+                is_owned = verified_candidate < cell_map.size_local
+                verified_candidate = verified_candidate[is_owned]
+                if len(verified_candidate) > 0:
+                    basis_values = dolfinx_mpc.cpp.mpc.get_basis_functions(
+                        V._cpp_object, master_coordinate, verified_candidate[0])
+                    cell_blocks = V.dofmap.cell_dofs(verified_candidate[0])
+                    for local_idx, block in enumerate(cell_blocks):
+                        for rem in range(bs):
+                            if not np.isclose(basis_values[local_idx * bs + rem, block_idx], 0):
+                                if block < size_local:
+                                    owners_.append(comm.rank)
+                                else:
+                                    owners_.append(ghost_owners[block - size_local])
+                                masters_.append(imap.local_to_global([block])[0] * bs + rem)
+                                coeffs_.append(scale * basis_values[local_idx * bs + rem, block_idx])
                 if len(masters_) > 0:
                     constraint_data[slave_dof]["masters"] = masters_
                     constraint_data[slave_dof]["coeffs"] = coeffs_
@@ -106,6 +105,7 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
                     remaining_slaves.remove(slave_dof)
                     num_remaining -= 1
                     search_globally = False
+
             # If masters not found on this processor
             if search_globally:
                 other_procs = procs[procs != comm.rank]
@@ -114,45 +114,50 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
                         search_data[proc][slave_dof] = master_coordinate
                     else:
                         search_data[proc] = {slave_dof: master_coordinate}
-
     # Send search data
     recv_procs = []
     for proc in range(comm.size):
         if proc != comm.rank:
             if proc in search_data.keys():
-                comm.send(search_data[proc], dest=proc, tag=11)
+                dofs = np.asarray(list(search_data[proc].keys()), dtype=np.int32)
+                coordinates = np.zeros((len(dofs), 3), dtype=np.float64)
+                for i, dof in enumerate(dofs):
+                    coordinates[i] = search_data[proc][dof]
+                comm.send(dofs, dest=proc, tag=11)
+                comm.send(coordinates, dest=proc, tag=12)
                 recv_procs.append(proc)
             else:
                 comm.send(None, dest=proc, tag=11)
+                comm.send(None, dest=proc, tag=12)
     # Receive search data
     for proc in range(comm.size):
         if proc != comm.rank:
-            in_data = comm.recv(source=proc, tag=11)
+            in_dofs = comm.recv(source=proc, tag=11)
+            in_coords = comm.recv(source=proc, tag=12)
+
             out_data = {}
-            if in_data is not None:
-                for slave_dof in in_data.keys():
+            if in_dofs is not None:
+                local_cells = dolfinx.geometry.compute_collisions(tree, in_coords)
+                verified_cells = dolfinx.geometry.compute_colliding_cells(V.mesh, local_cells, in_coords)
+                del local_cells
+                for i, slave_dof in enumerate(in_dofs):
                     block_idx = slave_dof % bs
-                    coordinate = in_data[slave_dof]
                     m_, c_, o_ = [], [], []
-                    possible_cells = dolfinx.geometry.compute_collisions_point(tree, coordinate)
-                    if len(possible_cells) > 0:
-                        glob_cells = cell_map.local_to_global(possible_cells)
-                        is_owned = np.logical_and(cmin <= glob_cells, glob_cells < cmax)
-                        verified_candidate = dolfinx.cpp.geometry.select_colliding_cells(
-                            V.mesh, list(possible_cells[is_owned]), coordinate, 1)
-                        if len(verified_candidate) > 0:
-                            basis_values = dolfinx_mpc.cpp.mpc.get_basis_functions(
-                                V._cpp_object, coordinate, verified_candidate[0])
-                            cell_blocks = V.dofmap.cell_dofs(verified_candidate[0])
-                            for idx, block in enumerate(cell_blocks):
-                                for rem in range(bs):
-                                    if not np.isclose(basis_values[idx * bs + rem, block_idx], 0):
-                                        if block < size_local:
-                                            o_.append(comm.rank)
-                                        else:
-                                            o_.append(ghost_owners[block - size_local])
-                                        m_.append(imap.local_to_global([block])[0] * bs + rem)
-                                        c_.append(scale * basis_values[idx * bs + rem, block_idx])
+                    owned_cells = verified_cells.links(i)[verified_cells.links(i) < cell_map.size_local]
+                    if len(owned_cells) > 0:
+
+                        basis_values = dolfinx_mpc.cpp.mpc.get_basis_functions(
+                            V._cpp_object, in_coords[i], owned_cells[0])
+                        cell_blocks = V.dofmap.cell_dofs(owned_cells[0])
+                        for idx, block in enumerate(cell_blocks):
+                            for rem in range(bs):
+                                if not np.isclose(basis_values[idx * bs + rem, block_idx], 0):
+                                    if block < size_local:
+                                        o_.append(comm.rank)
+                                    else:
+                                        o_.append(ghost_owners[block - size_local])
+                                    m_.append(imap.local_to_global([block])[0] * bs + rem)
+                                    c_.append(scale * basis_values[idx * bs + rem, block_idx])
                     if len(m_) > 0:
                         out_data[slave_dof] = {"masters": m_, "coeffs": c_, "owners": o_}
                 comm.send(out_data, dest=proc, tag=22)
@@ -166,6 +171,7 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
                 constraint_data[dof]["owners"] = master_info[dof]["owners"]
                 remaining_slaves.remove(dof)
                 num_remaining -= 1
+
     assert(num_remaining == 0)
 
     # Get the shared indices per block and send all dofs

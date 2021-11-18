@@ -59,17 +59,17 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     """
     timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 
-    V = constraint.function_space()
+    V = constraint.function_space
     dofmap = V.dofmap
     dofs = dofmap.list.array
 
     # Pack MPC data for numba kernels
     coefficients = constraint.coefficients()[0]
-    masters_adj = constraint.masters()
-    c_to_s_adj = constraint.cell_to_slaves()
+    masters_adj = constraint.masters
+    c_to_s_adj = constraint.cell_to_slaves
     cell_to_slave = c_to_s_adj.array
     c_to_s_off = c_to_s_adj.offsets
-    is_slave = constraint.is_slave()
+    is_slave = constraint.is_slave
     mpc_data = (masters_adj.array, coefficients, masters_adj.offsets, cell_to_slave, c_to_s_off, is_slave)
     slave_cells = extract_slave_cells(c_to_s_off)
 
@@ -175,8 +175,8 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
                                            num_facets_per_cell)
 
     # Add mpc entries on diagonal
-    slaves = constraint.slaves()
-    num_local_slaves = constraint.num_local_slaves()
+    slaves = constraint.slaves
+    num_local_slaves = constraint.num_local_slaves
     add_diagonal(A.handle, slaves[:num_local_slaves], diagval)
 
     # Add one on diagonal for diriclet bc and slave dofs

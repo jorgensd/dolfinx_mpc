@@ -36,7 +36,7 @@ else:
 
 def demo_periodic3D(celltype, out_periodic):
     # Create mesh and finite element
-    if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
+    if celltype == dolfinx.mesh.CellType.tetrahedron:
         # Tet setup
         N = 4
         mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
@@ -44,7 +44,7 @@ def demo_periodic3D(celltype, out_periodic):
     else:
         # Hex setup
         N = 12
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.cpp.mesh.CellType.hexahedron)
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.mesh.CellType.hexahedron)
         V = dolfinx.FunctionSpace(mesh, ("CG", 1))
 
     # Create Dirichlet boundary condition
@@ -98,7 +98,7 @@ def demo_periodic3D(celltype, out_periodic):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     # Apply boundary conditions
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
@@ -132,9 +132,9 @@ def demo_periodic3D(celltype, out_periodic):
         print(f"Constrained solver iterations {it}")
 
     # Write solution to file
-    u_h = dolfinx.Function(mpc.function_space())
+    u_h = dolfinx.Function(mpc.function_space)
     u_h.vector.setArray(uh.array)
-    if celltype == dolfinx.cpp.mesh.CellType.tetrahedron:
+    if celltype == dolfinx.mesh.CellType.tetrahedron:
         ext = "tet"
     else:
         ext = "hex"
@@ -187,7 +187,7 @@ def demo_periodic3D(celltype, out_periodic):
 if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
     out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
-    for celltype in [dolfinx.cpp.mesh.CellType.tetrahedron, dolfinx.cpp.mesh.CellType.hexahedron]:
+    for celltype in [dolfinx.mesh.CellType.tetrahedron, dolfinx.mesh.CellType.hexahedron]:
         demo_periodic3D(celltype, out_periodic)
     out_periodic.close()
     dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

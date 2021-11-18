@@ -13,69 +13,12 @@
 namespace
 {
 
-/// Given a local element vector, move all slave contributions to the global
-/// (local to process) vector.
-/// @param [in, out] b The global (local to process) vector
-/// @param [in, out] b_local The local element vector
-/// @param [in] b_local_copy Copy of the local element vector
-/// @param [in] cell_blocks Dofmap for the blocks in the cell
-/// @param [in] num_dofs The number of degrees of freedom in the local vector
-/// @param [in] bs The element block size
-/// @param [in] is_slave Vector indicating if a dof is a slave
-/// @param [in] slaves The slave dofs (local to process)
-/// @param [in] masters Adjacency list with master dofs
-/// @param [in] coeffs Adjacency list with the master coefficients
-template <typename T>
-void modify_mpc_vec(
-    const xtl::span<T>& b, const xtl::span<T>& b_local,
-    const xtl::span<T>& b_local_copy,
-    const xtl::span<const std::int32_t>& cell_blocks, const int num_dofs,
-    const int bs, const std::vector<std::int8_t>& is_slave,
-    const xtl::span<const std::int32_t>& slaves,
-    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
-        masters,
-    const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coeffs)
-{
-
-  // Get local index of slaves in cell
-  std::vector<std::int32_t> local_index(slaves.size());
-  std::int32_t dof;
-  for (std::int32_t i = 0; i < num_dofs; i++)
-  {
-    for (std::int32_t j = 0; j < bs; j++)
-    {
-      dof = cell_blocks[i] * bs + j;
-      if (is_slave[dof])
-      {
-        auto it = std::find(slaves.begin(), slaves.end(), dof);
-        const std::int32_t slave_index = std::distance(slaves.begin(), it);
-        local_index[slave_index] = i * bs + j;
-      }
-    }
-  }
-
-  // Move contribution from each slave to corresponding master dof
-  for (std::size_t i = 0; i < local_index.size(); i++)
-  {
-    auto masters_i = masters->links(slaves[i]);
-    auto coeffs_i = coeffs->links(slaves[i]);
-    for (std::size_t j = 0; j < masters_i.size(); j++)
-    {
-      b[masters_i[j]] += coeffs_i[j] * b_local_copy[local_index[i]];
-      b_local[local_index[i]] = 0;
-    }
-  }
-}
-
 /// Assemble an integration kernel over a set of active entities, described
 /// through into vector of type T, and apply the multipoint constraint
 /// @param[in, out] b The vector to assemble into
 /// @param[in] active_entities The set of active entities.
 /// @param[in] dofmap The dofmap
 /// @param[in] bs The block size of the dofmap
-/// @param[in] coeffs The packed coefficients for all cells
-/// @param[in] constants The pack constants
-/// @param[in] cell_info The cell permutation info
 /// @param[in] mpc The multipoint constraint
 /// @param[in] fetch_cells Function that fetches the cell index for an entity
 /// in active_entities
@@ -83,17 +26,14 @@ void modify_mpc_vec(
 /// assembles into a local element matrix for a given entity
 template <typename T, typename E_DESC>
 void _assemble_entities_impl(
-    xtl::span<T> b, const dolfinx::mesh::Mesh& mesh,
-    const std::vector<E_DESC>& active_entities,
+    xtl::span<T> b, const std::vector<E_DESC>& active_entities,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap, int bs,
-    const xtl::span<const T> coeffs, int cstride,
-    const std::vector<T>& constants,
-    const xtl::span<const std::uint32_t>& cell_info,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc,
     const std::function<const std::int32_t(const E_DESC&)> fetch_cells,
     const std::function<void(xtl::span<T>, E_DESC)>
         assemble_local_element_vector)
 {
+
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       masters = mpc->masters();
@@ -125,8 +65,8 @@ void _assemble_entities_impl(
       // Modify element vector for MPC and insert into b for non-local
       // contributions
       std::copy(be.begin(), be.end(), be_copy.begin());
-      modify_mpc_vec<T>(b, _be, _be_copy, dofs, num_dofs, bs, is_slave, slaves,
-                        masters, coefficients);
+      dolfinx_mpc::modify_mpc_vec<T>(b, _be, _be_copy, dofs, num_dofs, bs,
+                                     is_slave, slaves, masters, coefficients);
     }
 
     // Add local contribution to b
@@ -212,9 +152,9 @@ void _assemble_vector(
 
       // Assemble over all active cells
       const std::vector<std::int32_t>& active_cells = L.cell_domains(i);
-      _assemble_entities_impl<T, std::int32_t>(
-          b, *mesh, active_cells, dofs, bs, coeffs.first, coeffs.second,
-          constants, cell_info, mpc, fetch_cells, assemble_local_cell_vector);
+      _assemble_entities_impl<T, std::int32_t>(b, active_cells, dofs, bs, mpc,
+                                               fetch_cells,
+                                               assemble_local_cell_vector);
     }
   }
   // Prepare permutations for exterior and interior facet integrals
@@ -279,8 +219,7 @@ void _assemble_vector(
       const std::vector<std::pair<std::int32_t, int>>& active_facets
           = L.exterior_facet_domains(i);
       _assemble_entities_impl<T, std::pair<std::int32_t, int>>(
-          b, *mesh, active_facets, dofs, bs, coeffs.first, coeffs.second,
-          constants, cell_info, mpc, fetch_cells_ext,
+          b, active_facets, dofs, bs, mpc, fetch_cells_ext,
           assemble_local_exterior_facet_vector);
     }
     if (L.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)

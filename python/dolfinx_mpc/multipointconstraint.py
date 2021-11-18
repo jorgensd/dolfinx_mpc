@@ -11,7 +11,6 @@ import numpy
 from petsc4py import PETSc
 
 import dolfinx_mpc.cpp
-
 from dolfinx.cpp.fem import Form_complex128 as Form_C, Form_float64 as Form_R
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition_topological, create_periodic_condition_geometrical
@@ -87,7 +86,7 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has already been finalized")
         self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs, mpc_data.owners, mpc_data.offsets)
 
-    def finalize(self):
+    def finalize(self) -> None:
         """
         Finializes the multi point constraint. After this function is called, no new constraints can be added
         to the constraint. This function creates a map from the cells (local to index) to the slave degrees of
@@ -99,10 +98,9 @@ class MultiPointConstraint():
         # Initialize C++ object and create slave->cell maps
         self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
             self.V._cpp_object, self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
-
         # Replace function space
-        V_cpp = dolfinx.cpp.fem.FunctionSpace(self.V.mesh, self.V.element, self._cpp_object.dofmap)
-        self.V_mpc = dolfinx.FunctionSpace(None, self.V.ufl_element(), V_cpp)
+        self.V = dolfinx.FunctionSpace(None, self.V.ufl_element(), self._cpp_object.function_space)
+
         self.finalized = True
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
@@ -282,6 +280,7 @@ class MultiPointConstraint():
             self.V._cpp_object, meshtags, slave_marker, master_marker)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
+    @property
     def is_slave(self) -> numpy.ndarray:
         """
         Returns a vector of integers where the ith entry indicates if a degree of freedom (local to process) is a slave.
@@ -290,6 +289,7 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.is_slave
 
+    @property
     def slaves(self):
         """
         Returns the degrees of freedom for all slaves local to process
@@ -298,6 +298,7 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.slaves
 
+    @property
     def masters(self):
         """
         Returns an `dolfinx.cpp.graph.AdjacencyList_int32` whose ith node corresponds to
@@ -305,7 +306,7 @@ class MultiPointConstraint():
 
         Example
         -------
-        masters = mpc.masters()
+        masters = mpc.masters
         masters_of_dof_i = masters.links(i)
         """
         if not self.finalized:
@@ -326,6 +327,7 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return self._cpp_object.coefficients()
 
+    @property
     def num_local_slaves(self):
         """
         Return the number of slaves owned by the current process.
@@ -335,15 +337,7 @@ class MultiPointConstraint():
         if self.finalized:
             return self._cpp_object.num_local_slaves
 
-    def index_map(self):
-        """
-        Return the index map where all master degrees of freedom for slaves on the process
-        has an local index as a ghost.
-        """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
-        return self._cpp_object.index_map
-
+    @property
     def cell_to_slaves(self):
         """
         Returns an `dolfinx.cpp.graph.AdjacencyList_int32` whose ith node corresponds to
@@ -372,6 +366,7 @@ class MultiPointConstraint():
             raise RuntimeError("MultiPointConstraint has not been finalized")
         return dolfinx_mpc.cpp.mpc.create_sparsity_pattern(cpp_form, self._cpp_object)
 
+    @property
     def function_space(self):
         """
         Return the function space for the multi-point constraint with the updated index map
@@ -379,9 +374,9 @@ class MultiPointConstraint():
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
         else:
-            return self.V_mpc
+            return self.V
 
-    def backsubstitution(self, vector: PETSc.Vec):
+    def backsubstitution(self, vector: PETSc.Vec) -> None:
         """
         For a vector, impose the multi-point constraint by backsubstiution.
         This function is used after solving the reduced problem to obtain the values

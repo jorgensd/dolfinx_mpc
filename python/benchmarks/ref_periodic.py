@@ -51,7 +51,7 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         N = 3
         for i in range(r_lvl):
             N *= 2
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.cpp.mesh.CellType.hexahedron)
+        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.mesh.CellType.hexahedron)
 
     V = dolfinx.FunctionSpace(mesh, ("CG", degree))
 

@@ -19,6 +19,7 @@
 #include <dolfinx_mpc/SlipConstraint.h>
 #include <dolfinx_mpc/assemble_matrix.h>
 #include <dolfinx_mpc/assemble_vector.h>
+#include <dolfinx_mpc/lifting.h>
 #include <dolfinx_mpc/utils.h>
 #include <memory>
 #include <petscmat.h>
@@ -37,10 +38,26 @@ void mpc(py::module& m)
 
   m.def("get_basis_functions",
         [](std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-           const std::array<double, 3>& x, const int index)
+           const py::array_t<double, py::array::c_style>& x, const int index)
         {
+          const std::size_t x_s0 = x.ndim() == 1 ? 1 : x.shape(0);
+          const std::int32_t gdim = V->mesh()->geometry().dim();
+          xt::xtensor<double, 2> _x
+              = xt::zeros<double>({x_s0, static_cast<std::size_t>(gdim)});
+          auto xx = x.unchecked();
+          if (xx.ndim() == 1)
+          {
+            for (py::ssize_t i = 0; i < gdim; i++)
+              _x(0, i) = xx(i);
+          }
+          else if (xx.ndim() == 2)
+          {
+            for (py::ssize_t i = 0; i < xx.shape(0); i++)
+              for (py::ssize_t j = 0; j < gdim; j++)
+                _x(i, j) = xx(i, j);
+          }
           const xt::xtensor<double, 2> basis_function
-              = dolfinx_mpc::get_basis_functions(V, x, index);
+              = dolfinx_mpc::get_basis_functions(V, _x, index);
           return py::array_t<double>(basis_function.shape(),
                                      basis_function.data());
         });
@@ -76,6 +93,14 @@ void mpc(py::module& m)
                                            py::cast(self)));
            })
       .def_property_readonly(
+          "constants",
+          [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self)
+          {
+            const std::vector<PetscScalar>& consts = self.constant_values();
+            return py::array_t<PetscScalar>(consts.size(), consts.data(),
+                                            py::cast(self));
+          })
+      .def_property_readonly(
           "owners", &dolfinx_mpc::MultiPointConstraint<PetscScalar>::owners)
       .def_property_readonly(
           "slaves",
@@ -101,10 +126,8 @@ void mpc(py::module& m)
           "num_local_slaves",
           &dolfinx_mpc::MultiPointConstraint<PetscScalar>::num_local_slaves)
       .def_property_readonly(
-          "index_map",
-          &dolfinx_mpc::MultiPointConstraint<PetscScalar>::index_map)
-      .def_property_readonly(
-          "dofmap", &dolfinx_mpc::MultiPointConstraint<PetscScalar>::dofmap)
+          "function_space",
+          &dolfinx_mpc::MultiPointConstraint<PetscScalar>::function_space)
       .def_property_readonly(
           "owners", &dolfinx_mpc::MultiPointConstraint<PetscScalar>::owners)
       .def(
@@ -190,6 +213,28 @@ void mpc(py::module& m)
       "Assemble linear form into an existing vector");
 
   m.def(
+      "apply_lifting",
+      [](py::array_t<PetscScalar, py::array::c_style> b,
+         std::vector<std::shared_ptr<const dolfinx::fem::Form<PetscScalar>>>& a,
+         const std::vector<std::vector<std::shared_ptr<
+             const dolfinx::fem::DirichletBC<PetscScalar>>>>& bcs1,
+         const std::vector<py::array_t<PetscScalar, py::array::c_style>>& x0,
+         double scale,
+         std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
+             mpc)
+      {
+        std::vector<xtl::span<const PetscScalar>> _x0;
+        for (const auto& x : x0)
+          _x0.emplace_back(x.data(), x.size());
+
+        dolfinx_mpc::apply_lifting(xtl::span(b.mutable_data(), b.size()), a,
+                                   bcs1, _x0, scale, mpc);
+      },
+      py::arg("b"), py::arg("a"), py::arg("bcs"), py::arg("x0"),
+      py::arg("scale"), py::arg("mpc"),
+      "Assemble apply lifting from form a on vector b");
+
+  m.def(
       "create_matrix",
       [](const dolfinx::fem::Form<PetscScalar>& a,
          const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
@@ -220,17 +265,13 @@ void mpc(py::module& m)
         });
   m.def("create_contact_inelastic_condition",
         &dolfinx_mpc::create_contact_inelastic_condition);
-  m.def("create_dof_to_facet_map", &dolfinx_mpc::create_dof_to_facet_map);
-  m.def("create_average_normal", &dolfinx_mpc::create_average_normal);
   m.def("create_normal_approximation",
-        [](std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-           const py::array_t<std::int32_t, py::array::c_style>& entities,
-           py::array_t<PetscScalar, py::array::c_style> vector)
+        [](std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dim,
+           const py::array_t<std::int32_t, py::array::c_style>& entities)
         {
           return dolfinx_mpc::create_normal_approximation(
-              V,
-              xtl::span<const std::int32_t>(entities.data(), entities.size()),
-              xtl::span<PetscScalar>(vector.mutable_data(), vector.size()));
+              V, dim,
+              xtl::span<const std::int32_t>(entities.data(), entities.size()));
         });
 }
 } // namespace dolfinx_mpc_wrappers

@@ -34,7 +34,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                     xdmf=False, boomeramg=False, kspview=False, degree=1):
     # Create mesh and function space
     dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Create/Refine mesh")
-    ct = dolfinx.cpp.mesh.CellType.tetrahedron if tetra else dolfinx.cpp.mesh.CellType.hexahedron
+    ct = dolfinx.mesh.CellType.tetrahedron if tetra else dolfinx.mesh.CellType.hexahedron
     # Tet setup
     N = 3
     for i in range(r_lvl):
@@ -102,7 +102,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Apply boundary conditions
     dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Apply lifting")
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
@@ -158,7 +158,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         d_set = out_hdf5.get("num_dofs")
         d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("num_slaves")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = mpc.num_local_slaves()
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = mpc.num_local_slaves
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
 
@@ -168,7 +168,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Output solution to XDMF
     if xdmf:
         # Create function space with correct index map for MPC
-        u_h = dolfinx.Function(mpc.function_space())
+        u_h = dolfinx.Function(mpc.function_space)
         u_h.vector.setArray(uh.array)
 
         # Name formatting of functions

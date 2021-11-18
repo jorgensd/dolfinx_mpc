@@ -25,8 +25,8 @@ comm = MPI.COMM_WORLD
 
 
 def demo_stacked_cubes(outfile, theta, gmsh=False,
-                       ct=dolfinx.cpp.mesh.CellType.tetrahedron, compare=True, res=0.1, noslip=False):
-    celltype = "hexahedron" if ct == dolfinx.cpp.mesh.CellType.hexahedron else "tetrahedron"
+                       ct=dolfinx.mesh.CellType.tetrahedron, compare=True, res=0.1, noslip=False):
+    celltype = "hexahedron" if ct == dolfinx.mesh.CellType.hexahedron else "tetrahedron"
     type_ext = "no_slip" if noslip else "slip"
     mesh_ext = "_gmsh_" if gmsh else "_"
     dolfinx_mpc.utils.log_info(f"Run theta:{theta:.2f}, Cell: {celltype}, GMSH {gmsh}, Noslip: {noslip}")
@@ -112,22 +112,23 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
             mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
         with dolfinx.common.Timer("~Contact: Create facet normal approximation"):
-            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
+            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
         with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/nh.xdmf", "w") as xdmf:
             xdmf.write_mesh(mesh)
             xdmf.write_function(nh)
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
             mpc.create_contact_slip_condition(mt, 4, 9, nh)
+
     with dolfinx.common.Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     with dolfinx.common.Timer(f"~~Contact: Assemble matrix ({num_dofs})"):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer(f"~~Contact: Assemble vector ({num_dofs})"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
-    fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
@@ -162,7 +163,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
 
     it = solver.getIterationNumber()
     unorm = uh.norm()
-    num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)
+    num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves, op=MPI.SUM)
     if comm.rank == 0:
         num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
         print(f"Number of dofs: {num_dofs}")
@@ -171,7 +172,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         print(f"Norm of u {unorm:.5e}")
 
     # Write solution to file
-    u_h = dolfinx.Function(mpc.function_space())
+    u_h = dolfinx.Function(mpc.function_space)
     u_h.vector.setArray(uh.array)
     u_h.name = f"u_{celltype}_{theta:.2f}{mesh_ext}{type_ext}".format(celltype, theta, type_ext, mesh_ext)
     outfile.write_mesh(mesh)
@@ -246,9 +247,9 @@ if __name__ == "__main__":
     outfile = dolfinx.io.XDMFFile(comm, "results/demo_contact_3D.xdmf", "w")
 
     if hex:
-        ct = dolfinx.cpp.mesh.CellType.hexahedron
+        ct = dolfinx.mesh.CellType.hexahedron
     else:
-        ct = dolfinx.cpp.mesh.CellType.tetrahedron
+        ct = dolfinx.mesh.CellType.tetrahedron
     demo_stacked_cubes(outfile, theta=theta, gmsh=gmsh, ct=ct, compare=compare, res=res, noslip=noslip)
 
     outfile.close()

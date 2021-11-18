@@ -1,4 +1,4 @@
-# Copyright (C) 2020 Jørgen S. Dokken
+# Copyright (C) 2021 Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -17,82 +17,86 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 
+@pytest.mark.skipif(MPI.COMM_WORLD.size > 1,
+                    reason="This test should only be run in serial.")
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
-@pytest.mark.parametrize("Nx", [4])
-@pytest.mark.parametrize("Ny", [2, 3])
-@pytest.mark.parametrize("slave_space", [0, 1])
-@pytest.mark.parametrize("master_space", [0, 1])
-def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # noqa: F811
-
+def test_lifting(get_assemblers):  # noqa: F811
+    """
+    Test MPC lifting operation on a single cell
+    """
     assemble_matrix, assemble_vector = get_assemblers
+
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
+    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 1, 1, dolfinx.mesh.CellType.quadrilateral)
+    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
 
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
-
-    def boundary(x):
-        return np.isclose(x.T, [0, 0, 0]).all(axis=1)
-
-    # Define boundary conditions (HAS TO BE NON-MASTER NODES)
-    u_bc = dolfinx.Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
-
-    bdofsV = dolfinx.fem.locate_dofs_geometrical(V, boundary)
-    bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV)
-    bcs = [bc]
-
-    # Define variational problem
+    # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
-    f = ufl.as_vector((-5 * x[1], 7 * x[0]))
-
+    f = x[1] * ufl.sin(2 * ufl.pi * x[0])
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     rhs = ufl.inner(f, v) * ufl.dx
 
-    # Setup LU solver
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
+    # Create Dirichlet boundary condition
+    u_bc = dolfinx.Function(V)
+    with u_bc.vector.localForm() as u_local:
+        u_local.set(2.3)
 
-    # Create multipoint constraint
-    def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
-    s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.1, l2b([0.5, 1]): 0.3}}
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_general_constraint(s_m_c, slave_space, master_space)
-    mpc.finalize()
+    def DirichletBoundary(x):
+        return np.isclose(x[0], 1)
 
-    with dolfinx.common.Timer("~TEST: Assemble matrix"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("~TEST: Assemble vector"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+    mesh.topology.create_connectivity(2, 1)
+    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
+    bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
+    bcs = [bc]
 
-    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
-
-    solver.setOperators(A)
-    uh = b.copy()
-    uh.set(0)
-
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    mpc.backsubstitution(uh)
-
-    # Generate reference matrices for unconstrained problem
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    # Generate reference matrices
+    A_org = dolfinx.fem.assemble_matrix(a, bcs=bcs)
     A_org.assemble()
-
     L_org = dolfinx.fem.assemble_vector(rhs)
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(L_org, bcs)
 
+    # Create multipoint constraint
+
+    def l2b(li):
+        return np.array(li, dtype=np.float64).tobytes()
+    s_m_c = {l2b([0, 0]): {l2b([0, 1]): 1}}
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_general_constraint(s_m_c)
+    mpc.finalize()
+
+    A = assemble_matrix(a, mpc, bcs=bcs)
+    b = assemble_vector(rhs, mpc)
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+
+    dolfinx.fem.set_bc(b, bcs)
+
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver.setType(PETSc.KSP.Type.PREONLY)
+    solver.getPC().setType(PETSc.PC.Type.LU)
+    solver.setOperators(A)
+    # Solve
+    uh = b.copy()
+    uh.set(0)
+    solver.solve(b, uh)
+    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    mpc.backsubstitution(uh)
+
+    V_mpc = mpc.function_space
+    u_out = dolfinx.Function(V_mpc)
+    u_out.vector.array[:] = uh.array
+    with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "u_bc.xdmf", "w") as xdmf:
+        xdmf.write_mesh(mesh)
+        xdmf.write_function(u_out)
     root = 0
     comm = mesh.mpi_comm()
     with dolfinx.common.Timer("~TEST: Compare"):
+
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
@@ -101,14 +105,14 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
-
+        # constants = dolfinx_mpc.utils.gather_contants(mpc, root=root)
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
-            reduced_L = K.T @ L_np
+            reduced_L = K.T @ (L_np)  # - constants)
             # Solve linear system
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
-            # Back substitution to full solution vector
-            uh_numpy = K @ d
+            # Back substitution to full solution vecto
+            uh_numpy = K @ (d)  # + constants)
             assert np.allclose(uh_numpy, u_mpc)
 
     dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
