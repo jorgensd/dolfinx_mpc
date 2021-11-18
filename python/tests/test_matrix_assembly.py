@@ -20,8 +20,8 @@ root = 0
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
-@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.quadrilateral,
-                                      dolfinx.cpp.mesh.CellType.triangle])
+@pytest.mark.parametrize("celltype", [dolfinx.mesh.CellType.quadrilateral,
+                                      dolfinx.mesh.CellType.triangle])
 def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: F811
     assemble_matrix, _ = get_assemblers
 
@@ -57,8 +57,8 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
-@pytest.mark.parametrize("celltype", [dolfinx.cpp.mesh.CellType.triangle,
-                                      dolfinx.cpp.mesh.CellType.quadrilateral])
+@pytest.mark.parametrize("celltype", [dolfinx.mesh.CellType.triangle,
+                                      dolfinx.mesh.CellType.quadrilateral])
 def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # noqa: F811
     assemble_matrix, _ = get_assemblers
 

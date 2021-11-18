@@ -22,7 +22,7 @@ from petsc4py import PETSc
 comm = MPI.COMM_WORLD
 
 
-def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron, ext="tetrahedron", num_refinements=0, N0=5):
+def mesh_3D_dolfin(theta=0, ct=dolfinx.mesh.CellType.tetrahedron, ext="tetrahedron", num_refinements=0, N0=5):
     timer = dolfinx.common.Timer("Create mesh")
 
     def find_plane_function(p0, p1, p2):
@@ -162,7 +162,7 @@ def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron, ext="tetra
 
 
 def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
-    celltype = "hexahedron" if ct == dolfinx.cpp.mesh.CellType.hexahedron else "tetrahedron"
+    celltype = "hexahedron" if ct == dolfinx.mesh.CellType.hexahedron else "tetrahedron"
     type_ext = "no_slip" if noslip else "slip"
     dolfinx_mpc.utils.log_info(f"Run theta: {theta:.2f}, Cell: {celltype:s}, Noslip: {noslip:b}")
 
@@ -240,13 +240,13 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
             mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
         with dolfinx.common.Timer(f"{num_dofs}: FacetNormal"):
-            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
+            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
         with dolfinx.common.Timer(f"{num_dofs}: Contact-constraint"):
             mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
     with dolfinx.common.Timer(f"{num_dofs}: MPC-init"):
         mpc.finalize()
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
     dolfinx_mpc.utils.log_info(f"Num dofs: {num_dofs}")
 
     dolfinx_mpc.utils.log_info("Assemble matrix")
@@ -254,7 +254,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
     with dolfinx.common.Timer(f"{num_dofs}: Assemble-vector (C++)"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
     dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
@@ -294,7 +294,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     it = solver.getIterationNumber()
 
     # Write solution to file
-    u_h = dolfinx.Function(mpc.function_space())
+    u_h = dolfinx.Function(mpc.function_space)
     u_h.vector.setArray(uh.array)
     u_h.name = "u"
     with dolfinx.io.XDMFFile(comm, f"results/bench_contact_{num_dofs}.xdmf", "w") as outfile:
@@ -303,7 +303,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     # Write performance data to file
     if timings:
         dolfinx_mpc.utils.log_info("Timings")
-        num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves(), op=MPI.SUM)
+        num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves, op=MPI.SUM)
         results_file = None
         num_procs = comm.size
         if comm.rank == 0:
@@ -349,7 +349,7 @@ if __name__ == "__main__":
     hex = args.hex
     ref = args.ref
     N0 = args.N0
-    ct = dolfinx.cpp.mesh.CellType.hexahedron if hex else dolfinx.cpp.mesh.CellType.tetrahedron
+    ct = dolfinx.mesh.CellType.hexahedron if hex else dolfinx.mesh.CellType.tetrahedron
 
     # Create cache
     demo_stacked_cubes(theta=theta, ct=ct, num_refinements=0, N0=3, noslip=noslip, timings=False)

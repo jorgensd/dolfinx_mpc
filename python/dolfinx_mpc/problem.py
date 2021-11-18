@@ -11,7 +11,7 @@ from dolfinx import fem
 from dolfinx import cpp
 from petsc4py import PETSc
 from .assemble_matrix import assemble_matrix
-from .assemble_vector import assemble_vector
+from .assemble_vector import assemble_vector, apply_lifting
 from .multipointconstraint import MultiPointConstraint
 
 
@@ -70,7 +70,7 @@ class LinearProblem():
             raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
         self._mpc = mpc
         # Create function containing solution vector
-        self.u = fem.Function(self._mpc.function_space())
+        self.u = fem.Function(self._mpc.function_space)
 
         # NOTE: This is a workaround for only creating sparsity pattern once
         a_cpp = fem.Form(a, form_compiler_parameters=form_compiler_parameters,
@@ -79,9 +79,10 @@ class LinearProblem():
         # Create MPC matrix
         pattern = self._mpc.create_sparsity_pattern(a_cpp)
         pattern.assemble()
-        self._A = cpp.la.create_matrix(self._mpc.function_space().mesh.mpi_comm(), pattern)
+        self._A = cpp.la.create_matrix(self._mpc.function_space.mesh.mpi_comm(), pattern)
 
-        self._b = cpp.la.create_vector(self._mpc.index_map(), self._mpc.function_space().dofmap.index_map_bs)
+        self._b = cpp.la.create_vector(self._mpc.function_space.dofmap.index_map,
+                                       self._mpc.function_space.dofmap.index_map_bs)
         self.bcs = bcs
 
         self._solver = PETSc.KSP().create(self.u.function_space.mesh.mpi_comm())
@@ -115,7 +116,7 @@ class LinearProblem():
                         jit_parameters=self._jit_parameters)
 
         # Apply boundary conditions to the rhs
-        fem.apply_lifting(self._b, [self._a], [self.bcs])
+        apply_lifting(self._b, [self._a], [self.bcs], self._mpc)
         self._b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(self._b, self.bcs)
 

@@ -2,6 +2,10 @@
 
 ## main
 - **API**:
+  - `dolfinx_mpc.utils.create_normal_approximation` now takes in the meshtag and the marker, instead of the marked entities
+  - No longer direct access to dofmap and indexmap of MPC, now collected through the `dolfinx_mpc.MultiPointConstraint.function_space`.
+  - Introducing custom lifting operator: `dolfinx_mpc.apply_lifting`. Resolves a bug that woul occur if one had a non-zero Dirichlet BC on the same cell as a slave degree of freedom.
+    However, one can still not use Dirichlet dofs as slaves or masters in a multi point constraint.
   - Move `dolfinx_mpc.cpp.mpc.create_*_contact_condition` to `dolfinx_mpc.MultiPointConstraint.create_*_contact_condition`.
   - New default assembler: The default for `assemble_matrix` and `assemble_vector` is now C++ implementations. The numba implementations can be accessed through the submodule `dolfinx_mpc.numba`.
   - New submodule: `dolfinx_mpc.numba`. This module contains the `assemble_matrix` and `assemble_vector` that uses numba.
@@ -11,7 +15,12 @@
     - `slave_cells` does now longer exist as it can be gotten implicitly from `cell_to_slaves`.
 
 - **Performance**:
-  - The C++ assembler has been fully rewritten and has a "Insert number" speed-up for the `demo_contact_3D.py` with `XXX` dofs.
+  - The C++ assembler has been fully rewritten.
+  - Various improvements to `ContactConstraint`.
+
+- **Bugs**
+  - Resolved issue where `create_facet_normal_approximation` would give you a 0 normal for a surface dof it was not owned by any of the cells with facets on the surface.
+
 - **DOLFINX API-changes**:
   - Updates to match dolfinx implementation of exterior facet integrals
   - Updated user-interface of `dolfinx.Constant`, explicitly casting scalar-type with `PETSc.ScalarType`.

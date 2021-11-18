@@ -40,18 +40,38 @@ def _gather_slaves_global(constraint):
     """
     Given a multi point constraint, return slaves for all processors with global dof numbering
     """
-    imap = constraint.index_map()
-    num_local_slaves = constraint.num_local_slaves()
-    block_size = constraint.function_space().dofmap.index_map_bs
+    imap = constraint.function_space.dofmap.index_map
+    num_local_slaves = constraint.num_local_slaves
+    block_size = constraint.function_space.dofmap.index_map_bs
+    _slaves = constraint.slaves
     if num_local_slaves > 0:
-        slave_blocks = constraint.slaves()[:num_local_slaves] // block_size
-        slave_rems = constraint.slaves()[:num_local_slaves] % block_size
+        slave_blocks = _slaves[:num_local_slaves] // block_size
+        slave_rems = _slaves[:num_local_slaves] % block_size
         glob_slaves = imap.local_to_global(slave_blocks) * block_size + slave_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
 
     slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
     return slaves
+
+
+def gather_constants(constraint, root=0):
+    """
+    Given a multi-point constraint, gather all constants
+    """
+    imap = constraint.index_map()
+    constants = constraint._cpp_object.constants
+    l_range = imap.local_range
+    ranges = MPI.COMM_WORLD.gather(np.asarray(l_range, dtype=np.int64), root=root)
+    g_consts = MPI.COMM_WORLD.gather(constants[:l_range[1] - l_range[0]], root=root)
+    if MPI.COMM_WORLD.rank == root:
+        block_size = constraint.function_space().dofmap.index_map_bs
+        global_consts = np.zeros(imap.size_global * block_size, dtype=PETSc.ScalarType)
+        for (r, vals) in zip(ranges, g_consts):
+            global_consts[r[0]:r[1]] = vals
+        return global_consts
+    else:
+        return
 
 
 def gather_transformation_matrix(constraint, root=0):
@@ -75,11 +95,11 @@ def gather_transformation_matrix(constraint, root=0):
     """
     # Gather slaves from all procs
     V = constraint.V
-    imap = constraint.index_map()
+    imap = constraint.function_space.dofmap.index_map
     block_size = V.dofmap.index_map_bs
-    num_local_slaves = constraint.num_local_slaves()
+    num_local_slaves = constraint.num_local_slaves
     # Gather all global_slaves
-    slaves = constraint.slaves()[:num_local_slaves]
+    slaves = constraint.slaves[:num_local_slaves]
     if num_local_slaves > 0:
         local_blocks = slaves // block_size
         local_rems = slaves % block_size
@@ -87,23 +107,31 @@ def gather_transformation_matrix(constraint, root=0):
     else:
         glob_slaves = np.array([], dtype=np.int64)
     all_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
-    masters = constraint.masters().array
+    masters = constraint.masters.array
     master_blocks = masters // block_size
     master_rems = masters % block_size
     coeffs = constraint.coefficients()[0]
-    offsets = constraint.masters().offsets
+    offsets = constraint.masters.offsets
     # Create sparse K matrix
     K_val, rows, cols = [], [], []
+
     # Add local contributions to K from local slaves
     for slave, global_slave in zip(slaves, glob_slaves):
         masters_index = (imap.local_to_global(master_blocks[offsets[slave]: offsets[slave + 1]])
                          * block_size + master_rems[offsets[slave]: offsets[slave + 1]])
         coeffs_index = coeffs[offsets[slave]: offsets[slave + 1]]
-        for master, coeff in zip(masters_index, coeffs_index):
-            count = sum(master > all_slaves)
-            K_val.append(coeff)
+        # If we have a simply equality constraint (DirichletBC)
+        if len(masters_index) > 0:
+            for master, coeff in zip(masters_index, coeffs_index):
+                count = sum(master > all_slaves)
+                K_val.append(coeff)
+                rows.append(global_slave)
+                cols.append(master - count)
+        else:
+            K_val.append(1)
+            count = sum(global_slave > all_slaves)
             rows.append(global_slave)
-            cols.append(master - count)
+            cols.append(global_slave - count)
 
     # Add identity for all dofs on diagonal
     l_range = V.dofmap.index_map.local_range
@@ -129,7 +157,7 @@ def petsc_to_local_CSR(A: PETSc.Mat, mpc: dolfinx_mpc.MultiPointConstraint):
     """
     Convert a PETSc matrix to a local CSR matrix (scipy) including ghost entries
     """
-    global_indices = np.asarray(mpc.function_space().dofmap.index_map.global_indices(), dtype=PETSc.IntType)
+    global_indices = np.asarray(mpc.function_space.dofmap.index_map.global_indices(), dtype=PETSc.IntType)
     sort_index = np.argsort(global_indices)
     is_A = PETSc.IS().createGeneral(global_indices[sort_index])
     A_loc = A.createSubMatrices(is_A)[0]
@@ -198,6 +226,7 @@ def compare_MPC_LHS(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
 
         # Remove identity rows of MPC matrix
         all_cols = np.arange(V.dofmap.index_map.size_global * V.dofmap.index_map_bs)
+
         cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
         mpc_without_slaves = A_mpc_csr[cols_except_slaves[:, None], cols_except_slaves]
 
@@ -215,11 +244,10 @@ def compare_MPC_RHS(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.Mult
     b_org_np = dolfinx_mpc.utils.gather_PETScVector(b_org, root=root)
     b_np = dolfinx_mpc.utils.gather_PETScVector(b, root=root)
     K = gather_transformation_matrix(constraint, root=root)
-
+    # constants = gather_constants(constraint)
     comm = constraint.V.mesh.mpi_comm()
     if comm.rank == root:
-        reduced_b = K.T @ b_org_np
-
+        reduced_b = K.T @ b_org_np  # - constants for RHS mpc
         all_cols = np.arange(constraint.V.dofmap.index_map.size_global * constraint.V.dofmap.index_map_bs)
         cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
         assert np.allclose(b_np[glob_slaves], 0)

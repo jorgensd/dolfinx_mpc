@@ -62,17 +62,17 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
 
     # Data from multipointconstraint
     coefficients = constraint.coefficients()[0]
-    masters_adj = constraint.masters()
-    c_to_s_adj = constraint.cell_to_slaves()
+    masters_adj = constraint.masters
+    c_to_s_adj = constraint.cell_to_slaves
     cell_to_slave = c_to_s_adj.array
     c_to_s_off = c_to_s_adj.offsets
-    is_slave = constraint.is_slave()
+    is_slave = constraint.is_slave
     mpc_data = (masters_adj.array, coefficients, masters_adj.offsets, cell_to_slave, c_to_s_off, is_slave)
     slave_cells = extract_slave_cells(c_to_s_off)
 
     # Get index map and ghost info
     if b is None:
-        index_map = constraint.index_map()
+        index_map = constraint.function_space.dofmap.index_map
         vector = dolfinx.cpp.la.create_vector(index_map, block_size)
     else:
         vector = b

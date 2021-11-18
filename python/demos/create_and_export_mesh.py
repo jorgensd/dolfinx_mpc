@@ -425,9 +425,9 @@ def mesh_2D_dolfin(celltype, theta=0):
     # Using built in meshes, stacking cubes on top of each other
     N = 15
     if celltype == "quadrilateral":
-        ct = dolfinx.cpp.mesh.CellType.quadrilateral
+        ct = dolfinx.mesh.CellType.quadrilateral
     elif celltype == "triangle":
-        ct = dolfinx.cpp.mesh.CellType.triangle
+        ct = dolfinx.mesh.CellType.triangle
     else:
         raise ValueError("celltype has to be tri or quad")
     if MPI.COMM_WORLD.rank == 0:
@@ -520,7 +520,7 @@ def mesh_2D_dolfin(celltype, theta=0):
     MPI.COMM_WORLD.barrier()
 
 
-def mesh_3D_dolfin(theta=0, ct=dolfinx.cpp.mesh.CellType.tetrahedron, ext="tetrahedron", res=0.1):
+def mesh_3D_dolfin(theta=0, ct=dolfinx.mesh.CellType.tetrahedron, ext="tetrahedron", res=0.1):
     timer = dolfinx.common.Timer("~~Contact: Create mesh")
 
     def find_plane_function(p0, p1, p2):

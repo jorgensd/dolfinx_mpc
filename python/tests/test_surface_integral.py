@@ -89,7 +89,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = assemble_vector(rhs, mpc)
 
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
@@ -101,7 +101,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     mpc.backsubstitution(uh)
 
     # Write solution to file
-    # u_h = dolfinx.Function(mpc.function_space())
+    # u_h = dolfinx.Function(mpc.function_space)
     # u_h.vector.setArray(uh.array)
     # u_h.name = "u_mpc"
     # outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "output/uh.xdmf", "w")

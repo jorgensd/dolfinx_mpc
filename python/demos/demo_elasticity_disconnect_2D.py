@@ -149,14 +149,14 @@ for i, pair in enumerate(pairs):
     mpc.add_constraint(V, sl, ms, co, ow, off)
 mpc.finalize()
 
-null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
 num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
 with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(num_dofs)):
     A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
 with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(num_dofs)):
     b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
-fem.apply_lifting(b, [a], [bcs])
+dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
 b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 fem.set_bc(b, bcs)
 
@@ -195,7 +195,7 @@ if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 
 # Write solution to file
-u_h = dolfinx.Function(mpc.function_space())
+u_h = dolfinx.Function(mpc.function_space)
 u_h.vector.setArray(uh.array)
 u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"

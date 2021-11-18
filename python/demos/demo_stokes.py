@@ -120,7 +120,7 @@ bc1 = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
 bcs = [bc1]
 
 # Slip conditions for walls
-n = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 1])
+n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
 with dolfinx.common.Timer("~Stokes: Create slip constraint"):
     mpc = dolfinx_mpc.MultiPointConstraint(W)
     mpc.create_slip_constraint((mt, 1), n, sub_space=W.sub(0), sub_map=V_to_W, bcs=bcs)
@@ -171,7 +171,7 @@ with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
     b = dolfinx_mpc.assemble_vector(L, mpc)
 
 # Set Dirichlet boundary condition values in the RHS
-dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])
+dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
 b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.assemble.set_bc(b, bcs)
 
@@ -189,7 +189,7 @@ uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 mpc.backsubstitution(uh)
 
 # ------------------------------ Output ----------------------------------
-U = dolfinx.Function(mpc.function_space())
+U = dolfinx.Function(mpc.function_space)
 U.vector.setArray(uh.array)
 u = U.sub(0).collapse()
 p = U.sub(1).collapse()

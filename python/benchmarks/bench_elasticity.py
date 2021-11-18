@@ -89,11 +89,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
     # Apply boundary conditions
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
-    # Apply boundary conditions
-    dolfinx.fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.set_bc(b, bcs)
 
@@ -124,7 +120,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
     # opts["ksp_view"] = None # List progress of solver
 
     with dolfinx.common.Timer("~Elasticity: Solve problem") as timer:
-        null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+        null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
         A.setNearNullSpace(null_space)
         solver.setFromOptions()
         solver.setOperators(A)
@@ -156,7 +152,7 @@ def bench_elasticity_one(out_xdmf=None, r_lvl=0, out_hdf5=None,
         d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
     if xdmf:
         # Write solution to file
-        u_h = dolfinx.Function(mpc.function_space())
+        u_h = dolfinx.Function(mpc.function_space)
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
 

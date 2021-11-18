@@ -240,7 +240,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
         with dolfinx.common.Timer("~Contact: Create contact constraint"):
-            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
+            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
             mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
     mpc.finalize()
@@ -250,7 +250,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     with dolfinx.common.Timer("~TEST: Assemble vector"):
         b = assemble_vector(rhs, mpc)
 
-    fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
@@ -264,17 +264,14 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     mpc.backsubstitution(uh)
 
     # Write solution to file
-    # u_h = dolfinx.Function(mpc.function_space())
+    # u_h = dolfinx.Function(mpc.function_space)
     # u_h.vector.setArray(uh.array)
-    # u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-    #                        mode=PETSc.ScatterMode.FORWARD)
+    # u_h.x.scatter_forward()
     # u_h.name = "u_{0:.2f}".format(theta)
     # import dolfinx.io as io
-    # outfile = io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w")
-    # outfile.write_mesh(mesh)
-    # outfile.write_function(u_h, 0.0,
-    #                        f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
-    # outfile.close()
+    # with io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w") as outfile:
+    #     outfile.write_mesh(mesh)
+    #     outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values

@@ -28,7 +28,7 @@ quick-tests:
     - BUILD_TYPE=$MPC_CMAKE_BUILD_TYPE CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" pip3 install ./python
 
   script:
-    - python3 -m pytest python/tests
+    - python3 -m pytest python/tests -v
     - mpirun -n 2 python3 -m pytest python/tests
     - mpirun -n 3 python3 -m pytest python/tests
     - mpirun -n 4 python3 -m pytest python/tests
@@ -79,7 +79,7 @@ run-demos:
     - BUILD_TYPE="${MPC_BUILD_MODE}" CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/
 
   script:
-    - python3 -m pytest python/tests
+    - python3 -m pytest python/tests -v
     - mpirun -n 2 python3 -m pytest python/tests
     - mpirun -n 3 python3 -m pytest python/tests
     - mpirun -n 4 python3 -m pytest python/tests

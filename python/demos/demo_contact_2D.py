@@ -95,7 +95,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     mpc = dolfinx_mpc.MultiPointConstraint(V)
 
     with dolfinx.common.Timer("~Contact: Create contact constraint"):
-        nh = dolfinx_mpc.utils.create_normal_approximation(V, mt.indices[mt.values == 4])
+        nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
         mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
     with dolfinx.common.Timer("~Contact: Add non-slip condition at bottom interface"):
@@ -119,7 +119,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
-    fem.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
@@ -140,7 +140,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     # opts["ksp_view"] = None # List progress of solver
 
     # Create functionspace and build near nullspace
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space())
+    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
     A.setNearNullSpace(null_space)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -162,7 +162,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     # Write solution to file
     ext = "gmsh" if gmsh else ""
 
-    u_h = dolfinx.Function(mpc.function_space())
+    u_h = dolfinx.Function(mpc.function_space)
     u_h.vector.setArray(uh.array)
     u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
 

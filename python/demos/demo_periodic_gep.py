@@ -113,7 +113,7 @@ def EPS_get_spectrum(EPS: SLEPc.EPS,
     eigval = [EPS.getEigenvalue(i) for i in range(EPS.getConverged())]
     eigvec_r = list()
     eigvec_i = list()
-    V = mpc.function_space()
+    V = mpc.function_space
     vr = dolfinx.Function(V).vector
     vi = vr.copy()
     for i in range(EPS.getConverged()):

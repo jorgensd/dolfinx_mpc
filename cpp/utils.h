@@ -27,7 +27,8 @@ class MultiPointConstraint;
 /// @param[in] index   The cell_index
 xt::xtensor<double, 2>
 get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-                    const std::array<double, 3>& x, const int index);
+                    const xt::xtensor<double, 2>& x, const int index);
+
 /// Given a function space, compute its shared entities
 std::map<std::int32_t, std::set<int>>
 compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
@@ -45,35 +46,22 @@ std::array<MPI_Comm, 2>
 create_neighborhood_comms(dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
                           const bool has_slave, std::int32_t& master_marker);
 
-/// Create neighbourhood communicators from local_dofs to processors who has
-/// this as a ghost.
-/// @param[in] local_dofs Vector of local dofs
-/// @param[in] ghost_dofs Vector of ghost dofs
+/// Create neighbourhood communicators from a set of local indices to process
+/// who has these indices as ghosts.
+/// @param[in] local_dofs Vector of local blocks
+/// @param[in] ghost_dofs Vector of ghost blocks
 /// @param[in] index_map The index map relating procs and ghosts
-/// @param[in] block_size block_size of input dofs
 MPI_Comm create_owner_to_ghost_comm(
-    std::vector<std::int32_t>& local_dofs,
-    std::vector<std::int32_t>& ghost_dofs,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map, int block_size);
-
-/// Create a map from each dof found on the set of facets topologically, to the
-/// connecting facets
-std::map<std::int32_t, std::vector<std::int32_t>>
-create_dof_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-                        const xtl::span<const std::int32_t>& facets);
-
-/// For a dof, create an average normal over the topological entities it is
-/// connected to
-xt::xtensor_fixed<double, xt::xshape<3>>
-create_average_normal(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-                      std::int32_t dof, std::int32_t dim,
-                      const xtl::span<const std::int32_t>& entities);
+    std::vector<std::int32_t>& local_blocks,
+    std::vector<std::int32_t>& ghost_blocks,
+    std::shared_ptr<const dolfinx::common::IndexMap> index_map);
 
 /// Creates a normal approximation for the dofs in the closure of the attached
 /// facets, where the normal is an average if a dof belongs to multiple facets
-void create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
-                                 const xtl::span<const std::int32_t>& entities,
-                                 xtl::span<PetscScalar> vector);
+dolfinx::fem::Function<PetscScalar>
+create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
+                            std::int32_t dim,
+                            const xtl::span<const std::int32_t>& entities);
 
 /// Append standard sparsity pattern for a given form to a pre-initialized
 /// pattern and a DofMap
@@ -139,5 +127,23 @@ typename U::value_type dot(const U& u, const V& v)
   assert(u.size() == 3);
   assert(v.size() == 3);
   return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-}
+};
+
+/// Given a list of global degrees of freedom, map them to their local index
+/// @param[in] V The original function space
+/// @param[in] global_dofs The list of dofs (global index)
+/// @returns List of local dofs
+std::vector<std::int32_t>
+map_dofs_global_to_local(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+                         std::vector<std::int64_t>& global_dofs);
+
+/// Create an function space with an extended index map, where all input dofs
+/// (global index) is added to the local index map as ghosts.
+/// @param[in] V The original function space
+/// @param[in] global_dofs The list of master dofs (global index)
+/// @param[in] owners The owners of the master degrees of freedom
+dolfinx::fem::FunctionSpace create_extended_functionspace(
+    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+    std::vector<std::int64_t>& global_dofs, std::vector<std::int32_t>& owners);
+
 } // namespace dolfinx_mpc
