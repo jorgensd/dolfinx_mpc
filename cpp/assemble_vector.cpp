@@ -2,11 +2,12 @@
 //
 // This file is part of DOLFINX_MPC
 //
-// SPDX-License-Identifier:    LGPL-3.0-or-later
+// SPDX-License-Identifier:    MIT
 
 #include "assemble_vector.h"
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
+#include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 #include <iostream>
 
@@ -30,7 +31,7 @@ void _assemble_entities_impl(
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap, int bs,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc,
     const std::function<const std::int32_t(const E_DESC&)> fetch_cells,
-    const std::function<void(xtl::span<T>, E_DESC)>
+    const std::function<void(xtl::span<T>, E_DESC, std::size_t)>
         assemble_local_element_vector)
 {
 
@@ -54,7 +55,7 @@ void _assemble_entities_impl(
   for (std::size_t e = 0; e < active_entities.size(); ++e)
   {
     // Assemble into element vector
-    assemble_local_element_vector(_be, active_entities[e]);
+    assemble_local_element_vector(_be, active_entities[e], e);
 
     const std::int32_t cell = fetch_cells(active_entities[e]);
     auto dofs = dofmap.links(cell);
@@ -95,7 +96,8 @@ void _assemble_vector(
 
   // Prepare constants & coefficients
   const std::vector<T> constants = pack_constants(L);
-  const auto coeffs = dolfinx::fem::pack_coefficients(L);
+  const auto coeff_vec = dolfinx::fem::pack_coefficients(L);
+  auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
 
   // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
@@ -127,12 +129,16 @@ void _assemble_vector(
     const auto fetch_cells = [&](const std::int32_t& entity) { return entity; };
     for (int i : L.integral_ids(dolfinx::fem::IntegralType::cell))
     {
+      const auto& coeffs
+          = coefficients.at({dolfinx::fem::IntegralType::cell, i});
       const auto& fn = L.kernel(dolfinx::fem::IntegralType::cell, i);
       /// Assemble local cell kernels into a vector
       /// @param[in] be The local element vector
       /// @param[in] cell The cell index
+      /// @param[in] index The index of the cell in the active_cells (To fetch
+      /// the appropriate coefficients)
       const auto assemble_local_cell_vector
-          = [&](xtl::span<T> be, std::int32_t cell)
+          = [&](xtl::span<T> be, std::int32_t cell, std::int32_t index)
       {
         // Fetch the coordinates of the cell
         const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
@@ -143,7 +149,7 @@ void _assemble_vector(
         }
         // Tabulate tensor
         std::fill(be.data(), be.data() + be.size(), 0);
-        fn(be.data(), coeffs.first.data() + cell * coeffs.second,
+        fn(be.data(), coeffs.first.data() + index * coeffs.second,
            constants.data(), coordinate_dofs.data(), nullptr, nullptr);
 
         // Apply any required transformations
@@ -186,13 +192,16 @@ void _assemble_vector(
     for (int i : L.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
     {
       const auto& fn = L.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
-
+      const auto& coeffs
+          = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
       /// Assemble local exterior facet kernels into a vector
       /// @param[in] be The local element vector
       /// @param[in] entity The entity, given as a cell index and the local
       /// index relative to the cell
+      /// @param[in] index The index of entity in active_facets
       const auto assemble_local_exterior_facet_vector
-          = [&](xtl::span<T> be, std::pair<std::int32_t, int> entity)
+          = [&](xtl::span<T> be, std::pair<std::int32_t, int> entity,
+                std::size_t index)
       {
         // Fetch the coordiantes of the cell
         const std::int32_t cell = entity.first;
@@ -208,7 +217,7 @@ void _assemble_vector(
 
         // Tabulate tensor
         std::fill(be.data(), be.data() + be.size(), 0);
-        fn(be.data(), coeffs.first.data() + cell * coeffs.second,
+        fn(be.data(), coeffs.first.data() + index * coeffs.second,
            constants.data(), coordinate_dofs.data(), &local_facet, &perm);
 
         // Apply any required transformations

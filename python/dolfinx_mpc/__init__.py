@@ -2,7 +2,7 @@
 #
 # This file is part of DOLFINX_MPC
 #
-# SPDX-License-Identifier:    LGPL-3.0-or-later
+# SPDX-License-Identifier:    MIT
 """Main module for DOLFINX_MPC"""
 
 # flake8: noqa

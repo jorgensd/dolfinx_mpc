@@ -2,7 +2,7 @@
 //
 // This file is part of DOLFINX_MPC
 //
-// SPDX-License-Identifier:    LGPL-3.0-or-later
+// SPDX-License-Identifier:    MIT
 
 #pragma once
 
@@ -11,6 +11,7 @@
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
+#include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Geometry.h>
@@ -34,7 +35,7 @@ void _lift_bc_entities(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
     const std::function<const std::int32_t(const E_DESC&)> fetch_cells,
     const std::function<void(xtl::span<T>, xtl::span<T>, const int, const int,
-                             E_DESC)>
+                             E_DESC, std::size_t)>
         lift_local_vector)
 {
 
@@ -84,7 +85,7 @@ void _lift_bc_entities(
     // // Lift into local element vector
     const xtl::span<T> _be(be);
     const xtl::span<T> _Ae(Ae);
-    lift_local_vector(_be, _Ae, num_rows, num_cols, active_entities[e]);
+    lift_local_vector(_be, _Ae, num_rows, num_cols, active_entities[e], e);
 
     // Modify local element matrix if entity is connected to a slave cell
     xtl::span<const int32_t> slaves = cell_to_slaves->links(cell);
@@ -128,8 +129,8 @@ void _apply_lifting(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
   const std::vector<T> constants = pack_constants(*a);
-  const auto coefficients = dolfinx::fem::pack_coefficients(*a);
-
+  const auto coeff_vec = dolfinx::fem::pack_coefficients(*a);
+  auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
   const std::vector<std::int8_t>& is_slave = mpc1->is_slave();
 
   // Create 1D arrays of bc values and bc indicator
@@ -197,12 +198,14 @@ void _apply_lifting(
     const auto fetch_cells = [&](const std::int32_t& entity) { return entity; };
     for (int i : a->integral_ids(dolfinx::fem::IntegralType::cell))
     {
+      const auto& coeffs
+          = coefficients.at({dolfinx::fem::IntegralType::cell, i});
       const auto& kernel = a->kernel(dolfinx::fem::IntegralType::cell, i);
 
       // Function that lift bcs for cell kernels
       const auto lift_bcs_cell
           = [&](xtl::span<T> be, xtl::span<T> Ae, std::int32_t num_rows,
-                std::int32_t num_cols, std::int32_t cell)
+                std::int32_t num_cols, std::int32_t cell, std::size_t index)
       {
         // FIXME: Add proper interface for num coordinate dofs
         const std::size_t num_dofs_g = x_dofmap.num_links(cell);
@@ -217,11 +220,9 @@ void _apply_lifting(
                       std::next(coordinate_dofs.begin(), 3 * i));
         }
         // Tabulate tensor
-        const T* coeff_array
-            = coefficients.first.data() + cell * coefficients.second;
         std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-        kernel(Ae.data(), coeff_array, constants.data(), coordinate_dofs.data(),
-               nullptr, nullptr);
+        kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
+               constants.data(), coordinate_dofs.data(), nullptr, nullptr);
         dof_transform(Ae, cell_info, cell, num_cols);
         dof_transform_to_transpose(Ae, cell_info, cell, num_rows);
 
@@ -287,6 +288,8 @@ void _apply_lifting(
         mesh->topology().cell_type(), tdim - 1);
     for (int i : a->integral_ids(dolfinx::fem::IntegralType::exterior_facet))
     {
+      const auto& coeffs
+          = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
       const auto& kernel
           = a->kernel(dolfinx::fem::IntegralType::exterior_facet, i);
 
@@ -294,9 +297,11 @@ void _apply_lifting(
       /// @param[in] be The local element vector
       /// @param[in] entity The entity, given as a cell index and the local
       /// index relative to the cell
+      /// @param[in] index The index of the facet in the active_facets (To fetch
+      /// the appropriate coefficients)
       const auto lift_bc_exterior_facet
           = [&](xtl::span<T> be, xtl::span<T> Ae, int num_rows, int num_cols,
-                std::pair<std::int32_t, int> entity)
+                std::pair<std::int32_t, int> entity, std::size_t index)
       {
         // Fetch the coordiantes of the cell
         const std::int32_t cell = entity.first;
@@ -317,10 +322,8 @@ void _apply_lifting(
 
         // Tabulate tensor
         std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-        const T* coeff_array
-            = coefficients.first.data() + cell * coefficients.second;
-        kernel(Ae.data(), coeff_array, constants.data(), coordinate_dofs.data(),
-               &local_facet, &perm);
+        kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
+               constants.data(), coordinate_dofs.data(), &local_facet, &perm);
         dof_transform(Ae, cell_info, cell, num_cols);
         dof_transform_to_transpose(Ae, cell_info, cell, num_rows);
 

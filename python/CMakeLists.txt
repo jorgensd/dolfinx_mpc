@@ -22,6 +22,17 @@ target_link_libraries(cpp PRIVATE pybind11::module dolfinx_mpc)
 target_link_libraries(cpp PUBLIC dolfinx)
 target_include_directories(cpp PUBLIC dolfinx)
 
+# Get python include-dirs
+execute_process(
+  COMMAND ${Python3_EXECUTABLE} -c "import dolfinx.wrappers, sys; sys.stdout.write(str(dolfinx.wrappers.get_include_path()))"
+  OUTPUT_VARIABLE DOLFINX_PY_DIR
+  RESULT_VARIABLE DOLFINX_PY_COMMAND_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+if (DOLFINX_PY_DIR)
+  message(STATUS "Adding ${DOLFINX_PY_DIR} to include directories")
+  target_include_directories(cpp PRIVATE ${DOLFINX_PY_DIR})
+endif()
+
 # Add strict compiler flags
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-Wall -Werror -pedantic" HAVE_PEDANTIC)

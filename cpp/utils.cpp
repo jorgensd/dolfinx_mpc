@@ -2,7 +2,7 @@
 //
 // This file is part of DOLFINX_MPC
 //
-// SPDX-License-Identifier:    LGPL-3.0-or-later
+// SPDX-License-Identifier:    MIT
 
 #include "utils.h"
 #include <dolfinx/mesh/Mesh.h>
@@ -210,7 +210,23 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
       permutation_info[index], reference_value_size);
 
   // Push basis forward to physical element
-  element->push_forward(basis_values, reference_basis_values, J, detJ, K);
+  using u_t = xt::xview<decltype(basis_values)&, std::size_t,
+                        xt::xall<std::size_t>, xt::xall<std::size_t>>;
+  using U_t = xt::xview<decltype(reference_basis_values)&, std::size_t,
+                        xt::xall<std::size_t>, xt::xall<std::size_t>>;
+  using J_t = xt::xview<decltype(J)&, std::size_t, xt::xall<std::size_t>,
+                        xt::xall<std::size_t>>;
+  using K_t = xt::xview<decltype(K)&, std::size_t, xt::xall<std::size_t>,
+                        xt::xall<std::size_t>>;
+  auto push_forward_fn = element->map_fn<u_t, U_t, J_t, K_t>();
+  for (std::size_t i = 0; i < basis_values.shape(0); ++i)
+  {
+    auto _K = xt::view(K, i, xt::all(), xt::all());
+    auto _J = xt::view(J, i, xt::all(), xt::all());
+    auto _u = xt::view(basis_values, i, xt::all(), xt::all());
+    auto _U = xt::view(reference_basis_values, i, xt::all(), xt::all());
+    push_forward_fn(_u, _U, _J, detJ[i], _K);
+  }
 
   // Expand basis values for each dof
   for (std::size_t block = 0; block < block_size; ++block)

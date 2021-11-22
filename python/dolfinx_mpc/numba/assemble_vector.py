@@ -2,7 +2,7 @@
 #
 # This file is part of DOLFINX_MPC
 #
-# SPDX-License-Identifier:    LGPL-3.0-or-later
+# SPDX-License-Identifier:    MIT
 
 from typing import Tuple
 
@@ -117,9 +117,10 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
         for i, id in enumerate(subdomain_ids):
             cell_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
             active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
+            coeffs_i = form_coeffs[(dolfinx.fem.IntegralType.cell, id)]
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
-                               (pos, x_dofs, x), form_coeffs, form_consts,
+                               (pos, x_dofs, x), coeffs_i, form_consts,
                                cell_perms, dofs, block_size, num_dofs_per_element, mpc_data)
 
     # Assemble exterior facet integrals
@@ -136,12 +137,13 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
         for i, id in enumerate(subdomain_ids):
             facet_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i],
                                    f"tabulate_tensor_{nptype}")
+            coeffs_i = form_coeffs[(dolfinx.fem.IntegralType.exterior_facet, id)]
             facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
                 assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x),
-                                               form_coeffs, form_consts, perm,
+                                               coeffs_i, form_consts, perm,
                                                dofs, block_size, num_dofs_per_element, mpc_data, num_facets_per_cell)
     timer_vector.stop()
     return vector

@@ -2,7 +2,7 @@
 #
 # This file is part of DOLFINX_MPC
 #
-# SPDX-License-Identifier:    LGPL-3.0-or-later
+# SPDX-License-Identifier:    MIT
 
 from typing import List, Tuple
 
@@ -143,10 +143,11 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
         for i, id in enumerate(subdomain_ids):
+            coeffs_i = form_coeffs[(dolfinx.fem.IntegralType.cell, id)]
             cell_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
             active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
             assemble_slave_cells(A.handle, cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
-                                 (pos, x_dofs, x), form_coeffs, form_consts, cell_perms, dofs,
+                                 (pos, x_dofs, x), coeffs_i, form_consts, cell_perms, dofs,
                                  block_size, num_dofs_per_element, mpc_data, is_bc)
 
     # Assemble over exterior facets
@@ -168,9 +169,10 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
             facet_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)
                                    [i], f"tabulate_tensor_{nptype}")
             facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
+            coeffs_i = form_coeffs[(dolfinx.fem.IntegralType.exterior_facet, id)]
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
-            assemble_exterior_slave_facets(A.handle, facet_kernel, (pos, x_dofs, x), form_coeffs, form_consts,
+            assemble_exterior_slave_facets(A.handle, facet_kernel, (pos, x_dofs, x), coeffs_i, form_consts,
                                            perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, is_bc,
                                            num_facets_per_cell)
 

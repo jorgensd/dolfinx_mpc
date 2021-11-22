@@ -2,10 +2,10 @@
 //
 // This file is part of DOLFINX-MPC
 //
-// SPDX-License-Identifier:    LGPL-3.0-or-later
+// SPDX-License-Identifier:    MIT
 
-#include "array.h"
-#include "caster_petsc.h"
+#include <array.h>
+#include <caster_petsc.h>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
