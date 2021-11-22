@@ -2,7 +2,7 @@
 #
 # This file is part of DOLFINX_MPC
 #
-# SPDX-License-Identifier:    LGPL-3.0-or-later
+# SPDX-License-Identifier:    MIT
 #
 # Create constraint between two bodies that are not in contact
 

@@ -2,7 +2,7 @@
 #
 # This file is part of DOLFINX_MPC
 #
-# SPDX-License-Identifier:    LGPL-3.0-or-later
+# SPDX-License-Identifier:    MIT
 # This demo, adapted from 'demo_periodic.py', solves
 #
 #     - div grad u(x, y) = lambda*u(x, y)

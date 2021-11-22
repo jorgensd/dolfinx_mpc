@@ -2,11 +2,12 @@
 //
 // This file is part of DOLFINX_MPC
 //
-// SPDX-License-Identifier:    LGPL-3.0-or-later
+// SPDX-License-Identifier:    MIT
 
 #include "assemble_matrix.h"
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
+#include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 
 namespace
@@ -207,7 +208,7 @@ void assemble_exterior_facets(
     // Tabulate tensor
     std::uint8_t perm = get_perm(cell * num_cell_facets + local_facet);
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-    kernel(Ae.data(), coeffs.data() + cell * cstride, constants.data(),
+    kernel(Ae.data(), coeffs.data() + l * cstride, constants.data(),
            coordinate_dofs.data(), &local_facet, &perm);
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
@@ -314,10 +315,11 @@ void assemble_cells_impl(
   const size_t ndim1 = num_dofs1 * bs1;
   xt::xtensor<T, 2> Ae({ndim0, ndim1});
   const xtl::span<T> _Ae(Ae);
-  for (auto c : active_cells)
+  for (std::size_t c = 0; c < active_cells.size(); c++)
   {
+    const std::int32_t cell = active_cells[c];
     // Get cell coordinates/geometry
-    xtl::span<const int32_t> x_dofs = x_dofmap.links(c);
+    xtl::span<const int32_t> x_dofs = x_dofmap.links(cell);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(xt::row(x_g, x_dofs[i]).begin(), 3,
@@ -327,12 +329,12 @@ void assemble_cells_impl(
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
     kernel(Ae.data(), coeffs.data() + c * cstride, constants.data(),
            coordinate_dofs.data(), nullptr, nullptr);
-    apply_dof_transformation(_Ae, cell_info, c, ndim1);
-    apply_dof_transformation_to_transpose(_Ae, cell_info, c, ndim0);
+    apply_dof_transformation(_Ae, cell_info, cell, ndim1);
+    apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
 
     // Zero rows/columns for essential bcs
-    xtl::span<const int32_t> dofs0 = dofmap0.links(c);
-    xtl::span<const int32_t> dofs1 = dofmap1.links(c);
+    xtl::span<const int32_t> dofs0 = dofmap0.links(cell);
+    xtl::span<const int32_t> dofs1 = dofmap1.links(cell);
     if (!bc0.empty())
     {
       for (std::int32_t i = 0; i < num_dofs0; ++i)
@@ -357,9 +359,9 @@ void assemble_cells_impl(
     }
     // Modify local element matrix Ae and insert contributions into master
     // locations
-    if (cell_to_slaves->num_links(c) > 0)
+    if (cell_to_slaves->num_links(cell) > 0)
     {
-      xtl::span<const int32_t> slaves = cell_to_slaves->links(c);
+      xtl::span<const int32_t> slaves = cell_to_slaves->links(cell);
       // Assuming test and trial space has same number of dofs and dofs per
       // cell
       modify_mpc_cell<T>(mat_add_values, num_dofs0, Ae, dofs0, bs0, slaves,
@@ -400,8 +402,8 @@ void assemble_matrix_impl(
   const std::vector<T> constants = pack_constants(a);
 
   // Prepare coefficients
-  const auto coeffs = dolfinx::fem::pack_coefficients(a);
-
+  const auto coeff_vec = dolfinx::fem::pack_coefficients(a);
+  auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
   std::shared_ptr<const dolfinx::fem::FiniteElement> element0
       = a.function_spaces().at(0)->element();
   std::shared_ptr<const dolfinx::fem::FiniteElement> element1
@@ -427,12 +429,14 @@ void assemble_matrix_impl(
   for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i);
+    const auto& [coeffs, cstride]
+        = coefficients.at({dolfinx::fem::IntegralType::cell, i});
     const std::vector<std::int32_t>& active_cells = a.cell_domains(i);
     assemble_cells_impl<T>(
         mat_add_block_values, mat_add_values, mesh->geometry(), active_cells,
         apply_dof_transformation, dofs0, bs0,
-        apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn,
-        coeffs.first, coeffs.second, constants, cell_info, mpc);
+        apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn, coeffs,
+        cstride, constants, cell_info, mpc);
   }
   if (a.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
       or a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
@@ -454,13 +458,15 @@ void assemble_matrix_impl(
     for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
     {
       const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
+      const auto& [coeffs, cstride]
+          = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
       const std::vector<std::pair<std::int32_t, int>>& facets
           = a.exterior_facet_domains(i);
-      assemble_exterior_facets<T>(
-          mat_add_block_values, mat_add_values, *mesh, facets,
-          apply_dof_transformation, dofs0, bs0,
-          apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn,
-          coeffs.first, coeffs.second, constants, cell_info, get_perm, mpc);
+      assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
+                                  facets, apply_dof_transformation, dofs0, bs0,
+                                  apply_dof_transformation_to_transpose, dofs1,
+                                  bs1, bc0, bc1, fn, coeffs, cstride, constants,
+                                  cell_info, get_perm, mpc);
     }
 
     if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)

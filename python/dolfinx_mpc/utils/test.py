@@ -2,7 +2,7 @@
 #
 # This file is part of DOLFINX_MPC
 #
-# SPDX-License-Identifier:    LGPL-3.0-or-later
+# SPDX-License-Identifier:    MIT
 
 __all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_MPC_LHS", "compare_MPC_RHS",
            "gather_transformation_matrix", "compare_CSR"]
