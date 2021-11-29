@@ -4,9 +4,9 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import gmsh
+import gmsh as _gmsh
 import numpy
-from mpi4py import MPI
+from mpi4py import MPI as _MPI
 from dolfinx.cpp.io import perm_gmsh, distribute_entity_data
 from dolfinx.cpp.graph import AdjacencyList_int32
 from dolfinx.cpp.mesh import to_type, cell_entity_type
@@ -26,22 +26,22 @@ def read_from_msh(filename: str, cell_data=False, facet_data=False, gdim=None):
                     returned (Default: False)
         gdim: Geometrical dimension of problem (Default: 3)
     """
-    if MPI.COMM_WORLD.rank == 0:
+    if _MPI.COMM_WORLD.rank == 0:
         # Check if gmsh is already initialized
         try:
-            current_model = gmsh.model.getCurrent()
+            current_model = _gmsh.model.getCurrent()
         except ValueError:
             current_model = None
-            gmsh.initialize()
+            _gmsh.initialize()
 
-        gmsh.model.add("Mesh from file")
-        gmsh.merge(filename)
-    output = gmsh_model_to_mesh(gmsh.mode.getCurrent(), cell_data=cell_data, facet_data=facet_data, gdim=gdim)
-    if MPI.COMM_WORLD.rank == 0:
+        _gmsh.model.add("Mesh from file")
+        _gmsh.merge(filename)
+    output = gmsh_model_to_mesh(_gmsh.mode.getCurrent(), cell_data=cell_data, facet_data=facet_data, gdim=gdim)
+    if _MPI.COMM_WORLD.rank == 0:
         if current_model is None:
-            gmsh.finalize()
+            _gmsh.finalize()
         else:
-            gmsh.model.setCurrent(current_model)
+            _gmsh.model.setCurrent(current_model)
     return output
 
 
@@ -59,7 +59,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
     if gdim is None:
         gdim = 3
 
-    if MPI.COMM_WORLD.rank == 0:
+    if _MPI.COMM_WORLD.rank == 0:
         # Get mesh geometry
         x = extract_gmsh_geometry(model)
 
@@ -83,12 +83,12 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         cell_id = cell_information[perm_sort[-1]]["id"]
         tdim = cell_information[perm_sort[-1]]["dim"]
         num_nodes = cell_information[perm_sort[-1]]["num_nodes"]
-        cell_id, num_nodes = MPI.COMM_WORLD.bcast([cell_id, num_nodes], root=0)
+        cell_id, num_nodes = _MPI.COMM_WORLD.bcast([cell_id, num_nodes], root=0)
 
         # Check for facet data and broadcast if found
         if facet_data:
             if tdim - 1 in cell_dimensions:
-                num_facet_nodes = MPI.COMM_WORLD.bcast(
+                num_facet_nodes = _MPI.COMM_WORLD.bcast(
                     cell_information[perm_sort[-2]]["num_nodes"], root=0)
                 gmsh_facet_id = cell_information[perm_sort[-2]]["id"]
                 marked_facets = topologies[gmsh_facet_id]["topology"]
@@ -100,11 +100,11 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         cell_values = numpy.asarray(topologies[cell_id]["cell_data"], dtype=numpy.int32)
 
     else:
-        cell_id, num_nodes = MPI.COMM_WORLD.bcast([None, None], root=0)
+        cell_id, num_nodes = _MPI.COMM_WORLD.bcast([None, None], root=0)
         cells, x = numpy.empty([0, num_nodes]), numpy.empty([0, gdim])
         cell_values = numpy.empty((0,), dtype=numpy.int32)
         if facet_data:
-            num_facet_nodes = MPI.COMM_WORLD.bcast(None, root=0)
+            num_facet_nodes = _MPI.COMM_WORLD.bcast(None, root=0)
             marked_facets = numpy.empty((0, num_facet_nodes), numpy.int32)
             facet_values = numpy.empty((0,), dtype=numpy.int32)
 
@@ -112,7 +112,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
     ufl_domain = ufl_mesh_from_gmsh(cell_id, gdim)
     gmsh_cell_perm = perm_gmsh(to_type(str(ufl_domain.ufl_cell())), num_nodes)
     cells = numpy.asarray(cells[:, gmsh_cell_perm], dtype=numpy.int64)
-    mesh = create_mesh(MPI.COMM_WORLD, cells, x[:, :gdim], ufl_domain)
+    mesh = create_mesh(_MPI.COMM_WORLD, cells, x[:, :gdim], ufl_domain)
     # Create MeshTags for cells
     if cell_data:
         local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim, cells, cell_values)

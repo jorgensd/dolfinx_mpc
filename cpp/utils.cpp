@@ -265,7 +265,7 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   timer_s.stop();
 
   // Initialize matrix
-  dolfinx::la::PETScMatrix A(a.mesh()->mpi_comm(), pattern, type);
+  dolfinx::la::PETScMatrix A(a.mesh()->comm(), pattern, type);
 
   return A;
 }
@@ -274,7 +274,7 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
     dolfinx::mesh::MeshTags<std::int32_t>& meshtags, const bool has_slave,
     std::int32_t& master_marker)
 {
-  MPI_Comm comm = meshtags.mesh()->mpi_comm();
+  MPI_Comm comm = meshtags.mesh()->comm();
   int mpi_size = -1;
   MPI_Comm_size(comm, &mpi_size);
   int rank = -1;
@@ -483,7 +483,7 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
   new_maps[0] = index_map;
   new_maps[1] = index_map;
   std::array<int, 2> bs = {bs0, bs1};
-  dolfinx::la::SparsityPattern pattern(mesh.mpi_comm(), new_maps, bs);
+  dolfinx::la::SparsityPattern pattern(mesh.comm(), new_maps, bs);
 
   LOG(INFO) << "Build standard pattern\n";
   ///  Create and build sparsity pattern for original form. Should be

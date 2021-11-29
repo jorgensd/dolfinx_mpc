@@ -6,26 +6,26 @@
 
 from typing import Tuple
 
-import dolfinx
-import dolfinx.common
-import dolfinx.log
+import dolfinx.cpp as _cpp
+import dolfinx.log as _log
+import dolfinx.jit as _jit
+import dolfinx.fem as _fem
 import numpy
 import ufl
+from dolfinx.common import Timer
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
-from petsc4py import PETSc
+from petsc4py import PETSc as _PETSc
 
 import numba
 
 from .helpers import extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc
 
-Timer = dolfinx.common.Timer
-
 ffi, _ = initialize_petsc()
 
 
-def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PETSc.Vec = None,
-                    form_compiler_parameters={}, jit_parameters={}) -> PETSc.Vec:
+def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: _PETSc.Vec = None,
+                    form_compiler_parameters={}, jit_parameters={}) -> _PETSc.Vec:
     """
     Assemble a linear form into vector b.
 
@@ -49,7 +49,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
 
     """
 
-    dolfinx.log.log(dolfinx.log.LogLevel.INFO, "Assemble MPC vector")
+    _log.log(_log.LogLevel.INFO, "Assemble MPC vector")
     timer_vector = Timer("~MPC: Assemble vector (numba)")
 
     # Unpack Function space data
@@ -73,30 +73,30 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     # Get index map and ghost info
     if b is None:
         index_map = constraint.function_space.dofmap.index_map
-        vector = dolfinx.cpp.la.create_vector(index_map, block_size)
+        vector = _cpp.la.create_vector(index_map, block_size)
     else:
         vector = b
 
     # If using DOLFINx complex build, scalar type in form_compiler parameters must be updated
-    is_complex = numpy.issubdtype(PETSc.ScalarType, numpy.complexfloating)
+    is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)
     if is_complex:
         form_compiler_parameters["scalar_type"] = "double _Complex"
 
     # Compile ufc form for Python assembly
-    ufc_form, _, _ = dolfinx.jit.ffcx_jit(V.mesh.mpi_comm(), form,
-                                          form_compiler_parameters=form_compiler_parameters,
-                                          jit_parameters=jit_parameters)
+    ufc_form, _, _ = _jit.ffcx_jit(V.mesh.comm, form,
+                                   form_compiler_parameters=form_compiler_parameters,
+                                   jit_parameters=jit_parameters)
 
     # Pack constants and coefficients
-    cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
-                            jit_parameters=jit_parameters)._cpp_object
-    form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
+    cpp_form = _fem.Form(form, form_compiler_parameters=form_compiler_parameters,
+                         jit_parameters=jit_parameters)._cpp_object
+    form_coeffs = _cpp.fem.pack_coefficients(cpp_form)
+    form_consts = _cpp.fem.pack_constants(cpp_form)
     tdim = V.mesh.topology.dim
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Assemble vector with all entries
-    dolfinx.cpp.fem.assemble_vector(vector.array_w, cpp_form, form_consts, form_coeffs)
+    _cpp.fem.assemble_vector(vector.array_w, cpp_form, form_consts, form_coeffs)
 
     # Check if we need facet permutations
     # FIXME: access apply_dof_transformations here
@@ -109,22 +109,22 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
     if e0.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
     # Assemble over cells
-    subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.cell)
+    subdomain_ids = cpp_form.integral_ids(_fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
     nptype = "complex128" if is_complex else "float64"
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
         for i, id in enumerate(subdomain_ids):
-            cell_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
-            active_cells = cpp_form.domains(dolfinx.fem.IntegralType.cell, id)
-            coeffs_i = form_coeffs[(dolfinx.fem.IntegralType.cell, id)]
+            cell_kernel = getattr(ufc_form.integrals(_fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
+            active_cells = cpp_form.domains(_fem.IntegralType.cell, id)
+            coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                                (pos, x_dofs, x), coeffs_i, form_consts,
                                cell_perms, dofs, block_size, num_dofs_per_element, mpc_data)
 
     # Assemble exterior facet integrals
-    subdomain_ids = cpp_form.integral_ids(dolfinx.fem.IntegralType.exterior_facet)
+    subdomain_ids = cpp_form.integral_ids(_fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
@@ -135,10 +135,10 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
             facet_perms = V.mesh.topology.get_facet_permutations()
         perm = (cell_perms, cpp_form.needs_facet_permutations, facet_perms)
         for i, id in enumerate(subdomain_ids):
-            facet_kernel = getattr(ufc_form.integrals(dolfinx.fem.IntegralType.exterior_facet)[i],
+            facet_kernel = getattr(ufc_form.integrals(_fem.IntegralType.exterior_facet)[i],
                                    f"tabulate_tensor_{nptype}")
-            coeffs_i = form_coeffs[(dolfinx.fem.IntegralType.exterior_facet, id)]
-            facets = cpp_form.domains(dolfinx.fem.IntegralType.exterior_facet, id)
+            coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
+            facets = cpp_form.domains(_fem.IntegralType.exterior_facet, id)
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
@@ -150,17 +150,17 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: PE
 
 
 @numba.njit
-def assemble_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
+def assemble_cells(b: 'numpy.ndarray[_PETSc.ScalarType]',
                    kernel: ffi.CData, active_cells: 'numpy.ndarray[numpy.int32]',
                    mesh: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
                                'numpy.ndarray[numpy.float64]'],
-                   coeffs: 'numpy.ndarray[PETSc.ScalarType]',
-                   constants: 'numpy.ndarray[PETSc.ScalarType]',
+                   coeffs: 'numpy.ndarray[_PETSc.ScalarType]',
+                   constants: 'numpy.ndarray[_PETSc.ScalarType]',
                    permutation_info: 'numpy.ndarray[numpy.uint32]',
                    dofmap: 'numpy.ndarray[numpy.int32]',
                    block_size: int,
                    num_dofs_per_element: int,
-                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[PETSc.ScalarType]',
+                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[_PETSc.ScalarType]',
                               'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
                               'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]']):
     """Assemble additional MPC contributions for cell integrals"""
@@ -175,7 +175,7 @@ def assemble_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
 
     # NOTE: All cells are assumed to be of the same type
     geometry = numpy.zeros((pos[1] - pos[0], 3))
-    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=PETSc.ScalarType)
+    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)
 
     for cell_index in active_cells:
         num_vertices = pos[cell_index + 1] - pos[cell_index]
@@ -202,18 +202,18 @@ def assemble_cells(b: 'numpy.ndarray[PETSc.ScalarType]',
 
 
 @numba.njit
-def assemble_exterior_slave_facets(b: 'numpy.ndarray[PETSc.ScalarType]',
+def assemble_exterior_slave_facets(b: 'numpy.ndarray[_PETSc.ScalarType]',
                                    kernel: ffi.CData,
                                    facet_info: 'numpy.ndarray[numpy.int32]',
                                    mesh: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
                                                'numpy.ndarray[numpy.float64]'],
-                                   coeffs: 'numpy.ndarray[PETSc.ScalarType]',
-                                   constants: 'numpy.ndarray[PETSc.ScalarType]',
+                                   coeffs: 'numpy.ndarray[_PETSc.ScalarType]',
+                                   constants: 'numpy.ndarray[_PETSc.ScalarType]',
                                    permutation_info: 'numpy.ndarray[numpy.uint32]',
                                    dofmap: 'numpy.ndarray[numpy.int32]',
                                    block_size: int,
                                    num_dofs_per_element: int,
-                                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[PETSc.ScalarType]',
+                                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[_PETSc.ScalarType]',
                                               'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
                                               'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
                                    num_facets_per_cell: int):
@@ -229,7 +229,7 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[PETSc.ScalarType]',
     pos, x_dofmap, x = mesh
 
     geometry = numpy.zeros((pos[1] - pos[0], 3))
-    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=PETSc.ScalarType)
+    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)
     for i in range(facet_info.shape[0]):
         # Extract cell index (local to process) and facet index (local to cell) for kernel
         cell_index, local_facet = facet_info[i]
@@ -259,10 +259,10 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[PETSc.ScalarType]',
 
 
 @numba.njit(cache=True)
-def modify_mpc_contributions(b: 'numpy.ndarray[PETSc.ScalarType]', cell_index: int,
-                             b_local: 'numpy.ndarray[PETSc.ScalarType]',
-                             b_copy: 'numpy.ndarray[PETSc.ScalarType]',
-                             mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[PETSc.ScalarType]',
+def modify_mpc_contributions(b: 'numpy.ndarray[_PETSc.ScalarType]', cell_index: int,
+                             b_local: 'numpy.ndarray[_PETSc.ScalarType]',
+                             b_copy: 'numpy.ndarray[_PETSc.ScalarType]',
+                             mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[_PETSc.ScalarType]',
                                         'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
                                         'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
                              dofmap: 'numpy.ndarray[numpy.int32]',

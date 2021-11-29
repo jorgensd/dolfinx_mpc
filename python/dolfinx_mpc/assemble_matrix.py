@@ -6,21 +6,18 @@
 
 from typing import List
 
-import dolfinx
-import dolfinx.common
-import dolfinx.log
+import dolfinx.fem as _fem
+import dolfinx.cpp as _cpp
 
 import ufl
 from dolfinx_mpc import cpp
-from petsc4py import PETSc
+from petsc4py import PETSc as _PETSc
 from .multipointconstraint import MultiPointConstraint, cpp_dirichletbc
 
-Timer = dolfinx.common.Timer
 
-
-def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: List[dolfinx.fem.DirichletBC] = [],
-                    diagval: PETSc.ScalarType = 1, A: PETSc.Mat = None,
-                    form_compiler_parameters={}, jit_parameters={}) -> PETSc.Mat:
+def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: List[_fem.DirichletBC] = [],
+                    diagval: _PETSc.ScalarType = 1, A: _PETSc.Mat = None,
+                    form_compiler_parameters={}, jit_parameters={}) -> _PETSc.Mat:
     """
     Assemble a bi-linear form into a PETSc matrix with corresponding multi point constraints and Dirichlet boundary
     conditions.
@@ -50,13 +47,13 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: 
 
     Returns
     -------
-    PETSc.Mat
+    _PETSc.Mat
         The assembled bi-linear form
     """
     assert(form.arguments()[0].ufl_function_space() == form.arguments()[1].ufl_function_space())
 
-    cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
-                            jit_parameters=jit_parameters)._cpp_object
+    cpp_form = _fem.Form(form, form_compiler_parameters=form_compiler_parameters,
+                         jit_parameters=jit_parameters)._cpp_object
 
     # Generate matrix with MPC sparsity pattern
     if A is None:
@@ -69,9 +66,9 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: 
 
     # Add one on diagonal for Dirichlet boundary conditions
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
-        A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
-        A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
-        dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_bc, diagval)
+        A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)
+        A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)
+        _cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_bc, diagval)
 
     A.assemble()
     return A

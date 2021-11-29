@@ -128,7 +128,7 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
 {
   dolfinx::common::Timer timer(
       "~MPC: Create new index map with additional ghosts");
-  MPI_Comm comm = V->mesh()->mpi_comm();
+  MPI_Comm comm = V->mesh()->comm();
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
   std::shared_ptr<const dolfinx::common::IndexMap> index_map = dofmap.index_map;
 
@@ -208,7 +208,7 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
   // NOTE: This is a workaround to get the Adjacency list and block size
   // used to initialize the original dofmap
   auto [_, bs, dofmap_adj] = dolfinx::fem::build_dofmap_data(
-      V->mesh()->mpi_comm(), topology, layout,
+      V->mesh()->comm(), topology, layout,
       [](const dolfinx::graph::AdjacencyList<std::int32_t>& g)
       { return dolfinx::graph::reorder_gps(g); });
 

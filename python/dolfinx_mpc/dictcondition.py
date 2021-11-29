@@ -49,7 +49,7 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
              numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
     """
     dfloat = np.float64
-    comm = V.mesh.mpi_comm()
+    comm = V.mesh.comm
     bs = V.dofmap.index_map_bs
     local_size = V.dofmap.index_map.size_local * bs
     index_map = V.dofmap.index_map

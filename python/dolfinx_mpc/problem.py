@@ -79,13 +79,13 @@ class LinearProblem():
         # Create MPC matrix
         pattern = self._mpc.create_sparsity_pattern(a_cpp)
         pattern.assemble()
-        self._A = cpp.la.create_matrix(self._mpc.function_space.mesh.mpi_comm(), pattern)
+        self._A = cpp.la.create_matrix(self._mpc.function_space.mesh.comm, pattern)
 
         self._b = cpp.la.create_vector(self._mpc.function_space.dofmap.index_map,
                                        self._mpc.function_space.dofmap.index_map_bs)
         self.bcs = bcs
 
-        self._solver = PETSc.KSP().create(self.u.function_space.mesh.mpi_comm())
+        self._solver = PETSc.KSP().create(self.u.function_space.mesh.comm)
         self._solver.setOperators(self._A)
 
         # Give PETSc solver options a unique prefix

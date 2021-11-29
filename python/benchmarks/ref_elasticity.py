@@ -4,110 +4,101 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import argparse
+
 import resource
 import sys
-import time
-
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from time import perf_counter
 import h5py
 import numpy as np
-from petsc4py import PETSc
-
-import dolfinx
-import dolfinx.common
-import dolfinx.io
-import dolfinx.la
-import dolfinx.log
-import dolfinx.mesh
-import ufl
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
+                         apply_lifting, assemble_matrix, assemble_vector,
+                         locate_dofs_topological, set_bc)
+from dolfinx.generation import UnitCubeMesh
+from dolfinx.io import XDMFFile
+from dolfinx.log import LogLevel, set_log_level, log
+from dolfinx.mesh import MeshTags, CellType, locate_entities_boundary, refine
 from dolfinx_mpc.utils import rigid_motions_nullspace
 from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction, ds,
+                 dx, grad, inner, sym, tr, as_vector)
 
 
-def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
-                   xdmf=False, boomeramg=False, kspview=False, degree=1):
+def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: h5py.File = None,
+                   xdmf: bool = False, boomeramg: bool = False, kspview: bool = False, degree: int = 1):
     if tetra:
-        if degree == 1:
-            N = 3
-        else:
-            N = 2
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+        N = 3 if degree == 1 else 2
+        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
     else:
         N = 3
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                    dolfinx.mesh.CellType.hexahedron)
+        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
     for i in range(r_lvl):
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
+        # set_log_level(LogLevel.INFO)
         N *= 2
         if tetra:
-            mesh = dolfinx.mesh.refine(mesh, redistribute=True)
+            mesh = refine(mesh, redistribute=True)
         else:
-            mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N,
-                                        dolfinx.mesh.CellType.hexahedron)
-        # dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+            mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
+        # set_log_level(LogLevel.ERROR)
     N = degree * N
     fdim = mesh.topology.dim - 1
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
+    V = VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
-    u_bc = dolfinx.Function(V)
+    u_bc = Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
-    facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
-                                                   boundaries)
-    topological_dofs = dolfinx.fem.locate_dofs_topological(V, fdim, facets)
-    bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
+    facets = locate_entities_boundary(mesh, fdim, boundaries)
+    topological_dofs = locate_dofs_topological(V, fdim, facets)
+    bc = DirichletBC(u_bc, topological_dofs)
     bcs = [bc]
 
     # Create traction meshtag
     def traction_boundary(x):
         return np.isclose(x[0], 1)
-    t_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim,
-                                                     traction_boundary)
+    t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
-    mt = dolfinx.MeshTags(mesh, fdim, t_facets, facet_values)
+    mt = MeshTags(mesh, fdim, t_facets, facet_values)
 
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e4)
     nu = 0.1
-    mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
-    g = dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, -1e2)))
-    x = ufl.SpatialCoordinate(mesh)
-    f = dolfinx.Constant(mesh, PETSc.ScalarType(1e4)) * \
-        ufl.as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
+    mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
+    lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    g = Constant(mesh, PETSc.ScalarType((0, 0, -1e2)))
+    x = SpatialCoordinate(mesh)
+    f = Constant(mesh, PETSc.ScalarType(1e4)) * \
+        as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v))
-                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v)))
 
     # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(g, v) * ufl.ds(domain=mesh,
-                                   subdomain_data=mt, subdomain_id=1)\
-        + ufl.inner(f, v) * ufl.dx
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    a = inner(sigma(u), grad(v)) * dx
+    rhs = inner(g, v) * ds(domain=mesh, subdomain_data=mt, subdomain_id=1) + inner(f, v) * dx
 
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     if MPI.COMM_WORLD.rank == 0:
         print("Problem size {0:d} ".format(num_dofs))
 
     # Generate reference matrices and unconstrained solution
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org = assemble_matrix(a, bcs)
     A_org.assemble()
     null_space_org = rigid_motions_nullspace(V)
     A_org.setNearNullSpace(null_space_org)
 
-    L_org = dolfinx.fem.assemble_vector(rhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
+    L_org = assemble_vector(rhs)
+    apply_lifting(L_org, [a], [bcs])
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    set_bc(L_org, bcs)
     opts = PETSc.Options()
     if boomeramg:
         opts["ksp_type"] = "cg"
@@ -117,7 +108,7 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         opts["pc_hypre_boomeramg_max_iter"] = 1
         opts["pc_hypre_boomeramg_cycle_type"] = "v"
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
-        assert(False)
+
     else:
         opts["ksp_rtol"] = 1.0e-8
         opts["pc_type"] = "gamg"
@@ -139,13 +130,13 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
     solver.setOperators(A_org)
 
     # Solve linear problem
-    u_ = dolfinx.Function(V)
-    start = time.time()
-    with dolfinx.common.Timer("Ref solve"):
+    u_ = Function(V)
+    start = perf_counter()
+    with Timer("Ref solve"):
         solver.solve(L_org, u_.vector)
-    end = time.time()
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+    end = perf_counter()
+    u_.x.scatter_forward()
+
     if kspview:
         solver.view()
 
@@ -173,13 +164,13 @@ def ref_elasticity(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None,
         # Name formatting of functions
         u_.name = "u_unconstrained"
         fname = "results/ref_elasticity_{0:d}.xdmf".format(r_lvl)
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
+        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
             out_xdmf.write_mesh(mesh)
             out_xdmf.write_function(u_, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
                         help="Number of spatial refinements")
     parser.add_argument("--degree", default=1, type=np.int8, dest="degree",
@@ -226,14 +217,14 @@ if __name__ == "__main__":
     # Loop over refinement levels
     for i in range(N):
         if MPI.COMM_WORLD.rank == 0:
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-            dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                            "Run {0:1d} in progress".format(i))
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+            set_log_level(LogLevel.INFO)
+            log(LogLevel.INFO,
+                "Run {0:1d} in progress".format(i))
+            set_log_level(LogLevel.ERROR)
         ref_elasticity(tetra=tetra, r_lvl=i, out_hdf5=h5f,
                        xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
                        degree=degree)
         if timings and i == N - 1:
-            dolfinx.common.list_timings(
-                MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+            list_timings(
+                MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()

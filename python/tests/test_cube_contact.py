@@ -7,8 +7,6 @@
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
 
-import dolfinx
-# import dolfinx.io as io
 import dolfinx.fem as fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
@@ -17,6 +15,7 @@ import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -173,12 +172,12 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     mesh, mt = mesh_data
     fdim = mesh.topology.dim - 1
     # Create functionspaces
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Helper for orienting traction
 
     # Bottom boundary is fixed in all directions
-    u_bc = dolfinx.Function(V)
+    u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -202,7 +201,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
         values[1] = g_vec[1]
         values[2] = g_vec[2]
         return values
-    u_top = dolfinx.Function(V)
+    u_top = fem.Function(V)
     u_top.interpolate(top_v)
 
     top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
@@ -214,8 +213,8 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e3)
     nu = 0
-    mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
+    lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
 
     # Stress computation
     def sigma(v):
@@ -226,7 +225,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * ufl.dx
+    rhs = ufl.inner(fem.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * ufl.dx
     # Create LU solver
     solver = PETSc.KSP().create(comm)
     solver.setType("preonly")
@@ -236,25 +235,25 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     # Create MPC contact condition and assemble matrices
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     if nonslip:
-        with dolfinx.common.Timer("~Contact: Create non-elastic constraint"):
+        with Timer("~Contact: Create non-elastic constraint"):
             mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
-        with dolfinx.common.Timer("~Contact: Create contact constraint"):
+        with Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
             mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
     mpc.finalize()
 
-    with dolfinx.common.Timer("~TEST: Assemble bilinear form"):
+    with Timer("~TEST: Assemble bilinear form"):
         A = assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("~TEST: Assemble vector"):
+    with Timer("~TEST: Assemble vector"):
         b = assemble_vector(rhs, mpc)
 
     dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
-    with dolfinx.common.Timer("~MPC: Solve"):
+    with Timer("~MPC: Solve"):
         solver.setOperators(A)
         uh = b.copy()
         uh.set(0)
@@ -264,7 +263,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     mpc.backsubstitution(uh)
 
     # Write solution to file
-    # u_h = dolfinx.Function(mpc.function_space)
+    # u_h = fem.Function(mpc.function_space)
     # u_h.vector.setArray(uh.array)
     # u_h.x.scatter_forward()
     # u_h.name = "u_{0:.2f}".format(theta)
@@ -277,7 +276,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     # and numpy solvers to get reference values
     dolfinx_mpc.utils.log_info("Solving reference problem with global matrix (using numpy)")
 
-    with dolfinx.common.Timer("~TEST: Assemble bilinear form (unconstrained)"):
+    with Timer("~TEST: Assemble bilinear form (unconstrained)"):
         A_org = fem.assemble_matrix(a, bcs)
         A_org.assemble()
 
@@ -287,7 +286,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         fem.set_bc(L_org, bcs)
 
-    with dolfinx.common.Timer("~TEST: Compare"):
+    with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
@@ -306,4 +305,4 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
 
-    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
+    list_timings(comm, [TimingType.wall])

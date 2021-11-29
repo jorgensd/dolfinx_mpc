@@ -4,34 +4,33 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import dolfinx
 from typing import List, Optional
-import dolfinx.common
-import dolfinx.log
+import dolfinx.fem as _fem
+import dolfinx.cpp as _cpp
 import ufl
 import numpy
 import dolfinx_mpc.cpp
 from .multipointconstraint import MultiPointConstraint, cpp_dirichletbc
-from petsc4py import PETSc
+from petsc4py import PETSc as _PETSc
 import contextlib
-Timer = dolfinx.common.Timer
+from dolfinx.common import Timer
 
 
 def cpp_form(form, form_compiler_parameters={}, jit_parameters={}):
     """Recursively look for ufl.Forms and convert to
     dolfinx.cpp.fem.Form, otherwise return form argument"""
-    if isinstance(form, dolfinx.fem.Form):
+    if isinstance(form, _fem.Form):
         return form._cpp_object
     elif isinstance(form, ufl.Form):
-        return dolfinx.fem.Form(form, form_compiler_parameters=form_compiler_parameters,
-                                jit_parameters=jit_parameters)._cpp_object
+        return _fem.Form(form, form_compiler_parameters=form_compiler_parameters,
+                         jit_parameters=jit_parameters)._cpp_object
     elif isinstance(form, (tuple, list)):
         return list(map(lambda sub_form: cpp_form(sub_form), form))
     return form
 
 
-def apply_lifting(b: PETSc.Vec, form: List[ufl.form.Form], bcs: List[List[dolfinx.DirichletBC]],
-                  constraint: MultiPointConstraint, x0: Optional[List[PETSc.Vec]] = [],
+def apply_lifting(b: _PETSc.Vec, form: List[ufl.form.Form], bcs: List[List[_fem.DirichletBC]],
+                  constraint: MultiPointConstraint, x0: Optional[List[_PETSc.Vec]] = [],
                   scale: numpy.float64 = 1.0, form_compiler_parameters={}, jit_parameters={}):
     """
     Apply lifting to vector b, i.e.
@@ -80,8 +79,8 @@ def apply_lifting(b: PETSc.Vec, form: List[ufl.form.Form], bcs: List[List[dolfin
 
 
 def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
-                    b: PETSc.Vec = None,
-                    form_compiler_parameters={}, jit_parameters={}) -> PETSc.Vec:
+                    b: _PETSc.Vec = None,
+                    form_compiler_parameters={}, jit_parameters={}) -> _PETSc.Vec:
     """
     Assemble a linear form into vector b with corresponding multi point constraint
 
@@ -109,12 +108,12 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
         The assembled linear form
     """
 
-    cpp_form = dolfinx.Form(form, form_compiler_parameters=form_compiler_parameters,
-                            jit_parameters=jit_parameters)._cpp_object
+    cpp_form = _fem.Form(form, form_compiler_parameters=form_compiler_parameters,
+                         jit_parameters=jit_parameters)._cpp_object
 
     if b is None:
-        b = dolfinx.cpp.la.create_vector(constraint.function_space.dofmap.index_map,
-                                         constraint.function_space.dofmap.index_map_bs)
+        b = _cpp.la.create_vector(constraint.function_space.dofmap.index_map,
+                                  constraint.function_space.dofmap.index_map_bs)
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)

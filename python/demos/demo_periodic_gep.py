@@ -21,16 +21,16 @@
 # eigenvalue problem is solved using SLEPc and the computed eigenvalues are
 # compared to the exact ones.
 
-import dolfinx
-import dolfinx.io
-import dolfinx_mpc
-import dolfinx_mpc.utils
-import ufl
+from ufl import TrialFunction, TestFunction, inner, grad, dx
 import numpy as np
 from mpi4py import MPI
 from petsc4py import PETSc
 from slepc4py import SLEPc
 from typing import Tuple, List
+from dolfinx_mpc import MultiPointConstraint, assemble_matrix
+from dolfinx.mesh import locate_entities_boundary, MeshTags
+import dolfinx.fem as fem
+from dolfinx.generation import UnitSquareMesh
 
 
 def print0(string: str):
@@ -95,7 +95,7 @@ def EPS_print_results(EPS: SLEPc.EPS):
 
 
 def EPS_get_spectrum(EPS: SLEPc.EPS,
-                     mpc: dolfinx_mpc.MultiPointConstraint) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:
+                     mpc: MultiPointConstraint) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:
     """ Retrieve eigenvalues and eigenfunctions from SLEPc EPS object.
         Parameters
         ----------
@@ -114,7 +114,7 @@ def EPS_get_spectrum(EPS: SLEPc.EPS,
     eigvec_r = list()
     eigvec_i = list()
     V = mpc.function_space
-    vr = dolfinx.Function(V).vector
+    vr = fem.Function(V).vector
     vi = vr.copy()
     for i in range(EPS.getConverged()):
         EPS.getEigenvector(i, vr, vi)
@@ -199,11 +199,11 @@ def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
 
 # Create mesh and finite element
 N = 50
-mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N)
-V = dolfinx.FunctionSpace(mesh, ("CG", 1))
+mesh = UnitSquareMesh(MPI.COMM_WORLD, N, N)
+V = fem.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition
-u_bc = dolfinx.Function(V)
+u_bc = fem.Function(V)
 with u_bc.vector.localForm() as u_local:
     u_local.set(0.0)
 
@@ -212,10 +212,9 @@ def DirichletBoundary(x):
     return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
 
 
-facets = dolfinx.mesh.locate_entities_boundary(mesh, 1,
-                                               DirichletBoundary)
-topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
-bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
+facets = locate_entities_boundary(mesh, 1, DirichletBoundary)
+topological_dofs = fem.locate_dofs_topological(V, 1, facets)
+bc = fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
 
 
@@ -223,10 +222,10 @@ def PeriodicBoundary(x):
     return np.isclose(x[0], 1)
 
 
-facets = dolfinx.mesh.locate_entities_boundary(
+facets = locate_entities_boundary(
     mesh, mesh.topology.dim - 1, PeriodicBoundary)
-mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1,
-                      facets, np.full(len(facets), 2, dtype=np.int32))
+mt = MeshTags(mesh, mesh.topology.dim - 1,
+              facets, np.full(len(facets), 2, dtype=np.int32))
 
 
 def periodic_relation(x):
@@ -237,15 +236,14 @@ def periodic_relation(x):
     return out_x
 
 
-mpc = dolfinx_mpc.MultiPointConstraint(V)
+mpc = MultiPointConstraint(V)
 mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
 mpc.finalize()
-
 # Define variational problem
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-b = ufl.inner(u, v) * ufl.dx
+u = TrialFunction(V)
+v = TestFunction(V)
+a = inner(grad(u), grad(v)) * dx
+b = inner(u, v) * dx
 
 # Diagonal values for slave and Dirichlet DoF
 # The generalized eigenvalue problem will have spurious eigenvalues at
@@ -254,12 +252,11 @@ b = ufl.inner(u, v) * ufl.dx
 diagval_A = 1e2
 diagval_B = 1e-2
 
-A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs, diagval=diagval_A)
-B = dolfinx_mpc.assemble_matrix(b, mpc, bcs=bcs, diagval=diagval_B)
+A = assemble_matrix(a, mpc, bcs=bcs, diagval=diagval_A)
+B = assemble_matrix(b, mpc, bcs=bcs, diagval=diagval_B)
 
 Nev = 10  # number of requested eigenvalues
-EPS = solve_GEP_shiftinvert(A, B,
-                            problem_type=SLEPc.EPS.ProblemType.GHEP,
+EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,
                             solver=SLEPc.EPS.Type.KRYLOVSCHUR,
                             nev=Nev, tol=1e-6, max_it=10,
                             target=1.5, shift=1.5)

@@ -7,29 +7,37 @@
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
 
-import argparse
+
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+
 
 import dolfinx.fem as fem
-import dolfinx.io
-import dolfinx_mpc
-import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
-import ufl
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.mesh import CellType
+from dolfinx.io import XDMFFile
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import (compare_MPC_LHS, compare_MPC_RHS,
+                               create_normal_approximation, gather_PETScMatrix,
+                               gather_PETScVector,
+                               gather_transformation_matrix, log_info,
+                               rigid_motions_nullspace, rotation_matrix)
 from mpi4py import MPI
 from petsc4py import PETSc
+from ufl import (Identity, Measure, TestFunction, TrialFunction, dx, grad,
+                 inner, sym, tr)
 
 from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 
-comm = MPI.COMM_WORLD
 
-
-def demo_stacked_cubes(outfile, theta, gmsh=False,
-                       ct=dolfinx.mesh.CellType.tetrahedron, compare=True, res=0.1, noslip=False):
-    celltype = "hexahedron" if ct == dolfinx.mesh.CellType.hexahedron else "tetrahedron"
+def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellType.tetrahedron,
+                       compare: bool = True, res: np.float64 = 0.1, noslip: bool = False):
+    celltype = "hexahedron" if ct == CellType.hexahedron else "tetrahedron"
     type_ext = "no_slip" if noslip else "slip"
     mesh_ext = "_gmsh_" if gmsh else "_"
-    dolfinx_mpc.utils.log_info(f"Run theta:{theta:.2f}, Cell: {celltype}, GMSH {gmsh}, Noslip: {noslip}")
+    log_info(f"Run theta:{theta:.2f}, Cell: {celltype}, GMSH {gmsh}, Noslip: {noslip}")
 
     # Read in mesh
     if gmsh:
@@ -40,8 +48,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         mesh.topology.create_connectivity(fdim, tdim)
     else:
         mesh_3D_dolfin(theta, ct, celltype, res)
-        comm.barrier()
-        with dolfinx.io.XDMFFile(comm, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
+        MPI.COMM_WORLD.barrier()
+        with XDMFFile(MPI.COMM_WORLD, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
             mesh = xdmf.read_mesh(name="mesh")
             tdim = mesh.topology.dim
             fdim = tdim - 1
@@ -50,27 +58,28 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
             mt = xdmf.read_meshtags(mesh, "facet_tags")
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext}{mesh_ext}"
     # Create functionspaces
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
-    u_bc = dolfinx.Function(V)
+    u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
     bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
+
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
     bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
 
     g_vec = [0, 0, -4.25e-1]
     if not noslip:
         # Helper for orienting traction
-        r_matrix = dolfinx_mpc.utils.rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+        r_matrix = rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
 
-    g = dolfinx.Constant(mesh, PETSc.ScalarType(g_vec))
+    g = fem.Constant(mesh, PETSc.ScalarType(g_vec))
 
     def top_v(x):
         values = np.empty((3, x.shape[1]))
@@ -78,7 +87,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         values[1] = g_vec[1]
         values[2] = g_vec[2]
         return values
-    u_top = dolfinx.Function(V)
+    u_top = fem.Function(V)
     u_top.interpolate(top_v)
 
     top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
@@ -90,45 +99,45 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e3)
     nu = 0
-    mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
+    lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v)) + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return (2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v)))
 
     # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    a = inner(sigma(u), grad(v)) * dx
     # NOTE: Traction deactivated until we have a way of fixing nullspace
-    ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * ufl.dx
-    + ufl.inner(g, v) * ds
+    ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
+    rhs = inner(fem.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
+    + inner(g, v) * ds
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc = MultiPointConstraint(V)
     if noslip:
-        with dolfinx.common.Timer("~~Contact: Create non-elastic constraint"):
+        with Timer("~~Contact: Create non-elastic constraint"):
             mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
-        with dolfinx.common.Timer("~Contact: Create facet normal approximation"):
-            nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/nh.xdmf", "w") as xdmf:
+        with Timer("~Contact: Create facet normal approximation"):
+            nh = create_normal_approximation(V, mt, 4)
+        with XDMFFile(MPI.COMM_WORLD, "results/nh.xdmf", "w") as xdmf:
             xdmf.write_mesh(mesh)
             xdmf.write_function(nh)
-        with dolfinx.common.Timer("~Contact: Create contact constraint"):
+        with Timer("~Contact: Create contact constraint"):
             mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
-    with dolfinx.common.Timer("~~Contact: Add data and finialize MPC"):
+    with Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
+    null_space = rigid_motions_nullspace(mpc.function_space)
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
-    with dolfinx.common.Timer(f"~~Contact: Assemble matrix ({num_dofs})"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer(f"~~Contact: Assemble vector ({num_dofs})"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+    with Timer(f"~~Contact: Assemble matrix ({num_dofs})"):
+        A = assemble_matrix(a, mpc, bcs=bcs)
+    with Timer(f"~~Contact: Assemble vector ({num_dofs})"):
+        b = assemble_vector(rhs, mpc)
 
-    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+    apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
@@ -150,21 +159,21 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     # Create functionspace and build near nullspace
 
     A.setNearNullSpace(null_space)
-    solver = PETSc.KSP().create(comm)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setOperators(A)
     solver.setFromOptions()
     uh = b.copy()
     uh.set(0)
-    with dolfinx.common.Timer("~~Contact: Solve"):
+    with Timer("~~Contact: Solve"):
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    with dolfinx.common.Timer("~~Contact: Backsubstitution"):
+    with Timer("~~Contact: Backsubstitution"):
         mpc.backsubstitution(uh)
 
     it = solver.getIterationNumber()
     unorm = uh.norm()
     num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves, op=MPI.SUM)
-    if comm.rank == 0:
+    if mesh.comm.rank == 0:
         num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
         print(f"Number of dofs: {num_dofs}")
         print(f"Number of slaves: {num_slaves}")
@@ -172,7 +181,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         print(f"Norm of u {unorm:.5e}")
 
     # Write solution to file
-    u_h = dolfinx.Function(mpc.function_space)
+    u_h = fem.Function(mpc.function_space)
     u_h.vector.setArray(uh.array)
     u_h.name = f"u_{celltype}_{theta:.2f}{mesh_ext}{type_ext}".format(celltype, theta, type_ext, mesh_ext)
     outfile.write_mesh(mesh)
@@ -182,8 +191,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
     if not compare:
         return
 
-    dolfinx_mpc.utils.log_info("Solving reference problem with global matrix (using scipy)")
-    with dolfinx.common.Timer("~~Contact: Reference problem"):
+    log_info("Solving reference problem with global matrix (using scipy)")
+    with Timer("~~Contact: Reference problem"):
         A_org = fem.assemble_matrix(a, bcs)
         A_org.assemble()
         L_org = fem.assemble_vector(rhs)
@@ -192,15 +201,15 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
         fem.set_bc(L_org, bcs)
 
     root = 0
-    with dolfinx.common.Timer("~~Contact: Compare LHS, RHS and solution"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+    with Timer("~~Contact: Compare LHS, RHS and solution"):
+        compare_MPC_LHS(A_org, A, mpc, root=root)
+        compare_MPC_RHS(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
-        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
-        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
-        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        A_csr = gather_PETScMatrix(A_org, root=root)
+        K = gather_transformation_matrix(mpc, root=root)
+        L_np = gather_PETScVector(L_org, root=root)
+        u_mpc = gather_PETScVector(uh, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -211,11 +220,11 @@ def demo_stacked_cubes(outfile, theta, gmsh=False,
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
 
-    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
+    list_timings(mesh.comm, [TimingType.wall])
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--res", default=0.1, type=np.float64, dest="res", help="Resolution of Mesh")
     parser.add_argument("--theta", default=np.pi / 3, type=np.float64, dest="theta",
                         help="Rotation angle around axis [1, 1, 0]")
@@ -244,16 +253,14 @@ if __name__ == "__main__":
     theta = args.theta
     hex = args.hex
 
-    outfile = dolfinx.io.XDMFFile(comm, "results/demo_contact_3D.xdmf", "w")
+    outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_contact_3D.xdmf", "w")
 
-    if hex:
-        ct = dolfinx.mesh.CellType.hexahedron
-    else:
-        ct = dolfinx.mesh.CellType.tetrahedron
+    ct = CellType.hexahedron if hex else CellType.tetrahedron
+
     demo_stacked_cubes(outfile, theta=theta, gmsh=gmsh, ct=ct, compare=compare, res=res, noslip=noslip)
 
     outfile.close()
 
-    dolfinx_mpc.utils.log_info("Simulation finished")
+    log_info("Simulation finished")
     if timing:
-        dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
+        list_timings(MPI.COMM_WORLD, [TimingType.wall])

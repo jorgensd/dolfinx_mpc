@@ -4,48 +4,49 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import argparse
 import resource
 import sys
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
 import h5py
 import numpy as np
-from petsc4py import PETSc
-
-import dolfinx
-import dolfinx.common
-import dolfinx.io
-import dolfinx.la
-import dolfinx.log
-import dolfinx.mesh
-import dolfinx_mpc
-import dolfinx_mpc.utils
-import ufl
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
+                         locate_dofs_topological, set_bc)
+from dolfinx.generation import UnitCubeMesh
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import CellType, MeshTags, locate_entities_boundary
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
+                 as_vector, ds, dx, grad, inner, sym, tr)
 
 
-def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False,
-                          kspview=False, degree=1, info=False):
+def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdmf: bool = False,
+                          boomeramg: bool = False, kspview: bool = False, degree: int = 1, info: bool = False):
     N = 3
     for i in range(r_lvl):
         N *= 2
-    ct = dolfinx.mesh.CellType.tetrahedron if tetra else dolfinx.mesh.CellType.hexahedron
-    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
+    ct = CellType.tetrahedron if tetra else CellType.hexahedron
+    mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
     # Get number of unknowns on each edge
 
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
+    V = VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
 
     # Generate Dirichlet BC (Fixed)
-    u_bc = dolfinx.Function(V)
+    u_bc = Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
     fdim = mesh.topology.dim - 1
-    facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, boundaries)
-    topological_dofs = dolfinx.fem.locate_dofs_topological(V, fdim, facets)
-    bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
+    facets = locate_entities_boundary(mesh, fdim, boundaries)
+    topological_dofs = locate_dofs_topological(V, fdim, facets)
+    bc = DirichletBC(u_bc, topological_dofs)
     bcs = [bc]
 
     def PeriodicBoundary(x):
@@ -57,12 +58,12 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
         out_x[1] = x[1]
         out_x[2] = x[2] + 1
         return out_x
-    with dolfinx.common.Timer("~Elasticity: Initialize MPC"):
+    with Timer("~Elasticity: Initialize MPC"):
         edim = mesh.topology.dim - 2
-        edges = dolfinx.mesh.locate_entities_boundary(mesh, edim, PeriodicBoundary)
-        periodic_mt = dolfinx.MeshTags(mesh, edim, edges, np.full(len(edges), 2, dtype=np.int32))
+        edges = locate_entities_boundary(mesh, edim, PeriodicBoundary)
+        periodic_mt = MeshTags(mesh, edim, edges, np.full(len(edges), 2, dtype=np.int32))
 
-        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc = MultiPointConstraint(V)
         mpc.create_periodic_constraint_topological(periodic_mt, 2, periodic_relation, bcs, scale=0.5)
         mpc.finalize()
 
@@ -70,47 +71,47 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
 
     def traction_boundary(x):
         return np.isclose(x[0], 1)
-    t_facets = dolfinx.mesh.locate_entities_boundary(mesh, fdim, traction_boundary)
+    t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
-    mt = dolfinx.MeshTags(mesh, fdim, t_facets, facet_values)
+    mt = MeshTags(mesh, fdim, t_facets, facet_values)
 
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e4)
     nu = 0.1
-    mu = dolfinx.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = dolfinx.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
-    g = dolfinx.Constant(mesh, PETSc.ScalarType((0, 0, -1e2)))
-    x = ufl.SpatialCoordinate(mesh)
-    f = dolfinx.Constant(mesh, PETSc.ScalarType(1e3)) * ufl.as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
+    mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
+    lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    g = Constant(mesh, PETSc.ScalarType((0, 0, -1e2)))
+    x = SpatialCoordinate(mesh)
+    f = Constant(mesh, PETSc.ScalarType(1e3)) * as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
 
     # Stress computation
     def epsilon(v):
-        return ufl.sym(ufl.grad(v))
+        return sym(grad(v))
 
     def sigma(v):
-        return (2.0 * mu * epsilon(v) + lmbda * ufl.tr(epsilon(v)) * ufl.Identity(len(v)))
+        return (2.0 * mu * epsilon(v) + lmbda * tr(epsilon(v)) * Identity(len(v)))
 
     # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(g, v) * ufl.ds(domain=mesh, subdomain_data=mt, subdomain_id=1) + ufl.inner(f, v) * ufl.dx
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    a = inner(sigma(u), grad(v)) * dx
+    rhs = inner(g, v) * ds(domain=mesh, subdomain_data=mt, subdomain_id=1) + inner(f, v) * dx
 
     # Setup MPC system
     if info:
-        dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Assembling matrix and vector")
-    with dolfinx.common.Timer("~Elasticity: Assemble LHS and RHS"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+        log_info(f"Run {r_lvl}: Assembling matrix and vector")
+    with Timer("~Elasticity: Assemble LHS and RHS"):
+        A = assemble_matrix(a, mpc, bcs=bcs)
+        b = assemble_vector(rhs, mpc)
 
     # Create nullspace for elasticity problem and assign to matrix
-    null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
+    null_space = rigid_motions_nullspace(mpc.function_space)
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
-    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+    apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    set_bc(b, bcs)
 
     opts = PETSc.Options()
     if boomeramg:
@@ -141,9 +142,9 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
     solver.setFromOptions()
 
     if info:
-        dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Solving")
+        log_info(f"Run {r_lvl}: Solving")
 
-    with dolfinx.common.Timer("~Elasticity: Solve problem") as timer:
+    with Timer("~Elasticity: Solve problem") as timer:
         solver.setOperators(A)
         uh = b.copy()
         uh.set(0)
@@ -168,21 +169,21 @@ def bench_elasticity_edge(tetra=True, out_xdmf=None, r_lvl=0, out_hdf5=None, xdm
         d_set = out_hdf5.get("solve_time")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
     if info:
-        dolfinx_mpc.utils.log_info(f"Lvl: {r_lvl}, Its: {it}, max Mem: {mem}, dim(V): {num_dofs}")
+        log_info(f"Lvl: {r_lvl}, Its: {it}, max Mem: {mem}, dim(V): {num_dofs}")
 
     if xdmf:
         # Write solution to file
-        u_h = dolfinx.Function(mpc.function_space)
+        u_h = Function(mpc.function_space)
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
         fname = f"results/bench_elasticity_edge_{r_lvl}.xdmf"
-        with dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
+        with XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref", help="Number of spatial refinements")
     parser.add_argument("--degree", default=1, type=np.int8, dest="degree", help="CG Function space degree")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf", help="XDMF-output of function (Default false)")
@@ -219,10 +220,10 @@ if __name__ == "__main__":
     sd.attrs["ct"] = np.string_(ct)
 
     for i in range(N):
-        dolfinx_mpc.utils.log_info(f"Run {i} in progress")
+        log_info(f"Run {i} in progress")
         bench_elasticity_edge(tetra=tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
                               degree=degree, info=info)
 
         if timings and i == N - 1:
-            dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+            list_timings(MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()

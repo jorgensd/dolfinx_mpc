@@ -1,39 +1,41 @@
 from typing import Callable, List
 
-import dolfinx
+import dolfinx.fem as _fem
+import dolfinx.mesh as _mesh
+import dolfinx.geometry as _geometry
 import numpy as np
-from petsc4py import PETSc
+from petsc4py import PETSc as _PETSc
 
 import dolfinx_mpc.cpp
 
 
-def create_periodic_condition_topological(V: dolfinx.FunctionSpace, mt: dolfinx.MeshTags, marker: int,
-                                          relation: Callable[[np.ndarray], np.ndarray], bcs: List[dolfinx.DirichletBC],
-                                          scale: PETSc.ScalarType):
+def create_periodic_condition_topological(V: _fem.FunctionSpace, mt: _mesh.MeshTags, marker: int,
+                                          relation: Callable[[np.ndarray], np.ndarray], bcs: List[_fem.DirichletBC],
+                                          scale: _PETSc.ScalarType):
     """
     Create periodic condition for all dofs in MeshTag with given marker:
        u(x_i) = scale * u(relation(x_i))
     for all x_i on marked entities.
     """
     slave_entities = mt.indices[mt.values == marker]
-    slave_blocks = dolfinx.fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
+    slave_blocks = _fem.locate_dofs_topological(V, mt.dim, slave_entities, remote=True)
     return _create_periodic_condition(V, slave_blocks, relation, bcs, scale)
 
 
-def create_periodic_condition_geometrical(V: dolfinx.FunctionSpace, indicator: Callable[[np.ndarray], np.ndarray],
+def create_periodic_condition_geometrical(V: _fem.FunctionSpace, indicator: Callable[[np.ndarray], np.ndarray],
                                           relation: Callable[[np.ndarray], np.ndarray],
-                                          bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType):
+                                          bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType):
     """
     Create a periodic condition for all degrees of freedom's satisfying indicator(x):
        u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
     """
-    slave_blocks = dolfinx.fem.locate_dofs_geometrical(V, indicator)
+    slave_blocks = _fem.locate_dofs_geometrical(V, indicator)
     return _create_periodic_condition(V, slave_blocks, relation, bcs, scale)
 
 
-def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarray,
+def _create_periodic_condition(V: _fem.FunctionSpace, slave_blocks: np.ndarray,
                                relation: Callable[[np.ndarray], np.ndarray],
-                               bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType):
+                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType):
     """
     Create a periodic condition condition on all input slave blocks,
     x_i = x(slave_block)
@@ -46,7 +48,7 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
     ghost_owners = V.dofmap.index_map.ghost_owner_rank()
     imap = V.dofmap.index_map
     x = V.tabulate_dof_coordinates()
-    comm = V.mesh.mpi_comm()
+    comm = V.mesh.comm
 
     # Filter out Dirichlet BC dofs
     bc_dofs = []
@@ -58,14 +60,14 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
 
     # Compute coordinates where each slave has to evaluate its masters
     # FIXME: could be reduced to the set of boundary entities
-    tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim, padding=1e-15)
+    tree = _geometry.BoundingBoxTree(V.mesh, tdim, padding=1e-15)
     global_tree = tree.create_global_tree(comm)
     cell_map = V.mesh.topology.index_map(tdim)
     [cmin, cmax] = cell_map.local_range
     master_coordinates = relation(x[slave_blocks].T).T
-    master_procs = dolfinx.geometry.compute_collisions(global_tree, master_coordinates)
-    possible_local_cells = dolfinx.geometry.compute_collisions(tree, master_coordinates)
-    verified_candidates = dolfinx.geometry.compute_colliding_cells(V.mesh, possible_local_cells, master_coordinates)
+    master_procs = _geometry.compute_collisions(global_tree, master_coordinates)
+    possible_local_cells = _geometry.compute_collisions(tree, master_coordinates)
+    verified_candidates = _geometry.compute_colliding_cells(V.mesh, possible_local_cells, master_coordinates)
     del possible_local_cells
 
     constraint_data = {slave * bs + j: {} for slave in slave_blocks[:num_local_blocks] for j in range(bs)}
@@ -137,8 +139,8 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
 
             out_data = {}
             if in_dofs is not None:
-                local_cells = dolfinx.geometry.compute_collisions(tree, in_coords)
-                verified_cells = dolfinx.geometry.compute_colliding_cells(V.mesh, local_cells, in_coords)
+                local_cells = _geometry.compute_collisions(tree, in_coords)
+                verified_cells = _geometry.compute_colliding_cells(V.mesh, local_cells, in_coords)
                 del local_cells
                 for i, slave_dof in enumerate(in_dofs):
                     block_idx = slave_dof % bs
@@ -234,5 +236,5 @@ def _create_periodic_condition(V: dolfinx.FunctionSpace, slave_blocks: np.ndarra
         offsets.append(len(masters))
 
     return (np.asarray(slaves, dtype=np.int32), np.asarray(masters, dtype=np.int64),
-            np.asarray(coeffs, dtype=PETSc.ScalarType), np.asarray(owners, dtype=np.int32),
+            np.asarray(coeffs, dtype=_PETSc.ScalarType), np.asarray(owners, dtype=np.int32),
             np.asarray(offsets, dtype=np.int32))

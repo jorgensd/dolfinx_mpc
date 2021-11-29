@@ -85,7 +85,6 @@ void _assemble_vector(
 
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = L.mesh();
   assert(mesh);
-  const int tdim = mesh->topology().dim();
 
   // Get dofmap data
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap
@@ -164,29 +163,12 @@ void _assemble_vector(
     }
   }
   // Prepare permutations for exterior and interior facet integrals
-  if (L.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
-      or L.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
+  if (L.num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0)
   {
-    std::function<std::uint8_t(std::size_t)> get_perm;
-    if (L.needs_facet_permutations())
-    {
-      mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
-      mesh->topology_mutable().create_entity_permutations();
-      const std::vector<std::uint8_t>& perms
-          = mesh->topology().get_facet_permutations();
-      get_perm = [&perms](std::size_t i) { return perms[i]; };
-    }
-    else
-      get_perm = [](std::size_t) { return 0; };
 
     // Create lambda function fetching cell index from exterior facet entity
     const auto fetch_cells_ext = [&](const std::pair<std::int32_t, int>& entity)
     { return entity.first; };
-
-    // Get number of cells per facet to be able to get the facet permutation
-    const int tdim = mesh->topology().dim();
-    const int num_cell_facets = dolfinx::mesh::cell_num_entities(
-        mesh->topology().cell_type(), tdim - 1);
 
     // Assemble exterior facet integral kernels
     for (int i : L.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
@@ -213,12 +195,10 @@ void _assemble_vector(
                       std::next(coordinate_dofs.begin(), 3 * i));
         }
 
-        std::uint8_t perm = get_perm(cell * num_cell_facets + local_facet);
-
         // Tabulate tensor
         std::fill(be.data(), be.data() + be.size(), 0);
         fn(be.data(), coeffs.first.data() + index * coeffs.second,
-           constants.data(), coordinate_dofs.data(), &local_facet, &perm);
+           constants.data(), coordinate_dofs.data(), &local_facet, nullptr);
 
         // Apply any required transformations
         dof_transform(be, cell_info, cell, 1);
@@ -231,11 +211,24 @@ void _assemble_vector(
           b, active_facets, dofs, bs, mpc, fetch_cells_ext,
           assemble_local_exterior_facet_vector);
     }
-    if (L.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
-    {
-      throw std::runtime_error(
-          "Interior facet integrals currently not supported");
-    }
+  }
+
+  if (L.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
+  {
+    throw std::runtime_error(
+        "Interior facet integrals currently not supported");
+    // std::function<std::uint8_t(std::size_t)> get_perm;
+    // if (L.needs_facet_permutations())
+    // {
+    //   const int tdim = mesh->topology().dim();
+    //   mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
+    //   mesh->topology_mutable().create_entity_permutations();
+    //   const std::vector<std::uint8_t>& perms
+    //       = mesh->topology().get_facet_permutations();
+    //   get_perm = [&perms](std::size_t i) { return perms[i]; };
+    // }
+    // else
+    //   get_perm = [](std::size_t) { return 0; };
   }
 }
 } // namespace

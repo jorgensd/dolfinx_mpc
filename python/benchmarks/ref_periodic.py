@@ -17,31 +17,34 @@
 # SPDX-License-Identifier:    MIT
 
 
-import argparse
 import sys
-import time
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from time import perf_counter
 
 import h5py
 import numpy as np
-from petsc4py import PETSc
-
-import dolfinx
-import dolfinx.common
-import dolfinx.io
-import dolfinx.log
-import ufl
-from dolfinx.mesh import refine
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.fem import (DirichletBC, Function, FunctionSpace, apply_lifting,
+                         assemble_matrix, assemble_vector,
+                         locate_dofs_geometrical, set_bc)
+from dolfinx.generation import UnitCubeMesh
+from dolfinx.io import XDMFFile
+from dolfinx.log import LogLevel, log, set_log_level
+from dolfinx.mesh import CellType, refine
 from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
+                 inner, pi, sin)
 
 
-def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
-                       xdmf=False, boomeramg=False, kspview=False,
-                       degree=1):
+def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: h5py.File = None,
+                       xdmf: bool = False, boomeramg: bool = False, kspview: bool = False,
+                       degree: int = 1):
     # Create mesh and finite element
     if tetra:
         # Tet setup
         N = 3
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
         for i in range(r_lvl):
             mesh.topology.create_entities(mesh.topology.dim - 2)
             mesh = refine(mesh, redistribute=True)
@@ -51,12 +54,12 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         N = 3
         for i in range(r_lvl):
             N *= 2
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.mesh.CellType.hexahedron)
+        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
 
-    V = dolfinx.FunctionSpace(mesh, ("CG", degree))
+    V = FunctionSpace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
-    u_bc = dolfinx.Function(V)
+    u_bc = Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -67,30 +70,28 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                                            np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
-    bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
+    geometrical_dofs = locate_dofs_geometrical(V, DirichletBoundary)
+    bc = DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
     # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    x = ufl.SpatialCoordinate(mesh)
-    dx = x[0] - 0.9
-    dy = x[1] - 0.5
-    dz = x[2] - 0.1
-    f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) \
-        + 1.0 * ufl.exp(-(dx * dx + dy * dy + dz * dz) / 0.02)
-    rhs = ufl.inner(f, v) * ufl.dx
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    a = inner(grad(u), grad(v)) * dx
+    x = SpatialCoordinate(mesh)
+    dx_ = x[0] - 0.9
+    dy_ = x[1] - 0.5
+    dz_ = x[2] - 0.1
+    f = x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_ + dz_ * dz_) / 0.02)
+    rhs = inner(f, v) * dx
 
     # Assemble rhs, RHS and apply lifting
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org = assemble_matrix(a, bcs)
     A_org.assemble()
-    L_org = dolfinx.fem.assemble_vector(rhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES,
-                      mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
+    L_org = assemble_vector(rhs)
+    apply_lifting(L_org, [a], [bcs])
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    set_bc(L_org, bcs)
 
     # Create PETSc nullspace
     nullspace = PETSc.NullSpace().create(constant=True)
@@ -125,11 +126,11 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     solver.setOperators(A_org)
 
     # Solve linear problem
-    u_ = dolfinx.Function(V)
-    start = time.time()
-    with dolfinx.common.Timer("Solve"):
+    u_ = Function(V)
+    start = perf_counter()
+    with Timer("Solve"):
         solver.solve(L_org, u_.vector)
-    end = time.time()
+    end = perf_counter()
     u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                           mode=PETSc.ScatterMode.FORWARD)
     if kspview:
@@ -150,27 +151,21 @@ def reference_periodic(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
 
     # Output solution to XDMF
     if xdmf:
-        if tetra:
-            ext = "tet"
-        else:
-            ext = "hex"
-
+        ext = "tet" if tetra else "hex"
         fname = "results/reference_periodic_{0:d}_{1:s}.xdmf".format(
             r_lvl, ext)
         u_.name = "u_" + ext + "_unconstrained"
-        out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD,
-                                           fname, "w")
-        out_periodic.write_mesh(mesh)
-        out_periodic.write_function(u_, 0.0,
-                                    "Xdmf/Domain/"
-                                    + "Grid[@Name='{0:s}'][1]"
-                                    .format(mesh.name))
-        out_periodic.close()
+        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_periodic:
+            out_periodic.write_mesh(mesh)
+            out_periodic.write_function(u_, 0.0,
+                                        "Xdmf/Domain/"
+                                        + "Grid[@Name='{0:s}'][1]"
+                                        .format(mesh.name))
 
 
 if __name__ == "__main__":
     # Set Argparser defaults
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
                         help="Number of spatial refinements")
     parser.add_argument("--degree", default=1, type=np.int8, dest="degree",
@@ -218,16 +213,14 @@ if __name__ == "__main__":
     sd.attrs["ct"] = np.string_(ct)
     for i in range(N):
         if MPI.COMM_WORLD.rank == 0:
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-            dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                            "Run {0:1d} in progress".format(i))
-            dolfinx.log.set_log_level(dolfinx.log.LogLevel.ERROR)
+            set_log_level(LogLevel.INFO)
+            log(LogLevel.INFO, "Run {0:1d} in progress".format(i))
+            set_log_level(LogLevel.ERROR)
 
         reference_periodic(tetra, r_lvl=i, out_hdf5=h5f,
                            xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
                            degree=int(degree))
 
         if timings and i == N - 1:
-            dolfinx.common.list_timings(
-                MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+            list_timings(MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()
