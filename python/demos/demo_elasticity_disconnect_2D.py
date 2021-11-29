@@ -6,16 +6,23 @@
 #
 # Create constraint between two bodies that are not in contact
 
-from petsc4py import PETSc
-import dolfinx.fem as fem
-import ufl
-import dolfinx
-import dolfinx.io
-import dolfinx_mpc
-import dolfinx_mpc.utils
+
 import gmsh
 import numpy as np
+from dolfinx.common import Timer
+from dolfinx.fem import (Constant, DirichletBC, Function, FunctionSpace,
+                         VectorFunctionSpace, locate_dofs_geometrical,
+                         locate_dofs_topological, set_bc)
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import locate_entities_boundary
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import (create_point_to_point_constraint, gmsh_model_to_mesh,
+                               rigid_motions_nullspace)
 from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
+                 TrialFunction, grad, inner, sym, tr)
 
 # Mesh parameters for creating a mesh consisting of two disjoint rectangles
 right_tag = 1
@@ -41,29 +48,29 @@ if MPI.COMM_WORLD.rank == 0:
     gmsh.model.mesh.generate(2)
     # gmsh.option.setNumber("General.Terminal", 1)
     gmsh.model.mesh.optimize("Netgen")
-mesh, ct = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, cell_data=True, gdim=2)
+mesh, ct = gmsh_model_to_mesh(gmsh.model, cell_data=True, gdim=2)
 gmsh.clear()
 gmsh.finalize()
 MPI.COMM_WORLD.barrier()
 
 
-V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+V = VectorFunctionSpace(mesh, ("Lagrange", 1))
 tdim = mesh.topology.dim
 fdim = tdim - 1
 
-DG0 = dolfinx.FunctionSpace(mesh, ("DG", 0))
+DG0 = FunctionSpace(mesh, ("DG", 0))
 left_cells = ct.indices[ct.values == left_tag]
 right_cells = ct.indices[ct.values == right_tag]
-left_dofs = fem.locate_dofs_topological(DG0, tdim, left_cells)
-right_dofs = fem.locate_dofs_topological(DG0, tdim, right_cells)
+left_dofs = locate_dofs_topological(DG0, tdim, left_cells)
+right_dofs = locate_dofs_topological(DG0, tdim, right_cells)
 
 # Elasticity parameters
 E_right = 1e2
 E_left = 1e2
 nu_right = 0.3
 nu_left = 0.1
-mu = dolfinx.Function(DG0)
-lmbda = dolfinx.Function(DG0)
+mu = Function(DG0)
+lmbda = Function(DG0)
 with mu.vector.localForm() as local:
     local.array[left_dofs] = E_left / (2 * (1 + nu_left))
     local.array[right_dofs] = E_right / (2 * (1 + nu_right))
@@ -74,17 +81,17 @@ with lmbda.vector.localForm() as local:
 
 # Stress computation
 def sigma(v):
-    return (2.0 * mu * ufl.sym(ufl.grad(v))
-            + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+    return (2.0 * mu * sym(grad(v))
+            + lmbda * tr(sym(grad(v))) * Identity(len(v)))
 
 
 # Define variational problem
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
-a = ufl.inner(sigma(u), ufl.grad(v)) * dx
-x = ufl.SpatialCoordinate(mesh)
-rhs = ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx
+u = TrialFunction(V)
+v = TestFunction(V)
+dx = Measure("dx", domain=mesh, subdomain_data=ct)
+a = inner(sigma(u), grad(v)) * dx
+x = SpatialCoordinate(mesh)
+rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx
 
 
 def push(x):
@@ -93,14 +100,14 @@ def push(x):
     return values
 
 
-u_push = dolfinx.Function(V)
+u_push = Function(V)
 u_push.interpolate(push)
 u_push.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
-bc_push = dolfinx.DirichletBC(u_push, dofs)
-u_fix = dolfinx.Function(V)
+dofs = locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
+bc_push = DirichletBC(u_push, dofs)
+u_fix = Function(V)
 u_fix.vector.set(0)
-bc_fix = dolfinx.DirichletBC(u_fix, fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 2.1)))
+bc_fix = DirichletBC(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 2.1)))
 bcs = [bc_push, bc_fix]
 
 
@@ -126,10 +133,10 @@ def gather_dof_coordinates(V, dofs):
 # Create pairs of dofs at each boundary
 V0 = V.sub(0).collapse()
 
-facets_r = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1))
-dofs_r = fem.locate_dofs_topological(V0, fdim, facets_r)
-facets_l = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1.1))
-dofs_l = fem.locate_dofs_topological(V0, fdim, facets_l)
+facets_r = locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1))
+dofs_r = locate_dofs_topological(V0, fdim, facets_r)
+facets_l = locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1.1))
+dofs_l = locate_dofs_topological(V0, fdim, facets_l)
 
 # Given the local coordinates of the dofs, distribute them on all processors
 nodes = []
@@ -142,23 +149,23 @@ for x in nodes[0]:
             pairs.append([x, y])
             break
 
-mpc = dolfinx_mpc.MultiPointConstraint(V)
+mpc = MultiPointConstraint(V)
 for i, pair in enumerate(pairs):
-    sl, ms, co, ow, off = dolfinx_mpc.utils.create_point_to_point_constraint(
+    sl, ms, co, ow, off = create_point_to_point_constraint(
         V, pair[0], pair[1], vector=[1, 0])
     mpc.add_constraint(V, sl, ms, co, ow, off)
 mpc.finalize()
 
-null_space = dolfinx_mpc.utils.rigid_motions_nullspace(mpc.function_space)
+null_space = rigid_motions_nullspace(mpc.function_space)
 num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
-with dolfinx.common.Timer("~Contact: Assemble matrix ({0:d})".format(num_dofs)):
-    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-with dolfinx.common.Timer("~Contact: Assemble vector ({0:d})".format(num_dofs)):
-    b = dolfinx_mpc.assemble_vector(rhs, mpc)
+with Timer("~Contact: Assemble matrix ({0:d})".format(num_dofs)):
+    A = assemble_matrix(a, mpc, bcs=bcs)
+with Timer("~Contact: Assemble vector ({0:d})".format(num_dofs)):
+    b = assemble_vector(rhs, mpc)
 
-dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+apply_lifting(b, [a], [bcs], mpc)
 b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-fem.set_bc(b, bcs)
+set_bc(b, bcs)
 
 # Solve Linear problem
 opts = PETSc.Options()
@@ -183,7 +190,7 @@ solver.setOperators(A)
 solver.setFromOptions()
 uh = b.copy()
 uh.set(0)
-with dolfinx.common.Timer("~Contact: Solve old"):
+with Timer("~Contact: Solve old"):
     solver.solve(b, uh)
     uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
@@ -195,11 +202,11 @@ if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 
 # Write solution to file
-u_h = dolfinx.Function(mpc.function_space)
+u_h = Function(mpc.function_space)
 u_h.vector.setArray(uh.array)
 u_h.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
 u_h.name = "u"
-with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
+with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     # xdmf.write_meshtags(ct)
     # xdmf.write_meshtags(ft)

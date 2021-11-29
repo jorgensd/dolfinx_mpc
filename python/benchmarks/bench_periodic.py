@@ -12,39 +12,43 @@
 # SPDX-License-Identifier:    MIT
 
 
-import argparse
 import sys
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+
 
 import h5py
 import numpy as np
-from petsc4py import PETSc
 
-import dolfinx
-import dolfinx.common
-import dolfinx.io
-import dolfinx.log
-import dolfinx_mpc
-import dolfinx_mpc.utils
-import ufl
-# from dolfinx.mesh import refine
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.fem import (DirichletBC, Function, FunctionSpace,
+                         locate_dofs_geometrical, set_bc)
+from dolfinx.generation import UnitCubeMesh
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import CellType, MeshTags, locate_entities_boundary
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import log_info
 from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
+                 inner, pi, sin)
 
 
 def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                     xdmf=False, boomeramg=False, kspview=False, degree=1):
     # Create mesh and function space
-    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Create/Refine mesh")
-    ct = dolfinx.mesh.CellType.tetrahedron if tetra else dolfinx.mesh.CellType.hexahedron
+    log_info(f"Run {r_lvl}: Create mesh")
+    ct = CellType.tetrahedron if tetra else CellType.hexahedron
     # Tet setup
     N = 3
     for i in range(r_lvl):
         N *= 2
-    mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
+    mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
 
-    V = dolfinx.FunctionSpace(mesh, ("CG", degree))
+    V = FunctionSpace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
-    u_bc = dolfinx.Function(V)
+    u_bc = Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -53,8 +57,8 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
-    bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
+    geometrical_dofs = locate_dofs_geometrical(V, DirichletBoundary)
+    bc = DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
     def PeriodicBoundary(x):
@@ -68,43 +72,43 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         return out_x
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
 
-    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Create MultiPoint Constraint {num_dofs}")
-    with dolfinx.common.Timer("~Periodic: Initialize periodic constraint"):
-        facets = dolfinx.mesh.locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
-        mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
-        mpc = dolfinx_mpc.MultiPointConstraint(V)
+    log_info(f"Run {r_lvl}: Create MultiPoint Constraint {num_dofs}")
+    with Timer("~Periodic: Initialize periodic constraint"):
+        facets = locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
+        mt = MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
+        mpc = MultiPointConstraint(V)
         mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
         mpc.finalize()
 
     # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    x = ufl.SpatialCoordinate(mesh)
-    dx = x[0] - 0.9
-    dy = x[1] - 0.5
-    dz = x[2] - 0.1
-    f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) + 1.0 * ufl.exp(-(dx**2 + dy**2 + dz**2) / 0.02)
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    a = inner(grad(u), grad(v)) * dx
+    x = SpatialCoordinate(mesh)
+    dx_ = x[0] - 0.9
+    dy_ = x[1] - 0.5
+    dz_ = x[2] - 0.1
+    f = x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_**2 + dy_**2 + dz_**2) / 0.02)
 
-    rhs = ufl.inner(f, v) * ufl.dx
+    rhs = inner(f, v) * dx
 
     # Assemble LHS and RHS with multi-point constraint
 
-    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Assemble matrix")
-    with dolfinx.common.Timer(f"~Periodic {r_lvl}: Assemble matrix"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer(f"~Periodic {r_lvl}: Assemble matrix (cached)"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
+    log_info(f"Run {r_lvl}: Assemble matrix")
+    with Timer(f"~Periodic {r_lvl}: Assemble matrix"):
+        A = assemble_matrix(a, mpc, bcs=bcs)
+    with Timer(f"~Periodic {r_lvl}: Assemble matrix (cached)"):
+        A = assemble_matrix(a, mpc, bcs=bcs)
 
-    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Assembling vector")
-    with dolfinx.common.Timer(f"~Periodic: {r_lvl} Assemble vector (Total time)"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+    log_info(f"Run {r_lvl}: Assembling vector")
+    with Timer(f"~Periodic: {r_lvl} Assemble vector (Total time)"):
+        b = assemble_vector(rhs, mpc)
 
     # Apply boundary conditions
-    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Apply lifting")
-    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+    log_info(f"Run {r_lvl}: Apply lifting")
+    apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    set_bc(b, bcs)
 
     # Create nullspace
     nullspace = PETSc.NullSpace().create(constant=True)
@@ -133,13 +137,12 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # opts["ksp_view"] = None # List progress of solver
 
     # Solve linear problem
-    dolfinx_mpc.utils.log_info(f"Run {r_lvl}: Solving")
-    with dolfinx.common.Timer("~Periodic: Solve") as timer:
+    log_info(f"Run {r_lvl}: Solving")
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    with Timer("~Periodic: Solve") as timer:
         # Create solver, set operator and options
         PETSc.Mat.setNearNullSpace(A, nullspace)
         uh = b.copy()
-        uh.set(0)
-        solver = PETSc.KSP().create(MPI.COMM_WORLD)
         solver.setFromOptions()
         solver.setOperators(A)
         solver.solve(b, uh)
@@ -168,7 +171,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     # Output solution to XDMF
     if xdmf:
         # Create function space with correct index map for MPC
-        u_h = dolfinx.Function(mpc.function_space)
+        u_h = Function(mpc.function_space)
         u_h.vector.setArray(uh.array)
 
         # Name formatting of functions
@@ -176,17 +179,18 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
         mesh.name = f"mesh_{ext}"
         u_h.name = f"u_{ext}"
         fname = f"results/bench_periodic3d_{r_lvl}_{ext}.xdmf"
-        out_xdmf = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
-        out_xdmf.write_mesh(mesh)
-        out_xdmf.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
+        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
+            out_xdmf.write_mesh(mesh)
+            out_xdmf.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
 
 if __name__ == "__main__":
     # Set Argparser defaults
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref", help="Number of spatial refinements")
     parser.add_argument("--degree", default=1, type=np.int8, dest="degree", help="CG Function space degree")
-    parser.add_argument('--xdmf', action='store_true', dest="xdmf", help="XDMF-output of function (Default false)")
+    parser.add_argument('--xdmf', action='store_true', dest="xdmf",
+                        help="XDMF-output of function (Default false)")
     parser.add_argument('--timings', action='store_true', dest="timings", help="List timings (Default false)")
     parser.add_argument('--kspview', action='store_true', dest="kspview", help="View PETSc progress")
     parser.add_argument("-o", default='periodic_output.hdf5', dest="hdf5", help="Name of HDF5 output file")
@@ -196,7 +200,8 @@ if __name__ == "__main__":
     solver_parser = parser.add_mutually_exclusive_group(required=False)
     solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
                                action='store_true', help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false', help="Use PETSc GAMG preconditioner")
+    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
+                               help="Use PETSc GAMG preconditioner")
 
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
@@ -221,11 +226,11 @@ if __name__ == "__main__":
 
     # Loop over refinements
     for i in range(N):
-        dolfinx_mpc.utils.log_info(f"Run {i} in progress")
+        log_info(f"Run {i} in progress")
         demo_periodic3D(tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
                         boomeramg=boomeramg, kspview=kspview, degree=int(degree))
 
         # List_timings
         if timings and i == N - 1:
-            dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+            list_timings(MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()

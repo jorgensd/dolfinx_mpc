@@ -28,7 +28,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
     throw std::runtime_error("Number of input spaces can either be 1 or 2.");
 
   auto mesh = spaces[0]->mesh();
-  MPI_Comm comm = mesh->mpi_comm();
+  MPI_Comm comm = mesh->comm();
   const int rank = dolfinx::MPI::rank(comm);
 
   // Create view of v as xtensor

@@ -78,7 +78,7 @@ mpc_data compute_master_contributions(
   std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
   const std::int32_t size_local = imap->size_local();
-  MPI_Comm comm = mesh->mpi_comm();
+  MPI_Comm comm = mesh->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
   // Count number of masters for in local contribution if found, else add to
@@ -345,7 +345,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 {
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
 
-  MPI_Comm comm = meshtags.mesh()->mpi_comm();
+  MPI_Comm comm = meshtags.mesh()->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
@@ -1098,7 +1098,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
 
-  MPI_Comm comm = meshtags.mesh()->mpi_comm();
+  MPI_Comm comm = meshtags.mesh()->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 

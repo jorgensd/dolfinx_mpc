@@ -4,15 +4,17 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import dolfinx
-import dolfinx.io
-import dolfinx_mpc
-import dolfinx_mpc.utils
+
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+import dolfinx_mpc
+import dolfinx.fem as fem
+from dolfinx.generation import UnitSquareMesh
+from dolfinx.mesh import MeshTags, compute_midpoints
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
+from dolfinx.common import Timer, list_timings, TimingType
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -25,32 +27,26 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     assemble_matrix, assemble_vector = get_assemblers
     N = 5
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 15, N)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+    mesh = UnitSquareMesh(MPI.COMM_WORLD, 15, N)
+    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
 
     def left_side(x):
         return x[0] < 0.5
 
     tdim = mesh.topology.dim
     num_cells = mesh.topology.index_map(tdim).size_local
-    cell_midpoints = dolfinx.cpp.mesh.midpoints(mesh, tdim,
-                                                range(num_cells))
-    values = []
-    for cell_index in range(num_cells):
-        if left_side(cell_midpoints[cell_index]):
-            values.append(1)
-        else:
-            values.append(2)
-    ct = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim,
-                               np.arange(num_cells, dtype=np.int32),
-                               np.array(values, dtype=np.intc))
+    cell_midpoints = compute_midpoints(mesh, tdim, range(num_cells))
+    values = np.ones(num_cells, dtype=np.intc)
+    # All cells on right side marked one, all other with 1
+    values += left_side(cell_midpoints.T)
+    ct = MeshTags(mesh, mesh.topology.dim, np.arange(num_cells, dtype=np.int32), values)
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
-    c1 = dolfinx.Constant(mesh, PETSc.ScalarType(2))
-    c2 = dolfinx.Constant(mesh, PETSc.ScalarType(10))
+    c1 = fem.Constant(mesh, PETSc.ScalarType(2))
+    c2 = fem.Constant(mesh, PETSc.ScalarType(10))
 
     dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
     a = c1 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(1) +\
@@ -58,12 +54,12 @@ def test_cell_domains(get_assemblers):  # noqa: F811
         + 0.01 * ufl.inner(u, v) * dx(1)
 
     rhs = ufl.inner(x[1], v) * dx(1) + \
-        ufl.inner(dolfinx.Constant(mesh, PETSc.ScalarType(1)), v) * dx(2)
+        ufl.inner(fem.Constant(mesh, PETSc.ScalarType(1)), v) * dx(2)
 
     # Generate reference matrices
-    A_org = dolfinx.fem.assemble_matrix(a)
+    A_org = fem.assemble_matrix(a)
     A_org.assemble()
-    L_org = dolfinx.fem.assemble_vector(rhs)
+    L_org = fem.assemble_vector(rhs)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     def l2b(li):
@@ -77,9 +73,9 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     mpc.finalize()
 
     # Setup MPC system
-    with dolfinx.common.Timer("~TEST: Assemble matrix old"):
+    with Timer("~TEST: Assemble matrix old"):
         A = assemble_matrix(a, mpc)
-    with dolfinx.common.Timer("~TEST: Assemble vector"):
+    with Timer("~TEST: Assemble vector"):
         b = assemble_vector(rhs, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
@@ -97,8 +93,8 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     mpc.backsubstitution(uh)
 
     root = 0
-    comm = mesh.mpi_comm()
-    with dolfinx.common.Timer("~TEST: Compare"):
+    comm = mesh.comm
+    with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
@@ -116,4 +112,4 @@ def test_cell_domains(get_assemblers):  # noqa: F811
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
-    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
+    list_timings(comm, [TimingType.wall])

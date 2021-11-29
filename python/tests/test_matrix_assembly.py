@@ -4,13 +4,15 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import dolfinx
-import dolfinx.log
+import dolfinx.fem as fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import ufl
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.generation import UnitSquareMesh
+from dolfinx.mesh import CellType
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 
@@ -20,14 +22,14 @@ root = 0
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
-@pytest.mark.parametrize("celltype", [dolfinx.mesh.CellType.quadrilateral,
-                                      dolfinx.mesh.CellType.triangle])
+@pytest.mark.parametrize("celltype", [CellType.quadrilateral,
+                                      CellType.triangle])
 def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: F811
     assemble_matrix, _ = get_assemblers
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 5, 3, celltype)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
+    mesh = UnitSquareMesh(MPI.COMM_WORLD, 5, 3, celltype)
+    V = fem.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
@@ -36,19 +38,17 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
 
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()
-    s_m_c = {l2b([1, 0]): {l2b([0, 1]): 0.43,
-                           l2b([1, 1]): 0.11},
-             l2b([0, 0]):
-             {l2b(master_point): 0.69}}
+    s_m_c = {l2b([1, 0]): {l2b([0, 1]): 0.43, l2b([1, 1]): 0.11},
+             l2b([0, 0]): {l2b(master_point): 0.69}}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
-    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+    with Timer("~TEST: Assemble matrix"):
         A_mpc = assemble_matrix(a, mpc)
 
-    with dolfinx.common.Timer("~TEST: Compare with numpy"):
+    with Timer("~TEST: Compare with numpy"):
         # Create globally reduced system
-        A_org = dolfinx.fem.assemble_matrix(a)
+        A_org = fem.assemble_matrix(a)
         A_org.assemble()
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_mpc, mpc)
 
@@ -57,14 +57,14 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
-@pytest.mark.parametrize("celltype", [dolfinx.mesh.CellType.triangle,
-                                      dolfinx.mesh.CellType.quadrilateral])
+@pytest.mark.parametrize("celltype", [CellType.triangle,
+                                      CellType.quadrilateral])
 def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # noqa: F811
     assemble_matrix, _ = get_assemblers
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 1, 8, celltype)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", degree))
+    mesh = UnitSquareMesh(MPI.COMM_WORLD, 1, 8, celltype)
+    V = fem.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Build master slave map
     s_m_c = {np.array([1, 0], dtype=np.float64).tobytes():
@@ -72,7 +72,7 @@ def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # 
               np.array([1, 1], dtype=np.float64).tobytes(): 0.11},
              np.array([0, 0], dtype=np.float64).tobytes(): {
         np.array(master_point, dtype=np.float64).tobytes(): 0.69}}
-    with dolfinx.common.Timer("~TEST: MPC INIT"):
+    with Timer("~TEST: MPC INIT"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
         mpc.create_general_constraint(s_m_c)
         mpc.finalize()
@@ -82,14 +82,13 @@ def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # 
     v = ufl.TestFunction(V)
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
 
-    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+    with Timer("~TEST: Assemble matrix"):
         A_mpc = assemble_matrix(a, mpc)
 
-    with dolfinx.common.Timer("~TEST: Compare with numpy"):
+    with Timer("~TEST: Compare with numpy"):
         # Create globally reduced system
-        A_org = dolfinx.fem.assemble_matrix(a)
+        A_org = fem.assemble_matrix(a)
         A_org.assemble()
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_mpc, mpc)
 
-    dolfinx.common.list_timings(MPI.COMM_WORLD,
-                                [dolfinx.common.TimingType.wall])
+    list_timings(mesh.comm, [TimingType.wall])

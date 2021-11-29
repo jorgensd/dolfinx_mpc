@@ -16,16 +16,23 @@
 #
 # SPDX-License-Identifier:    MIT
 
-
-import dolfinx
-import dolfinx.io
-import dolfinx_mpc
+import dolfinx.fem as fem
 import dolfinx_mpc.utils
+
 import numpy as np
 import scipy.sparse.linalg
-import ufl
+
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.generation import UnitCubeMesh
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import CellType, MeshTags, locate_entities_boundary
+from dolfinx_mpc import apply_lifting, assemble_matrix, assemble_vector
+
 from mpi4py import MPI
 from petsc4py import PETSc
+
+from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
+                 inner, pi, sin)
 
 # Get PETSc int and scalar types
 if np.dtype(PETSc.ScalarType).kind == 'c':
@@ -36,19 +43,19 @@ else:
 
 def demo_periodic3D(celltype, out_periodic):
     # Create mesh and finite element
-    if celltype == dolfinx.mesh.CellType.tetrahedron:
+    if celltype == CellType.tetrahedron:
         # Tet setup
         N = 4
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
-        V = dolfinx.FunctionSpace(mesh, ("CG", 2))
+        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+        V = fem.FunctionSpace(mesh, ("CG", 2))
     else:
         # Hex setup
         N = 12
-        mesh = dolfinx.UnitCubeMesh(MPI.COMM_WORLD, N, N, N, dolfinx.mesh.CellType.hexahedron)
-        V = dolfinx.FunctionSpace(mesh, ("CG", 1))
+        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
+        V = fem.FunctionSpace(mesh, ("CG", 1))
 
     # Create Dirichlet boundary condition
-    u_bc = dolfinx.Function(V)
+    u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
@@ -57,15 +64,15 @@ def demo_periodic3D(celltype, out_periodic):
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
-    bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
+    geometrical_dofs = fem.locate_dofs_geometrical(V, DirichletBoundary)
+    bc = fem.DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
     def PeriodicBoundary(x):
         return np.isclose(x[0], 1)
 
-    facets = dolfinx.mesh.locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
-    mt = dolfinx.MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
+    facets = locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
+    mt = MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)
@@ -74,33 +81,33 @@ def demo_periodic3D(celltype, out_periodic):
         out_x[2] = x[2]
         return out_x
 
-    with dolfinx.common.Timer("~Periodic: New init"):
+    with Timer("~Periodic: New init"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
         mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
         mpc.finalize()
 
     # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    a = inner(grad(u), grad(v)) * dx
 
-    x = ufl.SpatialCoordinate(mesh)
-    dx = x[0] - 0.9
-    dy = x[1] - 0.5
-    dz = x[2] - 0.1
-    f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) \
-        + 1.0 * ufl.exp(-(dx * dx + dy * dy + dz * dz) / 0.02)
+    x = SpatialCoordinate(mesh)
+    dx_ = x[0] - 0.9
+    dy_ = x[1] - 0.5
+    dz_ = x[2] - 0.1
+    f = x[0] * sin(5.0 * pi * x[1]) \
+        + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_ + dz_ * dz_) / 0.02)
 
-    rhs = ufl.inner(f, v) * ufl.dx
+    rhs = inner(f, v) * dx
 
-    with dolfinx.common.Timer("~Periodic: Assemble LHS and RHS"):
-        A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=bcs)
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+    with Timer("~Periodic: Assemble LHS and RHS"):
+        A = assemble_matrix(a, mpc, bcs=bcs)
+        b = assemble_vector(rhs, mpc)
 
     # Apply boundary conditions
-    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+    apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    fem.set_bc(b, bcs)
 
     # Solve Linear problem
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -119,7 +126,7 @@ def demo_periodic3D(celltype, out_periodic):
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
         solver.setFromOptions()
 
-    with dolfinx.common.Timer("~Periodic: Solve MPC problem"):
+    with Timer("~Periodic: Solve MPC problem"):
         solver.setOperators(A)
         uh = b.copy()
         uh.set(0)
@@ -132,9 +139,9 @@ def demo_periodic3D(celltype, out_periodic):
         print(f"Constrained solver iterations {it}")
 
     # Write solution to file
-    u_h = dolfinx.Function(mpc.function_space)
+    u_h = fem.Function(mpc.function_space)
     u_h.vector.setArray(uh.array)
-    if celltype == dolfinx.mesh.CellType.tetrahedron:
+    if celltype == CellType.tetrahedron:
         ext = "tet"
     else:
         ext = "hex"
@@ -147,15 +154,15 @@ def demo_periodic3D(celltype, out_periodic):
 
     # --------------------VERIFICATION-------------------------
     print("----Verification----")
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org = fem.assemble_matrix(a, bcs)
     A_org.assemble()
-    L_org = dolfinx.fem.assemble_vector(rhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    L_org = fem.assemble_vector(rhs)
+    fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
+    fem.set_bc(L_org, bcs)
     solver.setOperators(A_org)
-    u_ = dolfinx.Function(V)
-    with dolfinx.common.Timer("~Periodic: Unconstrained solve"):
+    u_ = fem.Function(V)
+    with Timer("~Periodic: Unconstrained solve"):
         solver.solve(L_org, u_.vector)
         it = solver.getIterationNumber()
     print(f"Unconstrained solver iterations: {it}")
@@ -164,7 +171,7 @@ def demo_periodic3D(celltype, out_periodic):
     out_periodic.write_function(u_, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
     root = 0
-    with dolfinx.common.Timer("~Demo: Verification"):
+    with Timer("~Demo: Verification"):
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
@@ -186,8 +193,8 @@ def demo_periodic3D(celltype, out_periodic):
 
 if __name__ == "__main__":
     fname = "results/demo_periodic3d.xdmf"
-    out_periodic = dolfinx.io.XDMFFile(MPI.COMM_WORLD, fname, "w")
-    for celltype in [dolfinx.mesh.CellType.tetrahedron, dolfinx.mesh.CellType.hexahedron]:
+    out_periodic = XDMFFile(MPI.COMM_WORLD, fname, "w")
+    for celltype in [CellType.tetrahedron, CellType.hexahedron]:
         demo_periodic3D(celltype, out_periodic)
     out_periodic.close()
-    dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+    list_timings(MPI.COMM_WORLD, [TimingType.wall])

@@ -6,11 +6,13 @@
 
 from typing import Callable, List, Union, Dict
 
-import dolfinx
+
 import numpy
-from petsc4py import PETSc
+from petsc4py import PETSc as _PETSc
 
 import dolfinx_mpc.cpp
+import dolfinx.fem as _fem
+import dolfinx.mesh as _mesh
 from dolfinx.cpp.fem import Form_complex128 as Form_C, Form_float64 as Form_R
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition_topological, create_periodic_condition_geometrical
@@ -18,7 +20,7 @@ from .periodic_condition import create_periodic_condition_topological, create_pe
 
 def cpp_dirichletbc(bc):
     """Unwrap Dirichlet BC objects as cpp objects"""
-    if isinstance(bc, dolfinx.DirichletBC):
+    if isinstance(bc, _fem.DirichletBC):
         return bc._cpp_object
     elif isinstance(bc, (tuple, list)):
         return list(map(lambda sub_bc: cpp_dirichletbc(sub_bc), bc))
@@ -32,20 +34,20 @@ class MultiPointConstraint():
     including new index maps for local assembly of matrices and vectors.
     """
 
-    def __init__(self, V: dolfinx.fem.FunctionSpace):
+    def __init__(self, V: _fem.FunctionSpace):
         """
         Initialize the multi point constraint for a given function space.
         """
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
-        self._coeffs = numpy.array([], dtype=PETSc.ScalarType)
+        self._coeffs = numpy.array([], dtype=_PETSc.ScalarType)
         self._owners = numpy.array([], dtype=numpy.int32)
         self._offsets = numpy.array([0], dtype=numpy.int32)
         self.V = V
         self.finalized = False
 
-    def add_constraint(self, V: dolfinx.FunctionSpace, slaves_: "numpy.ndarray[numpy.int32]",
-                       masters_: "numpy.ndarray[numpy.int64]", coeffs_: "numpy.ndarray[PETSc.ScalarType]",
+    def add_constraint(self, V: _fem.FunctionSpace, slaves_: "numpy.ndarray[numpy.int32]",
+                       masters_: "numpy.ndarray[numpy.int64]", coeffs_: "numpy.ndarray[_PETSc.ScalarType]",
                        owners_: "numpy.ndarray[numpy.int32]", offsets_: "numpy.ndarray[numpy.int32]"):
         """
         Add new constraint given by numpy arrays.
@@ -78,7 +80,7 @@ class MultiPointConstraint():
             self._coeffs = numpy.append(self._coeffs, coeffs_)
             self._owners = numpy.append(self._owners, owners_)
 
-    def add_constraint_from_mpc_data(self, V: dolfinx.FunctionSpace, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
+    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
         """
@@ -99,15 +101,15 @@ class MultiPointConstraint():
         self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
             self.V._cpp_object, self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
         # Replace function space
-        self.V = dolfinx.FunctionSpace(None, self.V.ufl_element(), self._cpp_object.function_space)
+        self.V = _fem.FunctionSpace(None, self.V.ufl_element(), self._cpp_object.function_space)
 
         self.finalized = True
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
-    def create_periodic_constraint_topological(self, meshtag: dolfinx.MeshTags, tag: int,
+    def create_periodic_constraint_topological(self, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: list([dolfinx.DirichletBC]), scale: PETSc.ScalarType = 1):
+                                               bcs: list([_fem.DirichletBC]), scale: _PETSc.ScalarType = 1):
         """
         Create periodic condition for all dofs in MeshTag with given marker:
         u(x_i) = scale * u(relation(x_i))
@@ -131,10 +133,10 @@ class MultiPointConstraint():
             self.V, meshtag, tag, relation, bcs, scale)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_periodic_constraint_geometrical(self, V: dolfinx.FunctionSpace,
+    def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpace,
                                                indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: List[dolfinx.DirichletBC], scale: PETSc.ScalarType = 1):
+                                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies indicator(x)
         u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
@@ -155,11 +157,11 @@ class MultiPointConstraint():
             self.V, indicator, relation, bcs, scale)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_slip_constraint(self, facet_marker: tuple([dolfinx.MeshTags, int]), v: dolfinx.Function,
-                               sub_space: dolfinx.FunctionSpace = None, sub_map: numpy.ndarray = numpy.array([]),
-                               bcs: list([dolfinx.DirichletBC]) = []):
+    def create_slip_constraint(self, facet_marker: tuple([_mesh.MeshTags, int]), v: _fem.Function,
+                               sub_space: _fem.FunctionSpace = None, sub_map: numpy.ndarray = numpy.array([]),
+                               bcs: list([_fem.DirichletBC]) = []):
         """
-        Create a slip constraint dot(u, v)=0 over the entities defined in a dolfinx.Meshtags
+        Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.mesh.MeshTags`
         marked with index i. normal is the normal vector defined as a vector function.
 
         Parameters
@@ -194,7 +196,7 @@ class MultiPointConstraint():
              W0 = W.sub(0)
              V, V_to_W = W0.collapse(True)
              n = Function(V)
-             bc = dolfinx.DirichletBC(inlet_velocity, dofs, W0)
+             bc = _fem.DirichletBC(inlet_velocity, dofs, W0)
              create_slip_constraint((mt, i), normal, V, V_to_W, bcs=[bc])
         """
         if sub_space is None:
@@ -237,8 +239,8 @@ class MultiPointConstraint():
             self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_contact_slip_condition(self, meshtags: dolfinx.MeshTags, slave_marker: int, master_marker: int,
-                                      normal: dolfinx.Function):
+    def create_contact_slip_condition(self, meshtags: _mesh.MeshTags, slave_marker: int, master_marker: int,
+                                      normal: _fem.Function):
         """
         Create a slip condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
@@ -260,7 +262,7 @@ class MultiPointConstraint():
             self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
-    def create_contact_inelastic_condition(self, meshtags: dolfinx.MeshTags, slave_marker: int, master_marker: int):
+    def create_contact_inelastic_condition(self, meshtags: _mesh.MeshTags, slave_marker: int, master_marker: int):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
@@ -376,7 +378,7 @@ class MultiPointConstraint():
         else:
             return self.V
 
-    def backsubstitution(self, vector: PETSc.Vec) -> None:
+    def backsubstitution(self, vector: _PETSc.Vec) -> None:
         """
         For a vector, impose the multi-point constraint by backsubstiution.
         This function is used after solving the reduced problem to obtain the values
@@ -390,4 +392,4 @@ class MultiPointConstraint():
         # Unravel data from constraint
         with vector.localForm() as vector_local:
             self._cpp_object.backsubstitution(vector_local.array_w)
-        vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        vector.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)

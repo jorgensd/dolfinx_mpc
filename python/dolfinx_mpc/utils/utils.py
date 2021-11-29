@@ -12,13 +12,13 @@ import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
-import dolfinx
-import dolfinx.common
-import dolfinx.la
-import dolfinx.log
-import dolfinx.geometry
-import dolfinx.cpp
-
+import dolfinx.cpp as _cpp
+import dolfinx.la as _la
+import dolfinx.fem as _fem
+import dolfinx.mesh as _mesh
+import dolfinx.common as _common
+import dolfinx.geometry as _geometry
+import dolfinx.log as _log
 
 __all__ = ["rotation_matrix", "facet_normal_approximation", "log_info", "rigid_motions_nullspace",
            "determine_closest_block", "create_normal_approximation", "create_point_to_point_constraint"]
@@ -43,10 +43,10 @@ def rotation_matrix(axis, angle):
 
 
 def facet_normal_approximation(V, mt, mt_id, tangent=False):
-    timer = dolfinx.common.Timer("~MPC: Facet normal projection")
-    comm = V.mesh.mpi_comm()
+    timer = _common.Timer("~MPC: Facet normal projection")
+    comm = V.mesh.comm
     n = ufl.FacetNormal(V.mesh)
-    nh = dolfinx.Function(V)
+    nh = _fem.Function(V)
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
     ds = ufl.ds(domain=V.mesh, subdomain_data=mt, subdomain_id=mt_id)
     if tangent:
@@ -62,7 +62,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
                 https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf
                 """
                 return (ufl.Identity(u.ufl_shape[0]) - ufl.outer(n, n)) * u
-            c = dolfinx.Constant(V.mesh, [1, 1, 1])
+            c = _fem.Constant(V.mesh, [1, 1, 1])
             a = ufl.inner(u, v) * ds
             L = ufl.inner(tangential_proj(c, n), v) * ds
     else:
@@ -73,38 +73,37 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     imap = V.dofmap.index_map
     all_blocks = np.arange(imap.size_local, dtype=np.int32)
     top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
-    top_blocks = dolfinx.fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
+    top_blocks = _fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
     deac_blocks = all_blocks[np.isin(all_blocks, top_blocks, invert=True)]
 
     # Note there should be a better way to do this
     # Create sparsity pattern only for constraint + bc
-    cpp_form = dolfinx.Form(a)._cpp_object
-    pattern = dolfinx.fem.create_sparsity_pattern(cpp_form)
+    cpp_form = _fem.Form(a)._cpp_object
+    pattern = _fem.create_sparsity_pattern(cpp_form)
     pattern.insert_diagonal(deac_blocks)
     pattern.assemble()
-    u_0 = dolfinx.Function(V)
+    u_0 = _fem.Function(V)
     u_0.vector.set(0)
 
-    bc_deac = dolfinx.fem.DirichletBC(u_0, deac_blocks)
-    A = dolfinx.cpp.la.create_matrix(comm, pattern)
+    bc_deac = _fem.DirichletBC(u_0, deac_blocks)
+    A = _cpp.la.create_matrix(comm, pattern)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
-    form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
-    dolfinx.cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, [bc_deac._cpp_object])
+    form_coeffs = _cpp.fem.pack_coefficients(cpp_form)
+    form_consts = _cpp.fem.pack_constants(cpp_form)
+    _cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, [bc_deac._cpp_object])
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
-        dolfinx.cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0],
-                                        [bc_deac._cpp_object], 1.0)
+        _cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], [bc_deac._cpp_object], 1.0)
     A.assemble()
 
-    b = dolfinx.fem.assemble_vector(L)
+    b = _fem.assemble_vector(L)
 
-    dolfinx.fem.apply_lifting(b, [a], [[bc_deac]])
+    _fem.apply_lifting(b, [a], [[bc_deac]])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, [bc_deac])
+    _fem.set_bc(b, [bc_deac])
 
     # Solve Linear problem
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -122,12 +121,12 @@ def log_info(message):
     Wrapper for logging a simple string on the zeroth communicator
     Reverting the log level
     """
-    old_level = dolfinx.log.get_log_level()
+    old_level = _log.get_log_level()
     if MPI.COMM_WORLD.rank == 0:
-        dolfinx.log.set_log_level(dolfinx.log.LogLevel.INFO)
-        dolfinx.log.log(dolfinx.log.LogLevel.INFO,
-                        message)
-        dolfinx.log.set_log_level(old_level)
+        _log.set_log_level(_log.LogLevel.INFO)
+        _log.log(_log.LogLevel.INFO,
+                 message)
+        _log.set_log_level(old_level)
 
 
 def rigid_motions_nullspace(V):
@@ -141,7 +140,7 @@ def rigid_motions_nullspace(V):
     dim = 3 if gdim == 2 else 6
 
     # Create list of vectors for null space
-    nullspace_basis = [dolfinx.cpp.la.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs) for i in range(dim)]
+    nullspace_basis = [_cpp.la.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs) for i in range(dim)]
 
     with ExitStack() as stack:
         vec_local = [stack.enter_context(x.localForm()) for x in nullspace_basis]
@@ -169,7 +168,7 @@ def rigid_motions_nullspace(V):
             basis[5][dofs[2]] = x1
             basis[5][dofs[1]] = -x2
 
-    basis = dolfinx.la.VectorSpaceBasis(nullspace_basis)
+    basis = _la.VectorSpaceBasis(nullspace_basis)
     basis.orthonormalize()
 
     _x = [basis[i] for i in range(dim)]
@@ -183,7 +182,7 @@ def determine_closest_block(V, point):
     """
     # Create boundingboxtree of cells connected to boundary facets
     tdim = V.mesh.topology.dim
-    boundary_facets = np.flatnonzero(dolfinx.cpp.mesh.compute_boundary_facets(V.mesh.topology))
+    boundary_facets = np.flatnonzero(_cpp.mesh.compute_boundary_facets(V.mesh.topology))
     V.mesh.topology.create_connectivity(tdim - 1, tdim)
     f_to_c = V.mesh.topology.connectivity(tdim - 1, tdim)
     boundary_cells = []
@@ -192,12 +191,12 @@ def determine_closest_block(V, point):
     cell_imap = V.mesh.topology.index_map(tdim)
     boundary_cells = np.array(np.unique(boundary_cells), dtype=np.int32)
     boundary_cells = boundary_cells[boundary_cells < cell_imap.size_local]
-    bb_tree = dolfinx.geometry.BoundingBoxTree(V.mesh, tdim, boundary_cells)
-    midpoint_tree = dolfinx.cpp.geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
+    bb_tree = _geometry.BoundingBoxTree(V.mesh, tdim, boundary_cells)
+    midpoint_tree = _cpp.geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest
 
-    closest_cell = dolfinx.geometry.compute_closest_entity(
+    closest_cell = _geometry.compute_closest_entity(
         bb_tree, midpoint_tree, V.mesh, np.reshape(point, (1, 3)))[0]
 
     # Set distance high if cell is not owned
@@ -206,8 +205,8 @@ def determine_closest_block(V, point):
     else:
         # Get cell geometry
         p = V.mesh.geometry.x
-        entities = dolfinx.cpp.mesh.entities_to_geometry(V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False)
-        R = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, p[entities[0]]))
+        entities = _cpp.mesh.entities_to_geometry(V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False)
+        R = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, p[entities[0]]))
 
     # Find processor with cell closest to point
     global_distances = MPI.COMM_WORLD.allgather(R)
@@ -225,7 +224,7 @@ def determine_closest_block(V, point):
         x = V.tabulate_dof_coordinates()
         cell_blocks = dofmap.cell_dofs(closest_cell)
         for block in cell_blocks:
-            distance = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, x[block]))
+            distance = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, x[block]))
             if distance < min_distance:
                 # If cell owned by processor, but not the closest dof
                 if block < local_max:
@@ -244,7 +243,7 @@ def determine_closest_block(V, point):
         x = V.tabulate_dof_coordinates()
         cell_blocks = dofmap.cell_dofs(closest_cell)
         for block in cell_blocks:
-            distance = np.linalg.norm(dolfinx.cpp.geometry.compute_distance_gjk(point, x[block]))
+            distance = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, x[block]))
             if distance < min_distance:
                 # If cell owned by processor, but not the closest dof
                 if block < local_max:
@@ -379,7 +378,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     return slaves, masters, coeffs, owners, offsets
 
 
-def create_normal_approximation(V: dolfinx.FunctionSpace, mt: dolfinx.MeshTags, value: int):
+def create_normal_approximation(V: _fem.FunctionSpace, mt: _mesh.MeshTags, value: int):
     """
     Creates a normal approximation for the dofs in the closure of the attached entities.
     Where a dof is attached to entities facets, an average is computed
@@ -399,7 +398,7 @@ def create_normal_approximation(V: dolfinx.FunctionSpace, mt: dolfinx.MeshTags, 
     """
     dim = mt.dim
     entities = mt.indices[mt.values == value]
-    nh = dolfinx.Function(V)
+    nh = _fem.Function(V)
     n_cpp = dolfinx_mpc.cpp.mpc.create_normal_approximation(V._cpp_object, dim, entities)
     nh._cpp_object = n_cpp
     return nh

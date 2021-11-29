@@ -4,14 +4,15 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import dolfinx
-import dolfinx.io
+import dolfinx.fem as fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.generation import UnitSquareMesh
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -26,20 +27,20 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
 
     assemble_matrix, assemble_vector = get_assemblers
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
+    mesh = UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
 
-    V = dolfinx.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     def boundary(x):
         return np.isclose(x.T, [0, 0, 0]).all(axis=1)
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
-    u_bc = dolfinx.Function(V)
+    u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
-    bdofsV = dolfinx.fem.locate_dofs_geometrical(V, boundary)
-    bc = dolfinx.fem.dirichletbc.DirichletBC(u_bc, bdofsV)
+    bdofsV = fem.locate_dofs_geometrical(V, boundary)
+    bc = fem.DirichletBC(u_bc, bdofsV)
     bcs = [bc]
 
     # Define variational problem
@@ -64,14 +65,14 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     mpc.create_general_constraint(s_m_c, slave_space, master_space)
     mpc.finalize()
 
-    with dolfinx.common.Timer("~TEST: Assemble matrix"):
+    with Timer("~TEST: Assemble matrix"):
         A = assemble_matrix(a, mpc, bcs=bcs)
-    with dolfinx.common.Timer("~TEST: Assemble vector"):
+    with Timer("~TEST: Assemble vector"):
         b = dolfinx_mpc.assemble_vector(rhs, mpc)
 
     dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    fem.set_bc(b, bcs)
 
     solver.setOperators(A)
     uh = b.copy()
@@ -82,17 +83,17 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     mpc.backsubstitution(uh)
 
     # Generate reference matrices for unconstrained problem
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org = fem.assemble_matrix(a, bcs)
     A_org.assemble()
 
-    L_org = dolfinx.fem.assemble_vector(rhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    L_org = fem.assemble_vector(rhs)
+    fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
+    fem.set_bc(L_org, bcs)
 
     root = 0
-    comm = mesh.mpi_comm()
-    with dolfinx.common.Timer("~TEST: Compare"):
+    comm = mesh.comm
+    with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
 
@@ -111,4 +112,4 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
 
-    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
+    list_timings(comm, [TimingType.wall])

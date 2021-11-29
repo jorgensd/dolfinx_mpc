@@ -31,7 +31,7 @@ void _lift_bc_entities(
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs0,
     int bs1, const xtl::span<const T>& bc_values1,
-    const std::vector<bool>& bc_markers1,
+    const std::vector<std::int8_t>& bc_markers1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
     const std::function<const std::int32_t(const E_DESC&)> fetch_cells,
     const std::function<void(xtl::span<T>, xtl::span<T>, const int, const int,
@@ -134,7 +134,7 @@ void _apply_lifting(
   const std::vector<std::int8_t>& is_slave = mpc1->is_slave();
 
   // Create 1D arrays of bc values and bc indicator
-  std::vector<bool> bc_markers1;
+  std::vector<std::int8_t> bc_markers1;
   std::vector<T> bc_values1;
   assert(a->function_spaces().at(1));
   auto V1 = a->function_spaces().at(1);
@@ -263,21 +263,8 @@ void _apply_lifting(
   }
 
   // Prepare permutations for exterior and interior facet integrals
-  if (a->num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0
-      or a->num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
+  if (a->num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0)
   {
-    std::function<std::uint8_t(std::size_t)> get_perm;
-    if (a->needs_facet_permutations())
-    {
-      mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
-      mesh->topology_mutable().create_entity_permutations();
-      const std::vector<std::uint8_t>& perms
-          = mesh->topology().get_facet_permutations();
-      get_perm = [&perms](std::size_t i) { return perms[i]; };
-    }
-    else
-      get_perm = [](std::size_t) { return 0; };
-
     // Create lambda function fetching cell index from exterior facet entity
     const auto fetch_cells_ext = [&](const std::pair<std::int32_t, int>& entity)
     { return entity.first; };
@@ -318,12 +305,10 @@ void _apply_lifting(
                       std::next(coordinate_dofs.begin(), 3 * i));
         }
 
-        std::uint8_t perm = get_perm(cell * num_cell_facets + local_facet);
-
         // Tabulate tensor
         std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
         kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
-               constants.data(), coordinate_dofs.data(), &local_facet, &perm);
+               constants.data(), coordinate_dofs.data(), &local_facet, nullptr);
         dof_transform(Ae, cell_info, cell, num_cols);
         dof_transform_to_transpose(Ae, cell_info, cell, num_rows);
 
@@ -364,11 +349,23 @@ void _apply_lifting(
           b, active_facets, dofmap0, dofmap1, bs0, bs1, bc_values1, bc_markers1,
           mpc1, fetch_cells_ext, lift_bc_exterior_facet);
     }
-    if (a->num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
-    {
-      throw std::runtime_error(
-          "Interior facet integrals currently not supported");
-    }
+  }
+  if (a->num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
+  {
+    throw std::runtime_error(
+        "Interior facet integrals currently not supported");
+
+    //   std::function<std::uint8_t(std::size_t)> get_perm;
+    //   if (a->needs_facet_permutations())
+    //   {
+    //     mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
+    //     mesh->topology_mutable().create_entity_permutations();
+    //     const std::vector<std::uint8_t>& perms
+    //         = mesh->topology().get_facet_permutations();
+    //     get_perm = [&perms](std::size_t i) { return perms[i]; };
+    //   }
+    //   else
+    //     get_perm = [](std::size_t) { return 0; };
   }
 }
 } // namespace

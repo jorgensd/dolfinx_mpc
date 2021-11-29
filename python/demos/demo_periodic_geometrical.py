@@ -16,15 +16,21 @@
 # SPDX-License-Identifier:    MIT
 
 
-import dolfinx
-import dolfinx.io
-import dolfinx_mpc
+import dolfinx.fem as fem
 import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
-import ufl
+
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.generation import UnitSquareMesh
+from dolfinx.io import XDMFFile
+from dolfinx.mesh import locate_entities_boundary
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
+
 from mpi4py import MPI
 from petsc4py import PETSc
+from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
+                 inner, pi, sin)
 
 # Get PETSc int and scalar types
 if np.dtype(PETSc.ScalarType).kind == 'c':
@@ -34,11 +40,11 @@ else:
 
 # Create mesh and finite element
 N = 50
-mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, N, N)
-V = dolfinx.FunctionSpace(mesh, ("CG", 1))
+mesh = UnitSquareMesh(MPI.COMM_WORLD, N, N)
+V = fem.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition
-u_bc = dolfinx.Function(V)
+u_bc = fem.Function(V)
 with u_bc.vector.localForm() as u_local:
     u_local.set(0.0)
 
@@ -47,9 +53,9 @@ def DirichletBoundary(x):
     return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
 
 
-facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, DirichletBoundary)
-topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
-bc = dolfinx.fem.DirichletBC(u_bc, topological_dofs)
+facets = locate_entities_boundary(mesh, 1, DirichletBoundary)
+topological_dofs = fem.locate_dofs_topological(V, 1, facets)
+bc = fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
 
 
@@ -65,27 +71,27 @@ def periodic_relation(x):
     return out_x
 
 
-with dolfinx.common.Timer("~PERIODIC: Initialize MPC"):
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
+with Timer("~PERIODIC: Initialize MPC"):
+    mpc = MultiPointConstraint(V)
     mpc.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_relation, bcs)
     mpc.finalize()
 
 # Define variational problem
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+u = TrialFunction(V)
+v = TestFunction(V)
+a = inner(grad(u), grad(v)) * dx
 
-x = ufl.SpatialCoordinate(mesh)
-dx = x[0] - 0.9
-dy = x[1] - 0.5
-f = x[0] * ufl.sin(5.0 * ufl.pi * x[1]) + 1.0 * ufl.exp(-(dx * dx + dy * dy) / 0.02)
+x = SpatialCoordinate(mesh)
+dx_ = x[0] - 0.9
+dy_ = x[1] - 0.5
+f = x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_) / 0.02)
 
-rhs = ufl.inner(f, v) * ufl.dx
+rhs = inner(f, v) * dx
 
 
 # Setup MPC system
-with dolfinx.common.Timer("~PERIODIC: Initialize varitional problem"):
-    problem = dolfinx_mpc.LinearProblem(a, rhs, mpc, bcs=bcs)
+with Timer("~PERIODIC: Initialize varitional problem"):
+    problem = LinearProblem(a, rhs, mpc, bcs=bcs)
 
 solver = problem.solver
 
@@ -105,7 +111,7 @@ else:
     solver.setFromOptions()
 
 
-with dolfinx.common.Timer("~PERIODIC: Assemble and solve MPC problem"):
+with Timer("~PERIODIC: Assemble and solve MPC problem"):
     uh = problem.solve()
     solver.view()
     it = solver.getIterationNumber()
@@ -113,22 +119,22 @@ with dolfinx.common.Timer("~PERIODIC: Assemble and solve MPC problem"):
 
 # Write solution to file
 uh.name = "u_mpc"
-outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "results/demo_periodic.xdmf", "w")
+outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_periodic.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(uh)
 
 
 print("----Verification----")
 # --------------------VERIFICATION-------------------------
-A_org = dolfinx.fem.assemble_matrix(a, bcs)
+A_org = fem.assemble_matrix(a, bcs)
 
 A_org.assemble()
-L_org = dolfinx.fem.assemble_vector(rhs)
-dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+L_org = fem.assemble_vector(rhs)
+fem.apply_lifting(L_org, [a], [bcs])
 L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-dolfinx.fem.set_bc(L_org, bcs)
+fem.set_bc(L_org, bcs)
 solver.setOperators(A_org)
-u_ = dolfinx.Function(V)
+u_ = fem.Function(V)
 solver.solve(L_org, u_.vector)
 
 it = solver.getIterationNumber()
@@ -138,8 +144,8 @@ u_.name = "u_unconstrained"
 outfile.write_function(u_)
 
 root = 0
-comm = mesh.mpi_comm()
-with dolfinx.common.Timer("~Demo: Verification"):
+comm = mesh.comm
+with Timer("~Demo: Verification"):
     dolfinx_mpc.utils.compare_MPC_LHS(A_org, problem._A, mpc, root=root)
     dolfinx_mpc.utils.compare_MPC_RHS(L_org, problem._b, mpc, root=root)
 
@@ -157,4 +163,4 @@ with dolfinx.common.Timer("~Demo: Verification"):
         # Back substitution to full solution vector
         uh_numpy = K @ d
         assert np.allclose(uh_numpy, u_mpc)
-dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
+list_timings(MPI.COMM_WORLD, [TimingType.wall])

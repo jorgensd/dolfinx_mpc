@@ -4,14 +4,16 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import dolfinx
-import dolfinx.io
+import dolfinx.fem as fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.generation import UnitSquareMesh
+from dolfinx.mesh import CellType
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -27,8 +29,8 @@ def test_lifting(get_assemblers):  # noqa: F811
     assemble_matrix, assemble_vector = get_assemblers
 
     # Create mesh and function space
-    mesh = dolfinx.UnitSquareMesh(MPI.COMM_WORLD, 1, 1, dolfinx.mesh.CellType.quadrilateral)
-    V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+    mesh = UnitSquareMesh(MPI.COMM_WORLD, 1, 1, CellType.quadrilateral)
+    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
@@ -39,7 +41,7 @@ def test_lifting(get_assemblers):  # noqa: F811
     rhs = ufl.inner(f, v) * ufl.dx
 
     # Create Dirichlet boundary condition
-    u_bc = dolfinx.Function(V)
+    u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(2.3)
 
@@ -47,17 +49,17 @@ def test_lifting(get_assemblers):  # noqa: F811
         return np.isclose(x[0], 1)
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = dolfinx.fem.locate_dofs_geometrical(V, DirichletBoundary)
-    bc = dolfinx.fem.DirichletBC(u_bc, geometrical_dofs)
+    geometrical_dofs = fem.locate_dofs_geometrical(V, DirichletBoundary)
+    bc = fem.DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
     # Generate reference matrices
-    A_org = dolfinx.fem.assemble_matrix(a, bcs=bcs)
+    A_org = fem.assemble_matrix(a, bcs=bcs)
     A_org.assemble()
-    L_org = dolfinx.fem.assemble_vector(rhs)
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    L_org = fem.assemble_vector(rhs)
+    fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
+    fem.set_bc(L_org, bcs)
 
     # Create multipoint constraint
 
@@ -74,7 +76,7 @@ def test_lifting(get_assemblers):  # noqa: F811
     dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
-    dolfinx.fem.set_bc(b, bcs)
+    fem.set_bc(b, bcs)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)
@@ -88,14 +90,12 @@ def test_lifting(get_assemblers):  # noqa: F811
     mpc.backsubstitution(uh)
 
     V_mpc = mpc.function_space
-    u_out = dolfinx.Function(V_mpc)
+    u_out = fem.Function(V_mpc)
     u_out.vector.array[:] = uh.array
-    with dolfinx.io.XDMFFile(MPI.COMM_WORLD, "u_bc.xdmf", "w") as xdmf:
-        xdmf.write_mesh(mesh)
-        xdmf.write_function(u_out)
+
     root = 0
-    comm = mesh.mpi_comm()
-    with dolfinx.common.Timer("~TEST: Compare"):
+    comm = mesh.comm
+    with Timer("~TEST: Compare"):
 
         dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
@@ -115,4 +115,4 @@ def test_lifting(get_assemblers):  # noqa: F811
             uh_numpy = K @ (d)  # + constants)
             assert np.allclose(uh_numpy, u_mpc)
 
-    dolfinx.common.list_timings(comm, [dolfinx.common.TimingType.wall])
+    list_timings(comm, [TimingType.wall])

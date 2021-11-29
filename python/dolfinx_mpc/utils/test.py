@@ -211,7 +211,7 @@ def compare_MPC_LHS(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
     The unmodified matrix is multiplied with K^T A K, where K is the global transformation matrix.
     """
     timer = dolfinx.common.Timer("~MPC: Compare matrices")
-    comm = mpc.V.mesh.mpi_comm()
+    comm = mpc.V.mesh.comm
     V = mpc.V
     assert(root < comm.size)
 
@@ -245,7 +245,7 @@ def compare_MPC_RHS(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.Mult
     b_np = dolfinx_mpc.utils.gather_PETScVector(b, root=root)
     K = gather_transformation_matrix(constraint, root=root)
     # constants = gather_constants(constraint)
-    comm = constraint.V.mesh.mpi_comm()
+    comm = constraint.V.mesh.comm
     if comm.rank == root:
         reduced_b = K.T @ b_org_np  # - constants for RHS mpc
         all_cols = np.arange(constraint.V.dofmap.index_map.size_global * constraint.V.dofmap.index_map_bs)
