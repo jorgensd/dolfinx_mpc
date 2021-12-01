@@ -2,8 +2,7 @@ _petsc_cffi_None.*
 *.xdmf
 *.h5
 *.so
-build-dir
-python/build/
+**/build**/**
 __pycache__
 dolfinx_mpc.egg-info
 *.pvd
@@ -14,4 +13,5 @@ debug
 *results*
 *.msh
 CMakeFiles
-build-dir
+*.hdf5
+*.o

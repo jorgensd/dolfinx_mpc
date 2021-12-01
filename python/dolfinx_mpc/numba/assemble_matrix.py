@@ -108,7 +108,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
         pattern = constraint.create_sparsity_pattern(cpp_form)
         pattern.assemble()
-        A = _cpp.la.create_matrix(V.mesh.comm, pattern)
+        A = _cpp.la.create_petsc_matrix(V.mesh.comm, pattern)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
