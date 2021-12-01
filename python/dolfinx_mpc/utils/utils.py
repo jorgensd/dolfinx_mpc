@@ -86,7 +86,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False):
     u_0.vector.set(0)
 
     bc_deac = _fem.DirichletBC(u_0, deac_blocks)
-    A = _cpp.la.create_matrix(comm, pattern)
+    A = _cpp.la.create_petsc_matrix(comm, pattern)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
@@ -129,9 +129,16 @@ def log_info(message):
         _log.set_log_level(old_level)
 
 
-def rigid_motions_nullspace(V):
-    """Function to build nullspace for 2D/3D elasticity"""
+def rigid_motions_nullspace(V: _fem.FunctionSpace):
+    """
+    Function to build nullspace for 2D/3D elasticity.
 
+    Parameters:
+    ===========
+    V
+        The function space
+    """
+    _x = _fem.Function(V)
     # Get geometric dim
     gdim = V.mesh.geometry.dim
     assert gdim == 2 or gdim == 3
@@ -140,7 +147,7 @@ def rigid_motions_nullspace(V):
     dim = 3 if gdim == 2 else 6
 
     # Create list of vectors for null space
-    nullspace_basis = [_cpp.la.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs) for i in range(dim)]
+    nullspace_basis = [_x.vector.copy() for i in range(dim)]
 
     with ExitStack() as stack:
         vec_local = [stack.enter_context(x.localForm()) for x in nullspace_basis]
@@ -168,12 +175,9 @@ def rigid_motions_nullspace(V):
             basis[5][dofs[2]] = x1
             basis[5][dofs[1]] = -x2
 
-    basis = _la.VectorSpaceBasis(nullspace_basis)
-    basis.orthonormalize()
-
-    _x = [basis[i] for i in range(dim)]
-    nsp = PETSc.NullSpace().create(vectors=_x)
-    return nsp
+    _la.orthonormalize(nullspace_basis)
+    assert _la.is_orthonormal(nullspace_basis)
+    return PETSc.NullSpace().create(vectors=nullspace_basis)
 
 
 def determine_closest_block(V, point):
