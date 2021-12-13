@@ -68,7 +68,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint, bcs: 
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)
-        _cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_bc, diagval)
+        _cpp.fem.petsc.insert_diagonal(A, cpp_form.function_spaces[0], cpp_bc, diagval)
 
     A.assemble()
     return A

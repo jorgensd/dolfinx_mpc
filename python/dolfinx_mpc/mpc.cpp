@@ -195,8 +195,8 @@ void mpc(py::module& m)
            const PetscScalar diagval)
         {
           dolfinx_mpc::assemble_matrix(
-              dolfinx::la::PETScMatrix::set_block_fn(A, ADD_VALUES),
-              dolfinx::la::PETScMatrix::set_fn(A, ADD_VALUES), a, mpc, bcs,
+              dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES),
+              dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, mpc, bcs,
               diagval);
         });
   m.def(

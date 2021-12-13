@@ -112,7 +112,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
                          jit_parameters=jit_parameters)._cpp_object
 
     if b is None:
-        b = _cpp.la.create_petsc_vector(constraint.function_space.dofmap.index_map,
+        b = _cpp.la.petsc.create_vector(constraint.function_space.dofmap.index_map,
                                         constraint.function_space.dofmap.index_map_bs)
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:

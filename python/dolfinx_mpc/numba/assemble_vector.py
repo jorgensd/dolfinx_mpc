@@ -73,7 +73,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: _P
     # Get index map and ghost info
     if b is None:
         index_map = constraint.function_space.dofmap.index_map
-        vector = _cpp.la.create_petsc_vector(index_map, block_size)
+        vector = _cpp.la.petsc.create_vector(index_map, block_size)
     else:
         vector = b
 
