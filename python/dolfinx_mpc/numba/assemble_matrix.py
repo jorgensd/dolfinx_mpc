@@ -108,11 +108,11 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
         pattern = constraint.create_sparsity_pattern(cpp_form)
         pattern.assemble()
-        A = _cpp.la.create_petsc_matrix(V.mesh.comm, pattern)
+        A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
-    _cpp.fem.assemble_matrix_petsc(A, cpp_form, form_consts, form_coeffs, cpp_dirichletbc(bcs), False)
+    _cpp.fem.petsc.assemble_matrix(A, cpp_form, form_consts, form_coeffs, cpp_dirichletbc(bcs), False)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size()
@@ -186,7 +186,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     if cpp_form.function_spaces[0].id == cpp_form.function_spaces[1].id:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)
-        _cpp.fem.insert_diagonal(A, cpp_form.function_spaces[0], cpp_dirichletbc(bcs), diagval)
+        _cpp.fem.petsc.insert_diagonal(A, cpp_form.function_spaces[0], cpp_dirichletbc(bcs), diagval)
 
     A.assemble()
     timer_matrix.stop()

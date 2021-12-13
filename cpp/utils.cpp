@@ -249,7 +249,7 @@ std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
   return V->dofmap()->index_map->compute_shared_indices();
 }
 //-----------------------------------------------------------------------------
-dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
+dolfinx::la::petsc::Matrix dolfinx_mpc::create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
     const std::string& type)
@@ -265,7 +265,7 @@ dolfinx::la::PETScMatrix dolfinx_mpc::create_matrix(
   timer_s.stop();
 
   // Initialize matrix
-  dolfinx::la::PETScMatrix A(a.mesh()->comm(), pattern, type);
+  dolfinx::la::petsc::Matrix A(a.mesh()->comm(), pattern, type);
 
   return A;
 }

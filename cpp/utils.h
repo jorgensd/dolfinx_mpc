@@ -33,7 +33,7 @@ get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
 std::map<std::int32_t, std::set<int>>
 compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 
-dolfinx::la::PETScMatrix create_matrix(
+dolfinx::la::petsc::Matrix create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
     const std::string& type = std::string());
