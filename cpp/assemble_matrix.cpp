@@ -57,7 +57,7 @@ void modify_mpc_cell(
         {
           bool is_slave1 = is_slave[dofs[j] * bs + c];
           Ae_stripped(i * bs + b, j * bs + c)
-              = (!(is_slave0 && is_slave1)) * Ae(i * bs + b, j * bs + c);
+              = T(!(is_slave0 && is_slave1)) * Ae(i * bs + b, j * bs + c);
         }
     }
 
