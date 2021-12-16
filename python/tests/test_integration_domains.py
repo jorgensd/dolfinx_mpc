@@ -5,16 +5,15 @@
 # SPDX-License-Identifier:    MIT
 
 
+import dolfinx.fem as fem
+import dolfinx_mpc
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
-import dolfinx_mpc
-import dolfinx.fem as fem
-from dolfinx.generation import UnitSquareMesh
-from dolfinx.mesh import MeshTags, compute_midpoints
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.mesh import MeshTags, compute_midpoints, create_unit_square
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
-from dolfinx.common import Timer, list_timings, TimingType
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -27,7 +26,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     assemble_matrix, assemble_vector = get_assemblers
     N = 5
     # Create mesh and function space
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, 15, N)
+    mesh = create_unit_square(MPI.COMM_WORLD, 15, N)
     V = fem.FunctionSpace(mesh, ("Lagrange", 1))
 
     def left_side(x):

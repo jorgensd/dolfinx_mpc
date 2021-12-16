@@ -27,10 +27,9 @@ from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (DirichletBC, Function, FunctionSpace, apply_lifting,
                          assemble_matrix, assemble_vector,
                          locate_dofs_geometrical, set_bc)
-from dolfinx.generation import UnitCubeMesh
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
-from dolfinx.mesh import CellType, refine
+from dolfinx.mesh import CellType, UnitCubeMesh, refine
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,

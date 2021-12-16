@@ -13,7 +13,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.generation import UnitSquareMesh
+from dolfinx.mesh import create_unit_square
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -26,7 +26,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     assemble_matrix, assemble_vector = get_assemblers
 
     # Create mesh and function space
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, 3, 5)
+    mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
     V = fem.FunctionSpace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
@@ -104,7 +104,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
 def test_linearproblem(master_point):
 
     # Create mesh and function space
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, 3, 5)
+    mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
     V = fem.FunctionSpace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference

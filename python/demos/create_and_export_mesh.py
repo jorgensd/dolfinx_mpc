@@ -1,6 +1,5 @@
 import dolfinx.common as _common
 import dolfinx.cpp as _cpp
-import dolfinx.generation as _generation
 import dolfinx.io as _io
 import dolfinx.mesh as _mesh
 import dolfinx_mpc.utils as _utils
@@ -433,8 +432,8 @@ def mesh_2D_dolfin(celltype, theta=0):
     else:
         raise ValueError("celltype has to be tri or quad")
     if MPI.COMM_WORLD.rank == 0:
-        mesh0 = _generation.UnitSquareMesh(MPI.COMM_SELF, N, N, ct)
-        mesh1 = _generation.UnitSquareMesh(MPI.COMM_SELF, 2 * N, 2 * N, ct)
+        mesh0 = _mesh.create_unit_square(MPI.COMM_SELF, N, N, ct)
+        mesh1 = _mesh.create_unit_square(MPI.COMM_SELF, 2 * N, 2 * N, ct)
         mesh0.geometry.x[:, 1] += 1
 
         # Stack the two meshes in one mesh
@@ -551,8 +550,8 @@ def mesh_3D_dolfin(theta=0, ct=_mesh.CellType.tetrahedron, ext="tetrahedron", re
 
     N = int(1 / res)
     if MPI.COMM_WORLD.rank == 0:
-        mesh0 = _generation.UnitCubeMesh(MPI.COMM_SELF, N, N, N, ct)
-        mesh1 = _generation.UnitCubeMesh(MPI.COMM_SELF, 2 * N, 2 * N, 2 * N, ct)
+        mesh0 = _mesh.create_unit_cube(MPI.COMM_SELF, N, N, N, ct)
+        mesh1 = _mesh.create_unit_cube(MPI.COMM_SELF, 2 * N, 2 * N, 2 * N, ct)
         mesh0.geometry.x[:, 2] += 1
 
         # Stack the two meshes in one mesh

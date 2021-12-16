@@ -18,19 +18,15 @@
 
 import dolfinx.fem as fem
 import dolfinx_mpc.utils
-
 import numpy as np
 import scipy.sparse.linalg
-
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.generation import UnitCubeMesh
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import CellType, MeshTags, locate_entities_boundary
+from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
+                          locate_entities_boundary)
 from dolfinx_mpc import apply_lifting, assemble_matrix, assemble_vector
-
 from mpi4py import MPI
 from petsc4py import PETSc
-
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 
@@ -46,12 +42,12 @@ def demo_periodic3D(celltype, out_periodic):
     if celltype == CellType.tetrahedron:
         # Tet setup
         N = 4
-        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
         V = fem.FunctionSpace(mesh, ("CG", 2))
     else:
         # Hex setup
         N = 12
-        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
         V = fem.FunctionSpace(mesh, ("CG", 1))
 
     # Create Dirichlet boundary condition

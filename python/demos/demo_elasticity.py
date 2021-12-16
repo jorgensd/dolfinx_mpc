@@ -11,9 +11,8 @@ import numpy as np
 import scipy.sparse.linalg
 
 from dolfinx.common import Timer
-from dolfinx.generation import UnitSquareMesh
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import locate_entities_boundary
+from dolfinx.mesh import create_unit_square, locate_entities_boundary
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from mpi4py import MPI
@@ -23,7 +22,7 @@ from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
 
 
 def demo_elasticity():
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, 10, 10)
+    mesh = create_unit_square(MPI.COMM_WORLD, 10, 10)
 
     V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 

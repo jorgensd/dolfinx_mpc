@@ -11,8 +11,7 @@ import numpy as np
 import pytest
 import ufl
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.generation import UnitSquareMesh
-from dolfinx.mesh import CellType
+from dolfinx.mesh import CellType, create_unit_square
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 
@@ -28,7 +27,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     assemble_matrix, _ = get_assemblers
 
     # Create mesh and function space
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, 5, 3, celltype)
+    mesh = create_unit_square(MPI.COMM_WORLD, 5, 3, celltype)
     V = fem.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Test against generated code and general assembler
@@ -63,7 +62,7 @@ def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # 
     assemble_matrix, _ = get_assemblers
 
     # Create mesh and function space
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, 1, 8, celltype)
+    mesh = create_unit_square(MPI.COMM_WORLD, 1, 8, celltype)
     V = fem.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Build master slave map

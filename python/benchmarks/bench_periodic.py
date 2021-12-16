@@ -15,16 +15,14 @@
 import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
-
 import h5py
 import numpy as np
-
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (DirichletBC, Function, FunctionSpace,
                          locate_dofs_geometrical, set_bc)
-from dolfinx.generation import UnitCubeMesh
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import CellType, MeshTags, locate_entities_boundary
+from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
+                          locate_entities_boundary)
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import log_info
@@ -43,7 +41,7 @@ def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
     N = 3
     for i in range(r_lvl):
         N *= 2
-    mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
+    mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
 
     V = FunctionSpace(mesh, ("CG", degree))
 
