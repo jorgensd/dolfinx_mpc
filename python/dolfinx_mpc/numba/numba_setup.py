@@ -74,11 +74,11 @@ def initialize_petsc():
             petsc_lib_ctypes = ctypes.CDLL(os.path.join(
                 petsc_dir, petsc_arch, "lib", "libpetsc.so"))
         except OSError:
-            petsc_lib_ctypes = ctypes.CDLL(os.path.join(
-                petsc_dir, petsc_arch, "lib", "libpetsc.dylib"))
-        except OSError:
-            print("Could not load PETSc library for CFFI (ABI mode).")
-            raise
+            try:
+                petsc_lib_ctypes = ctypes.CDLL(os.path.join(
+                    petsc_dir, petsc_arch, "lib", "libpetsc.dylib"))
+            except OSError:
+                raise RuntimeError("Could not load PETSc library for CFFI (ABI mode).")
 
     # Get the PETSc MatSetValuesLocal function via ctypes
     MatSetValues_ctypes = petsc_lib_ctypes.MatSetValuesLocal
@@ -104,10 +104,10 @@ def initialize_petsc():
         try:
             ffi.dlopen(os.path.join(petsc_dir, petsc_arch, "lib", "libpetsc.so"))
         except OSError:
-            ffi.dlopen(os.path.join(petsc_dir, petsc_arch, "lib", "libpetsc.dylib"))
-        except OSError:
-            print("Could not load PETSc library for CFFI (ABI mode).")
-            raise
+            try:
+                ffi.dlopen(os.path.join(petsc_dir, petsc_arch, "lib", "libpetsc.dylib"))
+            except OSError:
+                raise RuntimeError("Could not load PETSc library for CFFI (ABI mode).")
 
     # Make MatSetValuesLocal from PETSc available via cffi in API mode
     worker = os.getenv('ASSEMBLE_XDIST_WORKER', None)

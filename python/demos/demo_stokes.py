@@ -51,7 +51,6 @@ def create_mesh_gmsh(L: int = 2, H: int = 1, res: np.float64 = 0.1, theta: np.fl
 
         # Find entity markers before rotation
         surfaces = gmsh.model.occ.getEntities(dim=1)
-        inlet_marker, outlet_marker, wall_marker = 3, 2, 1
         walls = []
         inlets = []
         outlets = []

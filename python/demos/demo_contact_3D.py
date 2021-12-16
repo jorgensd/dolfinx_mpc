@@ -10,13 +10,12 @@
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
-
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.mesh import CellType
 from dolfinx.io import XDMFFile
+from dolfinx.mesh import CellType
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import (compare_MPC_LHS, compare_MPC_RHS,
@@ -26,8 +25,7 @@ from dolfinx_mpc.utils import (compare_MPC_LHS, compare_MPC_RHS,
                                rigid_motions_nullspace, rotation_matrix)
 from mpi4py import MPI
 from petsc4py import PETSc
-from ufl import (Identity, Measure, TestFunction, TrialFunction, dx, grad,
-                 inner, sym, tr)
+from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
 from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 
@@ -79,8 +77,6 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
 
-    g = fem.Constant(mesh, PETSc.ScalarType(g_vec))
-
     def top_v(x):
         values = np.empty((3, x.shape[1]))
         values[0] = g_vec[0]
@@ -111,9 +107,10 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
     v = TestFunction(V)
     a = inner(sigma(u), grad(v)) * dx
     # NOTE: Traction deactivated until we have a way of fixing nullspace
-    ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
+    # g = fem.Constant(mesh, PETSc.ScalarType(g_vec))
+    # ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
     rhs = inner(fem.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
-    + inner(g, v) * ds
+    # + inner(g, v) * ds
 
     mpc = MultiPointConstraint(V)
     if noslip:
