@@ -408,7 +408,7 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
   for (std::int32_t i = 0; i < block_to_entities.num_nodes(); i++)
   {
     auto ents = block_to_entities.links(i);
-    if (ents.size() == 0)
+    if (ents.empty())
       continue;
     // Sum all normal for entities
     xt::xtensor<double, 2> normals
