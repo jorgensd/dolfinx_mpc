@@ -1,6 +1,8 @@
 # Multi-point constraints with FEniCS-X
 ![CI status](https://github.com/jorgensd/dolfinx_mpc/actions/workflows/test_mpc.yml/badge.svg)
 
+[![SonarCloud](https://sonarcloud.io/images/project_badges/sonarcloud-orange.svg)](https://sonarcloud.io/summary/new_code?id=jorgensd_dolfinx_mpc)
+
 Author: Jørgen S. Dokken
 
 This library contains an add-on to FEniCS_X enabling the possibilities
