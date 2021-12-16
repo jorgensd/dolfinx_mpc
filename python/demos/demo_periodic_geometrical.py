@@ -20,13 +20,10 @@ import dolfinx.fem as fem
 import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
-
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.generation import UnitSquareMesh
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import locate_entities_boundary
+from dolfinx.mesh import create_unit_square, locate_entities_boundary
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
-
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
@@ -40,7 +37,7 @@ else:
 
 # Create mesh and finite element
 N = 50
-mesh = UnitSquareMesh(MPI.COMM_WORLD, N, N)
+mesh = create_unit_square(MPI.COMM_WORLD, N, N)
 V = fem.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition

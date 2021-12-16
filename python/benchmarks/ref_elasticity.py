@@ -9,38 +9,39 @@ import resource
 import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from time import perf_counter
+
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
                          apply_lifting, assemble_matrix, assemble_vector,
                          locate_dofs_topological, set_bc)
-from dolfinx.generation import UnitCubeMesh
 from dolfinx.io import XDMFFile
-from dolfinx.log import LogLevel, set_log_level, log
-from dolfinx.mesh import MeshTags, CellType, locate_entities_boundary, refine
+from dolfinx.log import LogLevel, log, set_log_level
+from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
+                          locate_entities_boundary, refine)
 from dolfinx_mpc.utils import rigid_motions_nullspace
 from mpi4py import MPI
 from petsc4py import PETSc
-from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction, ds,
-                 dx, grad, inner, sym, tr, as_vector)
+from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
+                 as_vector, ds, dx, grad, inner, sym, tr)
 
 
 def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: h5py.File = None,
                    xdmf: bool = False, boomeramg: bool = False, kspview: bool = False, degree: int = 1):
     if tetra:
         N = 3 if degree == 1 else 2
-        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
     else:
         N = 3
-        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
     for i in range(r_lvl):
         # set_log_level(LogLevel.INFO)
         N *= 2
         if tetra:
             mesh = refine(mesh, redistribute=True)
         else:
-            mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
+            mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
         # set_log_level(LogLevel.ERROR)
     N = degree * N
     fdim = mesh.topology.dim - 1

@@ -4,15 +4,14 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from dolfinx.mesh import CellType
-from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.generation import UnitSquareMesh
 import dolfinx.fem as fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import ufl
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.mesh import CellType, create_unit_square
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -28,7 +27,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     _, assemble_vector = get_assemblers
 
     # Create mesh and function space
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, 3, 5, celltype)
+    mesh = create_unit_square(MPI.COMM_WORLD, 3, 5, celltype)
     V = fem.FunctionSpace(mesh, ("Lagrange", degree))
 
     # Generate reference vector

@@ -12,7 +12,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.generation import UnitSquareMesh
+from dolfinx.mesh import create_unit_square
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -27,7 +27,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
 
     assemble_matrix, assemble_vector = get_assemblers
     # Create mesh and function space
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, Nx, Ny)
+    mesh = create_unit_square(MPI.COMM_WORLD, Nx, Ny)
 
     V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 

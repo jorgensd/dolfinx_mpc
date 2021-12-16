@@ -13,9 +13,8 @@ import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
                          locate_dofs_topological, set_bc)
-from dolfinx.generation import UnitCubeMesh
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import CellType, MeshTags, locate_entities_boundary
+from dolfinx.mesh import create_unit_cube, CellType, MeshTags, locate_entities_boundary
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
@@ -31,7 +30,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     for i in range(r_lvl):
         N *= 2
     ct = CellType.tetrahedron if tetra else CellType.hexahedron
-    mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, ct)
+    mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
     # Get number of unknowns on each edge
 
     V = VectorFunctionSpace(mesh, ("Lagrange", int(degree)))

@@ -14,10 +14,9 @@ from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
 from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
                          locate_dofs_topological, set_bc)
-from dolfinx.generation import UnitCubeMesh
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, MeshTags, compute_midpoints, create_mesh,
-                          locate_entities_boundary, refine)
+                          locate_entities_boundary, refine, create_unit_cube)
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import (create_normal_approximation, log_info,
@@ -62,9 +61,9 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
     if MPI.COMM_WORLD.rank == 0:
         # Create two coarse meshes and merge them
-        mesh0 = UnitCubeMesh(MPI.COMM_SELF, N0, N0, N0, ct)
+        mesh0 = create_unit_cube(MPI.COMM_SELF, N0, N0, N0, ct)
         mesh0.geometry.x[:, 2] += 1
-        mesh1 = UnitCubeMesh(MPI.COMM_SELF, 2 * N0, 2 * N0, 2 * N0, ct)
+        mesh1 = create_unit_cube(MPI.COMM_SELF, 2 * N0, 2 * N0, 2 * N0, ct)
 
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local

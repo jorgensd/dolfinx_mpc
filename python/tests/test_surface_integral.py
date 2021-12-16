@@ -13,8 +13,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.generation import UnitSquareMesh
-from dolfinx.mesh import MeshTags, locate_entities_boundary
+from dolfinx.mesh import MeshTags, create_unit_square, locate_entities_boundary
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -26,7 +25,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     assemble_matrix, assemble_vector = get_assemblers
 
     N = 4
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, N, N)
+    mesh = create_unit_square(MPI.COMM_WORLD, N, N)
     V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Fixed Dirichlet BC on the left wall
@@ -151,7 +150,7 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
 
     assemble_matrix, assemble_vector = get_assemblers
     N = 10
-    mesh = UnitSquareMesh(MPI.COMM_WORLD, N, N)
+    mesh = create_unit_square(MPI.COMM_WORLD, N, N)
     V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     def top(x):

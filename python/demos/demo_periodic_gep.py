@@ -21,16 +21,16 @@
 # eigenvalue problem is solved using SLEPc and the computed eigenvalues are
 # compared to the exact ones.
 
-from ufl import TrialFunction, TestFunction, inner, grad, dx
+from typing import List, Tuple
+
+import dolfinx.fem as fem
 import numpy as np
+from dolfinx.mesh import MeshTags, create_unit_square, locate_entities_boundary
+from dolfinx_mpc import MultiPointConstraint, assemble_matrix
 from mpi4py import MPI
 from petsc4py import PETSc
 from slepc4py import SLEPc
-from typing import Tuple, List
-from dolfinx_mpc import MultiPointConstraint, assemble_matrix
-from dolfinx.mesh import locate_entities_boundary, MeshTags
-import dolfinx.fem as fem
-from dolfinx.generation import UnitSquareMesh
+from ufl import TestFunction, TrialFunction, dx, grad, inner
 
 
 def print0(string: str):
@@ -199,7 +199,7 @@ def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
 
 # Create mesh and finite element
 N = 50
-mesh = UnitSquareMesh(MPI.COMM_WORLD, N, N)
+mesh = create_unit_square(MPI.COMM_WORLD, N, N)
 V = fem.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition

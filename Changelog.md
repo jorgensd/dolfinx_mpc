@@ -22,6 +22,7 @@
   - Resolved issue where `create_facet_normal_approximation` would give you a 0 normal for a surface dof it was not owned by any of the cells with facets on the surface.
 
 - **DOLFINX API-changes**:
+  - Updates to use latest import schemes from dolfinx, including `UnitSquareMesh` -> `create_unit_square`.
   - Updates to match dolfinx implementation of exterior facet integrals
   - Updated user-interface of `dolfinx.Constant`, explicitly casting scalar-type with `PETSc.ScalarType`.
   - Various internal changes to handle new `dolfinx.DirichletBC` without class inheritance

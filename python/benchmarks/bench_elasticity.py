@@ -13,9 +13,9 @@ import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
                          locate_dofs_topological, set_bc)
-from dolfinx.generation import UnitCubeMesh
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import MeshTags, locate_entities_boundary, refine
+from dolfinx.mesh import (MeshTags, create_unit_cube, locate_entities_boundary,
+                          refine)
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
@@ -28,7 +28,7 @@ from ufl import (Identity, TestFunction, TrialFunction, ds, dx, grad, inner,
 def bench_elasticity_one(r_lvl: int = 0, out_hdf5: h5py.File = None,
                          xdmf: bool = False, boomeramg: bool = False, kspview: bool = False):
     N = 3
-    mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+    mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
         mesh.topology.create_entities(mesh.topology.dim - 2)
         mesh = refine(mesh, redistribute=True)
