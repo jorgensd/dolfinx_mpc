@@ -32,7 +32,7 @@ from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 
 
-def demo_periodic3D(tetra, out_xdmf=None, r_lvl=0, out_hdf5=None,
+def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
                     xdmf=False, boomeramg=False, kspview=False, degree=1):
     # Create mesh and function space
     log_info(f"Run {r_lvl}: Create mesh")
