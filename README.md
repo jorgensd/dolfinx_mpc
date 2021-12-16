@@ -37,7 +37,7 @@ Easiest way to install dolfinx is to use docker. The dolfinx docker images goes 
 
 To install the `dolfinx_mpc`-library run the following code from this directory:
 ```bash
-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build-dir ../cpp/
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build-dir cpp/
 ninja -j3 install -C build-dir
 pip3 install python/. --upgrade
 ```

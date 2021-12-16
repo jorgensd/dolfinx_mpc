@@ -5,6 +5,7 @@
 // SPDX-License-Identifier:    MIT
 
 #include "utils.h"
+#include <dolfinx/la/PETScVector.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
 #include <xtensor/xcomplex.hpp>
@@ -393,7 +394,9 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
   // Create normal vector function and get local span
   dolfinx::fem::Function<PetscScalar> nh(V);
   Vec n_local;
-  VecGhostGetLocalForm(nh.vector(), &n_local);
+  dolfinx::la::petsc::Vector n_vec(
+      dolfinx::la::petsc::create_vector_wrap(*nh.x()), false);
+  VecGhostGetLocalForm(n_vec.vec(), &n_local);
   PetscInt n = 0;
   VecGetSize(n_local, &n);
   PetscScalar* array = nullptr;
@@ -426,8 +429,8 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
     }
   }
   // Receive normals from other processes with dofs on the facets
-  VecGhostUpdateBegin(nh.vector(), ADD_VALUES, SCATTER_REVERSE);
-  VecGhostUpdateEnd(nh.vector(), ADD_VALUES, SCATTER_REVERSE);
+  VecGhostUpdateBegin(n_vec.vec(), ADD_VALUES, SCATTER_REVERSE);
+  VecGhostUpdateEnd(n_vec.vec(), ADD_VALUES, SCATTER_REVERSE);
   // Normalize nh
   auto imap = V->dofmap()->index_map;
   std::int32_t num_blocks = imap->size_local();
@@ -444,8 +447,8 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
     }
   }
 
-  VecGhostUpdateBegin(nh.vector(), INSERT_VALUES, SCATTER_FORWARD);
-  VecGhostUpdateEnd(nh.vector(), INSERT_VALUES, SCATTER_FORWARD);
+  VecGhostUpdateBegin(n_vec.vec(), INSERT_VALUES, SCATTER_FORWARD);
+  VecGhostUpdateEnd(n_vec.vec(), INSERT_VALUES, SCATTER_FORWARD);
   return nh;
 }
 
