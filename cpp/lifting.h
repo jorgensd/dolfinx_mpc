@@ -171,7 +171,7 @@ void _apply_lifting(
   // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
       = mesh->geometry().dofmap();
-  const xt::xtensor<double, 2>& x_g = mesh->geometry().x();
+  xtl::span<const double> x_g = mesh->geometry().x();
   const int tdim = mesh->topology().dim();
 
   xtl::span<const std::uint32_t> cell_info;
@@ -216,8 +216,9 @@ void _apply_lifting(
         const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(xt::row(x_g, x_dofs[i]).begin(), 3,
-                      std::next(coordinate_dofs.begin(), 3 * i));
+          dolfinx::common::impl::copy_N<3>(
+              std::next(x_g.begin(), 3 * x_dofs[i]),
+              std::next(coordinate_dofs.begin(), 3 * i));
         }
         // Tabulate tensor
         std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
@@ -301,8 +302,9 @@ void _apply_lifting(
         std::vector<double> coordinate_dofs(3 * num_dofs_g);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(xt::row(x_g, x_dofs[i]).begin(), 3,
-                      std::next(coordinate_dofs.begin(), 3 * i));
+          dolfinx::common::impl::copy_N<3>(
+              std::next(x_g.begin(), 3 * x_dofs[i]),
+              std::next(coordinate_dofs.begin(), 3 * i));
         }
 
         // Tabulate tensor
