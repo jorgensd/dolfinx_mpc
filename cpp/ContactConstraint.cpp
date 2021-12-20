@@ -89,7 +89,7 @@ mpc_data compute_master_contributions(
   assert(num_slaves_local == (std::size_t)verified_collisions.num_nodes());
   std::vector<xt::xtensor<PetscScalar, 2>> basis_values(num_slaves_local);
 
-  for (std::size_t i = 0; i < num_slaves_local; ++i)
+  for (int i = 0; i < (int)num_slaves_local; ++i)
   {
     auto verified_cell = verified_collisions.links(i);
     if (!verified_cell.empty())
