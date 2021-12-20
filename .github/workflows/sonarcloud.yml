@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - dokken/*
   pull_request:
     branches:
       - master
@@ -79,6 +80,26 @@ jobs:
         run: |
           cmake -S ./cpp -B build-mpc
           build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build-mpc/ --config Release
+
+      - name: Install DOLFINx-MPC (C++)
+        run: |
+          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
+          cmake --build build-dir --parallel 3
+          cmake --install build-dir
+ 
+      - name: Install DOLFINx-MPC (Python)
+        run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/
+
+      - name: Run coverage report
+        run: |
+          pip3 install pytest-cov
+          pytest -v  --cov=dolfinx_mpc --cov-report=xml --cov-report=html python/tests
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: code-coverage
+          path: htmlcov
+
       - name: Run sonar-scanner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
