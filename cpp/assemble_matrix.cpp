@@ -177,7 +177,7 @@ void assemble_exterior_facets(
       = mesh.geometry().dofmap();
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  const xt::xtensor<double, 2>& x_g = mesh.geometry().x();
+  xtl::span<const double> x_g = mesh.geometry().x();
 
   // Iterate over all facets
   const size_t num_dofs0 = dofmap0.links(0).size();
@@ -198,8 +198,9 @@ void assemble_exterior_facets(
     xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), 3,
-                  std::next(coordinate_dofs.begin(), 3 * i));
+      dolfinx::common::impl::copy_N<3>(
+          std::next(x_g.begin(), 3 * x_dofs[i]),
+          std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
@@ -300,7 +301,7 @@ void assemble_cells_impl(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  const xt::xtensor<double, 2>& x_g = geometry.x();
+  xtl::span<const double> x_g = geometry.x();
 
   // Iterate over active cells
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
@@ -317,8 +318,9 @@ void assemble_cells_impl(
     xtl::span<const int32_t> x_dofs = x_dofmap.links(cell);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(xt::row(x_g, x_dofs[i]).begin(), 3,
-                  std::next(coordinate_dofs.begin(), 3 * i));
+      dolfinx::common::impl::copy_N<3>(
+          std::next(x_g.begin(), 3 * x_dofs[i]),
+          std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);

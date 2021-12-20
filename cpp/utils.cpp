@@ -112,7 +112,7 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
 
   // FIXME: Add proper interface for num coordinate dofs
   const size_t num_dofs_g = x_dofmap.num_links(0);
-  const xt::xtensor<double, 2>& x_g = mesh->geometry().x();
+  xtl::span<const double> x_g = mesh->geometry().x();
   xt::xtensor<double, 2> coordinate_dofs({num_dofs_g, gdim});
 
   // Get coordinate mapping
@@ -153,9 +153,9 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   auto x_dofs = x_dofmap.links(index);
   for (std::size_t i = 0; i < num_dofs_g; ++i)
   {
-    auto coord = xt::row(x_g, x_dofs[i]);
+    const int pos = 3 * x_dofs[i];
     for (std::size_t j = 0; j < gdim; ++j)
-      coordinate_dofs(i, j) = coord[j];
+      coordinate_dofs(i, j) = x_g[pos + j];
   }
   xt::xtensor<double, 2> xp({1, gdim});
   for (std::size_t j = 0; j < gdim; ++j)
