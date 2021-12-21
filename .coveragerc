@@ -1,0 +1,12 @@
+# Omit numba code for now due to
+# https://github.com/numba/numba/issues/4268
+[run]
+omit = */numba/*
+parallel = true
+source = dolfinx_mpc
+
+[html]
+directory= htmlcov
+
+[xml]
+output = coverage.xml
