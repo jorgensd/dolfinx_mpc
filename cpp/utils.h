@@ -12,8 +12,8 @@
 #include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/fem/sparsitybuild.h>
 #include <dolfinx/graph/AdjacencyList.h>
-#include <dolfinx/la/PETScMatrix.h>
 #include <dolfinx/la/SparsityPattern.h>
+#include <dolfinx/la/petsc.h>
 #include <xtensor/xtensor.hpp>
 
 namespace dolfinx_mpc

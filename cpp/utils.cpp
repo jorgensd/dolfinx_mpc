@@ -5,7 +5,6 @@
 // SPDX-License-Identifier:    MIT
 
 #include "utils.h"
-#include <dolfinx/la/PETScVector.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
 #include <xtensor/xcomplex.hpp>
