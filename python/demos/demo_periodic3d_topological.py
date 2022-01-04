@@ -24,17 +24,14 @@ from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
                           locate_entities_boundary)
-from dolfinx_mpc import apply_lifting, assemble_matrix, assemble_vector
+from dolfinx_mpc import LinearProblem
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 
 # Get PETSc int and scalar types
-if np.dtype(PETSc.ScalarType).kind == 'c':
-    complex = True
-else:
-    complex = False
+complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 
 
 def demo_periodic3D(celltype, out_periodic):
@@ -55,12 +52,12 @@ def demo_periodic3D(celltype, out_periodic):
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
-    def DirichletBoundary(x):
+    def dirichletboundary(x):
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = fem.locate_dofs_geometrical(V, DirichletBoundary)
+    geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
     bc = fem.DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
@@ -96,47 +93,16 @@ def demo_periodic3D(celltype, out_periodic):
 
     rhs = inner(f, v) * dx
 
-    with Timer("~Periodic: Assemble LHS and RHS"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
-        b = assemble_vector(rhs, mpc)
-
-    # Apply boundary conditions
-    apply_lifting(b, [a], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(b, bcs)
-
-    # Solve Linear problem
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-
-    if complex:
-        solver.setType(PETSc.KSP.Type.PREONLY)
-        solver.getPC().setType(PETSc.PC.Type.LU)
+    if complex_mode:
+        petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
-        opts = PETSc.Options()
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-6
-        opts["pc_type"] = "hypre"
-        opts['pc_hypre_type'] = 'boomeramg'
-        opts["pc_hypre_boomeramg_max_iter"] = 1
-        opts["pc_hypre_boomeramg_cycle_type"] = "v"
-        # opts["pc_hypre_boomeramg_print_statistics"] = 1
-        solver.setFromOptions()
-
-    with Timer("~Periodic: Solve MPC problem"):
-        solver.setOperators(A)
-        uh = b.copy()
-        uh.set(0)
-        solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                       mode=PETSc.ScatterMode.FORWARD)
-        mpc.backsubstitution(uh)
-        # solver.view()
-        it = solver.getIterationNumber()
-        print(f"Constrained solver iterations {it}")
+        petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_typ": "boomeramg",
+                         "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
+                         "pc_hypre_boomeramg_print_statistics": 1}
+    problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)
+    u_h = problem.solve()
 
     # Write solution to file
-    u_h = fem.Function(mpc.function_space)
-    u_h.vector.setArray(uh.array)
     if celltype == CellType.tetrahedron:
         ext = "tet"
     else:
@@ -150,32 +116,24 @@ def demo_periodic3D(celltype, out_periodic):
 
     # --------------------VERIFICATION-------------------------
     print("----Verification----")
-    A_org = fem.assemble_matrix(a, bcs)
-    A_org.assemble()
-    L_org = fem.assemble_vector(rhs)
-    fem.apply_lifting(L_org, [a], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(L_org, bcs)
-    solver.setOperators(A_org)
-    u_ = fem.Function(V)
+    org_problem = fem.LinearProblem(a, rhs, bcs=bcs, petsc_options=petsc_options)
     with Timer("~Periodic: Unconstrained solve"):
-        solver.solve(L_org, u_.vector)
-        it = solver.getIterationNumber()
+        u_ = org_problem.solve()
+        it = org_problem.solver.getIterationNumber()
     print(f"Unconstrained solver iterations: {it}")
-    u_.x.scatter_forward()
     u_.name = "u_" + ext + "_unconstrained"
     out_periodic.write_function(u_, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
     root = 0
     with Timer("~Demo: Verification"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(org_problem.A, problem.A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(org_problem.b, problem.b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
-        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(org_problem.A, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
-        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        L_np = dolfinx_mpc.utils.gather_PETScVector(org_problem.b, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(u_h.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K

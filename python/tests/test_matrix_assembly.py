@@ -49,7 +49,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
         # Create globally reduced system
         A_org = fem.assemble_matrix(a)
         A_org.assemble()
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_mpc, mpc)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, A_mpc, mpc)
 
 
 # Check if ordering of connected dofs matter
@@ -88,6 +88,6 @@ def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # 
         # Create globally reduced system
         A_org = fem.assemble_matrix(a)
         A_org.assemble()
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A_mpc, mpc)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, A_mpc, mpc)
 
     list_timings(mesh.comm, [TimingType.wall])

@@ -7,8 +7,8 @@
 
 # flake8: noqa
 
-from .test import (get_assemblers, gather_PETScVector, gather_PETScMatrix, compare_MPC_LHS,
-                   compare_MPC_RHS, gather_transformation_matrix, compare_CSR, gather_constants)
+from .test import (get_assemblers, gather_PETScVector, gather_PETScMatrix, compare_mpc_lhs,
+                   compare_mpc_rhs, gather_transformation_matrix, compare_CSR, gather_constants)
 from .utils import (rotation_matrix, facet_normal_approximation,
                     log_info, rigid_motions_nullspace,
                     determine_closest_block, create_normal_approximation,

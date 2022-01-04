@@ -79,8 +79,8 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     comm = mesh.comm
     with Timer("~TEST: Compare"):
 
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
@@ -142,14 +142,13 @@ def test_linearproblem(master_point):
 
     problem = dolfinx_mpc.LinearProblem(a, rhs, mpc, bcs=[],
                                         petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
-    for i in range(2):
-        uh = problem.solve()
+    uh = problem.solve()
 
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, problem._A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, problem._b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem._A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem._b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)

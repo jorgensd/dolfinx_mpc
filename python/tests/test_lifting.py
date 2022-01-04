@@ -44,11 +44,11 @@ def test_lifting(get_assemblers):  # noqa: F811
     with u_bc.vector.localForm() as u_local:
         u_local.set(2.3)
 
-    def DirichletBoundary(x):
+    def dirichletboundary(x):
         return np.isclose(x[0], 1)
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = fem.locate_dofs_geometrical(V, DirichletBoundary)
+    geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
     bc = fem.DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 
@@ -96,8 +96,8 @@ def test_lifting(get_assemblers):  # noqa: F811
     comm = mesh.comm
     with Timer("~TEST: Compare"):
 
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)

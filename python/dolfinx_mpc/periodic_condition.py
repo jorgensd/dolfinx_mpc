@@ -59,7 +59,6 @@ def _create_periodic_condition(V: _fem.FunctionSpace, slave_blocks: np.ndarray,
     num_local_blocks = len(slave_blocks[slave_blocks < size_local])
 
     # Compute coordinates where each slave has to evaluate its masters
-    # FIXME: could be reduced to the set of boundary entities
     tree = _geometry.BoundingBoxTree(V.mesh, tdim, padding=1e-15)
     global_tree = tree.create_global_tree(comm)
     cell_map = V.mesh.topology.index_map(tdim)

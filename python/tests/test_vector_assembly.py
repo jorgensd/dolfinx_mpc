@@ -53,6 +53,6 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
     list_timings(comm, [TimingType.wall])

@@ -15,14 +15,14 @@ from .assemble_vector import assemble_vector, apply_lifting
 from .multipointconstraint import MultiPointConstraint
 
 
-class LinearProblem():
+class LinearProblem(fem.LinearProblem):
     """Class for solving a linear variational problem with multi point constraints of the form
     a(u, v) = L(v) for all v using PETSc as a linear algebra backend.
 
     """
 
-    def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint, bcs: typing.List[fem.DirichletBC] = [],
-                 petsc_options={}, form_compiler_parameters={}, jit_parameters={}):
+    def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint, bcs: typing.List[fem.DirichletBC] = None,
+                 petsc_options: dict = None, form_compiler_parameters: dict = None, jit_parameters: dict = None):
         """Initialize solver for a linear variational problem.
 
         Parameters
@@ -32,6 +32,7 @@ class LinearProblem():
 
         L
             A linear UFL form, the right hand side of the variational problem.
+
         mpc
             The multi point constraint.
 
@@ -63,8 +64,8 @@ class LinearProblem():
         # Store jit and form parameters for matrix and vector assembly
         self._a = a
         self._L = L
-        self._form_compiler_parameters = form_compiler_parameters
-        self._jit_parameters = jit_parameters
+        self._form_compiler_parameters = {} if form_compiler_parameters is None else form_compiler_parameters
+        self._jit_parameters = {} if jit_parameters is None else jit_parameters
 
         if not mpc.finalized:
             raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
@@ -73,8 +74,8 @@ class LinearProblem():
         self.u = fem.Function(self._mpc.function_space)
 
         # NOTE: This is a workaround for only creating sparsity pattern once
-        a_cpp = fem.Form(a, form_compiler_parameters=form_compiler_parameters,
-                         jit_parameters=jit_parameters)._cpp_object
+        a_cpp = fem.Form(a, form_compiler_parameters=self._form_compiler_parameters,
+                         jit_parameters=self._jit_parameters)._cpp_object
 
         # Create MPC matrix
         pattern = self._mpc.create_sparsity_pattern(a_cpp)
@@ -83,7 +84,7 @@ class LinearProblem():
 
         self._b = cpp.la.petsc.create_vector(self._mpc.function_space.dofmap.index_map,
                                              self._mpc.function_space.dofmap.index_map_bs)
-        self.bcs = bcs
+        self.bcs = [] if bcs is None else bcs
 
         self._solver = PETSc.KSP().create(self.u.function_space.mesh.comm)
         self._solver.setOperators(self._A)
@@ -95,8 +96,9 @@ class LinearProblem():
         # Set PETSc options
         opts = PETSc.Options()
         opts.prefixPush(solver_prefix)
-        for k, v in petsc_options.items():
-            opts[k] = v
+        if petsc_options is not None:
+            for k, v in petsc_options.items():
+                opts[k] = v
         opts.prefixPop()
         self._solver.setFromOptions()
 
@@ -126,29 +128,3 @@ class LinearProblem():
         self._mpc.backsubstitution(self.u.vector)
 
         return self.u
-
-    # FIXME: Add these using new interface for assemble_matrix and assemble_vector
-    # @property
-    # def L(self) -> fem.Form:
-    #     """Get the compiled linear form"""
-    #     return self._L
-
-    # @property
-    # def a(self) -> fem.Form:
-    #     """Get the compiled bilinear form"""
-    #     return self._a
-
-    @property
-    def A(self) -> PETSc.Mat:
-        """Get the matrix operator"""
-        return self._A
-
-    @property
-    def b(self) -> PETSc.Vec:
-        """Get the RHS vector"""
-        return self._b
-
-    @property
-    def solver(self) -> PETSc.KSP:
-        """Get the linear solver"""
-        return self._solver

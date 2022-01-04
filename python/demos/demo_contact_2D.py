@@ -16,24 +16,26 @@
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
 import numpy as np
-from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
-                         locate_dofs_geometrical, set_bc)
-
-from dolfinx.io import XDMFFile
-from dolfinx.mesh import MeshTags, locate_entities_boundary
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
-from dolfinx_mpc.utils import (create_normal_approximation, log_info,
-                               rigid_motions_nullspace, rotation_matrix, facet_normal_approximation,
-                               compare_MPC_LHS, compare_MPC_RHS, gather_PETScMatrix, gather_transformation_matrix,
-                               gather_PETScVector)
 import scipy.sparse.linalg
+from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.fem import (Constant, DirichletBC, VectorFunctionSpace,
+                         assemble_matrix, assemble_vector, apply_lifting,
+                         locate_dofs_geometrical, set_bc)
+from dolfinx.io import XDMFFile
+from dolfinx.log import LogLevel, set_log_level
+from dolfinx.mesh import MeshTags, locate_entities_boundary
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
+from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
+                               create_normal_approximation,
+                               facet_normal_approximation, gather_PETScMatrix,
+                               gather_PETScVector,
+                               gather_transformation_matrix, log_info,
+                               rigid_motions_nullspace, rotation_matrix)
 from mpi4py import MPI
 from petsc4py import PETSc
-from ufl import (Identity, TestFunction, TrialFunction,
-                 dx, grad, inner, sym, tr, Measure)
-from dolfinx.log import set_log_level, LogLevel
+from ufl import (Identity, Measure, TestFunction, TrialFunction, dx, grad,
+                 inner, sym, tr)
+
 from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 
 set_log_level(LogLevel.ERROR)
@@ -70,12 +72,11 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     def bottom_corner(x):
         return np.isclose(x, [[0], [0], [0]]).all(axis=0)
+
     # Fix bottom corner
-    u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
+    bc_value = np.array((0,) * mesh.geometry.dim, dtype=PETSc.ScalarType)
     bottom_dofs = locate_dofs_geometrical(V, bottom_corner)
-    bc_bottom = DirichletBC(u_bc, bottom_dofs)
+    bc_bottom = DirichletBC(bc_value, bottom_dofs, V)
     bcs = [bc_bottom]
 
     # Elasticity parameters
@@ -98,6 +99,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
 
+    # Create multi point constraint
     mpc = MultiPointConstraint(V)
 
     with Timer("~Contact: Create contact constraint"):
@@ -106,9 +108,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
-        with XDMFFile(mesh.comm, "results/nh.xdmf", "w") as xdmf:
-            xdmf.write_mesh(mesh)
-            xdmf.write_function(bottom_normal)
         mpc.create_slip_constraint((mt, 5), bottom_normal, bcs=bcs)
 
     with Timer("~Contact: Add tangential constraint at one point"):
@@ -120,56 +119,33 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     mpc.finalize()
 
-    with Timer("~Contact: Assemble LHS and RHS"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
-        b = assemble_vector(rhs, mpc)
-
-    apply_lifting(b, [a], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    set_bc(b, bcs)
+    petsc_options = {"ksp_rtol": 1e-8,
+                     "pc_type": "gamg", "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
+                     "pc_gamg_threshold": 0.02, "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
+                     "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
+                     "mg_levels_esteig_ksp_type": "cg"
+                     #  , "help": None, "ksp_view": None
+                     }
 
     # Solve Linear problem
-    opts = PETSc.Options()
-    opts["ksp_rtol"] = 1.0e-8
-    opts["pc_type"] = "gamg"
-    opts["pc_gamg_type"] = "agg"
-    opts["pc_gamg_coarse_eq_limit"] = 1000
-    opts["pc_gamg_sym_graph"] = True
-    opts["mg_levels_ksp_type"] = "chebyshev"
-    opts["mg_levels_pc_type"] = "jacobi"
-    opts["mg_levels_esteig_ksp_type"] = "cg"
-    opts["matptap_via"] = "scalable"
-    opts["pc_gamg_square_graph"] = 2
-    opts["pc_gamg_threshold"] = 0.02
-    # opts["help"] = None # List all available options
-    # opts["ksp_view"] = None # List progress of solver
+    problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
-    # Create functionspace and build near nullspace
+    # Build near nullspace
     null_space = rigid_motions_nullspace(mpc.function_space)
-    A.setNearNullSpace(null_space)
+    problem.A.setNearNullSpace(null_space)
+    u_h = problem.solve()
 
-    solver = PETSc.KSP().create(mesh.comm)
-    solver.setFromOptions()
-    solver.setOperators(A)
-    uh = b.copy()
-    uh.set(0)
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    mpc.backsubstitution(uh)
-    it = solver.getIterationNumber()
+    it = problem.solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:
         print("Number of iterations: {0:d}".format(it))
 
-    unorm = uh.norm()
+    unorm = u_h.vector.norm()
     if MPI.COMM_WORLD.rank == 0:
         print(f"Norm of u: {unorm}")
 
     # Write solution to file
-    ext = "gmsh" if gmsh else ""
-
-    u_h = Function(mpc.function_space)
-    u_h.vector.setArray(uh.array)
-    u_h.name = "u_mpc_{0:s}_{1:.2f}_{2:s}".format(celltype, theta, ext)
+    ext = "_gmsh" if gmsh else ""
+    u_h.name = "u_mpc_{0:s}_{1:.2f}{2:s}".format(celltype, theta, ext)
 
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
@@ -182,7 +158,6 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     with Timer("~MPC: Reference problem"):
         # Generate reference matrices and unconstrained solution
         A_org = assemble_matrix(a, bcs)
-
         A_org.assemble()
         L_org = assemble_vector(rhs)
         apply_lifting(L_org, [a], [bcs])
@@ -191,13 +166,13 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     root = 0
     with Timer("~MPC: Verification"):
-        compare_MPC_LHS(A_org, A, mpc, root=root)
-        compare_MPC_RHS(L_org, b, mpc, root=root)
+        compare_mpc_lhs(A_org, problem.A, mpc, root=root)
+        compare_mpc_rhs(L_org, problem.b, mpc, root=root)
         # Gather LHS, RHS and solution on one process
         A_csr = gather_PETScMatrix(A_org, root=root)
         K = gather_transformation_matrix(mpc, root=root)
         L_np = gather_PETScVector(L_org, root=root)
-        u_mpc = gather_PETScVector(uh, root=root)
+        u_mpc = gather_PETScVector(u_h.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -229,17 +204,14 @@ if __name__ == "__main__":
                       help="List timings", default=False)
 
     args = parser.parse_args()
-    compare = args.compare
-    timing = args.timing
-    res = args.res
-    gmsh = args.gmsh
-    theta = args.theta
-    quad = args.quad
 
+    # Create results file
     outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_contact_2D.xdmf", "w")
-    demo_stacked_cubes(outfile, theta=theta, gmsh=gmsh,
-                       quad=quad, compare=compare, res=res)
+
+    # Run demo for input parameters
+    demo_stacked_cubes(outfile, theta=args.theta, gmsh=args.gmsh, quad=args.quad,
+                       compare=args.compare, res=args.res)
 
     outfile.close()
-    if timing:
+    if args.timing:
         list_timings(MPI.COMM_WORLD, [TimingType.wall])

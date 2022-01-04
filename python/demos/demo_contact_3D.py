@@ -18,7 +18,7 @@ from dolfinx.io import XDMFFile
 from dolfinx.mesh import CellType
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
-from dolfinx_mpc.utils import (compare_MPC_LHS, compare_MPC_RHS,
+from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
                                create_normal_approximation, gather_PETScMatrix,
                                gather_PETScVector,
                                gather_transformation_matrix, log_info,
@@ -55,40 +55,29 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
             mesh.topology.create_connectivity(fdim, tdim)
             mt = xdmf.read_meshtags(mesh, "facet_tags")
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext}{mesh_ext}"
+
     # Create functionspaces
     V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Define boundary conditions
+
     # Bottom boundary is fixed in all directions
-    u_bc = fem.Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
-
     bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
-
     bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
-    bc_bottom = fem.DirichletBC(u_bc, bottom_dofs)
+    u_bc = np.array((0, ) * mesh.geometry.dim, dtype=PETSc.ScalarType)
+    bc_bottom = fem.DirichletBC(u_bc, bottom_dofs, V)
 
-    g_vec = [0, 0, -4.25e-1]
+    g_vec = np.array([0, 0, -4.25e-1], dtype=PETSc.ScalarType)
     if not noslip:
         # Helper for orienting traction
         r_matrix = rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
         # Top boundary has a given deformation normal to the interface
-        g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
-
-    def top_v(x):
-        values = np.empty((3, x.shape[1]))
-        values[0] = g_vec[0]
-        values[1] = g_vec[1]
-        values[2] = g_vec[2]
-        return values
-    u_top = fem.Function(V)
-    u_top.interpolate(top_v)
+        g_vec = np.dot(r_matrix, g_vec)
 
     top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
     top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
-    bc_top = fem.DirichletBC(u_top, top_dofs)
+    bc_top = fem.DirichletBC(g_vec, top_dofs, V)
 
     bcs = [bc_bottom, bc_top]
 
@@ -117,16 +106,14 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
         with Timer("~~Contact: Create non-elastic constraint"):
             mpc.create_contact_inelastic_condition(mt, 4, 9)
     else:
-        with Timer("~Contact: Create facet normal approximation"):
-            nh = create_normal_approximation(V, mt, 4)
-        with XDMFFile(MPI.COMM_WORLD, "results/nh.xdmf", "w") as xdmf:
-            xdmf.write_mesh(mesh)
-            xdmf.write_function(nh)
         with Timer("~Contact: Create contact constraint"):
+            nh = create_normal_approximation(V, mt, 4)
             mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
     with Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()
+
+    # Create null-space
     null_space = rigid_motions_nullspace(mpc.function_space)
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
     with Timer(f"~~Contact: Assemble matrix ({num_dofs})"):
@@ -153,22 +140,22 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
     # opts["pc_gamg_threshold"] = 1e-2
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
-    # Create functionspace and build near nullspace
 
+    # Create functionspace and build near nullspace
     A.setNearNullSpace(null_space)
     solver = PETSc.KSP().create(mesh.comm)
     solver.setOperators(A)
     solver.setFromOptions()
-    uh = b.copy()
-    uh.set(0)
+
+    u_h = fem.Function(mpc.function_space)
     with Timer("~~Contact: Solve"):
-        solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        solver.solve(b, u_h.vector)
+        u_h.x.scatter_forward()
     with Timer("~~Contact: Backsubstitution"):
-        mpc.backsubstitution(uh)
+        mpc.backsubstitution(u_h.vector)
 
     it = solver.getIterationNumber()
-    unorm = uh.norm()
+    unorm = u_h.vector.norm()
     num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves, op=MPI.SUM)
     if mesh.comm.rank == 0:
         num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
@@ -178,8 +165,6 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
         print(f"Norm of u {unorm:.5e}")
 
     # Write solution to file
-    u_h = fem.Function(mpc.function_space)
-    u_h.vector.setArray(uh.array)
     u_h.name = f"u_{celltype}_{theta:.2f}{mesh_ext}{type_ext}".format(celltype, theta, type_ext, mesh_ext)
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
@@ -199,14 +184,14 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
 
     root = 0
     with Timer("~~Contact: Compare LHS, RHS and solution"):
-        compare_MPC_LHS(A_org, A, mpc, root=root)
-        compare_MPC_RHS(L_org, b, mpc, root=root)
+        compare_mpc_lhs(A_org, A, mpc, root=root)
+        compare_mpc_rhs(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
         A_csr = gather_PETScMatrix(A_org, root=root)
         K = gather_transformation_matrix(mpc, root=root)
         L_np = gather_PETScVector(L_org, root=root)
-        u_mpc = gather_PETScVector(uh, root=root)
+        u_mpc = gather_PETScVector(u_h.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -242,22 +227,16 @@ if __name__ == "__main__":
                       help="List timings", default=False)
 
     args = parser.parse_args()
-    compare = args.compare
-    timing = args.timing
-    res = args.res
-    noslip = args.noslip
-    gmsh = args.gmsh
-    theta = args.theta
-    hex = args.hex
 
     outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_contact_3D.xdmf", "w")
 
-    ct = CellType.hexahedron if hex else CellType.tetrahedron
+    ct = CellType.hexahedron if args.hex else CellType.tetrahedron
 
-    demo_stacked_cubes(outfile, theta=theta, gmsh=gmsh, ct=ct, compare=compare, res=res, noslip=noslip)
+    demo_stacked_cubes(outfile, theta=args.theta, gmsh=args.gmsh, ct=ct,
+                       compare=args.compare, res=args.res, noslip=args.noslip)
 
     outfile.close()
 
     log_info("Simulation finished")
-    if timing:
+    if args.timing:
         list_timings(MPI.COMM_WORLD, [TimingType.wall])

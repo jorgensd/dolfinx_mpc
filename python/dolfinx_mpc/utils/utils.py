@@ -37,9 +37,9 @@ def rotation_matrix(axis, angle):
     axis_x = np.array([[0, -n_axis[2], n_axis[1]],
                        [n_axis[2], 0, -n_axis[0]],
                        [-n_axis[1], n_axis[0], 0]])
-    id = np.cos(angle) * np.eye(3)
+    identity = np.cos(angle) * np.eye(3)
     outer = (1 - np.cos(angle)) * np.outer(n_axis, n_axis)
-    return np.sin(angle) * axis_x + id + outer
+    return np.sin(angle) * axis_x + identity + outer
 
 
 def facet_normal_approximation(V, mt, mt_id, tangent=False):
@@ -147,7 +147,7 @@ def rigid_motions_nullspace(V: _fem.FunctionSpace):
     dim = 3 if gdim == 2 else 6
 
     # Create list of vectors for null space
-    nullspace_basis = [_x.vector.copy() for i in range(dim)]
+    nullspace_basis = [_x.vector.copy() for _ in range(dim)]
 
     with ExitStack() as stack:
         vec_local = [stack.enter_context(x.localForm()) for x in nullspace_basis]

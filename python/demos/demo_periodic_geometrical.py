@@ -30,10 +30,7 @@ from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 
 # Get PETSc int and scalar types
-if np.dtype(PETSc.ScalarType).kind == 'c':
-    complex = True
-else:
-    complex = False
+complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 
 # Create mesh and finite element
 N = 50
@@ -41,18 +38,15 @@ mesh = create_unit_square(MPI.COMM_WORLD, N, N)
 V = fem.FunctionSpace(mesh, ("CG", 1))
 
 # Create Dirichlet boundary condition
-u_bc = fem.Function(V)
-with u_bc.vector.localForm() as u_local:
-    u_local.set(0.0)
 
 
-def DirichletBoundary(x):
+def dirichletboundary(x):
     return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
 
 
-facets = locate_entities_boundary(mesh, 1, DirichletBoundary)
+facets = locate_entities_boundary(mesh, 1, dirichletboundary)
 topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-bc = fem.DirichletBC(u_bc, topological_dofs)
+bc = fem.DirichletBC(PETSc.ScalarType(0), topological_dofs, V)
 bcs = [bc]
 
 
@@ -92,20 +86,26 @@ with Timer("~PERIODIC: Initialize varitional problem"):
 
 solver = problem.solver
 
-if complex:
-    solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
+# Give PETSc solver options a unique prefix
+solver_prefix = "dolfinx_mpc_solve_{}".format(id(solver))
+solver.setOptionsPrefix(solver_prefix)
+
+
+if complex_mode:
+    petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:
-    opts = PETSc.Options()
-    prefix = solver.getOptionsPrefix()
-    opts[f"{prefix}ksp_type"] = "cg"
-    opts[f"{prefix}ksp_rtol"] = 1.0e-6
-    opts[f"{prefix}pc_type"] = "hypre"
-    opts[f'{prefix}pc_hypre_type'] = 'boomeramg'
-    opts[f"{prefix}pc_hypre_boomeramg_max_iter"] = 1
-    opts[f"{prefix}pc_hypre_boomeramg_cycle_type"] = "v"
-    # opts["pc_hypre_boomeramg_print_statistics"] = 1
-    solver.setFromOptions()
+    petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_typ": "boomeramg",
+                     "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
+                     "pc_hypre_boomeramg_print_statistics": 1}
+
+# Set PETSc options
+opts = PETSc.Options()
+opts.prefixPush(solver_prefix)
+if petsc_options is not None:
+    for k, v in petsc_options.items():
+        opts[k] = v
+opts.prefixPop()
+solver.setFromOptions()
 
 
 with Timer("~PERIODIC: Assemble and solve MPC problem"):
@@ -116,7 +116,7 @@ with Timer("~PERIODIC: Assemble and solve MPC problem"):
 
 # Write solution to file
 uh.name = "u_mpc"
-outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_periodic.xdmf", "w")
+outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_periodic_geometrical.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(uh)
 
@@ -143,8 +143,8 @@ outfile.write_function(u_)
 root = 0
 comm = mesh.comm
 with Timer("~Demo: Verification"):
-    dolfinx_mpc.utils.compare_MPC_LHS(A_org, problem._A, mpc, root=root)
-    dolfinx_mpc.utils.compare_MPC_RHS(L_org, problem._b, mpc, root=root)
+    dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem._A, mpc, root=root)
+    dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem._b, mpc, root=root)
 
     # Gather LHS, RHS and solution on one process
     A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)

@@ -29,10 +29,7 @@ def initialize_petsc():
     petsc_arch = petsc4py.lib.getPathArchPETSc()[1]
 
     # Get PETSc int and scalar types
-    if np.dtype(PETSc.ScalarType).kind == 'c':
-        complex = True
-    else:
-        complex = False
+    cmplx = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 
     scalar_size = np.dtype(PETSc.ScalarType).itemsize
     index_size = np.dtype(PETSc.IntType).itemsize
@@ -48,16 +45,16 @@ def initialize_petsc():
             "Cannot translate PETSc index size into a C type, index_size: {}."
             .format(index_size))
 
-    if complex and scalar_size == 16:
+    if cmplx and scalar_size == 16:
         c_scalar_t = "double _Complex"
         numba_scalar_t = numba.types.complex128
-    elif complex and scalar_size == 8:
+    elif cmplx and scalar_size == 8:
         c_scalar_t = "float _Complex"
         numba_scalar_t = numba.types.complex64
-    elif not complex and scalar_size == 8:
+    elif not cmplx and scalar_size == 8:
         c_scalar_t = "double"
         numba_scalar_t = numba.types.float64
-    elif not complex and scalar_size == 4:
+    elif not cmplx and scalar_size == 4:
         c_scalar_t = "float"
         numba_scalar_t = numba.types.float32
     else:

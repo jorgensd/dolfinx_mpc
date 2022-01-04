@@ -208,24 +208,23 @@ with u_bc.vector.localForm() as u_local:
     u_local.set(0.0)
 
 
-def DirichletBoundary(x):
+def dirichletboundary(x):
     return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
 
 
-facets = locate_entities_boundary(mesh, 1, DirichletBoundary)
-topological_dofs = fem.locate_dofs_topological(V, 1, facets)
+fdim = mesh.topology.dim - 1
+facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
+topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
 bc = fem.DirichletBC(u_bc, topological_dofs)
 bcs = [bc]
 
 
-def PeriodicBoundary(x):
+def periodicboundary(x):
     return np.isclose(x[0], 1)
 
 
-facets = locate_entities_boundary(
-    mesh, mesh.topology.dim - 1, PeriodicBoundary)
-mt = MeshTags(mesh, mesh.topology.dim - 1,
-              facets, np.full(len(facets), 2, dtype=np.int32))
+facets = locate_entities_boundary(mesh, fdim, periodicboundary)
+mt = MeshTags(mesh, fdim, facets, np.full(len(facets), 2, dtype=np.int32))
 
 
 def periodic_relation(x):

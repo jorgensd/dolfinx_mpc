@@ -10,7 +10,7 @@
 
 try:
     import numba
-except:
+except ModuleNotFoundError:
     raise ModuleNotFoundError("Numba is required to use numba assembler")
 
 from .assemble_matrix import assemble_matrix
