@@ -25,7 +25,7 @@ ffi, _ = initialize_petsc()
 
 
 def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: _PETSc.Vec = None,
-                    form_compiler_parameters={}, jit_parameters={}) -> _PETSc.Vec:
+                    form_compiler_parameters: dict = None, jit_parameters: dict = None) -> _PETSc.Vec:
     """
     Assemble a linear form into vector b.
 
@@ -79,6 +79,8 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint, b: _P
 
     # If using DOLFINx complex build, scalar type in form_compiler parameters must be updated
     is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)
+    form_compiler_parameters = {} if form_compiler_parameters is None else form_compiler_parameters
+    jit_parameters = {} if jit_parameters is None else jit_parameters
     if is_complex:
         form_compiler_parameters["scalar_type"] = "double _Complex"
 
@@ -189,7 +191,7 @@ def assemble_cells(b: 'numpy.ndarray[_PETSc.ScalarType]',
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
                ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
                ffi_fb(facet_perm))
-        # FIXME: Here we need to add the apply_dof_transformation function
+        # NOTE: Here we need to add the apply_dof_transformation function
 
         # Modify global vector and local cell contributions
         b_local_copy = b_local.copy()
@@ -246,7 +248,7 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[_PETSc.ScalarType]',
             facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm))
-        # FIXME: Here we need to add the apply_dof_transformation
+        # NOTE: Here we need to add the apply_dof_transformation
 
         # Modify local contributions and add global MPC contributions
         b_local_copy = b_local.copy()

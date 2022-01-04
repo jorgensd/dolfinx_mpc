@@ -9,12 +9,10 @@
 
 import gmsh
 import numpy as np
-from dolfinx.common import Timer
 from dolfinx.fem import (Constant, DirichletBC, Function, FunctionSpace,
-                         VectorFunctionSpace, locate_dofs_topological, set_bc)
+                         VectorFunctionSpace, locate_dofs_topological)
 from dolfinx.io import XDMFFile
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
+from dolfinx_mpc import (MultiPointConstraint, LinearProblem)
 from dolfinx_mpc.utils import (create_point_to_point_constraint,
                                determine_closest_block, gmsh_model_to_mesh,
                                rigid_motions_nullspace)
@@ -149,19 +147,16 @@ rhs += inner(Constant(mesh, PETSc.ScalarType((0.01, 0.02, 0))), v) * dx(outer_ta
 rhs += inner(as_vector(PETSc.ScalarType((0, 0, -9.81e-2))), v) * dx(inner_tag)
 
 
+# Create DirichletBC
 owning_processor, bc_dofs = determine_closest_block(V, -np.array([-r2, 0, 0]))
-u_fixed = Function(V)
-u_fixed.vector.set(0)
-u_fixed.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+bc_dofs = [] if bc_dofs is None else bc_dofs
 
-if bc_dofs is None:
-    bc_dofs = []
-
-bc_fixed = DirichletBC(u_fixed, bc_dofs)
+u_fixed = np.array([0, 0, 0], dtype=PETSc.ScalarType)
+bc_fixed = DirichletBC(u_fixed, np.asarray(bc_dofs, dtype=np.int32), V)
 bcs = [bc_fixed]
+
+# Create point to point constraints
 mpc = MultiPointConstraint(V)
-
-
 signs = [-1, 1]
 axis = [0, 1]
 for i in axis:
@@ -170,66 +165,35 @@ for i in axis:
         r1_point = np.zeros(3)
         r0_point[i] = s * r0
         r1_point[i] = s * r1
-
-        with Timer("~DEMO: Create node-node constraint"):
-            sl, ms, co, ow, off = create_point_to_point_constraint(V, r1_point, r0_point)
-        with Timer("~DEMO: Add data and finialize MPC"):
-            mpc.add_constraint(V, sl, ms, co, ow, off)
-
+        sl, ms, co, ow, off = create_point_to_point_constraint(V, r1_point, r0_point)
+        mpc.add_constraint(V, sl, ms, co, ow, off)
 mpc.finalize()
+
+# Create nullspace
 null_space = rigid_motions_nullspace(mpc.function_space)
-num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
-with Timer("~DEMO: Assemble matrix ({0:d})".format(num_dofs)):
-    A = assemble_matrix(a, mpc, bcs=bcs)
-with Timer("~DEMO: Assemble vector ({0:d})".format(num_dofs)):
-    b = assemble_vector(rhs, mpc)
 
-apply_lifting(b, [a], [bcs], mpc)
-b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-set_bc(b, bcs)
+petsc_options = {"ksp_rtol": 1.0e-8, "pc_type": "gamg", "pc_gamg_type": "agg",
+                 "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
+                 "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
+                 "mg_levels_esteig_ksp_type": "cg", "matptap_via": "scalable",
+                 "pc_gamg_square_graph": 2, "pc_gamg_threshold": 0.02
+                 # ,"help": None, "ksp_view": None
+                 }
+problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
-# Solve Linear problem
-opts = PETSc.Options()
-opts["ksp_rtol"] = 1.0e-8
-opts["pc_type"] = "gamg"
-opts["pc_gamg_type"] = "agg"
-opts["pc_gamg_coarse_eq_limit"] = 1000
-opts["pc_gamg_sym_graph"] = True
-opts["mg_levels_ksp_type"] = "chebyshev"
-opts["mg_levels_pc_type"] = "jacobi"
-opts["mg_levels_esteig_ksp_type"] = "cg"
-opts["matptap_via"] = "scalable"
-opts["pc_gamg_square_graph"] = 2
-opts["pc_gamg_threshold"] = 0.02
-# opts["help"] = None # List all available options
-# opts["ksp_view"] = None # List progress of solver
-# Create functionspace and build near nullspace
+# Build near nullspace
+null_space = rigid_motions_nullspace(mpc.function_space)
+problem.A.setNearNullSpace(null_space)
+u_h = problem.solve()
 
-A.setNearNullSpace(null_space)
-solver = PETSc.KSP().create(MPI.COMM_WORLD)
-solver.setOperators(A)
-solver.setFromOptions()
-uh = b.copy()
-uh.set(0)
-with Timer("~Contact: Solve old"):
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    mpc.backsubstitution(uh)
+it = problem.solver.getIterationNumber()
 
-it = solver.getIterationNumber()
-
-unorm = uh.norm()
+unorm = u_h.vector.norm()
 if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 
 # Write solution to file
-u_h = Function(mpc.function_space)
-u_h.vector.setArray(uh.array)
-u_h.x.scatter_forward()
 u_h.name = "u"
 with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
-
-    # xdmf.write_meshtags(ct)
-    # xdmf.write_meshtags(ft)
     xdmf.write_function(u_h)

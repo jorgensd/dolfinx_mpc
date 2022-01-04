@@ -6,8 +6,7 @@ import scipy.sparse.linalg
 
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
+from dolfinx_mpc import (MultiPointConstraint, LinearProblem)
 
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -151,7 +150,7 @@ def T(u, p, mu):
 # --------------------------Variational problem---------------------------
 # Traditional terms
 mu = 1
-f = fem.Constant(mesh, PETSc.ScalarType(((0, 0))))
+f = fem.Constant(mesh, PETSc.ScalarType((0, 0)))
 (u, p) = TrialFunctions(W)
 (v, q) = TestFunctions(W)
 a = (2 * mu * inner(sym_grad(u), sym_grad(v))
@@ -169,33 +168,12 @@ ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 a -= inner(outer(n, n) * dot(T(u, p, mu), n), v) * ds
 L += inner(g_tau, v) * ds
 
-# Assemble LHS matrix and RHS vector
-with Timer("~Stokes: Assemble LHS and RHS"):
-    A = assemble_matrix(a, mpc, bcs)
-    A.assemble()
-    b = assemble_vector(L, mpc)
-
-# Set Dirichlet boundary condition values in the RHS
-apply_lifting(b, [a], [bcs], mpc)
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-fem.assemble.set_bc(b, bcs)
-
-# ---------------------- Solve variational problem -----------------------
-ksp = PETSc.KSP().create(mesh.comm)
-ksp.setOperators(A)
-ksp.setType("preonly")
-ksp.getPC().setType("lu")
-ksp.getPC().setFactorSolverType("mumps")
-uh = b.copy()
-ksp.solve(b, uh)
-uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-
-# Backsubstitute to update slave dofs in solution vector
-mpc.backsubstitution(uh)
+# Solve linear problem
+petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_solver_type": "mumps"}
+problem = LinearProblem(a, L, mpc, bcs=bcs, petsc_options=petsc_options)
+U = problem.solve()
 
 # ------------------------------ Output ----------------------------------
-U = fem.Function(mpc.function_space)
-U.vector.setArray(uh.array)
 u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 u.name = "u"
@@ -221,14 +199,14 @@ with Timer("~Stokes: Verification of problem by global matrix reduction"):
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
     root = 0
-    dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-    dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+    dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem.A, mpc, root=root)
+    dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem.b, mpc, root=root)
 
     # Gather LHS, RHS and solution on one process
     A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
     K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+    u_mpc = dolfinx_mpc.utils.gather_PETScVector(U.vector, root=root)
 
     if MPI.COMM_WORLD.rank == root:
         KTAK = K.T * A_csr * K

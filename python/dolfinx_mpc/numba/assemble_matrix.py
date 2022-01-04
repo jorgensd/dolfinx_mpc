@@ -27,8 +27,8 @@ ffi, set_values_local = initialize_petsc()
 
 
 def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
-                    bcs: List[_fem.DirichletBC] = [], diagval=1, A: _PETSc.Mat = None,
-                    form_compiler_parameters={}, jit_parameters={}):
+                    bcs: List[_fem.DirichletBC] = None, diagval=1, A: _PETSc.Mat = None,
+                    form_compiler_parameters: dict = None, jit_parameters: dict = None):
     """
     Assembles a ufl form given a multi point constraint and possible
     Dirichlet boundary conditions.
@@ -76,6 +76,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     # Create 1D bc indicator for matrix assembly
     num_dofs_local = (dofmap.index_map.size_local + dofmap.index_map.num_ghosts) * dofmap.index_map_bs
     is_bc = numpy.zeros(num_dofs_local, dtype=bool)
+    bcs = [] if bcs is None else bcs
     if len(bcs) > 0:
         for bc in cpp_dirichletbc(bcs):
             is_bc[bc.dof_indices()[0]] = True
@@ -87,6 +88,9 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
 
     # If using DOLFINx complex build, scalar type in form_compiler parameters must be updated
     is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)
+
+    form_compiler_parameters = {} if form_compiler_parameters is None else form_compiler_parameters
+    jit_parameters = {} if jit_parameters is None else jit_parameters
     if is_complex:
         form_compiler_parameters["scalar_type"] = "double _Complex"
 
@@ -134,7 +138,7 @@ def assemble_matrix(form: ufl.form.Form, constraint: MultiPointConstraint,
     if needs_transformation_data:
         V.mesh.topology.create_entity_permutations()
         cell_perms = V.mesh.topology.get_cell_permutation_info()
-    # FIXME: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
+    # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
     # to support more exotic elements
     if e0.needs_dof_transformations or e1.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
@@ -257,7 +261,7 @@ def assemble_slave_cells(A: int,
         kernel(ffi_fb(A_local), ffi_fb(coeffs[cell, :]), ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm))
 
-        # FIXME: Here we need to apply dof transformations
+        # NOTE: Here we need to apply dof transformations
 
         # Local dof position
         local_blocks = dofmap[num_dofs_per_element
@@ -443,7 +447,7 @@ def assemble_exterior_slave_facets(A: int, kernel: ffi.CData,
             facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         kernel(ffi.from_buffer(A_local), ffi.from_buffer(coeffs[cell_index, :]), ffi.from_buffer(consts),
                ffi.from_buffer(geometry), ffi.from_buffer(facet_index), ffi.from_buffer(facet_perm))
-        # FIXME: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
+        # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
 
         # Extract local blocks of dofs
         block_pos = num_dofs_per_element * cell_index

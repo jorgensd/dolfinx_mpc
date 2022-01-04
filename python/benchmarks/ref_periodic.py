@@ -62,14 +62,14 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: h5py.File = None,
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
-    def DirichletBoundary(x):
+    def dirichletboundary(x):
         return np.logical_or(np.logical_or(np.isclose(x[1], 0),
                                            np.isclose(x[1], 1)),
                              np.logical_or(np.isclose(x[2], 0),
                                            np.isclose(x[2], 1)))
 
     mesh.topology.create_connectivity(2, 1)
-    geometrical_dofs = locate_dofs_geometrical(V, DirichletBoundary)
+    geometrical_dofs = locate_dofs_geometrical(V, dirichletboundary)
     bc = DirichletBC(u_bc, geometrical_dofs)
     bcs = [bc]
 

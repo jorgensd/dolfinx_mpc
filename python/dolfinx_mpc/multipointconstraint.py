@@ -70,8 +70,7 @@ class MultiPointConstraint():
 
         """
         assert(V == self.V)
-        if self.finalized:
-            raise RuntimeError("MultiPointConstraint has already been finalized")
+        self._already_finalized()
 
         if len(slaves_) > 0:
             self._offsets = numpy.append(self._offsets, offsets_[1:] + len(self._masters))
@@ -84,8 +83,7 @@ class MultiPointConstraint():
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
         """
-        if self.finalized:
-            raise RuntimeError("MultiPointConstraint has already been finalized")
+        self._already_finalized()
         self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs, mpc_data.owners, mpc_data.offsets)
 
     def finalize(self) -> None:
@@ -94,8 +92,7 @@ class MultiPointConstraint():
         to the constraint. This function creates a map from the cells (local to index) to the slave degrees of
         freedom and builds a new index map and function space where unghosted master dofs are added as ghosts.
         """
-        if self.finalized:
-            raise RuntimeError("MultiPointConstraint has already been finalized")
+        self._already_finalized()
 
         # Initialize C++ object and create slave->cell maps
         self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
@@ -287,8 +284,7 @@ class MultiPointConstraint():
         """
         Returns a vector of integers where the ith entry indicates if a degree of freedom (local to process) is a slave.
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
+        self._not_finalized()
         return self._cpp_object.is_slave
 
     @property
@@ -296,8 +292,7 @@ class MultiPointConstraint():
         """
         Returns the degrees of freedom for all slaves local to process
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
+        self._not_finalized()
         return self._cpp_object.slaves
 
     @property
@@ -311,8 +306,7 @@ class MultiPointConstraint():
         masters = mpc.masters
         masters_of_dof_i = masters.links(i)
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
+        self._not_finalized()
         return self._cpp_object.masters
 
     def coefficients(self):
@@ -325,8 +319,7 @@ class MultiPointConstraint():
         coeffs, offsets = mpc.coefficients()
         coeffs_of_slave_i = coeffs[offsets[i]:offsets[i+1]]
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
+        self._not_finalized()
         return self._cpp_object.coefficients()
 
     @property
@@ -334,10 +327,8 @@ class MultiPointConstraint():
         """
         Return the number of slaves owned by the current process.
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
-        if self.finalized:
-            return self._cpp_object.num_local_slaves
+        self._not_finalized()
+        return self._cpp_object.num_local_slaves
 
     @property
     def cell_to_slaves(self):
@@ -351,8 +342,7 @@ class MultiPointConstraint():
         cell_to_slaves = mpc.cell_to_slaves()
         slaves_in_cell_i = cell_to_slaves.links(i)
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
+        self._not_finalized()
         return self._cpp_object.cell_to_slaves
 
     def create_sparsity_pattern(self, cpp_form: Union[Form_C, Form_R]):
@@ -364,8 +354,7 @@ class MultiPointConstraint():
         cpp_form
             The form
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
+        self._not_finalized()
         return dolfinx_mpc.cpp.mpc.create_sparsity_pattern(cpp_form, self._cpp_object)
 
     @property
@@ -373,10 +362,8 @@ class MultiPointConstraint():
         """
         Return the function space for the multi-point constraint with the updated index map
         """
-        if not self.finalized:
-            raise RuntimeError("MultiPointConstraint has not been finalized")
-        else:
-            return self.V
+        self._not_finalized()
+        return self.V
 
     def backsubstitution(self, vector: _PETSc.Vec) -> None:
         """
@@ -393,3 +380,17 @@ class MultiPointConstraint():
         with vector.localForm() as vector_local:
             self._cpp_object.backsubstitution(vector_local.array_w)
         vector.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
+
+    def _already_finalized(self):
+        """
+        Check if we have already finalized the multi point constraint
+        """
+        if self.finalized:
+            raise RuntimeError("MultiPointConstraint has already been finalized")
+
+    def _not_finalized(self):
+        """
+        Check if we have finalized the multi point constraint
+        """
+        if not self.finalized:
+            raise RuntimeError("MultiPointConstraint has not been finalized")

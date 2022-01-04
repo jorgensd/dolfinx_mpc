@@ -13,8 +13,7 @@ import scipy.sparse.linalg
 from dolfinx.common import Timer
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
+from dolfinx_mpc import (MultiPointConstraint, LinearProblem)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
@@ -27,15 +26,12 @@ def demo_elasticity():
     V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
-    u_bc = fem.Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
     facets = locate_entities_boundary(mesh, 1, boundaries)
     topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-    bc = fem.DirichletBC(u_bc, topological_dofs)
+    bc = fem.DirichletBC(np.array([0, 0], dtype=PETSc.ScalarType), topological_dofs, V)
     bcs = [bc]
 
     # Define variational problem
@@ -61,40 +57,21 @@ def demo_elasticity():
     rhs = inner(as_vector((0, (x[0] - 0.5) * 10**4 * x[1])), v) * dx
 
     # Create MPC
-    with Timer("~Elasticity: Initialize MPC"):
-        def l2b(li):
-            return np.array(li, dtype=np.float64).tobytes()
-        s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.9}}
-        mpc = MultiPointConstraint(V)
-        mpc.create_general_constraint(s_m_c, 1, 1)
-        mpc.finalize()
-
-    # Setup MPC system
-    with Timer("~Elasticity: Assemble LHS and RHS"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
-        b = assemble_vector(rhs, mpc)
-        apply_lifting(b, [a], [bcs], mpc)
-        b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        fem.set_bc(b, bcs)
+    def l2b(li):
+        return np.array(li, dtype=np.float64).tobytes()
+    s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.9}}
+    mpc = MultiPointConstraint(V)
+    mpc.create_general_constraint(s_m_c, 1, 1)
+    mpc.finalize()
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
-    solver.setOperators(A)
-    uh = b.copy()
-    uh.set(0)
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    mpc.backsubstitution(uh)
-
-    # Write solution to file
-    u_h = fem.Function(mpc.function_space)
-    u_h.vector.setArray(uh.array)
+    petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
+    problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
+    u_h = problem.solve()
     u_h.name = "u_mpc"
-    outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity.xdmf", "w")
-    outfile.write_mesh(mesh)
-    outfile.write_function(u_h)
+    with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity.xdmf", "w") as outfile:
+        outfile.write_mesh(mesh)
+        outfile.write_function(u_h)
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
@@ -112,19 +89,21 @@ def demo_elasticity():
     solver.solve(L_org, u_.vector)
     u_.x.scatter_forward()
     u_.name = "u_unconstrained"
-    outfile.write_function(u_)
-    outfile.close()
+
+    with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity.xdmf", "a") as outfile:
+        outfile.write_function(u_)
+        outfile.close()
 
     root = 0
     with Timer("~Demo: Verification"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem.A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem.b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(u_h.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -144,7 +123,7 @@ def demo_elasticity():
         bs = mpc.function_space.dofmap.index_map_bs
         slave = mpc.slaves[0]
         print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}"
-              .format(uh.array[slave], u_.vector.array[slave]))
+              .format(u_h.x.array[slave], u_.vector.array[slave]))
         master_owner = mpc._cpp_object.owners.links(slave)[0]
         _masters = mpc.masters
         master = _masters.links(slave)[0]
@@ -157,7 +136,7 @@ def demo_elasticity():
             MPI.COMM_WORLD.send(master_data, dest=master_owner, tag=1)
         else:
             print("Master*Coeff: {0:.5e}".format(coeffs[offs[slave]:offs[slave + 1]][0]
-                                                 * uh.array[_masters.links(slave)[0]]))
+                                                 * u_h.x.array[_masters.links(slave)[0]]))
     # As a processor with a master is not aware that it has a master,
     # Determine this so that it can receive the global dof and coefficient
     master_recv = MPI.COMM_WORLD.allgather(master_owner)
@@ -171,9 +150,8 @@ def demo_elasticity():
         l2g = mpc.function_space.dofmap.index_map.global_indices()
         l_index = np.flatnonzero(l2g == in_data[0] // bs)[0]
         print("Master*Coeff (on other proc): {0:.5e}"
-              .format(uh.array[l_index * bs + in_data[0] % bs] * in_data[1]))
+              .format(u_h.x.array[l_index * bs + in_data[0] % bs] * in_data[1]))
 
 
 if __name__ == "__main__":
     demo_elasticity()
-    # list_timings(MPI.COMM_WORLD, [TimingType.wall])

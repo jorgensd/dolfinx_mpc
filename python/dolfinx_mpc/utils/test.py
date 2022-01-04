@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-__all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_MPC_LHS", "compare_MPC_RHS",
+__all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_mpc_lhs", "compare_mpc_rhs",
            "gather_transformation_matrix", "compare_CSR"]
 
 import pytest
@@ -202,7 +202,7 @@ def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-
     assert(diff.max() < atol)
 
 
-def compare_MPC_LHS(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
+def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
                     mpc: dolfinx_mpc.MultiPointConstraint, root: int = 0):
     """
     Compare an unmodified matrix for the problem with the one assembled with a
@@ -236,7 +236,7 @@ def compare_MPC_LHS(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
     timer.stop()
 
 
-def compare_MPC_RHS(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.MultiPointConstraint, root: int = 0):
+def compare_mpc_rhs(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.MultiPointConstraint, root: int = 0):
     """
     Compare an unconstrained RHS with an MPC rhs.
     """

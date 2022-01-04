@@ -94,8 +94,8 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)

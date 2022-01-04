@@ -50,10 +50,6 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
     g = fem.Constant(mesh, PETSc.ScalarType((0, -9.81e2)))
 
-    # Define variational problem
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e4)
     nu = 0.0
@@ -124,8 +120,8 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
@@ -205,7 +201,7 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_MPC_LHS(A_org, A, mpc, root=root)
-        dolfinx_mpc.utils.compare_MPC_RHS(L_org, b, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
+        dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
     list_timings(comm, [TimingType.wall])
