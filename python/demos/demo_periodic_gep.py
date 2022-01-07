@@ -215,7 +215,7 @@ def dirichletboundary(x):
 fdim = mesh.topology.dim - 1
 facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
 topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
-bc = fem.DirichletBC(u_bc, topological_dofs)
+bc = fem.dirichletbc(u_bc, topological_dofs)
 bcs = [bc]
 
 
@@ -243,7 +243,8 @@ u = TrialFunction(V)
 v = TestFunction(V)
 a = inner(grad(u), grad(v)) * dx
 b = inner(u, v) * dx
-
+mass_form = fem.form(a)
+stiffness_form = fem.form(b)
 # Diagonal values for slave and Dirichlet DoF
 # The generalized eigenvalue problem will have spurious eigenvalues at
 # lambda_spurious = diagval_A/diagval_B. Here we choose lambda_spurious=1e4,
@@ -251,8 +252,8 @@ b = inner(u, v) * dx
 diagval_A = 1e2
 diagval_B = 1e-2
 
-A = assemble_matrix(a, mpc, bcs=bcs, diagval=diagval_A)
-B = assemble_matrix(b, mpc, bcs=bcs, diagval=diagval_B)
+A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
+B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
 
 Nev = 10  # number of requested eigenvalues
 EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,

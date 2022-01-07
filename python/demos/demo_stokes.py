@@ -119,7 +119,7 @@ inlet_velocity.interpolate(inlet_velocity_expression)
 inlet_velocity.x.scatter_forward()
 W0 = W.sub(0)
 dofs = fem.locate_dofs_topological((W0, V), 1, inlet_facets)
-bc1 = fem.DirichletBC(inlet_velocity, dofs, W0)
+bc1 = fem.dirichletbc(inlet_velocity, dofs, W0)
 
 # Collect Dirichlet boundary conditions
 bcs = [bc1]
@@ -191,11 +191,13 @@ with Timer("~Stokes: Verification of problem by global matrix reduction"):
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     # Generate reference matrices and unconstrained solution
-    A_org = fem.assemble_matrix(a, bcs)
+    bilinear_form = fem.form(a)
+    A_org = fem.assemble_matrix(bilinear_form, bcs)
     A_org.assemble()
-    L_org = fem.assemble_vector(L)
+    linear_form = fem.form(L)
+    L_org = fem.assemble_vector(linear_form)
 
-    fem.apply_lifting(L_org, [a], [bcs])
+    fem.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
     root = 0

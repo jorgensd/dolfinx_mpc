@@ -39,6 +39,9 @@ def test_lifting(get_assemblers):  # noqa: F811
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     rhs = ufl.inner(f, v) * ufl.dx
 
+    bilinear_form = fem.form(a)
+    linear_form = fem.form(rhs)
+
     # Create Dirichlet boundary condition
     u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
@@ -49,14 +52,14 @@ def test_lifting(get_assemblers):  # noqa: F811
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
-    bc = fem.DirichletBC(u_bc, geometrical_dofs)
+    bc = fem.dirichletbc(u_bc, geometrical_dofs)
     bcs = [bc]
 
     # Generate reference matrices
-    A_org = fem.assemble_matrix(a, bcs=bcs)
+    A_org = fem.assemble_matrix(bilinear_form, bcs=bcs)
     A_org.assemble()
-    L_org = fem.assemble_vector(rhs)
-    fem.apply_lifting(L_org, [a], [bcs])
+    L_org = fem.assemble_vector(linear_form)
+    fem.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
 
@@ -70,9 +73,9 @@ def test_lifting(get_assemblers):  # noqa: F811
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
 
-    A = assemble_matrix(a, mpc, bcs=bcs)
-    b = assemble_vector(rhs, mpc)
-    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+    A = assemble_matrix(bilinear_form, mpc, bcs=bcs)
+    b = assemble_vector(linear_form, mpc)
+    dolfinx_mpc.apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     fem.set_bc(b, bcs)

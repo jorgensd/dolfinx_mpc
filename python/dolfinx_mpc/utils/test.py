@@ -120,7 +120,7 @@ def gather_transformation_matrix(constraint, root=0):
         masters_index = (imap.local_to_global(master_blocks[offsets[slave]: offsets[slave + 1]])
                          * block_size + master_rems[offsets[slave]: offsets[slave + 1]])
         coeffs_index = coeffs[offsets[slave]: offsets[slave + 1]]
-        # If we have a simply equality constraint (DirichletBC)
+        # If we have a simply equality constraint (dirichletbc)
         if len(masters_index) > 0:
             for master, coeff in zip(masters_index, coeffs_index):
                 count = sum(master > all_slaves)

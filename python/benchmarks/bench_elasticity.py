@@ -11,8 +11,8 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
-                         locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
+                         form, locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (MeshTags, create_unit_cube, locate_entities_boundary,
                           refine)
@@ -45,7 +45,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: h5py.File = None,
         return np.isclose(x[0], np.finfo(float).eps)
     facets = locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = locate_dofs_topological(V, fdim, facets)
-    bc = DirichletBC(u_bc, topological_dofs)
+    bc = dirichletbc(u_bc, topological_dofs)
     bcs = [bc]
 
     # Create traction meshtag
@@ -86,11 +86,13 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: h5py.File = None,
         mpc.finalize()
 
     # Setup MPC system
+    bilinear_form = form(a)
+    linear_form = form(rhs)
     with Timer("~Elasticity: Assemble LHS and RHS"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
-        b = assemble_vector(rhs, mpc)
+        A = assemble_matrix(bilinear_form, mpc, bcs=bcs)
+        b = assemble_vector(linear_form, mpc)
     # Apply boundary conditions
-    apply_lifting(b, [a], [bcs], mpc)
+    apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     set_bc(b, bcs)
 

@@ -13,9 +13,9 @@ from time import perf_counter
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
+from dolfinx.fem import (Constant, Function, VectorFunctionSpace,
                          apply_lifting, assemble_matrix, assemble_vector,
-                         locate_dofs_topological, set_bc)
+                         dirichletbc, form, locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
 from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
@@ -56,7 +56,7 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: h5py.File = Non
         return np.isclose(x[0], np.finfo(float).eps)
     facets = locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = locate_dofs_topological(V, fdim, facets)
-    bc = DirichletBC(u_bc, topological_dofs)
+    bc = dirichletbc(u_bc, topological_dofs)
     bcs = [bc]
 
     # Create traction meshtag
@@ -91,13 +91,15 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: h5py.File = Non
         print("Problem size {0:d} ".format(num_dofs))
 
     # Generate reference matrices and unconstrained solution
-    A_org = assemble_matrix(a, bcs)
+    bilinear_form = form(a)
+    A_org = assemble_matrix(bilinear_form, bcs)
     A_org.assemble()
     null_space_org = rigid_motions_nullspace(V)
     A_org.setNearNullSpace(null_space_org)
 
-    L_org = assemble_vector(rhs)
-    apply_lifting(L_org, [a], [bcs])
+    linear_form = form(rhs)
+    L_org = assemble_vector(linear_form)
+    apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     set_bc(L_org, bcs)
     opts = PETSc.Options()

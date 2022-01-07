@@ -33,20 +33,19 @@ from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 
 # Create mesh and finite element
-N = 50
+N = 100
 mesh = create_unit_square(MPI.COMM_WORLD, N, N)
 V = fem.FunctionSpace(mesh, ("CG", 1))
-
-# Create Dirichlet boundary condition
 
 
 def dirichletboundary(x):
     return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
 
 
+# Create Dirichlet boundary condition
 facets = locate_entities_boundary(mesh, 1, dirichletboundary)
 topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-bc = fem.DirichletBC(PETSc.ScalarType(0), topological_dofs, V)
+bc = fem.dirichletbc(PETSc.ScalarType(0), topological_dofs, V)
 bcs = [bc]
 
 
@@ -123,11 +122,13 @@ outfile.write_function(uh)
 
 print("----Verification----")
 # --------------------VERIFICATION-------------------------
-A_org = fem.assemble_matrix(a, bcs)
-
+bilinear_form = fem.form(a)
+A_org = fem.assemble_matrix(bilinear_form, bcs)
 A_org.assemble()
-L_org = fem.assemble_vector(rhs)
-fem.apply_lifting(L_org, [a], [bcs])
+
+linear_form = fem.form(rhs)
+L_org = fem.assemble_vector(linear_form)
+fem.apply_lifting(L_org, [bilinear_form], [bcs])
 L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 fem.set_bc(L_org, bcs)
 solver.setOperators(A_org)

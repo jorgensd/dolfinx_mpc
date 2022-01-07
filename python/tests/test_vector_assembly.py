@@ -35,6 +35,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     x = ufl.SpatialCoordinate(mesh)
     f = ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     rhs = ufl.inner(f, v) * ufl.dx
+    linear_form = fem.form(rhs)
 
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()
@@ -44,11 +45,11 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
-    b = assemble_vector(rhs, mpc)
+    b = assemble_vector(linear_form, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     # Reduce system with global matrix K after assembly
-    L_org = fem.assemble_vector(rhs)
+    L_org = fem.assemble_vector(linear_form)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     root = 0
     comm = mesh.comm

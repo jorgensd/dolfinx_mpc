@@ -2,6 +2,7 @@
 
 ## main
 - **API**:
+  - `assemble_matrix` and `assemble_vector` now only accepts compiled DOLFINx forms as opposed to `ufl`-forms. `LinearProblem` still accepts `ufl`-forms
   - `dolfinx_mpc.utils.create_normal_approximation` now takes in the meshtag and the marker, instead of the marked entities
   - No longer direct access to dofmap and indexmap of MPC, now collected through the `dolfinx_mpc.MultiPointConstraint.function_space`.
   - Introducing custom lifting operator: `dolfinx_mpc.apply_lifting`. Resolves a bug that woul occur if one had a non-zero Dirichlet BC on the same cell as a slave degree of freedom.
@@ -22,6 +23,8 @@
   - Resolved issue where `create_facet_normal_approximation` would give you a 0 normal for a surface dof it was not owned by any of the cells with facets on the surface.
 
 - **DOLFINX API-changes**:
+  - `dolfinx.fem.DirichletBC` -> `dolfinx.fem.dirichletbc`
+  - `dolfinx.fem.Form` -> `dolfinx.fem.form`
   - Updates to use latest import schemes from dolfinx, including `UnitSquareMesh` -> `create_unit_square`.
   - Updates to match dolfinx implementation of exterior facet integrals
   - Updated user-interface of `dolfinx.Constant`, explicitly casting scalar-type with `PETSc.ScalarType`.

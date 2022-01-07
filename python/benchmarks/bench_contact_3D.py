@@ -12,8 +12,8 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
-from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
-                         locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, dirichletbc, Function, VectorFunctionSpace,
+                         locate_dofs_topological, set_bc, form)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, MeshTags, compute_midpoints, create_mesh,
                           locate_entities_boundary, refine, create_unit_cube)
@@ -186,7 +186,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
 
     bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
     bottom_dofs = locate_dofs_topological(V, fdim, bottom_facets)
-    bc_bottom = DirichletBC(u_bc, bottom_dofs)
+    bc_bottom = dirichletbc(u_bc, bottom_dofs)
 
     g_vec = [0, 0, -4.25e-1]
     if not noslip:
@@ -208,7 +208,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
 
     top_facets = mt.indices[mt.values == 3]
     top_dofs = locate_dofs_topological(V, fdim, top_facets)
-    bc_top = DirichletBC(u_top, top_dofs)
+    bc_top = dirichletbc(u_top, top_dofs)
 
     bcs = [bc_bottom, bc_top]
 
@@ -246,11 +246,13 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     log_info(f"Num dofs: {num_dofs}")
 
     log_info("Assemble matrix")
+    bilinear_form = form(a)
+    linear_form = form(rhs)
     with Timer(f"{num_dofs}: Assemble-matrix (C++)"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
+        A = assemble_matrix(bilinear_form, mpc, bcs=bcs)
     with Timer(f"{num_dofs}: Assemble-vector (C++)"):
-        b = assemble_vector(rhs, mpc)
-    apply_lifting(b, [a], [bcs], mpc)
+        b = assemble_vector(linear_form, mpc)
+    apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     set_bc(b, bcs)
     list_timings(MPI.COMM_WORLD, [TimingType.wall])

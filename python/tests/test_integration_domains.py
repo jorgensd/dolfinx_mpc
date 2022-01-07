@@ -54,11 +54,13 @@ def test_cell_domains(get_assemblers):  # noqa: F811
 
     rhs = ufl.inner(x[1], v) * dx(1) + \
         ufl.inner(fem.Constant(mesh, PETSc.ScalarType(1)), v) * dx(2)
+    bilinear_form = fem.form(a)
+    linear_form = fem.form(rhs)
 
     # Generate reference matrices
-    A_org = fem.assemble_matrix(a)
+    A_org = fem.assemble_matrix(bilinear_form)
     A_org.assemble()
-    L_org = fem.assemble_vector(rhs)
+    L_org = fem.assemble_vector(linear_form)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     def l2b(li):
@@ -73,9 +75,9 @@ def test_cell_domains(get_assemblers):  # noqa: F811
 
     # Setup MPC system
     with Timer("~TEST: Assemble matrix old"):
-        A = assemble_matrix(a, mpc)
+        A = assemble_matrix(bilinear_form, mpc)
     with Timer("~TEST: Assemble vector"):
-        b = assemble_vector(rhs, mpc)
+        b = assemble_vector(linear_form, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)

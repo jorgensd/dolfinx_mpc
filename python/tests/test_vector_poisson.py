@@ -40,7 +40,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
         u_local.set(0.0)
 
     bdofsV = fem.locate_dofs_geometrical(V, boundary)
-    bc = fem.DirichletBC(u_bc, bdofsV)
+    bc = fem.dirichletbc(u_bc, bdofsV)
     bcs = [bc]
 
     # Define variational problem
@@ -51,6 +51,8 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
 
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     rhs = ufl.inner(f, v) * ufl.dx
+    bilinear_form = fem.form(a)
+    linear_form = fem.form(rhs)
 
     # Setup LU solver
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -66,11 +68,11 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     mpc.finalize()
 
     with Timer("~TEST: Assemble matrix"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
+        A = assemble_matrix(bilinear_form, mpc, bcs=bcs)
     with Timer("~TEST: Assemble vector"):
-        b = dolfinx_mpc.assemble_vector(rhs, mpc)
+        b = dolfinx_mpc.assemble_vector(linear_form, mpc)
 
-    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc)
+    dolfinx_mpc.apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(b, bcs)
 
@@ -83,11 +85,11 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     mpc.backsubstitution(uh)
 
     # Generate reference matrices for unconstrained problem
-    A_org = fem.assemble_matrix(a, bcs)
+    A_org = fem.assemble_matrix(bilinear_form, bcs)
     A_org.assemble()
 
-    L_org = fem.assemble_vector(rhs)
-    fem.apply_lifting(L_org, [a], [bcs])
+    L_org = fem.assemble_vector(linear_form)
+    fem.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
 

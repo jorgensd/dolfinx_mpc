@@ -11,10 +11,11 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, DirichletBC, Function, VectorFunctionSpace,
-                         locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
+                         form, locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import create_unit_cube, CellType, MeshTags, locate_entities_boundary
+from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
+                          locate_entities_boundary)
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
@@ -45,7 +46,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     fdim = mesh.topology.dim - 1
     facets = locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = locate_dofs_topological(V, fdim, facets)
-    bc = DirichletBC(u_bc, topological_dofs)
+    bc = dirichletbc(u_bc, topological_dofs)
     bcs = [bc]
 
     def PeriodicBoundary(x):
@@ -99,16 +100,18 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     # Setup MPC system
     if info:
         log_info(f"Run {r_lvl}: Assembling matrix and vector")
+    bilinear_form = form(a)
+    linear_form = form(rhs)
     with Timer("~Elasticity: Assemble LHS and RHS"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
-        b = assemble_vector(rhs, mpc)
+        A = assemble_matrix(bilinear_form, mpc, bcs=bcs)
+        b = assemble_vector(linear_form, mpc)
 
     # Create nullspace for elasticity problem and assign to matrix
     null_space = rigid_motions_nullspace(mpc.function_space)
     A.setNearNullSpace(null_space)
 
     # Apply boundary conditions
-    apply_lifting(b, [a], [bcs], mpc)
+    apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     set_bc(b, bcs)
 

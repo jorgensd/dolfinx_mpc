@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Callable, List, Union, Dict
+from typing import Callable, List, Dict
 
 
 import numpy
@@ -13,18 +13,8 @@ from petsc4py import PETSc as _PETSc
 import dolfinx_mpc.cpp
 import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
-from dolfinx.cpp.fem import Form_complex128 as Form_C, Form_float64 as Form_R
 from .dictcondition import create_dictionary_constraint
 from .periodic_condition import create_periodic_condition_topological, create_periodic_condition_geometrical
-
-
-def cpp_dirichletbc(bc):
-    """Unwrap Dirichlet BC objects as cpp objects"""
-    if isinstance(bc, _fem.DirichletBC):
-        return bc._cpp_object
-    elif isinstance(bc, (tuple, list)):
-        return list(map(lambda sub_bc: cpp_dirichletbc(sub_bc), bc))
-    return bc
 
 
 class MultiPointConstraint():
@@ -106,7 +96,7 @@ class MultiPointConstraint():
 
     def create_periodic_constraint_topological(self, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: list([_fem.DirichletBC]), scale: _PETSc.ScalarType = 1):
+                                               bcs: list([_fem.DirichletBCMetaClass]), scale: _PETSc.ScalarType = 1):
         """
         Create periodic condition for all dofs in MeshTag with given marker:
         u(x_i) = scale * u(relation(x_i))
@@ -133,7 +123,7 @@ class MultiPointConstraint():
     def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpace,
                                                indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
+                                               bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies indicator(x)
         u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
@@ -156,7 +146,7 @@ class MultiPointConstraint():
 
     def create_slip_constraint(self, facet_marker: tuple([_mesh.MeshTags, int]), v: _fem.Function,
                                sub_space: _fem.FunctionSpace = None, sub_map: numpy.ndarray = numpy.array([]),
-                               bcs: list([_fem.DirichletBC]) = []):
+                               bcs: list([_fem.DirichletBCMetaClass]) = []):
         """
         Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.mesh.MeshTags`
         marked with index i. normal is the normal vector defined as a vector function.
@@ -193,7 +183,7 @@ class MultiPointConstraint():
              W0 = W.sub(0)
              V, V_to_W = W0.collapse(True)
              n = Function(V)
-             bc = _fem.DirichletBC(inlet_velocity, dofs, W0)
+             bc = dirichletbc(inlet_velocity, dofs, W0)
              create_slip_constraint((mt, i), normal, V, V_to_W, bcs=[bc])
         """
         if sub_space is None:
@@ -203,7 +193,7 @@ class MultiPointConstraint():
         mesh_tag, marker = facet_marker
         mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(W, mesh_tag, marker, v._cpp_object,
                                                              numpy.asarray(sub_map, dtype=numpy.int32),
-                                                             cpp_dirichletbc(bcs))
+                                                             bcs)
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_general_constraint(self, slave_master_dict: Dict[bytes, Dict[bytes, float]],
@@ -345,17 +335,17 @@ class MultiPointConstraint():
         self._not_finalized()
         return self._cpp_object.cell_to_slaves
 
-    def create_sparsity_pattern(self, cpp_form: Union[Form_C, Form_R]):
+    def create_sparsity_pattern(self, form: _fem.FormMetaClass):
         """
         Create sparsity-pattern for MPC given a compiled DOLFINx form
 
         Parameters
         ----------
-        cpp_form
+        form
             The form
         """
         self._not_finalized()
-        return dolfinx_mpc.cpp.mpc.create_sparsity_pattern(cpp_form, self._cpp_object)
+        return dolfinx_mpc.cpp.mpc.create_sparsity_pattern(form, self._cpp_object)
 
     @property
     def function_space(self):

@@ -18,7 +18,7 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (DirichletBC, Function, FunctionSpace,
+from dolfinx.fem import (Function, FunctionSpace, dirichletbc, form,
                          locate_dofs_geometrical, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
@@ -46,9 +46,6 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
     V = FunctionSpace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
-    u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
 
     def dirichletboundary(x):
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
@@ -56,7 +53,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = locate_dofs_geometrical(V, dirichletboundary)
-    bc = DirichletBC(u_bc, geometrical_dofs)
+    bc = dirichletbc(PETSc.ScalarType(0), geometrical_dofs, V)
     bcs = [bc]
 
     def PeriodicBoundary(x):
@@ -93,18 +90,18 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
     # Assemble LHS and RHS with multi-point constraint
 
     log_info(f"Run {r_lvl}: Assemble matrix")
-    with Timer(f"~Periodic {r_lvl}: Assemble matrix"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
+    bilinear_form = form(a)
     with Timer(f"~Periodic {r_lvl}: Assemble matrix (cached)"):
-        A = assemble_matrix(a, mpc, bcs=bcs)
+        A = assemble_matrix(bilinear_form, mpc, bcs=bcs)
 
     log_info(f"Run {r_lvl}: Assembling vector")
+    linear_form = form(rhs)
     with Timer(f"~Periodic: {r_lvl} Assemble vector (Total time)"):
-        b = assemble_vector(rhs, mpc)
+        b = assemble_vector(linear_form, mpc)
 
     # Apply boundary conditions
     log_info(f"Run {r_lvl}: Apply lifting")
-    apply_lifting(b, [a], [bcs], mpc)
+    apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     set_bc(b, bcs)
 
