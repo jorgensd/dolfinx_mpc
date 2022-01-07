@@ -58,7 +58,7 @@ def demo_periodic3D(celltype, out_periodic):
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
-    bc = fem.DirichletBC(u_bc, geometrical_dofs)
+    bc = fem.dirichletbc(u_bc, geometrical_dofs)
     bcs = [bc]
 
     def PeriodicBoundary(x):

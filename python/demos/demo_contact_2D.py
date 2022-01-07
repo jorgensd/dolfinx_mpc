@@ -18,8 +18,8 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, DirichletBC, VectorFunctionSpace,
-                         assemble_matrix, assemble_vector, apply_lifting,
+from dolfinx.fem import (Constant, VectorFunctionSpace, apply_lifting,
+                         assemble_matrix, assemble_vector, dirichletbc, form,
                          locate_dofs_geometrical, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, set_log_level
@@ -76,7 +76,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     # Fix bottom corner
     bc_value = np.array((0,) * mesh.geometry.dim, dtype=PETSc.ScalarType)
     bottom_dofs = locate_dofs_geometrical(V, bottom_corner)
-    bc_bottom = DirichletBC(bc_value, bottom_dofs, V)
+    bc_bottom = dirichletbc(bc_value, bottom_dofs, V)
     bcs = [bc_bottom]
 
     # Elasticity parameters
@@ -118,8 +118,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         mpc.create_slip_constraint((mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
-
-    petsc_options = {"ksp_rtol": 1e-8,
+    rtol = 1e-9
+    petsc_options = {"ksp_rtol": 1e-9,
                      "pc_type": "gamg", "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
                      "pc_gamg_threshold": 0.02, "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
                      "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
@@ -157,10 +157,10 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
     log_info("Solving reference problem with global matrix (using numpy)")
     with Timer("~MPC: Reference problem"):
         # Generate reference matrices and unconstrained solution
-        A_org = assemble_matrix(a, bcs)
+        A_org = assemble_matrix(form(a), bcs)
         A_org.assemble()
-        L_org = assemble_vector(rhs)
-        apply_lifting(L_org, [a], [bcs])
+        L_org = assemble_vector(form(rhs))
+        apply_lifting(L_org, [form(a)], [bcs])
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
         set_bc(L_org, bcs)
 
@@ -181,7 +181,8 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+
+            assert np.allclose(uh_numpy, u_mpc, rtol=rtol)
 
 
 if __name__ == "__main__":

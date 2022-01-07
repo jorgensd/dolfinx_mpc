@@ -9,7 +9,7 @@
 
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, DirichletBC, Function, FunctionSpace,
+from dolfinx.fem import (Constant, dirichletbc, Function, FunctionSpace,
                          VectorFunctionSpace, locate_dofs_geometrical,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile
@@ -96,9 +96,9 @@ rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx
 # Set boundary conditions
 u_push = np.array([0.1, 0], dtype=PETSc.ScalarType)
 dofs = locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
-bc_push = DirichletBC(u_push, dofs, V)
+bc_push = dirichletbc(u_push, dofs, V)
 u_fix = np.array([0, 0], dtype=PETSc.ScalarType)
-bc_fix = DirichletBC(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 2.1)), V)
+bc_fix = dirichletbc(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 2.1)), V)
 bcs = [bc_push, bc_fix]
 
 

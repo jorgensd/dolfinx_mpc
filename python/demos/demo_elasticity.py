@@ -31,7 +31,7 @@ def demo_elasticity():
         return np.isclose(x[0], np.finfo(float).eps)
     facets = locate_entities_boundary(mesh, 1, boundaries)
     topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-    bc = fem.DirichletBC(np.array([0, 0], dtype=PETSc.ScalarType), topological_dofs, V)
+    bc = fem.dirichletbc(np.array([0, 0], dtype=PETSc.ScalarType), topological_dofs, V)
     bcs = [bc]
 
     # Define variational problem
@@ -75,10 +75,12 @@ def demo_elasticity():
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
-    A_org = fem.assemble_matrix(a, bcs)
+    bilinear_form = fem.form(a)
+    A_org = fem.assemble_matrix(bilinear_form, bcs)
     A_org.assemble()
-    L_org = fem.assemble_vector(rhs)
-    fem.apply_lifting(L_org, [a], [bcs])
+    linear_form = fem.form(rhs)
+    L_org = fem.assemble_vector(linear_form)
+    fem.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
     solver = PETSc.KSP().create(MPI.COMM_WORLD)

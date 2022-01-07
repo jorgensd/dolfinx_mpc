@@ -24,12 +24,12 @@ from time import perf_counter
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (DirichletBC, Function, FunctionSpace, apply_lifting,
-                         assemble_matrix, assemble_vector,
+from dolfinx.fem import (Function, FunctionSpace, apply_lifting,
+                         assemble_matrix, assemble_vector, dirichletbc, form,
                          locate_dofs_geometrical, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
-from dolfinx.mesh import CellType, UnitCubeMesh, refine
+from dolfinx.mesh import CellType, create_unit_cube, refine
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
@@ -43,7 +43,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: h5py.File = None,
     if tetra:
         # Tet setup
         N = 3
-        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
         for i in range(r_lvl):
             mesh.topology.create_entities(mesh.topology.dim - 2)
             mesh = refine(mesh, redistribute=True)
@@ -53,14 +53,11 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: h5py.File = None,
         N = 3
         for i in range(r_lvl):
             N *= 2
-        mesh = UnitCubeMesh(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
 
     V = FunctionSpace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
-    u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
 
     def dirichletboundary(x):
         return np.logical_or(np.logical_or(np.isclose(x[1], 0),
@@ -70,7 +67,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: h5py.File = None,
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = locate_dofs_geometrical(V, dirichletboundary)
-    bc = DirichletBC(u_bc, geometrical_dofs)
+    bc = dirichletbc(PETSc.ScalarType(0), geometrical_dofs, V)
     bcs = [bc]
 
     # Define variational problem
@@ -85,10 +82,12 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: h5py.File = None,
     rhs = inner(f, v) * dx
 
     # Assemble rhs, RHS and apply lifting
-    A_org = assemble_matrix(a, bcs)
+    bilinear_form = form(a)
+    linear_form = form(rhs)
+    A_org = assemble_matrix(bilinear_form, bcs)
     A_org.assemble()
-    L_org = assemble_vector(rhs)
-    apply_lifting(L_org, [a], [bcs])
+    L_org = assemble_vector(linear_form)
+    apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     set_bc(L_org, bcs)
 

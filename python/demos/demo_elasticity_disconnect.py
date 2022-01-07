@@ -9,7 +9,7 @@
 
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, DirichletBC, Function, FunctionSpace,
+from dolfinx.fem import (Constant, dirichletbc, Function, FunctionSpace,
                          VectorFunctionSpace, locate_dofs_topological)
 from dolfinx.io import XDMFFile
 from dolfinx_mpc import (MultiPointConstraint, LinearProblem)
@@ -147,12 +147,12 @@ rhs += inner(Constant(mesh, PETSc.ScalarType((0.01, 0.02, 0))), v) * dx(outer_ta
 rhs += inner(as_vector(PETSc.ScalarType((0, 0, -9.81e-2))), v) * dx(inner_tag)
 
 
-# Create DirichletBC
+# Create dirichletbc
 owning_processor, bc_dofs = determine_closest_block(V, -np.array([-r2, 0, 0]))
 bc_dofs = [] if bc_dofs is None else bc_dofs
 
 u_fixed = np.array([0, 0, 0], dtype=PETSc.ScalarType)
-bc_fixed = DirichletBC(u_fixed, np.asarray(bc_dofs, dtype=np.int32), V)
+bc_fixed = dirichletbc(u_fixed, np.asarray(bc_dofs, dtype=np.int32), V)
 bcs = [bc_fixed]
 
 # Create point to point constraints

@@ -10,7 +10,7 @@ import dolfinx_mpc.cpp
 
 
 def create_periodic_condition_topological(V: _fem.FunctionSpace, mt: _mesh.MeshTags, marker: int,
-                                          relation: Callable[[np.ndarray], np.ndarray], bcs: List[_fem.DirichletBC],
+                                          relation: Callable[[np.ndarray], np.ndarray], bcs: List[_fem.dirichletbc],
                                           scale: _PETSc.ScalarType):
     """
     Create periodic condition for all dofs in MeshTag with given marker:
@@ -24,7 +24,7 @@ def create_periodic_condition_topological(V: _fem.FunctionSpace, mt: _mesh.MeshT
 
 def create_periodic_condition_geometrical(V: _fem.FunctionSpace, indicator: Callable[[np.ndarray], np.ndarray],
                                           relation: Callable[[np.ndarray], np.ndarray],
-                                          bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType):
+                                          bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType):
     """
     Create a periodic condition for all degrees of freedom's satisfying indicator(x):
        u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
@@ -35,7 +35,7 @@ def create_periodic_condition_geometrical(V: _fem.FunctionSpace, indicator: Call
 
 def _create_periodic_condition(V: _fem.FunctionSpace, slave_blocks: np.ndarray,
                                relation: Callable[[np.ndarray], np.ndarray],
-                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType):
+                               bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType):
     """
     Create a periodic condition condition on all input slave blocks,
     x_i = x(slave_block)
@@ -53,7 +53,7 @@ def _create_periodic_condition(V: _fem.FunctionSpace, slave_blocks: np.ndarray,
     # Filter out Dirichlet BC dofs
     bc_dofs = []
     for bc in bcs:
-        bc_indices, _ = bc._cpp_object.dof_indices()
+        bc_indices, _ = bc.dof_indices()
         bc_dofs.extend(bc_indices)
     slave_blocks = slave_blocks[np.isin(slave_blocks, bc_dofs, invert=True)]
     num_local_blocks = len(slave_blocks[slave_blocks < size_local])

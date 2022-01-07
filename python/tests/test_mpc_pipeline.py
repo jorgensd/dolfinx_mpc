@@ -43,10 +43,13 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
 
     a = d * g * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     rhs = h * ufl.inner(f, v) * ufl.dx
+    bilinear_form = fem.form(a)
+    linear_form = fem.form(rhs)
+
     # Generate reference matrices
-    A_org = fem.assemble_matrix(a)
+    A_org = fem.assemble_matrix(bilinear_form)
     A_org.assemble()
-    L_org = fem.assemble_vector(rhs)
+    L_org = fem.assemble_vector(linear_form)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     # Create multipoint constraint
@@ -59,8 +62,8 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
 
-    A = assemble_matrix(a, mpc)
-    b = assemble_vector(rhs, mpc)
+    A = assemble_matrix(bilinear_form, mpc)
+    b = assemble_vector(linear_form, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
@@ -122,9 +125,9 @@ def test_linearproblem(master_point):
     a = d * g * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     rhs = h * ufl.inner(f, v) * ufl.dx
     # Generate reference matrices
-    A_org = fem.assemble_matrix(a)
+    A_org = fem.assemble_matrix(fem.form(a))
     A_org.assemble()
-    L_org = fem.assemble_vector(rhs)
+    L_org = fem.assemble_vector(fem.form(rhs))
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     # Create multipoint constraint

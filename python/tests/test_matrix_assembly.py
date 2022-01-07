@@ -34,6 +34,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    bilinear_form = fem.form(a)
 
     def l2b(li):
         return np.array(li, dtype=np.float64).tobytes()
@@ -43,11 +44,11 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
     with Timer("~TEST: Assemble matrix"):
-        A_mpc = assemble_matrix(a, mpc)
+        A_mpc = assemble_matrix(bilinear_form, mpc)
 
     with Timer("~TEST: Compare with numpy"):
         # Create globally reduced system
-        A_org = fem.assemble_matrix(a)
+        A_org = fem.assemble_matrix(bilinear_form)
         A_org.assemble()
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A_mpc, mpc)
 
@@ -56,8 +57,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
-@pytest.mark.parametrize("celltype", [CellType.triangle,
-                                      CellType.quadrilateral])
+@pytest.mark.parametrize("celltype", [CellType.triangle, CellType.quadrilateral])
 def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # noqa: F811
     assemble_matrix, _ = get_assemblers
 
@@ -80,13 +80,14 @@ def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # 
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    bilinear_form = fem.form(a)
 
     with Timer("~TEST: Assemble matrix"):
-        A_mpc = assemble_matrix(a, mpc)
+        A_mpc = assemble_matrix(bilinear_form, mpc)
 
     with Timer("~TEST: Compare with numpy"):
         # Create globally reduced system
-        A_org = fem.assemble_matrix(a)
+        A_org = fem.assemble_matrix(bilinear_form)
         A_org.assemble()
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A_mpc, mpc)
 
