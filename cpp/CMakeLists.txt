@@ -108,8 +108,23 @@ set_package_properties(basix PROPERTIES TYPE REQUIRED
 # MPI
 find_package(MPI 3 REQUIRED)
 
-# PETSc
-find_package(PETSc 3.10)
+# Check for PETSc
+find_package(PkgConfig REQUIRED)
+set(ENV{PKG_CONFIG_PATH} "$ENV{PETSC_DIR}/$ENV{PETSC_ARCH}/lib/pkgconfig:$ENV{PETSC_DIR}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+pkg_search_module(PETSC REQUIRED IMPORTED_TARGET PETSc>=3.15 petsc>=3.15)
+
+# Check if PETSc build uses real or complex scalars (this is configured
+# in DOLFINxConfig.cmake.in)
+include(CheckSymbolExists)
+set(CMAKE_REQUIRED_INCLUDES ${PETSC_INCLUDE_DIRS})
+check_symbol_exists(PETSC_USE_COMPLEX petscsystypes.h HAVE_PETSC_SCALAR_COMPLEX)
+
+# Setting for FeatureSummary
+if(PETSC_FOUND)
+  set_property(GLOBAL APPEND PROPERTY PACKAGES_FOUND PETSc)
+else()
+  set_property(GLOBAL APPEND PROPERTY PACKAGES_NOT_FOUND PETSc)
+endif()
 set_package_properties(PETSc PROPERTIES TYPE REQUIRED
   DESCRIPTION "Portable, Extensible Toolkit for Scientific Computation (PETSc)"
   URL "https://www.mcs.anl.gov/petsc/"
@@ -123,8 +138,7 @@ feature_summary(WHAT ALL)
 add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
 
 target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
-target_link_libraries(dolfinx_mpc PUBLIC PETSC::petsc)
-target_link_libraries(dolfinx_mpc PRIVATE PETSC::petsc_static)
+target_link_libraries(dolfinx_mpc PUBLIC PkgConfig::PETSC)
 
 # Basix
 target_link_libraries(dolfinx_mpc PUBLIC Basix::basix)

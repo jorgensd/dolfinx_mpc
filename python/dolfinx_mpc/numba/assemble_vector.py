@@ -90,11 +90,11 @@ def assemble_vector(form: _fem.FormMetaClass, constraint: MultiPointConstraint, 
 
     is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)
     nptype = "complex128" if is_complex else "float64"
-    ufc_form = form.ufc_form
+    ufcx_form = form.ufcx_form
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
         for i, id in enumerate(subdomain_ids):
-            cell_kernel = getattr(ufc_form.integrals(_fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
+            cell_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
             active_cells = form.domains(_fem.IntegralType.cell, id)
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
             with vector.localForm() as b:
@@ -114,7 +114,7 @@ def assemble_vector(form: _fem.FormMetaClass, constraint: MultiPointConstraint, 
             facet_perms = V.mesh.topology.get_facet_permutations()
         perm = (cell_perms, form.needs_facet_permutations, facet_perms)
         for i, id in enumerate(subdomain_ids):
-            facet_kernel = getattr(ufc_form.integrals(_fem.IntegralType.exterior_facet)[i],
+            facet_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.exterior_facet)[i],
                                    f"tabulate_tensor_{nptype}")
             coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
             facets = form.domains(_fem.IntegralType.exterior_facet, id)
