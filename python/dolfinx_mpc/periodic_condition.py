@@ -50,11 +50,13 @@ def _create_periodic_condition(V: _fem.FunctionSpace, slave_blocks: np.ndarray,
     x = V.tabulate_dof_coordinates()
     comm = V.mesh.comm
 
-    # Filter out Dirichlet BC dofs
+    # Filter out Dirichlet BC dofs (on block level)
     bc_dofs = []
     for bc in bcs:
         bc_indices, _ = bc.dof_indices()
-        bc_dofs.extend(bc_indices)
+        bc_dofs.append(np.unique(np.asarray(bc_indices / bs, dtype=np.int32)))
+    bc_dofs = np.hstack(bc_dofs)
+
     slave_blocks = slave_blocks[np.isin(slave_blocks, bc_dofs, invert=True)]
     num_local_blocks = len(slave_blocks[slave_blocks < size_local])
 
@@ -194,7 +196,7 @@ def _create_periodic_condition(V: _fem.FunctionSpace, slave_blocks: np.ndarray,
                     else:
                         send_ghost_masters[proc] = {imap.local_to_global([block])[0] * bs + rem:
                                                     {"masters": constraint_data[dof]["masters"],
-                                                     "coeffs": constraint_data[dof]["coeffs"],
+                                                    "coeffs": constraint_data[dof]["coeffs"],
                                                      "owners": constraint_data[dof]["owners"]}}
     for proc in send_ghost_masters.keys():
         comm.send(send_ghost_masters[proc], dest=proc, tag=33)
@@ -233,7 +235,6 @@ def _create_periodic_condition(V: _fem.FunctionSpace, slave_blocks: np.ndarray,
         coeffs.extend(ghost_dofs[dof]["coeffs"])
         owners.extend(ghost_dofs[dof]["owners"])
         offsets.append(len(masters))
-
     return (np.asarray(slaves, dtype=np.int32), np.asarray(masters, dtype=np.int64),
             np.asarray(coeffs, dtype=_PETSc.ScalarType), np.asarray(owners, dtype=np.int32),
             np.asarray(offsets, dtype=np.int32))

@@ -102,8 +102,8 @@ P2 = VectorElement("Lagrange", mesh.ufl_cell(), 2)
 P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
 TH = P2 * P1
 W = fem.FunctionSpace(mesh, TH)
-V, V_to_W = W.sub(0).collapse(True)
-Q = W.sub(1).collapse()
+V, V_to_W = W.sub(0).collapse()
+Q, _ = W.sub(1).collapse()
 
 
 def inlet_velocity_expression(x):

@@ -57,7 +57,7 @@ create_block_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
     local_indices[i] = local_entity;
     auto cell_blocks = dofmap->cell_dofs(cell[0]);
     auto closure_blocks
-        = dofmap->element_dof_layout->entity_closure_dofs(dim, local_entity);
+        = dofmap->element_dof_layout().entity_closure_dofs(dim, local_entity);
     for (std::size_t j = 0; j < closure_blocks.size(); ++j)
     {
       const int dof = cell_blocks[closure_blocks[j]];
@@ -78,7 +78,7 @@ create_block_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
   for (std::size_t i = 0; i < entities.size(); ++i)
   {
     auto cell_blocks = dofmap->cell_dofs(cells[i]);
-    auto closure_blocks = dofmap->element_dof_layout->entity_closure_dofs(
+    auto closure_blocks = dofmap->element_dof_layout().entity_closure_dofs(
         dim, local_indices[i]);
     for (std::size_t j = 0; j < closure_blocks.size(); ++j)
     {

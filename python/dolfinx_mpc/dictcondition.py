@@ -72,7 +72,7 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
         if subspace_slave is None:
             slave_dofs = fem.locate_dofs_geometrical(V, close_to(slave_point_nd))
         else:
-            Vsub = V.sub(subspace_slave).collapse()
+            Vsub = V.sub(subspace_slave).collapse()[0]
             slave_dofs = fem.locate_dofs_geometrical(
                 (V.sub(subspace_slave), Vsub), close_to(slave_point_nd))[0]
         if len(slave_dofs) == 1:
@@ -104,7 +104,7 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
             if subspace_master is None:
                 master_dofs = fem.locate_dofs_geometrical(V, close_to(master_points_nd[:, j:j + 1]))
             else:
-                Vsub = V.sub(subspace_master).collapse()
+                Vsub = V.sub(subspace_master).collapse()[0]
                 master_dofs = fem.locate_dofs_geometrical((V.sub(subspace_master), Vsub),
                                                           close_to(master_points_nd[:, j:j + 1]))[0]
 
