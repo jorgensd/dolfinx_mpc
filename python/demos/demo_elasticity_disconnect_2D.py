@@ -122,7 +122,7 @@ def gather_dof_coordinates(V, dofs):
 
 
 # Create pairs of dofs at each boundary
-V0 = V.sub(0).collapse()
+V0, _ = V.sub(0).collapse()
 
 facets_r = locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 1))
 dofs_r = locate_dofs_topological(V0, fdim, facets_r)

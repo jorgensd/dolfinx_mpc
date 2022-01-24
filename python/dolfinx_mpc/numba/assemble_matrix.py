@@ -88,7 +88,7 @@ def assemble_matrix(form: _fem.FormMetaClass, constraint: MultiPointConstraint,
     _cpp.fem.petsc.assemble_matrix(A, form, form_consts, form_coeffs, bcs, False)
 
     # General assembly data
-    block_size = dofmap.dof_layout.block_size()
+    block_size = dofmap.dof_layout.block_size
     num_dofs_per_element = dofmap.dof_layout.num_dofs
 
     tdim = V.mesh.topology.dim

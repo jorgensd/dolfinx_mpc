@@ -1726,8 +1726,11 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     for (std::int32_t j = 0; j < tdim; ++j)
       ghost_slaves[i * tdim + j] = ghost_blocks[i] * block_size + j;
 
-  auto [src_ranks_ghost, dest_ranks_ghost]
+  std::array<std::vector<std::int32_t>, 2> neighbors
       = dolfinx::MPI::neighbors(slave_to_ghost);
+  auto& src_ranks_ghost = neighbors[0];
+  auto& dest_ranks_ghost = neighbors[1];
+
   // Count number of incoming slaves
   std::vector<std::int32_t> inc_num_slaves(src_ranks_ghost.size(), 0);
   std::for_each(ghost_slaves.begin(), ghost_slaves.end(),

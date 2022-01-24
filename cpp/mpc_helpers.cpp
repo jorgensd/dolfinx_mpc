@@ -202,7 +202,7 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
   // Extract information from the old dofmap to create a new one
   const dolfinx::fem::DofMap* old_dofmap = V->dofmap().get();
   dolfinx::mesh::Topology topology = V->mesh()->topology();
-  dolfinx::fem::ElementDofLayout layout = *old_dofmap->element_dof_layout;
+  dolfinx::fem::ElementDofLayout layout = old_dofmap->element_dof_layout();
 
   // Create new dofmap based on the MPC index map
   // NOTE: This is a workaround to get the Adjacency list and block size
@@ -233,7 +233,7 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
   // Create the new dofmap based on the extended index map
   std::shared_ptr<dolfinx::fem::DofMap> new_dofmap
       = std::make_shared<dolfinx::fem::DofMap>(
-          old_dofmap->element_dof_layout, new_index_map, bs, dofmap_adj, bs);
+          old_dofmap->element_dof_layout(), new_index_map, bs, dofmap_adj, bs);
 
   return dolfinx::fem::FunctionSpace(V->mesh(), element, new_dofmap);
 }
