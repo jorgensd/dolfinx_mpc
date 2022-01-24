@@ -35,6 +35,12 @@ compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 
 dolfinx::la::petsc::Matrix create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1,
+    const std::string& type = std::string());
+
+dolfinx::la::petsc::Matrix create_matrix(
+    const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
     const std::string& type = std::string());
 /// Create neighborhood communicators from every processor with a slave dof on
@@ -112,9 +118,14 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 /// @param[in] a bi-linear form for the current variational problem
 /// (The one used to generate input sparsity-pattern)
 /// @param[in] mpc The multi point constraint.
+// dolfinx::la::SparsityPattern create_sparsity_pattern(
+//     const dolfinx::fem::Form<PetscScalar>& a,
+//     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc);
+
 dolfinx::la::SparsityPattern create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc);
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1);
 
 /// Compute the dot product u . vs
 /// @param u The first vector. It must has size 3.
