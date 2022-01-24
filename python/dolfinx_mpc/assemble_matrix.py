@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import List
+from typing import List, Union
 
 import dolfinx.fem as _fem
 import dolfinx.cpp as _cpp
@@ -56,4 +56,46 @@ def assemble_matrix(form: _fem.FormMetaClass, constraint: MultiPointConstraint,
         _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0], bcs, diagval)
 
     A.assemble()
+    return A
+
+
+def create_sparsity_pattern(form: _fem.FormMetaClass,
+                            mpc: Union[MultiPointConstraint,
+                                       List[MultiPointConstraint]]):
+    """
+    Create sparsity-pattern for MPC given a compiled DOLFINx form
+
+    Parameters
+    ----------
+    form
+        The form
+    mpc
+        For square forms, the MPC. For rectangular forms a list of 2 MPCs on
+        axis 0 & 1, respectively
+    """
+    if not isinstance(mpc, list):
+        mpc = [mpc, mpc]
+    assert len(mpc) == 2
+    for mpc_ in mpc:
+        mpc_._not_finalized()
+    return cpp.mpc.create_sparsity_pattern(form, mpc[0]._cpp_object,
+                                           mpc[1]._cpp_object)
+
+
+def create_matrix_nest(
+        a: List[List[_fem.FormMetaClass]],
+        constraint: List[MultiPointConstraint]):
+    assert len(constraint) == len(a)
+
+    A_ = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
+
+    for i, a_row in enumerate(a):
+        for j, a_block in enumerate(a_row):
+            if a[i][j] is None:
+                continue
+            A_[i][j] = cpp.mpc.create_matrix(
+                a[i][j], constraint[i]._cpp_object, constraint[j]._cpp_object)
+
+    A = _PETSc.Mat().createNest(
+        A_, comm=constraint[0].function_space.mesh.comm)
     return A

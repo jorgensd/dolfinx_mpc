@@ -247,6 +247,21 @@ void mpc(py::module& m)
       },
       py::return_value_policy::take_ownership,
       "Create a PETSc Mat for bilinear form.");
+  m.def(
+      "create_matrix",
+      [](const dolfinx::fem::Form<PetscScalar>& a,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
+             mpc0,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
+             mpc1)
+      {
+        auto A = dolfinx_mpc::create_matrix(a, mpc0, mpc1);
+        Mat _A = A.mat();
+        PetscObjectReference((PetscObject)_A);
+        return _A;
+      },
+      py::return_value_policy::take_ownership,
+      "Create a PETSc Mat for bilinear form.");
   m.def("create_contact_slip_condition",
         &dolfinx_mpc::create_contact_slip_condition);
   m.def("create_slip_condition",
