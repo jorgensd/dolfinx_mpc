@@ -189,15 +189,17 @@ void mpc(py::module& m)
   m.def("assemble_matrix",
         [](Mat A, const dolfinx::fem::Form<PetscScalar>& a,
            const std::shared_ptr<
-               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc,
+               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc0,
+           const std::shared_ptr<
+               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc1,
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
            const PetscScalar diagval)
         {
           dolfinx_mpc::assemble_matrix(
               dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES),
-              dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, mpc, bcs,
-              diagval);
+              dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, 
+              mpc0, mpc1, bcs, diagval);
         });
   m.def(
       "assemble_vector",
