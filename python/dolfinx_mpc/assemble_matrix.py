@@ -92,8 +92,19 @@ def create_sparsity_pattern(form: _fem.FormMetaClass,
 
 def create_matrix_nest(
         a: Sequence[Sequence[_fem.FormMetaClass]],
-        constraint: Sequence[MultiPointConstraint]):
-    assert len(constraint) == len(a)
+        constraints: Sequence[MultiPointConstraint]):
+    """
+    Create a PETSc matrix of type "nest" with appropriate sparsity pattern
+    given the provided multi points constraints
+
+    Parameters
+    ----------
+    a
+        The compiled bilinear variational form provided in a rank 2 list
+    constraints
+        An ordered list of multi point constraints
+    """
+    assert len(constraints) == len(a)
 
     A_ = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
 
@@ -102,23 +113,41 @@ def create_matrix_nest(
             if a[i][j] is None:
                 continue
             A_[i][j] = cpp.mpc.create_matrix(
-                a[i][j], constraint[i]._cpp_object, constraint[j]._cpp_object)
+                a[i][j], constraints[i]._cpp_object, constraints[j]._cpp_object)
 
     A = _PETSc.Mat().createNest(
-        A_, comm=constraint[0].function_space.mesh.comm)
+        A_, comm=constraints[0].function_space.mesh.comm)
     return A
 
 
 def assemble_matrix_nest(
         A: _PETSc.Mat,
         a: Sequence[Sequence[_fem.FormMetaClass]],
-        constraint: Sequence[MultiPointConstraint],
+        constraints: Sequence[MultiPointConstraint],
         bcs: Sequence[_fem.DirichletBCMetaClass] = [],
         diagval: _PETSc.ScalarType = 1):
+    """
+    Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
+    "nest" with corresponding multi point constraints and Dirichlet boundary
+    conditions.
+
+    Parameters
+    ----------
+    a
+        The compiled bilinear variational form provided in a rank 2 list
+    constraints
+        An ordered list of multi point constraints
+    bcs
+        Sequence of Dirichlet boundary conditions
+    diagval
+        Value to set on the diagonal of the matrix (Default 1)
+    A
+        PETSc matrix to assemble into
+    """
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):
             if a_block is not None:
                 Asub = A.getNestSubMatrix(i, j)
                 assemble_matrix(
-                    a_block, (constraint[i], constraint[j]),
+                    a_block, (constraints[i], constraints[j]),
                     bcs=bcs, diagval=diagval, A=Asub)
