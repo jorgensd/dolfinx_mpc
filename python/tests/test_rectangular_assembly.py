@@ -1,3 +1,9 @@
+# Copyright (C) 2022 Nathan Sime
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    MIT
+
 import pytest
 
 import dolfinx
