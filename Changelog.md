@@ -16,6 +16,7 @@
     - `slave_cells` does now longer exist as it can be gotten implicitly from `cell_to_slaves`.
 
 - **Performance**:
+  - Major rewrite of periodic boundary conditions. On average at least a 5 x performance speed-up.
   - The C++ assembler has been fully rewritten.
   - Various improvements to `ContactConstraint`.
 

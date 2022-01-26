@@ -50,6 +50,7 @@ run-demos:
   variables:
     PETSC_ARCH: "linux-gnu-${PETSC_TYPE}-32"
     DOLFINX_DIR: "dolfinx-${PETSC_TYPE}"
+    DOLFINX_BRANCH: "main"
     PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.8/dist-packages:/usr/local/lib"
     LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
     MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
@@ -69,10 +70,13 @@ run-demos:
     - python3 -m pip install git+https://github.com/FEniCS/ufl.git
     - python3 -m pip install git+https://github.com/FEniCS/ffcx.git
     - git clone https://github.com/fenics/dolfinx.git
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
+    - cd dolfinx
+    - git checkout ${DOLFINX_BRANCH}
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./cpp/
     - cmake --build build-dolfinx
     - cmake --install build-dolfinx
-    - BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
+    - BUILD_TYPE="Release" python3 -m pip -v install ./python/
+    - cd ..
     - cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
     - cmake --build build-dir --parallel 3
     - cmake --install build-dir
