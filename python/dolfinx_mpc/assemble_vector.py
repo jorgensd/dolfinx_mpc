@@ -87,7 +87,23 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
 
 def create_vector_nest(
         L: Sequence[_fem.FormMetaClass],
-        constraints: Sequence[MultiPointConstraint]):
+        constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:
+    """
+    Create a PETSc vector of type "nest" appropriate for the provided multi
+    point constraints
+
+    Parameters
+    ----------
+    L
+        A sequence of linear forms
+    constraints
+        An ordered list of multi point constraints
+
+    Returns
+    -------
+    PETSc.Vec
+        A PETSc vector of type "nest"
+    """
     assert len(constraints) == len(L)
 
     maps = [(constraint.function_space.dofmap.index_map,
@@ -100,7 +116,20 @@ def assemble_vector_nest(
         b: _PETSc.Vec,
         L: Sequence[_fem.FormMetaClass],
         constraints: Sequence[MultiPointConstraint]):
+    """
+    Assemble a linear form into a PETSc vector of type "nest"
+
+    Parameters
+    ----------
+    b
+        A PETSc vector of type "nest"
+    L
+        A sequence of linear forms
+    constraints
+        An ordered list of multi point constraints
+    """
     assert len(constraints) == len(L)
+    assert b.getType() == "nest"
 
     b_sub_vecs = b.getNestSubVecs()
     for i, L_row in enumerate(L):
