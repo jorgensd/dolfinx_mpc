@@ -10,7 +10,7 @@
 # This implementation can be found at:
 # https://bitbucket.org/fenics-project/dolfin/src/master/python/demo/documented/periodic/demo_periodic.py
 #
-# Copyright (C) Jørgen S. Dokken 2020.
+# Copyright (C) Jørgen S. Dokken 2020-2022.
 #
 # This file is part of DOLFINX_MPCX.
 #
@@ -21,7 +21,7 @@ import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.io import XDMFFile
+from dolfinx.cpp.io import VTXWriter
 from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
                           locate_entities_boundary)
 from dolfinx_mpc import LinearProblem
@@ -34,31 +34,27 @@ from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 
 
-def demo_periodic3D(celltype, out_periodic):
+def demo_periodic3D(celltype):
     # Create mesh and finite element
     if celltype == CellType.tetrahedron:
         # Tet setup
-        N = 4
+        N = 5
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
-        V = fem.FunctionSpace(mesh, ("CG", 2))
+        V = fem.FunctionSpace(mesh, ("CG", 3))
     else:
         # Hex setup
-        N = 12
+        N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
-        V = fem.FunctionSpace(mesh, ("CG", 1))
-
-    # Create Dirichlet boundary condition
-    u_bc = fem.Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
+        V = fem.FunctionSpace(mesh, ("CG", 2))
 
     def dirichletboundary(x):
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
-    mesh.topology.create_connectivity(2, 1)
+    # Create Dirichlet boundary condition
+    zero = PETSc.ScalarType(0)
     geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
-    bc = fem.dirichletbc(u_bc, geometrical_dofs)
+    bc = fem.dirichletbc(zero, geometrical_dofs, V)
     bcs = [bc]
 
     def PeriodicBoundary(x):
@@ -74,9 +70,9 @@ def demo_periodic3D(celltype, out_periodic):
         out_x[2] = x[2]
         return out_x
 
-    with Timer("~Periodic: New init"):
+    with Timer("~~Periodic: Compute mpc condition"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
+        mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs, 1)
         mpc.finalize()
 
     # Define variational problem
@@ -94,35 +90,34 @@ def demo_periodic3D(celltype, out_periodic):
     rhs = inner(f, v) * dx
 
     if complex_mode:
+        rtol = 1e-16
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
-        petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_typ": "boomeramg",
+        rtol = 1e-8
+        petsc_options = {"ksp_type": "cg", "ksp_rtol": rtol, "pc_type": "hypre", "pc_hypre_typ": "boomeramg",
                          "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
                          "pc_hypre_boomeramg_print_statistics": 1}
     problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)
     u_h = problem.solve()
 
-    # Write solution to file
-    if celltype == CellType.tetrahedron:
-        ext = "tet"
-    else:
-        ext = "hex"
-
-    mesh.name = "mesh_" + ext
-    u_h.name = "u_" + ext
-
-    out_periodic.write_mesh(mesh)
-    out_periodic.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
-
     # --------------------VERIFICATION-------------------------
     print("----Verification----")
-    org_problem = fem.LinearProblem(a, rhs, bcs=bcs, petsc_options=petsc_options)
+    u_ = u_h.copy()
+    u_.x.array[:] = 0
+    org_problem = fem.LinearProblem(a, rhs, u=u_, bcs=bcs, petsc_options=petsc_options)
     with Timer("~Periodic: Unconstrained solve"):
-        u_ = org_problem.solve()
+        org_problem.solve()
         it = org_problem.solver.getIterationNumber()
     print(f"Unconstrained solver iterations: {it}")
+
+    # Write solutions to file
+    ext = "tet" if celltype == CellType.tetrahedron else "hex"
     u_.name = "u_" + ext + "_unconstrained"
-    out_periodic.write_function(u_, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
+    u_h.name = "u_" + ext
+    fname = f"results/demo_periodic3d_{ext}.bp"
+    out_periodic = VTXWriter(MPI.COMM_WORLD, fname, [u_h._cpp_object, u_._cpp_object])
+    out_periodic.write(0)
+    out_periodic.close()
 
     root = 0
     with Timer("~Demo: Verification"):
@@ -142,13 +137,10 @@ def demo_periodic3D(celltype, out_periodic):
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            assert np.allclose(uh_numpy, u_mpc, rtol=rtol)
 
 
 if __name__ == "__main__":
-    fname = "results/demo_periodic3d.xdmf"
-    out_periodic = XDMFFile(MPI.COMM_WORLD, fname, "w")
-    for celltype in [CellType.tetrahedron, CellType.hexahedron]:
-        demo_periodic3D(celltype, out_periodic)
-    out_periodic.close()
+    for celltype in [CellType.hexahedron, CellType.tetrahedron]:
+        demo_periodic3D(celltype)
     list_timings(MPI.COMM_WORLD, [TimingType.wall])

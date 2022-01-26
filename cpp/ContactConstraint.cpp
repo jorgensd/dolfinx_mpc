@@ -59,26 +59,27 @@ create_boundingbox_tree(const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
 };
 
 /// Compute contributions to slip constrain from master side (local to process)
-/// @param [in] local_rems List containing which block each slave dof is in
-/// @param [in] verified_collisions AdjacencyList where each node contains the
-/// cells colliding with local_rems[i]
-/// @param [in] slave_coordinates The coordinates of the slave dofs
-/// @param [in] normals The normals at each slave dofs
-/// @param [in] V the function space
+/// @param[in] local_rems List containing which block each slave dof is in
+/// @param[in] local_colliding_cell List with one-to-one correspondes to a cell
+/// that the block is colliding with
+/// @param[in] normals The normals at each slave dofs
+/// @param[in] V the function space
+/// @param[in] tabulated_basis_valeus The basis values tabulated for the given
+/// cells at the given coordiantes
 /// @returns The mpc data (exluding slave indices)
 mpc_data compute_master_contributions(
-    const std::vector<std::int32_t>& local_rems,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& verified_collisions,
-    const xt::xtensor<double, 2>& slave_coordinates,
+    const tcb::span<const std::int32_t>& local_rems,
+    const tcb::span<const std::int32_t>& local_colliding_cell,
     const xt::xtensor<PetscScalar, 2>& normals,
-    std::shared_ptr<const dolfinx::fem::FunctionSpace> V)
+    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+    xt::xtensor<double, 3> tabulated_basis_values)
 {
+  const double tol = 1e-6;
   auto mesh = V->mesh();
-  const std::int32_t tdim = mesh->topology().dim();
-  const std::int32_t gdim = mesh->geometry().dim();
   const std::int32_t block_size = V->dofmap()->index_map_bs();
   std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
+  const int bs = V->dofmap()->index_map_bs();
   const std::int32_t size_local = imap->size_local();
   MPI_Comm comm = mesh->comm();
   int rank = -1;
@@ -88,31 +89,26 @@ mpc_data compute_master_contributions(
   const std::size_t num_slaves_local = local_rems.size();
   std::vector<std::int32_t> num_masters_local(num_slaves_local, 0);
 
-  assert(num_slaves_local == (std::size_t)verified_collisions.num_nodes());
-  std::vector<xt::xtensor<PetscScalar, 2>> basis_values(num_slaves_local);
+  assert(num_slaves_local == local_colliding_cell.size());
 
-  for (int i = 0; i < (int)num_slaves_local; ++i)
+  for (std::size_t i = 0; i < num_slaves_local; ++i)
   {
-    auto verified_cell = verified_collisions.links(i);
-    if (!verified_cell.empty())
+    if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      basis_values[i] = get_basis_functions(
-          V,
-          xt::reshape_view(xt::view(slave_coordinates, i, xt::xrange(0, gdim)),
-                           {1, gdim}),
-          verified_cell[0]);
-      auto cell_blocks = V->dofmap()->cell_dofs(verified_cell[0]);
-      for (std::int32_t j = 0; j < tdim; ++j)
-      {
-        for (std::size_t k = 0; k < cell_blocks.size(); ++k)
-        {
-          for (std::int32_t block = 0; block < block_size; ++block)
-          {
-            PetscScalar coeff = basis_values[i](k * block_size + block, j)
-                                * normals(i, j) / normals(i, local_rems[i]);
+      auto basis_values
+          = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
 
-            if (std::abs(coeff) > 1e-6)
-              num_masters_local[i]++;
+      auto cell_blocks = V->dofmap()->cell_dofs(cell);
+      for (std::size_t j = 0; j < cell_blocks.size(); ++j)
+      {
+        for (int b = 0; b < bs; b++)
+        {
+          // NOTE: Assuming 0 value size
+          if (const PetscScalar val
+              = normals(i, b) / normals(i, local_rems[i]) * basis_values(j, 0);
+              std::abs(val) > tol)
+          {
+            num_masters_local[i]++;
           }
         }
       }
@@ -126,42 +122,41 @@ mpc_data compute_master_contributions(
   std::vector<PetscScalar> coefficients_other_side(masters_offsets.back());
   std::vector<std::int32_t> owners_other_side(masters_offsets.back());
   std::vector<std::int32_t> ghost_owners = imap->ghost_owner_rank();
+
+  // Temporary array holding global indices
+  std::vector<std::int64_t> global_blocks;
+
   // Reuse num_masters_local for insertion
   std::fill(num_masters_local.begin(), num_masters_local.end(), 0);
-  for (int i = 0; i < (int)num_slaves_local; ++i)
+  for (std::size_t i = 0; i < num_slaves_local; ++i)
   {
-    auto verified_cell = verified_collisions.links(i);
-    if (verified_cell.empty())
-      continue;
-    auto cell_blocks = V->dofmap()->cell_dofs(verified_cell[0]);
-    std::vector<std::int64_t> global_master_blocks(cell_blocks.size());
-    imap->local_to_global(cell_blocks, global_master_blocks);
-    // Compute coefficients for each master
-    for (std::int32_t j = 0; j < tdim; ++j)
+    if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      for (std::size_t k = 0; k < cell_blocks.size(); ++k)
+      auto basis_values
+          = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
+
+      auto cell_blocks = V->dofmap()->cell_dofs(cell);
+      global_blocks.resize(cell_blocks.size());
+      imap->local_to_global(cell_blocks, global_blocks);
+      // Compute coefficients for each master
+      for (std::size_t j = 0; j < cell_blocks.size(); ++j)
       {
-        for (std::int32_t block = 0; block < block_size; ++block)
+        const std::int32_t cell_block = cell_blocks[j];
+        for (int b = 0; b < bs; b++)
         {
-          PetscScalar coeff = basis_values[i](k * block_size + block, j)
-                              * normals(i, j) / normals(i, local_rems[i]);
-          if (std::abs(coeff) > 1e-6)
+          // NOTE: Assuming 0 value size
+          if (const PetscScalar val
+              = normals(i, b) / normals(i, local_rems[i]) * basis_values(j, 0);
+              std::abs(val) > tol)
           {
-            masters_other_side[masters_offsets[i] + num_masters_local[i]]
-                = global_master_blocks[k] * block_size + block;
-            coefficients_other_side[masters_offsets[i] + num_masters_local[i]]
-                = coeff;
-            // If master dof owned by other process find owner
-            if (cell_blocks[k] < size_local)
-            {
-              owners_other_side[masters_offsets[i] + num_masters_local[i]]
-                  = rank;
-            }
-            else
-            {
-              owners_other_side[masters_offsets[i] + num_masters_local[i]]
-                  = ghost_owners[cell_blocks[k] - size_local];
-            }
+            const std::int32_t m_pos
+                = masters_offsets[i] + num_masters_local[i];
+            masters_other_side[m_pos] = global_blocks[j] * block_size + b;
+            coefficients_other_side[m_pos] = val;
+            owners_other_side[m_pos]
+                = cell_block < size_local
+                      ? rank
+                      : ghost_owners[cell_block - size_local];
             num_masters_local[i]++;
           }
         }
@@ -354,15 +349,17 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
-  const int tdim = V->mesh()->topology().dim();
-  const int gdim = V->mesh()->geometry().dim();
+  auto mesh = V->mesh();
+  assert(mesh == meshtags.mesh());
+  const int tdim = mesh->topology().dim();
+  const int gdim = mesh->geometry().dim();
   const int fdim = tdim - 1;
   const int block_size = V->dofmap()->index_map_bs();
   std::int32_t size_local = V->dofmap()->index_map->size_local();
 
-  V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
-  V->mesh()->topology_mutable().create_connectivity(tdim, tdim);
-  V->mesh()->topology_mutable().create_entity_permutations();
+  mesh->topology_mutable().create_connectivity(fdim, tdim);
+  mesh->topology_mutable().create_connectivity(tdim, tdim);
+  mesh->topology_mutable().create_entity_permutations();
 
   // Find all slave dofs and split them into locally owned and ghosted blocks
   std::vector<std::int32_t> local_slave_blocks;
@@ -432,26 +429,26 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   dolfinx::geometry::BoundingBoxTree bb_tree
       = create_boundingbox_tree(meshtags, fdim, master_marker);
-  // Extract coordinates of local slave dofs
-  xt::xtensor<double, 2> slave_coordinates({local_slave_blocks.size(), 3});
 
+  // Compute contributions on other side local to process
+  mpc_data mpc_master_local;
+
+  // Create map from slave dof blocks to a cell containing them
+  std::vector<std::int32_t> slave_cells
+      = dolfinx_mpc::create_block_to_cell_map(*V, local_slave_blocks);
+  xt::xtensor<double, 2> slave_coordinates
+      = xt::transpose(dolfinx_mpc::tabulate_dof_coordinates(
+          *V, local_slave_blocks, slave_cells));
   {
-    xt::xtensor<double, 2> coordinates = V->tabulate_dof_coordinates(false);
+    std::vector<std::int32_t> local_cell_collisions
+        = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, slave_coordinates);
+    xt::xtensor<double, 3> tabulated_basis_values
+        = dolfinx_mpc::evaluate_basis_functions(V, slave_coordinates,
+                                                local_cell_collisions);
 
-    for (std::size_t i = 0; i < local_slaves.size(); ++i)
-      xt::row(slave_coordinates, i)
-          = xt::row(coordinates, local_slave_blocks[i]);
+    mpc_master_local = compute_master_contributions(
+        local_rems, local_cell_collisions, normals, V, tabulated_basis_values);
   }
-  // Compute all local collisions between slave dofs and master interface
-  dolfinx::graph::AdjacencyList<std::int32_t> bbox_collisions
-      = dolfinx::geometry::compute_collisions(bb_tree, slave_coordinates);
-
-  const dolfinx::graph::AdjacencyList<std::int32_t> verified_collisions
-      = dolfinx::geometry::compute_colliding_cells(*V->mesh(), bbox_collisions,
-                                                   slave_coordinates);
-  mpc_data mpc_master_local = compute_master_contributions(
-      local_rems, verified_collisions, slave_coordinates, normals, V);
-
   // Find slave indices were contributions are not found on the process
   std::vector<std::int32_t>& l_offsets = mpc_master_local.offsets;
   std::vector<std::int32_t> slave_indices_remote;
@@ -555,14 +552,16 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
                                    xt::no_ownership(), shape_3);
     auto slave_coords = xt::adapt(coord_recv.data(), coord_recv.size(),
                                   xt::no_ownership(), shape_3);
-    dolfinx::graph::AdjacencyList<std::int32_t> bbox_collisions_local
-        = dolfinx::geometry::compute_collisions(bb_tree, slave_coords);
-    dolfinx::graph::AdjacencyList<std::int32_t> verified_candidates_local
-        = dolfinx::geometry::compute_colliding_cells(
-            *V->mesh(), bbox_collisions_local, slave_coords);
+
+    std::vector<std::int32_t> recv_slave_cells_collisions
+        = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, slave_coords);
+    xt::xtensor<double, 3> recv_tabulated_basis_values
+        = dolfinx_mpc::evaluate_basis_functions(V, slave_coords,
+                                                recv_slave_cells_collisions);
 
     remote_data = compute_master_contributions(
-        recv_rems, verified_candidates_local, slave_coords, slave_normals, V);
+        recv_rems, recv_slave_cells_collisions, slave_normals, V,
+        recv_tabulated_basis_values);
   }
 
   // Get info about reverse communicator
@@ -680,8 +679,8 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
           = remote_colliding_offsets[inc_disp_offsets[i] + c];
       const std::int32_t slave_max
           = remote_colliding_offsets[inc_disp_offsets[i] + c + 1];
-      const std::int32_t num_inc = slave_max - slave_min;
-      if (!(slave_found[c]) && (num_inc > 0))
+      if (const std::int32_t num_inc = slave_max - slave_min;
+          !(slave_found[c]) && (num_inc > 0))
       {
         slave_found[c] = true;
         num_inc_masters[c] = num_inc;
@@ -1248,15 +1247,16 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
         {
           for (std::int32_t block = 0; block < block_size; ++block)
           {
-            const PetscScalar coeff = basis_values(k * block_size + block, j);
-            if (std::abs(coeff) > 1e-6)
+            if (const PetscScalar coeff
+                = basis_values(k * block_size + block, j);
+                std::abs(coeff) > 1e-6)
             {
               l_master[j].push_back(cell_blocks[k] * block_size + block);
               l_coeff[j].push_back(coeff);
-              if (cell_blocks[k] < size_local)
-                l_owner[j].push_back(rank);
-              else
-                l_owner[j].push_back(ghost_owners[cell_blocks[k] - size_local]);
+              l_owner[j].push_back(
+                  cell_blocks[k] < size_local
+                      ? rank
+                      : ghost_owners[cell_blocks[k] - size_local]);
             }
           }
         }
@@ -1450,18 +1450,16 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
           {
             for (std::int32_t block = 0; block < block_size; ++block)
             {
-              const PetscScalar coeff = basis_values(k * block_size + block, t);
-              if (std::abs(coeff) > 1e-6)
+              if (const PetscScalar coeff
+                  = basis_values(k * block_size + block, t);
+                  std::abs(coeff) > 1e-6)
               {
                 l_master[t].push_back(cell_blocks[k] * block_size + block);
                 l_coeff[t].push_back(coeff);
-                if (cell_blocks[k] < size_local)
-                  l_owner[t].push_back(rank);
-                else
-                {
-                  l_owner[t].push_back(
-                      ghost_owners[cell_blocks[k] - size_local]);
-                }
+                l_owner[t].push_back(
+                    cell_blocks[k] < size_local
+                        ? rank
+                        : ghost_owners[cell_blocks[k] - size_local]);
               }
             }
           }
