@@ -64,10 +64,15 @@ void modify_mpc_cell(
         for (std::int32_t c = 0; c < bs[1]; c++)
         {
           const bool is_slave1 = is_slave[1][dofs[1][j] * bs[1] + c];
+          if (is_slave0 &&  is_slave1)
+            std::cout << "removing a support dof" << std::endl;
           Ae_stripped(i * bs[0] + b, j * bs[1] + c)
               = (is_slave0 && is_slave1) ? T(0.0) : Ae(i * bs[0] + b, j * bs[1] + c);
         }
     }
+
+  std::cout << "local index size (" << local_index[0].size() << ", " << local_index[1].size() << ")" << std::endl;
+  std::cout << "supp size (" << slaves[0].size() << ", " << slaves[1].size() << ")" << std::endl;
 
   std::cout << "Ae stripped" << std::endl;
   std::cout << Ae_stripped << std::endl;
@@ -89,8 +94,10 @@ void modify_mpc_cell(
       Ae[row * ndim1 + dof] = 0.0;
   }
 
-  // std::cout << "Ae" << std::endl;
-  // std::cout << Ae << std::endl;
+  std::cout << "Ae original" << std::endl;
+  std::cout << Ae_original << std::endl;
+  std::cout << "Ae after mod" << std::endl;
+  std::cout << Ae << std::endl;
 
   // Flatten slaves, masters and coeffs for efficient modification of the
   // matrices
@@ -125,26 +132,11 @@ void modify_mpc_cell(
   xt::xarray<T> Acol(ndim1);
 
   // Loop over each master
-  std::vector<std::int32_t> unrolled_dofs(ndim0);
+  std::cout << "Doing rows " << std::endl;
+  std::vector<std::int32_t> unrolled_dofs(ndim1);
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
   {
     Acol = flattened_coeffs[0][i] * xt::row(Ae_stripped, flattened_slaves[0][i]);
-
-    // Unroll dof blocks
-    for (std::int32_t j = 0; j < num_dofs[0]; ++j)
-      for (std::int32_t k = 0; k < bs[0]; ++k)
-        unrolled_dofs[j * bs[0] + k] = dofs[0][j] * bs[0] + k;
-
-    // Insert modified entries
-    row[0] = flattened_masters[0][i];
-    unrolled_dofs[flattened_slaves[0][i]] = flattened_masters[0][i];
-    mat_set(1, row.data(), int(ndim1), unrolled_dofs.data(), Acol.data());
-  }
-
-  unrolled_dofs.resize(ndim1);
-  for (std::size_t i = 0; i < num_flattened_masters[1]; ++i)
-  {
-    Arow = flattened_coeffs[1][i] * xt::col(Ae_stripped, flattened_slaves[1][i]);
 
     // Unroll dof blocks
     for (std::int32_t j = 0; j < num_dofs[1]; ++j)
@@ -152,8 +144,35 @@ void modify_mpc_cell(
         unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
 
     // Insert modified entries
+    row[0] = flattened_masters[0][i];
+    // unrolled_dofs[flattened_slaves[0][i]] = flattened_masters[0][i];
+    std::string msg = "";
+    for (auto df : unrolled_dofs)
+      msg += std::to_string(df) + ", ";
+    std::cout << "Adding into row " << row[0] << " values " << Acol << std::endl;
+    std::cout << "Into col DoFs " << msg << std::endl;
+    mat_set(1, row.data(), int(ndim1), unrolled_dofs.data(), Acol.data());
+  }
+
+  std::cout << "Doing cols " << std::endl;
+  unrolled_dofs.resize(ndim0);
+  for (std::size_t i = 0; i < num_flattened_masters[1]; ++i)
+  {
+    Arow = flattened_coeffs[1][i] * xt::col(Ae_stripped, flattened_slaves[1][i]);
+
+    // Unroll dof blocks
+    for (std::int32_t j = 0; j < num_dofs[0]; ++j)
+      for (std::int32_t k = 0; k < bs[0]; ++k)
+        unrolled_dofs[j * bs[0] + k] = dofs[0][j] * bs[0] + k;
+
+    // Insert modified entries
     col[0] = flattened_masters[1][i];
-    unrolled_dofs[flattened_slaves[1][i]] = flattened_masters[1][i];
+    // unrolled_dofs[flattened_slaves[1][i]] = flattened_masters[1][i];
+    std::string msg = "";
+    for (auto df : unrolled_dofs)
+      msg += std::to_string(df) + ", ";
+    std::cout << "Adding into col " << col[0] << " values " << Arow << std::endl;
+    std::cout << "Into row DoFs " << msg << std::endl;
     mat_set(int(ndim0), unrolled_dofs.data(), 1, col.data(), Arow.data());
   }
 
@@ -325,6 +344,7 @@ void assemble_cells_impl(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
+  std::cout << "In assemble_cells_impl" << std::endl;
   // Get MPC data
   const std::array<
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
@@ -375,9 +395,12 @@ void assemble_cells_impl(
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
 
+    std::cout << "In assemble_cells_impl 1" << std::endl;
     // Zero rows/columns for essential bcs
     xtl::span<const int32_t> dofs0 = dofmap0.links(cell);
     xtl::span<const int32_t> dofs1 = dofmap1.links(cell);
+    std::cout << "bc0 size " << bc0.size() << " bc1 size " << bc1.size() << std::endl;
+    std::cout << "In assemble_cells_impl 1a" << std::endl;
     if (!bc0.empty())
     {
       for (std::int32_t i = 0; i < num_dofs0; ++i)
@@ -389,6 +412,7 @@ void assemble_cells_impl(
         }
       }
     }
+    std::cout << "In assemble_cells_impl 1b" << std::endl;
     if (!bc1.empty())
     {
       for (std::int32_t j = 0; j < num_dofs1; ++j)
@@ -396,17 +420,19 @@ void assemble_cells_impl(
         for (std::int32_t k = 0; k < bs1; ++k)
         {
           if (bc1[bs1 * dofs1[j] + k])
-            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({num_dofs1 * bs1});
+            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({num_dofs0 * bs0});
         }
       }
     }
+    std::cout << "In assemble_cells_impl 2" << std::endl;
     // Modify local element matrix Ae and insert contributions into master
     // locations
     if ((cell_to_slaves[0]->num_links(cell) > 0)
       or (cell_to_slaves[1]->num_links(cell) > 0))
     {
+      std::cout << "about to modify a cell" << std::endl;
       const std::array<const xtl::span<const int32_t>, 2> slaves = 
-        {cell_to_slaves[0]->links(cell), cell_to_slaves[0]->links(cell)};
+        {cell_to_slaves[0]->links(cell), cell_to_slaves[1]->links(cell)};
       const std::array<const xtl::span<const int32_t>, 2> dofs = {dofs0, dofs1};
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
                          masters, coefficients, is_slave);
@@ -430,6 +456,8 @@ void assemble_matrix_impl(
 {
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
   assert(mesh);
+
+  std::cout << "In assemble_matrix_impl" << std::endl;
 
   // Get dofmap data
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap0
@@ -530,6 +558,8 @@ void _assemble_matrix(
     const T diagval)
 {
   dolfinx::common::Timer timer("~MPC: Assemble matrix (C++)");
+
+  std::cout << "In _assemble_matrix" << std::endl;
 
   // Index maps for dof ranges
   std::shared_ptr<const dolfinx::common::IndexMap> map0

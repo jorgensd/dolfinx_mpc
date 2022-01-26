@@ -112,7 +112,7 @@ def create_matrix_nest(
 def assemble_matrix_nest(
         A: _PETSc.Mat,
         a: Sequence[Sequence[_fem.FormMetaClass]],
-        constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+        constraint: Sequence[MultiPointConstraint],
         bcs: Sequence[_fem.DirichletBCMetaClass] = [],
         diagval: _PETSc.ScalarType = 1):
     for i, a_row in enumerate(a):

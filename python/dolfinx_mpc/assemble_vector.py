@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 import dolfinx.fem as _fem
 import dolfinx.cpp as _cpp
 import ufl
@@ -83,3 +83,25 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
         dolfinx_mpc.cpp.mpc.assemble_vector(b_local, form, constraint._cpp_object)
     t.stop()
     return b
+
+
+def create_vector_nest(
+        L: Sequence[_fem.FormMetaClass],
+        constraints: Sequence[MultiPointConstraint]):
+    assert len(constraints) == len(L)
+
+    maps = [(constraint.function_space.dofmap.index_map,
+             constraint.function_space.dofmap.index_map_bs)
+             for constraint in constraints]
+    return _cpp.fem.petsc.create_vector_nest(maps)
+
+
+def assemble_vector_nest(
+        b: _PETSc.Vec,
+        L: Sequence[_fem.FormMetaClass],
+        constraints: Sequence[MultiPointConstraint]):
+    assert len(constraints) == len(L)
+
+    b_sub_vecs = b.getNestSubVecs()
+    for i, L_row in enumerate(L):
+        assemble_vector(L_row, constraints[i], b=b_sub_vecs[i])

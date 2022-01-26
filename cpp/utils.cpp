@@ -473,6 +473,8 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
         "Cannot create sparsity pattern. Form is not a bilinear form");
   }
 
+  std::cout << "Creating MPC sparsity pattern" << std::endl;
+
   // Extract function space and index map from mpc
   auto V0 = mpc0->function_space();
   auto V1 = mpc1->function_space();
@@ -502,6 +504,7 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
   build_standard_pattern<PetscScalar>(pattern, a);
   LOG(INFO) << "Build new pattern\n";
 
+  std::cout << "Standard pattern created" << std::endl;
   // // Arrays replacing slave dof with master dof in sparsity pattern
   // const int& block_size = bs0;
   // std::vector<PetscInt> master_for_slave(block_size);
@@ -643,12 +646,30 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
     pattern_populator(
         pattern, mpc0, mpc1,
         [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
-        { pattern.insert(dofs_m, dofs_s); },
+        { 
+          std::string msg = "";
+          for (auto mdof : dofs_m)
+            msg += std::to_string(mdof) + ", ";
+          std::cout << "PPop1: dofs_m " << msg << std::endl;
+          msg = "";
+          for (auto mdof : dofs_s)
+            msg += std::to_string(mdof) + ", ";
+          std::cout << "PPop1: dofs_s " << msg << std::endl;
+          pattern.insert(dofs_m, dofs_s); },
         do_nothing_inserter);
     pattern_populator(
         pattern, mpc1, mpc0,
         [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
-        { pattern.insert(dofs_s, dofs_m); },
+        { 
+          std::string msg = "";
+          for (auto mdof : dofs_m)
+            msg += std::to_string(mdof) + ", ";
+          std::cout << "PPop2: dofs_m " << msg << std::endl;
+          msg = "";
+          for (auto mdof : dofs_s)
+            msg += std::to_string(mdof) + ", ";
+          std::cout << "PPop2: dofs_s " << msg << std::endl;
+          pattern.insert(dofs_s, dofs_m); },
         do_nothing_inserter);
   }
 
