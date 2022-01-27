@@ -628,6 +628,12 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   const std::size_t value_size = element->value_size() / bs_element;
   const std::size_t space_dimension = element->space_dimension() / bs_element;
 
+  // Return early if we have no points
+  xt::xtensor<double, 3> basis_values(
+      {x.shape(0), space_dimension, value_size});
+  if (x.shape(0) == 0)
+    return basis_values;
+
   // If the space has sub elements, concatenate the evaluations on the sub
   // elements
   if (const int num_sub_elements = element->num_sub_elements();
@@ -723,8 +729,6 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   // Prepare basis function data structures
   xt::xtensor<double, 4> basis_reference_values(
       {1, x.shape(0), space_dimension, reference_value_size});
-  xt::xtensor<double, 3> basis_values(
-      {x.shape(0), space_dimension, value_size});
 
   // Compute basis on reference element
   element->tabulate(basis_reference_values, X, 0);
