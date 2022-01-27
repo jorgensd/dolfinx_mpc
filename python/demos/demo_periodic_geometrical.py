@@ -5,11 +5,7 @@
 # on the unit square with homogeneous Dirichlet boundary conditions
 # at y = 0, 1 and periodic boundary conditions at x = 0, 1.
 #
-# Original implementation in DOLFIN by Kristian B. Oelgaard and Anders Logg
-# This implementation can be found at:
-# https://bitbucket.org/fenics-project/dolfin/src/master/python/demo/documented/periodic/demo_periodic.py
-#
-# Copyright (C) Jørgen S. Dokken 2020.
+# Copyright (C) Jørgen S. Dokken 2020-2022.
 #
 # This file is part of DOLFINX_MPCX.
 #
@@ -26,16 +22,17 @@ from dolfinx.mesh import create_unit_square, locate_entities_boundary
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from mpi4py import MPI
 from petsc4py import PETSc
-from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
-                 inner, pi, sin)
+from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
+                 exp, grad, inner, pi, sin)
 
 # Get PETSc int and scalar types
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 
 # Create mesh and finite element
-N = 100
-mesh = create_unit_square(MPI.COMM_WORLD, N, N)
-V = fem.FunctionSpace(mesh, ("CG", 1))
+NX = 50
+NY = 100
+mesh = create_unit_square(MPI.COMM_WORLD, NX, NY)
+V = fem.VectorFunctionSpace(mesh, ("CG", 1))
 
 
 def dirichletboundary(x):
@@ -45,7 +42,8 @@ def dirichletboundary(x):
 # Create Dirichlet boundary condition
 facets = locate_entities_boundary(mesh, 1, dirichletboundary)
 topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-bc = fem.dirichletbc(PETSc.ScalarType(0), topological_dofs, V)
+zero = np.array([0, 0], dtype=PETSc.ScalarType)
+bc = fem.dirichletbc(zero, topological_dofs, V)
 bcs = [bc]
 
 
@@ -63,7 +61,7 @@ def periodic_relation(x):
 
 with Timer("~PERIODIC: Initialize MPC"):
     mpc = MultiPointConstraint(V)
-    mpc.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_relation, bcs)
+    mpc.create_periodic_constraint_geometrical(periodic_boundary, periodic_relation, bcs)
     mpc.finalize()
 
 # Define variational problem
@@ -74,7 +72,7 @@ a = inner(grad(u), grad(v)) * dx
 x = SpatialCoordinate(mesh)
 dx_ = x[0] - 0.9
 dy_ = x[1] - 0.5
-f = x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_) / 0.02)
+f = as_vector((x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_) / 0.02), 0.3 * x[1]))
 
 rhs = inner(f, v) * dx
 
@@ -94,8 +92,9 @@ if complex_mode:
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:
     petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_typ": "boomeramg",
-                     "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
-                     "pc_hypre_boomeramg_print_statistics": 1}
+                     "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v"  # ,
+                     # "pc_hypre_boomeramg_print_statistics": 1
+                     }
 
 # Set PETSc options
 opts = PETSc.Options()
@@ -109,7 +108,7 @@ solver.setFromOptions()
 
 with Timer("~PERIODIC: Assemble and solve MPC problem"):
     uh = problem.solve()
-    solver.view()
+    # solver.view()
     it = solver.getIterationNumber()
     print("Constrained solver iterations {0:d}".format(it))
 
@@ -118,7 +117,6 @@ uh.name = "u_mpc"
 outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_periodic_geometrical.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(uh)
-
 
 print("----Verification----")
 # --------------------VERIFICATION-------------------------

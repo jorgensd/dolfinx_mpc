@@ -91,13 +91,13 @@ set_package_properties(UFC PROPERTIES TYPE REQUIRED
   URL "https://github.com/fenics/ffcx")
 
 # Check for required package DOLFINX
-find_package(DOLFINX REQUIRED)
+find_package(DOLFINX 0.3.1.0 REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     DESCRIPTION "New generation Dynamic Object-oriented Library for - FINite element computation"
     URL "https://github.com/FEniCS/dolfinx"
     PURPOSE "Main dependency of library")
 
-find_package(Basix 0.0.1 REQUIRED)
+find_package(Basix 0.3.1.0 REQUIRED)
 set_package_properties(basix PROPERTIES TYPE REQUIRED
       DESCRIPTION "FEniCS tabulation library"
       URL "https://github.com/fenics/basix")
@@ -160,11 +160,12 @@ include(GNUInstallDirs)
 
 install(FILES dolfinx_mpc.h  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
 
-install(FILES ContactConstraint.h utils.h MultiPointConstraint.h SlipConstraint.h assemble_matrix.h assemble_vector.h lifting.h mpc_helpers.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
+install(FILES ContactConstraint.h utils.h MultiPointConstraint.h SlipConstraint.h PeriodicConstraint.h assemble_matrix.h assemble_vector.h lifting.h mpc_helpers.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
 # Add source files to the target
 target_sources(dolfinx_mpc PRIVATE
 ${CMAKE_CURRENT_SOURCE_DIR}/SlipConstraint.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/ContactConstraint.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/PeriodicConstraint.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/utils.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/assemble_matrix.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/assemble_vector.cpp

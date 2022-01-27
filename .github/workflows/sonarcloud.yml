@@ -13,8 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     container: dolfinx/dev-env
     env:
-      SONAR_SCANNER_VERSION: 4.6.1.2450 # Find the latest version in the "Linux" link on this page:
-                                        # https://sonarcloud.io/documentation/analysis/scan/sonarscanner/
+      SONAR_SCANNER_VERSION:
+        4.6.2.2472 # Find the latest version in at:
+        # https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       PETSC_ARCH: linux-gnu-real-32
@@ -86,9 +87,16 @@ jobs:
           cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
           cmake --build build-dir --parallel 3
           cmake --install build-dir
- 
+
       - name: Install DOLFINx-MPC (Python)
         run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/
+
+      - name: Run sonar-scanner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          sonar-scanner --define sonar.host.url="${{ env.SONAR_SERVER_URL }}" --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
 
       - name: Run coverage report (with 4 process to hit all mpi special handling)
         run: |
@@ -99,15 +107,7 @@ jobs:
           coverage html --rcfile=.coveragerc
           coverage xml --rcfile=.coveragerc
 
-
       - uses: actions/upload-artifact@v2
         with:
           name: code-coverage
           path: htmlcov
-
-      - name: Run sonar-scanner
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          sonar-scanner --define sonar.host.url="${{ env.SONAR_SERVER_URL }}" --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"

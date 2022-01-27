@@ -6,25 +6,16 @@
 
 #pragma once
 
+#include "utils.h"
 #include <dolfinx/fem/Function.h>
 #include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/mesh/MeshTags.h>
 #include <petscsys.h>
 namespace dolfinx_mpc
 {
-typedef struct mpc_data mpc_data;
-
-struct mpc_data
-{
-  std::vector<std::int32_t> slaves;
-  std::vector<std::int64_t> masters;
-  std::vector<PetscScalar> coeffs;
-  std::vector<std::int32_t> offsets;
-  std::vector<std::int32_t> owners;
-};
 
 /// Create a slip contact condition between two sets of facets
-/// @param[in] The mpc function space
+/// @param[in] V The mpc function space
 /// @param[in] meshtags The meshtag
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
