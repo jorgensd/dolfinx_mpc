@@ -179,115 +179,123 @@ void assemble_exterior_facets(
     const std::function<void(const xtl::span<T>&,
                              const xtl::span<const std::uint32_t>&,
                              std::int32_t, int)>& apply_dof_transformation,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, size_t bs0,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
     const std::function<
         void(const xtl::span<T>&, const xtl::span<const std::uint32_t>&,
              std::int32_t, int)>& apply_dof_transformation_to_transpose,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, size_t bs1,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
     const std::vector<std::int8_t>& bc0, const std::vector<std::int8_t>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*)>& kernel,
     const xtl::span<const T> coeffs, int cstride,
     const std::vector<T>& constants,
     const xtl::span<const std::uint32_t>& cell_info,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
+  // Get MPC data
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+        masters = {mpc0->masters(), mpc1->masters()};
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2> coefficients
+      = {mpc0->coefficients(), mpc1->coefficients()};
+  const std::array<const std::vector<std::int8_t>, 2>
+    is_slave = {mpc0->is_slave(), mpc1->is_slave()};
 
-  // // Get MPC data
-  // const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-  //     masters = mpc->masters();
-  // const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coefficients
-  //     = mpc->coefficients();
-  // const std::vector<std::int8_t>& is_slave = mpc->is_slave();
-  // const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
-  //     cell_to_slaves
-  //     = mpc->cell_to_slaves();
+  const std::array<
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
-  // // Get mesh data
-  // const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-  //     = mesh.geometry().dofmap();
-  // // FIXME: Add proper interface for num coordinate dofs
-  // const int num_dofs_g = x_dofmap.num_links(0);
-  // xtl::span<const double> x_g = mesh.geometry().x();
+  // Get mesh data
+  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
+      = mesh.geometry().dofmap();
 
-  // // Iterate over all facets
-  // const size_t num_dofs0 = dofmap0.links(0).size();
-  // const size_t num_dofs1 = dofmap1.links(0).size();
-  // const std::uint32_t ndim0 = bs0 * num_dofs0;
-  // const std::uint32_t ndim1 = bs1 * num_dofs1;
-  // xt::xtensor<T, 2> Ae({ndim0, ndim1});
-  // const xtl::span<T> _Ae(Ae);
-  // std::vector<double> coordinate_dofs(3 * num_dofs_g);
+  // FIXME: Add proper interface for num coordinate dofs
+  const int num_dofs_g = x_dofmap.num_links(0);
+  xtl::span<const double> x_g = mesh.geometry().x();
 
-  // for (std::size_t l = 0; l < facets.size(); ++l)
-  // {
+  // Iterate over all facets
+  std::vector<double> coordinate_dofs(3 * num_dofs_g);
+  const int num_dofs0 = dofmap0.links(0).size();
+  const int num_dofs1 = dofmap1.links(0).size();
+  const std::uint32_t ndim0 = bs0 * num_dofs0;
+  const std::uint32_t ndim1 = bs1 * num_dofs1;
+  const std::array<const int, 2> num_dofs = {num_dofs0, num_dofs1};
+  const std::array<const int, 2> bs = {bs0, bs1};
+  xt::xtensor<T, 2> Ae({ndim0, ndim1});
+  const xtl::span<T> _Ae(Ae);
 
-  //   const std::int32_t cell = facets[l].first;
-  //   const int local_facet = facets[l].second;
+  for (std::size_t l = 0; l < facets.size(); ++l)
+  {
 
-  //   // Get cell vertex coordinates
-  //   xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
-  //   for (std::size_t i = 0; i < x_dofs.size(); ++i)
-  //   {
-  //     dolfinx::common::impl::copy_N<3>(
-  //         std::next(x_g.begin(), 3 * x_dofs[i]),
-  //         std::next(coordinate_dofs.begin(), 3 * i));
-  //   }
-  //   // Tabulate tensor
-  //   std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-  //   kernel(Ae.data(), coeffs.data() + l * cstride, constants.data(),
-  //          coordinate_dofs.data(), &local_facet, nullptr);
-  //   apply_dof_transformation(_Ae, cell_info, cell, ndim1);
-  //   apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
+    const std::int32_t cell = facets[l].first;
+    const int local_facet = facets[l].second;
 
-  //   // Zero rows/columns for essential bcs
-  //   xtl::span<const std::int32_t> dmap0 = dofmap0.links(cell);
-  //   xtl::span<const std::int32_t> dmap1 = dofmap1.links(cell);
-  //   if (!bc0.empty())
-  //   {
-  //     for (std::size_t i = 0; i < num_dofs0; ++i)
-  //     {
-  //       for (std::size_t k = 0; k < bs0; ++k)
-  //       {
-  //         if (bc0[bs0 * dmap0[i] + k])
-  //         {
-  //           // Zero row bs0 * i + k
-  //           const int row = bs0 * i + k;
-  //           std::fill_n(std::next(Ae.begin(), ndim1 * row), ndim1, 0.0);
-  //         }
-  //       }
-  //     }
-  //   }
-  //   if (!bc1.empty())
-  //   {
-  //     for (std::size_t j = 0; j < num_dofs1; ++j)
-  //     {
-  //       for (std::size_t k = 0; k < bs1; ++k)
-  //       {
-  //         if (bc1[bs1 * dmap1[j] + k])
-  //         {
-  //           // Zero column bs1 * j + k
-  //           const int col = bs1 * j + k;
-  //           for (std::uint32_t row = 0; row < ndim0; ++row)
-  //             Ae[row * ndim1 + col] = 0.0;
-  //         }
-  //       }
-  //     }
-  //   }
+    // Get cell vertex coordinates
+    xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
+    for (std::size_t i = 0; i < x_dofs.size(); ++i)
+    {
+      dolfinx::common::impl::copy_N<3>(
+          std::next(x_g.begin(), 3 * x_dofs[i]),
+          std::next(coordinate_dofs.begin(), 3 * i));
+    }
+    // Tabulate tensor
+    std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
+    kernel(Ae.data(), coeffs.data() + l * cstride, constants.data(),
+           coordinate_dofs.data(), &local_facet, nullptr);
+    apply_dof_transformation(_Ae, cell_info, cell, ndim1);
+    apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
 
-  //   // Modify local element matrix Ae and insert contributions into master
-  //   // locations
-  //   if (cell_to_slaves->num_links(cell) > 0)
-  //   {
-  //     xtl::span<const std::int32_t> slave_indices = cell_to_slaves->links(cell);
-  //     // Assuming test and trial space has same number of dofs and dofs per
-  //     // cell
-  //     modify_mpc_cell<T>(mat_add_values, num_dofs0, Ae, dmap0, bs0,
-  //                        slave_indices, masters, coefficients, is_slave);
-  //   }
-  //   mat_add_block_values(dmap0.size(), dmap0.data(), dmap1.size(), dmap1.data(),
-  //                        Ae.data());
-  // }
+    // Zero rows/columns for essential bcs
+    xtl::span<const std::int32_t> dmap0 = dofmap0.links(cell);
+    xtl::span<const std::int32_t> dmap1 = dofmap1.links(cell);
+    if (!bc0.empty())
+    {
+      for (std::size_t i = 0; i < num_dofs0; ++i)
+      {
+        for (std::size_t k = 0; k < bs0; ++k)
+        {
+          if (bc0[bs0 * dmap0[i] + k])
+          {
+            // Zero row bs0 * i + k
+            const int row = bs0 * i + k;
+            std::fill_n(std::next(Ae.begin(), ndim1 * row), ndim1, 0.0);
+          }
+        }
+      }
+    }
+    if (!bc1.empty())
+    {
+      for (std::size_t j = 0; j < num_dofs1; ++j)
+      {
+        for (std::size_t k = 0; k < bs1; ++k)
+        {
+          if (bc1[bs1 * dmap1[j] + k])
+          {
+            // Zero column bs1 * j + k
+            const int col = bs1 * j + k;
+            for (std::uint32_t row = 0; row < ndim0; ++row)
+              Ae[row * ndim1 + col] = 0.0;
+          }
+        }
+      }
+    }
+
+    // Modify local element matrix Ae and insert contributions into master
+    // locations
+    if ((cell_to_slaves[0]->num_links(cell) > 0)
+      or (cell_to_slaves[1]->num_links(cell) > 0))
+    {
+      const std::array<const xtl::span<const int32_t>, 2> slaves = 
+        {cell_to_slaves[0]->links(cell), cell_to_slaves[1]->links(cell)};
+      const std::array<const xtl::span<const int32_t>, 2> dofs = {dmap0, dmap1};
+      modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs,
+                         slaves, masters, coefficients, is_slave);
+    }
+    mat_add_block_values(dmap0.size(), dmap0.data(), dmap1.size(), dmap1.data(),
+                         Ae.data());
+  }
 } // namespace
 //-----------------------------------------------------------------------------
 template <typename T>
@@ -474,19 +482,19 @@ void assemble_matrix_impl(
         cstride, constants, cell_info, mpc0, mpc1);
   }
 
-  // for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
-  // {
-  //   const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
-  //   const auto& [coeffs, cstride]
-  //       = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
-  //   const std::vector<std::pair<std::int32_t, int>>& facets
-  //       = a.exterior_facet_domains(i);
-  //   assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
-  //                               facets, apply_dof_transformation, dofs0, bs0,
-  //                               apply_dof_transformation_to_transpose, dofs1,
-  //                               bs1, bc0, bc1, fn, coeffs, cstride, constants,
-  //                               cell_info, mpc);
-  // }
+  for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
+  {
+    const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
+    const auto& [coeffs, cstride]
+        = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
+    const std::vector<std::pair<std::int32_t, int>>& facets
+        = a.exterior_facet_domains(i);
+    assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
+                                facets, apply_dof_transformation, dofs0, bs0,
+                                apply_dof_transformation_to_transpose, dofs1,
+                                bs1, bc0, bc1, fn, coeffs, cstride, constants,
+                                cell_info, mpc0, mpc1);
+  }
 
   // if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   // {
