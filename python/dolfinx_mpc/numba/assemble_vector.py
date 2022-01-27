@@ -72,7 +72,8 @@ def assemble_vector(form: _fem.FormMetaClass, constraint: MultiPointConstraint, 
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Assemble vector with all entries
-    _cpp.fem.assemble_vector(vector.array_w, form, form_consts, form_coeffs)
+    with vector.localForm() as b_local:
+        _cpp.fem.assemble_vector(b_local.array_w, form, form_consts, form_coeffs)
 
     # Check if we need facet permutations
     # FIXME: access apply_dof_transformations here
