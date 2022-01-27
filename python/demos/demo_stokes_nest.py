@@ -160,7 +160,7 @@ L1 = dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)) * q * ufl.dx
 # No prescribed shear stress
 n = ufl.FacetNormal(mesh)
 g_tau = tangential_proj(dolfinx.fem.Constant(
-    mesh, PETSc.ScalarType(((0, 0), (0, 0))))*n, n)
+    mesh, PETSc.ScalarType(((0, 0), (0, 0)))) * n, n)
 ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
 # Terms due to slip condition

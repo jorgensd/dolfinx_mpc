@@ -108,7 +108,7 @@ def create_vector_nest(
 
     maps = [(constraint.function_space.dofmap.index_map,
              constraint.function_space.dofmap.index_map_bs)
-             for constraint in constraints]
+            for constraint in constraints]
     return _cpp.fem.petsc.create_vector_nest(maps)
 
 
