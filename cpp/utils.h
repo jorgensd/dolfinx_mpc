@@ -168,7 +168,7 @@ typename U::value_type dot(const U& u, const V& v)
   assert(u.size() == 3);
   assert(v.size() == 3);
   return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-};
+}
 
 /// Given a list of global degrees of freedom, map them to their local index
 /// @param[in] V The original function space
@@ -351,7 +351,7 @@ void append_master_data(recv_data<T> in_data,
   [[maybe_unused]] const std::size_t num_unique
       = std::set<std::int32_t>(local_slaves.begin(), local_slaves.end()).size();
   assert(num_found == num_unique);
-};
+}
 
 /// Distribute local slave->master data from owning process to ghost processes
 /// @param[in] slaves List of local slaves indices (local to process, unrolled)

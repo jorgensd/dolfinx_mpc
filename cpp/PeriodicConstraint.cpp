@@ -461,7 +461,7 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
       = remove_bc_blocks<double>(V, slave_blocks, bcs);
   return _create_periodic_condition<double>(V, tcb::make_span(reduced_blocks),
                                             relation, scale);
-};
+}
 
 dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
@@ -482,7 +482,7 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
       = remove_bc_blocks<std::complex<double>>(V, slave_blocks, bcs);
   return _create_periodic_condition<std::complex<double>>(
       V, tcb::make_span(reduced_blocks), relation, scale);
-};
+}
 
 dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
@@ -504,7 +504,7 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
       = remove_bc_blocks<double>(V, slave_blocks, bcs);
   return _create_periodic_condition<double>(V, tcb::make_span(reduced_blocks),
                                             relation, scale);
-};
+}
 
 dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
@@ -529,4 +529,4 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
 
   return _create_periodic_condition<std::complex<double>>(
       V, tcb::make_span(reduced_blocks), relation, scale);
-};
+}

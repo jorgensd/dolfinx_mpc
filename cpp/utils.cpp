@@ -593,12 +593,12 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
       }
 
       // Loop over all masters and insert all cell dofs for each master
-      for (std::int32_t j = 0; j < flattened_masters.size(); ++j)
+      for (std::size_t j = 0; j < flattened_masters.size(); ++j)
       {
         master_block[0] = flattened_masters[j];
         pattern_inserter(pattern, tcb::make_span(master_block), cell_dofs);
         // Add sparsity pattern for all master dofs of any slave on this cell
-        for (std::int32_t k = j + 1; k < flattened_masters.size(); ++k)
+        for (std::size_t k = j + 1; k < flattened_masters.size(); ++k)
         {
           other_master_block[0] = flattened_masters[k];
           master_inserter(pattern, tcb::make_span(other_master_block),

@@ -19,7 +19,7 @@ template <typename T>
 void modify_mpc_cell(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const T*)>& mat_set,
-    const std::array<const int, 2>& num_dofs, xt::xtensor<T, 2>& Ae,
+    const std::array<const std::uint32_t, 2>& num_dofs, xt::xtensor<T, 2>& Ae,
     const std::array<const xtl::span<const int32_t>, 2>& dofs, const std::array<const int, 2>& bs,
     const std::array<const xtl::span<const int32_t>, 2>& slaves,
     const std::array<const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>&
@@ -35,8 +35,8 @@ void modify_mpc_cell(
   for (int axis = 0; axis < 2; ++axis)
   {
     local_index[axis] = std::vector<std::int32_t>(slaves[axis].size());
-    for (std::int32_t i = 0; i < num_dofs[axis]; i++)
-      for (std::int32_t j = 0; j < bs[axis]; j++)
+    for (std::uint32_t i = 0; i < num_dofs[axis]; i++)
+      for (int j = 0; j < bs[axis]; j++)
       {
         const std::int32_t slave = dofs[axis][i] * bs[axis] + j;
         if (is_slave[axis][slave])
@@ -56,12 +56,12 @@ void modify_mpc_cell(
     xt::empty<T>({bs[0] * num_dofs[0], bs[1] * num_dofs[1]});
 
   // Strip Ae of all entries where both i and j are slaves
-  for (std::int32_t i = 0; i < num_dofs[0]; i++)
-    for (std::int32_t b = 0; b < bs[0]; b++)
+  for (std::uint32_t i = 0; i < num_dofs[0]; i++)
+    for (int b = 0; b < bs[0]; b++)
     {
       const bool is_slave0 = is_slave[0][dofs[0][i] * bs[0] + b];
-      for (std::int32_t j = 0; j < num_dofs[1]; j++)
-        for (std::int32_t c = 0; c < bs[1]; c++)
+      for (std::uint32_t j = 0; j < num_dofs[1]; j++)
+        for (int c = 0; c < bs[1]; c++)
         {
           const bool is_slave1 = is_slave[1][dofs[1][j] * bs[1] + c];
           Ae_stripped(i * bs[0] + b, j * bs[1] + c)
@@ -125,8 +125,8 @@ void modify_mpc_cell(
     Acol = flattened_coeffs[0][i] * xt::row(Ae_stripped, flattened_slaves[0][i]);
 
     // Unroll dof blocks
-    for (std::int32_t j = 0; j < num_dofs[1]; ++j)
-      for (std::int32_t k = 0; k < bs[1]; ++k)
+    for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
+      for (int k = 0; k < bs[1]; ++k)
         unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
 
     // Insert modified entries
@@ -140,8 +140,8 @@ void modify_mpc_cell(
     Arow = flattened_coeffs[1][i] * xt::col(Ae_stripped, flattened_slaves[1][i]);
 
     // Unroll dof blocks
-    for (std::int32_t j = 0; j < num_dofs[0]; ++j)
-      for (std::int32_t k = 0; k < bs[0]; ++k)
+    for (std::uint32_t j = 0; j < num_dofs[0]; ++j)
+      for (int k = 0; k < bs[0]; ++k)
         unrolled_dofs[j * bs[0] + k] = dofs[0][j] * bs[0] + k;
 
     // Insert modified entries
@@ -217,11 +217,11 @@ void assemble_exterior_facets(
 
   // Iterate over all facets
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
-  const int num_dofs0 = dofmap0.links(0).size();
-  const int num_dofs1 = dofmap1.links(0).size();
+  const std::uint32_t num_dofs0 = dofmap0.links(0).size();
+  const std::uint32_t num_dofs1 = dofmap1.links(0).size();
   const std::uint32_t ndim0 = bs0 * num_dofs0;
   const std::uint32_t ndim1 = bs1 * num_dofs1;
-  const std::array<const int, 2> num_dofs = {num_dofs0, num_dofs1};
+  const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
   const std::array<const int, 2> bs = {bs0, bs1};
   xt::xtensor<T, 2> Ae({ndim0, ndim1});
   const xtl::span<T> _Ae(Ae);
@@ -252,9 +252,9 @@ void assemble_exterior_facets(
     xtl::span<const std::int32_t> dmap1 = dofmap1.links(cell);
     if (!bc0.empty())
     {
-      for (std::size_t i = 0; i < num_dofs0; ++i)
+      for (std::uint32_t i = 0; i < num_dofs0; ++i)
       {
-        for (std::size_t k = 0; k < bs0; ++k)
+        for (int k = 0; k < bs0; ++k)
         {
           if (bc0[bs0 * dmap0[i] + k])
           {
@@ -269,7 +269,7 @@ void assemble_exterior_facets(
     {
       for (std::size_t j = 0; j < num_dofs1; ++j)
       {
-        for (std::size_t k = 0; k < bs1; ++k)
+        for (int k = 0; k < bs1; ++k)
         {
           if (bc1[bs1 * dmap1[j] + k])
           {
@@ -348,11 +348,11 @@ void assemble_cells_impl(
 
   // Iterate over active cells
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
-  const int num_dofs0 = dofmap0.links(0).size();
-  const int num_dofs1 = dofmap1.links(0).size();
-  const size_t ndim0 = num_dofs0 * bs0;
-  const size_t ndim1 = num_dofs1 * bs1;
-  const std::array<const int, 2> num_dofs = {num_dofs0, num_dofs1};
+  const std::uint32_t num_dofs0 = dofmap0.links(0).size();
+  const std::uint32_t num_dofs1 = dofmap1.links(0).size();
+  const std::uint32_t ndim0 = num_dofs0 * bs0;
+  const std::uint32_t ndim1 = num_dofs1 * bs1;
+  const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
   const std::array<const int, 2> bs = {bs0, bs1};
   xt::xtensor<T, 2> Ae({ndim0, ndim1});
   const xtl::span<T> _Ae(Ae);
@@ -379,7 +379,7 @@ void assemble_cells_impl(
     xtl::span<const int32_t> dofs1 = dofmap1.links(cell);
     if (!bc0.empty())
     {
-      for (std::int32_t i = 0; i < num_dofs0; ++i)
+      for (std::uint32_t i = 0; i < num_dofs0; ++i)
       {
         for (std::int32_t k = 0; k < bs0; ++k)
         {
@@ -390,7 +390,7 @@ void assemble_cells_impl(
     }
     if (!bc1.empty())
     {
-      for (std::int32_t j = 0; j < num_dofs1; ++j)
+      for (std::uint32_t j = 0; j < num_dofs1; ++j)
       {
         for (std::int32_t k = 0; k < bs1; ++k)
         {
