@@ -95,7 +95,8 @@ void _assemble_vector(
 
   // Prepare constants & coefficients
   const std::vector<T> constants = pack_constants(L);
-  const auto coeff_vec = dolfinx::fem::pack_coefficients(L);
+  auto coeff_vec = dolfinx::fem::allocate_coefficient_storage(L);
+  dolfinx::fem::pack_coefficients(L, coeff_vec);
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
 
   // Prepare cell geometry
