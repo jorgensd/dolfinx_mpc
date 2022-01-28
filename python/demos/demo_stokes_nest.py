@@ -1,4 +1,5 @@
 import dolfinx.io
+import dolfinx.cpp.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import gmsh
@@ -43,7 +44,6 @@ def create_mesh_gmsh(L: int = 2, H: int = 1, res: np.float64 = 0.1, theta: np.fl
 
         # Find entity markers before rotation
         surfaces = gmsh.model.occ.getEntities(dim=1)
-        inlet_marker, outlet_marker, wall_marker = 3, 2, 1
         walls = []
         inlets = []
         outlets = []
@@ -238,15 +238,19 @@ uh = dolfinx.fem.Function(mpc.function_space)
 uh.vector.setArray(Uh.getNestSubVecs()[0].array)
 ph = dolfinx.fem.Function(mpc_q.function_space)
 ph.vector.setArray(Uh.getNestSubVecs()[1].array)
+uh.x.scatter_forward()
+ph.x.scatter_forward()
 uh.name = "u"
 ph.name = "p"
 with dolfinx.io.XDMFFile(
-        MPI.COMM_WORLD, "results/demo_stokes_nest.xdmf", "w") as outfile:
+        mesh.comm, "results/demo_stokes_nest.xdmf", "w") as outfile:
     outfile.write_mesh(mesh)
     outfile.write_meshtags(mt)
     outfile.write_function(uh)
     outfile.write_function(ph)
 
+with dolfinx.cpp.io.VTXWriter(mesh.comm, "results/stokes_nest.bp", [uh._cpp_object]) as vtx:
+    vtx.write(0.0)
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison
 with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix reduction"):

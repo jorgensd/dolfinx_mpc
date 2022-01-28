@@ -574,8 +574,7 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
         continue;
 
       xtl::span<int32_t> slaves = cell_to_slaves->links(i);
-      xtl::span<const int32_t> cell_dofs =
-        V_off_axis->dofmap()->cell_dofs(i);
+      xtl::span<const int32_t> cell_dofs = V_off_axis->dofmap()->cell_dofs(i);
 
       // Arrays for flattened master slave data
       std::vector<std::int32_t> flattened_masters;
@@ -622,8 +621,9 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
   }
   else
   {
-    const auto do_nothing_inserter
-        = [](auto& pattern, const auto& dofs_m, const auto& dofs_s) {};
+    const auto do_nothing_inserter = []([[maybe_unused]] auto& pattern,
+                                        [[maybe_unused]] const auto& dofs_m,
+                                        [[maybe_unused]] const auto& dofs_s) {};
     // Potentially rectangular pattern needs each axis inserted separately
     pattern_populator(
         pattern, mpc0, mpc1,
