@@ -10,6 +10,7 @@ import dolfinx.fem as _fem
 import dolfinx.cpp as _cpp
 import numpy
 from dolfinx.common import Timer
+from dolfinx_mpc.assemble_matrix import create_sparsity_pattern
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 
 from petsc4py import PETSc as _PETSc
@@ -79,7 +80,7 @@ def assemble_matrix(form: _fem.FormMetaClass, constraint: MultiPointConstraint,
 
     # Create sparsity pattern and matrix if not supplied
     if A is None:
-        pattern = constraint.create_sparsity_pattern(form)
+        pattern = create_sparsity_pattern(form, constraint)
         pattern.assemble()
         A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern)
     A.zeroEntries()

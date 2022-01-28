@@ -31,7 +31,8 @@ void assemble_matrix(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
                             const std::int32_t*, const double*)>& mat_add,
     const dolfinx::fem::Form<double>& a,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     const double diagval = 1.0);
@@ -55,7 +56,9 @@ void assemble_matrix(
         mat_add,
     const dolfinx::fem::Form<std::complex<double>>& a,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc,
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc1,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,

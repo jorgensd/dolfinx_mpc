@@ -57,6 +57,12 @@ compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 
 dolfinx::la::petsc::Matrix create_matrix(
     const dolfinx::fem::Form<PetscScalar>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1,
+    const std::string& type = std::string());
+
+dolfinx::la::petsc::Matrix create_matrix(
+    const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc,
     const std::string& type = std::string());
 /// Create neighborhood communicators from every processor with a slave dof on
@@ -142,9 +148,14 @@ create_block_to_cell_map(const dolfinx::fem::FunctionSpace& V,
 /// @param[in] a bi-linear form for the current variational problem
 /// (The one used to generate input sparsity-pattern)
 /// @param[in] mpc The multi point constraint.
+// dolfinx::la::SparsityPattern create_sparsity_pattern(
+//     const dolfinx::fem::Form<PetscScalar>& a,
+//     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc);
+
 dolfinx::la::SparsityPattern create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc);
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc1);
 
 /// Compute the dot product u . vs
 /// @param u The first vector. It must has size 3.
@@ -157,7 +168,7 @@ typename U::value_type dot(const U& u, const V& v)
   assert(u.size() == 3);
   assert(v.size() == 3);
   return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-};
+}
 
 /// Given a list of global degrees of freedom, map them to their local index
 /// @param[in] V The original function space
@@ -340,7 +351,7 @@ void append_master_data(recv_data<T> in_data,
   [[maybe_unused]] const std::size_t num_unique
       = std::set<std::int32_t>(local_slaves.begin(), local_slaves.end()).size();
   assert(num_found == num_unique);
-};
+}
 
 /// Distribute local slave->master data from owning process to ghost processes
 /// @param[in] slaves List of local slaves indices (local to process, unrolled)

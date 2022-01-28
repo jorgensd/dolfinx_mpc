@@ -120,7 +120,7 @@ std::vector<std::int32_t> dolfinx_mpc::map_dofs_global_to_local(
   for (std::size_t i = 0; i < local_blocks.size(); i++)
     local_blocks[i] = local_blocks[i] * block_size + remainders[i];
   return local_blocks;
-};
+}
 //-----------------------------------------------------------------------------
 dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,

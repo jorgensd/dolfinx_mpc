@@ -333,18 +333,6 @@ class MultiPointConstraint():
         self._not_finalized()
         return self._cpp_object.cell_to_slaves
 
-    def create_sparsity_pattern(self, form: _fem.FormMetaClass):
-        """
-        Create sparsity-pattern for MPC given a compiled DOLFINx form
-
-        Parameters
-        ----------
-        form
-            The form
-        """
-        self._not_finalized()
-        return dolfinx_mpc.cpp.mpc.create_sparsity_pattern(form, self._cpp_object)
-
     @property
     def function_space(self):
         """
