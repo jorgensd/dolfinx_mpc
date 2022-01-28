@@ -77,7 +77,7 @@ void modify_mpc_cell(
   const int ndim1 = bs[1] * num_dofs[1];
   // Zero slave row
   std::for_each(local_index[0].cbegin(), local_index[0].cend(),
-                [&Ae, ndim0, ndim1](const auto dof) {
+                [&Ae, ndim1](const auto dof) {
                   std::fill_n(std::next(Ae.begin(), ndim1 * dof), ndim1, 0.0);
                 });
   // Zero slave column
@@ -223,8 +223,8 @@ void assemble_exterior_facets(
 
   // Iterate over all facets
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
-  const std::uint32_t num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
-  const std::uint32_t num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
+  const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
+  const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
   const std::uint32_t ndim0 = bs0 * num_dofs0;
   const std::uint32_t ndim1 = bs1 * num_dofs1;
   const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
@@ -356,8 +356,8 @@ void assemble_cells_impl(
 
   // Iterate over active cells
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
-  const std::uint32_t num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
-  const std::uint32_t num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
+  const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
+  const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
   const std::uint32_t ndim0 = num_dofs0 * bs0;
   const std::uint32_t ndim1 = num_dofs1 * bs1;
   const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
