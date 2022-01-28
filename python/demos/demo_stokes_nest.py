@@ -1,3 +1,16 @@
+# Copyright (C) 2022 Nathan Sime
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    MIT
+#
+# This demo illustrates how to apply a slip condition on an
+# interface not aligned with the coordiante axis.
+# The demos solves the Stokes problem using the nest functionality to
+# avoid using mixed function spaces. The demo also illustrates how to use
+#  block preconditioners with PETSc
+
+
 import dolfinx.io
 import dolfinx.cpp.io
 import dolfinx_mpc
