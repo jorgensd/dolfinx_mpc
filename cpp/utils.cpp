@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Jorgen S. Dokken
+// Copyright (C) 2020 Jorgen S. Dokken and Nathan Sime
 //
 // This file is part of DOLFINX_MPC
 //
@@ -574,8 +574,7 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
         continue;
 
       xtl::span<int32_t> slaves = cell_to_slaves->links(i);
-      xtl::span<const int32_t> cell_dofs =
-        V_off_axis->dofmap()->cell_dofs(i);
+      xtl::span<const int32_t> cell_dofs = V_off_axis->dofmap()->cell_dofs(i);
 
       // Arrays for flattened master slave data
       std::vector<std::int32_t> flattened_masters;
@@ -622,8 +621,9 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
   }
   else
   {
-    const auto do_nothing_inserter
-        = [](auto& pattern, const auto& dofs_m, const auto& dofs_s) {};
+    const auto do_nothing_inserter = []([[maybe_unused]] auto& pattern,
+                                        [[maybe_unused]] const auto& dofs_m,
+                                        [[maybe_unused]] const auto& dofs_s) {};
     // Potentially rectangular pattern needs each axis inserted separately
     pattern_populator(
         pattern, mpc0, mpc1,
@@ -676,6 +676,12 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
       = element->reference_value_size() / bs_element;
   const std::size_t value_size = element->value_size() / bs_element;
   const std::size_t space_dimension = element->space_dimension() / bs_element;
+
+  // Return early if we have no points
+  xt::xtensor<double, 3> basis_values(
+      {x.shape(0), space_dimension, value_size});
+  if (x.shape(0) == 0)
+    return basis_values;
 
   // If the space has sub elements, concatenate the evaluations on the sub
   // elements
@@ -772,8 +778,6 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   // Prepare basis function data structures
   xt::xtensor<double, 4> basis_reference_values(
       {1, x.shape(0), space_dimension, reference_value_size});
-  xt::xtensor<double, 3> basis_values(
-      {x.shape(0), space_dimension, value_size});
 
   // Compute basis on reference element
   element->tabulate(basis_reference_values, X, 0);

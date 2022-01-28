@@ -15,8 +15,6 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/petsc.h>
-#include <xtensor/xadapt.hpp>
-#include <xtensor/xio.hpp>
 #include <xtensor/xtensor.hpp>
 namespace dolfinx_mpc
 {
@@ -147,11 +145,10 @@ create_block_to_cell_map(const dolfinx::fem::FunctionSpace& V,
 /// sparsity pattern
 /// @param[in] a bi-linear form for the current variational problem
 /// (The one used to generate input sparsity-pattern)
-/// @param[in] mpc The multi point constraint.
-// dolfinx::la::SparsityPattern create_sparsity_pattern(
-//     const dolfinx::fem::Form<PetscScalar>& a,
-//     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc);
-
+/// @param[in] mpc0 The multi point constraint to apply to the rows of the
+/// matrix.
+/// @param[in] mpc1 The multi point constraint to apply to the columns of the
+/// matrix.
 dolfinx::la::SparsityPattern create_sparsity_pattern(
     const dolfinx::fem::Form<PetscScalar>& a,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>> mpc0,

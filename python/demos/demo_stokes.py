@@ -1,3 +1,14 @@
+# Copyright (C) 2022 Jørgen S. Dokken
+#
+# This file is part of DOLFINX_MPC
+#
+# SPDX-License-Identifier:    MIT
+#
+# This demo illustrates how to apply a slip condition on an
+# interface not aligned with the coordiante axis.
+# The demos solves the Stokes problem
+
+
 import dolfinx.fem as fem
 import dolfinx_mpc.utils
 import gmsh
