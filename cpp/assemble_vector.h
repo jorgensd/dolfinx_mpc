@@ -7,6 +7,7 @@
 #pragma once
 
 #include "MultiPointConstraint.h"
+#include "assemble_utils.h"
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <functional>
@@ -41,22 +42,10 @@ void modify_mpc_vec(
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coeffs)
 {
 
+  // NOTE: Should this be moved into the MPC constructor?
   // Get local index of slaves in cell
-  std::vector<std::int32_t> local_index(slaves.size());
-  std::int32_t dof;
-  for (int i = 0; i < num_dofs; i++)
-  {
-    for (int j = 0; j < bs; j++)
-    {
-      dof = cell_blocks[i] * bs + j;
-      if (is_slave[dof])
-      {
-        auto it = std::find(slaves.begin(), slaves.end(), dof);
-        const std::int32_t slave_index = std::distance(slaves.begin(), it);
-        local_index[slave_index] = i * bs + j;
-      }
-    }
-  }
+  std::vector<std::int32_t> local_index
+      = compute_local_slave_index(slaves, num_dofs, bs, cell_blocks, is_slave);
 
   // Move contribution from each slave to corresponding master dof
   for (std::size_t i = 0; i < local_index.size(); i++)

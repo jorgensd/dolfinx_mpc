@@ -5,14 +5,70 @@
 // SPDX-License-Identifier:    MIT
 
 #include "assemble_matrix.h"
+#include <assemble_utils.h>
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 #include <xtensor/xtensor.hpp>
-
 namespace
 {
+
+/// Given an assembled element matrix Ae, remove all entries (i,j) where both i
+/// and j corresponds to a slave degree of freedom
+/// @param[in] Ae The element matrix
+/// @param[in] num_dofs The number of degrees of freedom in each row and column
+/// (blocked)
+/// @param[in] bs The block size for the rows and columns
+/// @param[in] is_slave Marker indicating if a dof (local to process) is a slave
+/// degree of freedom
+/// @param[in] dofs Map from index local to cell to index local to process for
+/// rows rows and columns
+/// @returns The matrix stripped of slave contributions
+template <typename T>
+xt::xtensor<T, 2> create_stripped_matrix(
+    const xt::xtensor<T, 2>& Ae,
+    const std::array<const std::uint32_t, 2>& num_dofs,
+    const std::array<const int, 2>& bs,
+    const std::array<const std::vector<std::int8_t>, 2>& is_slave,
+    const std::array<const xtl::span<const int32_t>, 2>& dofs)
+{
+  const auto& [row_bs, col_bs] = bs;
+  const auto& [num_row_dofs, num_col_dofs] = num_dofs;
+  const auto& [row_dofs, col_dofs] = dofs;
+  const auto& [slave_rows, slave_cols] = is_slave;
+
+  const int ndim0 = row_bs * num_row_dofs;
+  const int ndim1 = col_bs * num_col_dofs;
+  xt::xtensor<T, 2> Ae_stripped = xt::empty<T>({ndim0, ndim1});
+  assert(Ae.shape() == Ae_stripped.shape());
+
+  // Strip Ae of all entries where both i and j are slaves
+  bool slave_row;
+  bool slave_col;
+  for (std::uint32_t i = 0; i < num_row_dofs; i++)
+  {
+    const int row_block = row_dofs[i] * row_bs;
+    for (int row = 0; row < row_bs; row++)
+    {
+      slave_row = slave_rows[row_block + row];
+      const int l_row = i * row_bs + row;
+      for (std::uint32_t j = 0; j < num_col_dofs; j++)
+      {
+        const int col_block = col_dofs[j] * col_bs;
+        for (int col = 0; col < col_bs; col++)
+        {
+          slave_col = slave_cols[col_block + col];
+          const int l_col = j * col_bs + col;
+          Ae_stripped(l_row, l_col)
+              = (slave_row && slave_col) ? T(0.0) : Ae(l_row, l_col);
+        }
+      }
+    }
+  }
+  return Ae_stripped;
+};
+
 template <typename T>
 void modify_mpc_cell(
     const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
@@ -30,47 +86,34 @@ void modify_mpc_cell(
     const std::array<const std::vector<std::int8_t>, 2>& is_slave)
 {
 
-  // Locate which local dofs are slave dofs and compute the local index of the
-  // slave
-  std::array<std::vector<std::int32_t>, 2> local_index;
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
+  std::array<std::vector<std::int32_t>, 2> local_index;
   for (int axis = 0; axis < 2; ++axis)
   {
-    local_index[axis] = std::vector<std::int32_t>(slaves[axis].size());
+    // NOTE: Should this be moved into the MPC constructor?
+    // Locate which local dofs are slave dofs and compute the local index of the
+    // slave
+    local_index[axis] = dolfinx_mpc::compute_local_slave_index(
+        slaves[axis], num_dofs[axis], bs[axis], dofs[axis], is_slave[axis]);
+
+    // Count number of masters in flattened structure for the rows and columns
     for (std::uint32_t i = 0; i < num_dofs[axis]; i++)
+    {
       for (int j = 0; j < bs[axis]; j++)
       {
-        const std::int32_t slave = dofs[axis][i] * bs[axis] + j;
-        if (is_slave[axis][slave])
-        {
-          auto it = std::find(slaves[axis].begin(), slaves[axis].end(), slave);
-          const auto slave_index = std::distance(slaves[axis].begin(), it);
-          local_index[axis][slave_index] = i * bs[axis] + j;
-          num_flattened_masters[axis] += masters[axis]->links(slave).size();
-        }
+        const std::int32_t dof = dofs[axis][i] * bs[axis] + j;
+        if (is_slave[axis][dof])
+          num_flattened_masters[axis] += masters[axis]->links(dof).size();
       }
+    }
   }
+
   // Create copy to use for distribution to master dofs
   xt::xtensor<T, 2> Ae_original = Ae;
   // Build matrix where all slave-slave entries are 0 for usage to row and
   // column addition
   xt::xtensor<T, 2> Ae_stripped
-      = xt::empty<T>({bs[0] * num_dofs[0], bs[1] * num_dofs[1]});
-
-  // Strip Ae of all entries where both i and j are slaves
-  for (std::uint32_t i = 0; i < num_dofs[0]; i++)
-    for (int b = 0; b < bs[0]; b++)
-    {
-      const bool is_slave0 = is_slave[0][dofs[0][i] * bs[0] + b];
-      for (std::uint32_t j = 0; j < num_dofs[1]; j++)
-        for (int c = 0; c < bs[1]; c++)
-        {
-          const bool is_slave1 = is_slave[1][dofs[1][j] * bs[1] + c];
-          Ae_stripped(i * bs[0] + b, j * bs[1] + c)
-              = (is_slave0 && is_slave1) ? T(0.0)
-                                         : Ae(i * bs[0] + b, j * bs[1] + c);
-        }
-    }
+      = create_stripped_matrix<T>(Ae, num_dofs, bs, is_slave, dofs);
 
   // Zero out slave entries in element matrix
   const int ndim0 = bs[0] * num_dofs[0];
@@ -110,9 +153,9 @@ void modify_mpc_cell(
       }
     }
   }
-
   for (std::int8_t axis = 0; axis < 2; ++axis)
     assert(num_flattened_masters[axis] == flattened_masters[axis].size());
+
   // Data structures used for insertion of master contributions
   std::array<std::int32_t, 1> row;
   std::array<std::int32_t, 1> col;
@@ -120,7 +163,8 @@ void modify_mpc_cell(
   xt::xarray<T> Arow(ndim0);
   xt::xarray<T> Acol(ndim1);
 
-  // Loop over each master
+  // Loop over all masters for the MPC applied to rows.
+  // Insert contributions in columns
   std::vector<std::int32_t> unrolled_dofs(ndim1);
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
   {
@@ -137,6 +181,8 @@ void modify_mpc_cell(
     mat_set(1, row.data(), int(ndim1), unrolled_dofs.data(), Acol.data());
   }
 
+  // Loop over all masters for the MPC applied to columns.
+  // Insert contributions in rows
   unrolled_dofs.resize(ndim0);
   for (std::size_t i = 0; i < num_flattened_masters[1]; ++i)
   {
@@ -158,8 +204,6 @@ void modify_mpc_cell(
     // Loop through other masters on the same cell and add in contribution
     for (std::size_t j = 0; j < num_flattened_masters[1]; ++j)
     {
-      // if (i == j)
-      //   continue;
 
       row[0] = flattened_masters[0][i];
       col[0] = flattened_masters[1][j];

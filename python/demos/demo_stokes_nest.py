@@ -168,7 +168,7 @@ a10 = - ufl.inner(ufl.div(u), q) * ufl.dx
 a11 = None
 
 L0 = ufl.inner(f, v) * ufl.dx
-L1 = dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)) * q * ufl.dx
+L1 = ufl.inner(dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)), q) * ufl.dx
 
 # No prescribed shear stress
 n = ufl.FacetNormal(mesh)
