@@ -398,8 +398,10 @@ void assemble_matrix_impl(
   const std::vector<T> constants = pack_constants(a);
 
   // Prepare coefficients
-  const auto coeff_vec = dolfinx::fem::pack_coefficients(a);
+  auto coeff_vec = dolfinx::fem::allocate_coefficient_storage(a);
+  dolfinx::fem::pack_coefficients(a, coeff_vec);
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
+
   std::shared_ptr<const dolfinx::fem::FiniteElement> element0
       = a.function_spaces().at(0)->element();
   std::shared_ptr<const dolfinx::fem::FiniteElement> element1

@@ -129,7 +129,8 @@ void _apply_lifting(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
   const std::vector<T> constants = pack_constants(*a);
-  const auto coeff_vec = dolfinx::fem::pack_coefficients(*a);
+  auto coeff_vec = dolfinx::fem::allocate_coefficient_storage(*a);
+  dolfinx::fem::pack_coefficients(*a, coeff_vec);
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
   const std::vector<std::int8_t>& is_slave = mpc1->is_slave();
 
