@@ -190,15 +190,17 @@ void mpc(py::module& m)
   m.def("assemble_matrix",
         [](Mat A, const dolfinx::fem::Form<PetscScalar>& a,
            const std::shared_ptr<
-               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc,
+               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc0,
+           const std::shared_ptr<
+               const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc1,
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
            const PetscScalar diagval)
         {
           dolfinx_mpc::assemble_matrix(
               dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES),
-              dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, mpc, bcs,
-              diagval);
+              dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, 
+              mpc0, mpc1, bcs, diagval);
         });
   m.def(
       "assemble_vector",
@@ -242,6 +244,21 @@ void mpc(py::module& m)
              mpc)
       {
         auto A = dolfinx_mpc::create_matrix(a, mpc);
+        Mat _A = A.mat();
+        PetscObjectReference((PetscObject)_A);
+        return _A;
+      },
+      py::return_value_policy::take_ownership,
+      "Create a PETSc Mat for bilinear form.");
+  m.def(
+      "create_matrix",
+      [](const dolfinx::fem::Form<PetscScalar>& a,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
+             mpc0,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
+             mpc1)
+      {
+        auto A = dolfinx_mpc::create_matrix(a, mpc0, mpc1);
         Mat _A = A.mat();
         PetscObjectReference((PetscObject)_A);
         return _A;

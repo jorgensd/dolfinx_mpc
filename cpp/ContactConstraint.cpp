@@ -56,7 +56,7 @@ create_boundingbox_tree(const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
   std::vector<int> cells_vec(cells.begin(), cells.end());
   dolfinx::geometry::BoundingBoxTree bb_tree(*mesh, tdim, cells_vec, 1e-12);
   return bb_tree;
-};
+}
 
 /// Compute contributions to slip constrain from master side (local to process)
 /// @param[in] local_rems List containing which block each slave dof is in
