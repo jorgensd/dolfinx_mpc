@@ -177,7 +177,7 @@ public:
   const std::int32_t num_local_slaves() const { return _num_local_slaves; }
 
   /// Return the MPC FunctionSpace
-  std::shared_ptr<const dolfinx::fem::FunctionSpace> function_space()
+  std::shared_ptr<const dolfinx::fem::FunctionSpace> function_space() const
   {
     return _V;
   }

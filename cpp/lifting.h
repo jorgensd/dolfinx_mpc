@@ -20,11 +20,26 @@
 namespace
 {
 
-/// Implementation of bc application (lifting) for an given a set of integartion
+/// Implementation of bc application (lifting) for an given a set of integration
 /// entities
 /// @tparam T The scalar type
 /// @tparam E_DESC Description of the set of entities
 /// @param[in, out] b The vector to apply lifting to
+/// @param[in] active_entities Set of active entities (either cells, exterior
+/// facets or interior facets in their specified format)
+/// @param[in] dofmap0 The dofmap for the rows of the matrix
+/// @param[in] dofmap0 The dofmap for the columns of the matrix
+/// @param[in] bs0 The block size for the rows
+/// @param[in] bs1 The block size for the columns
+/// @param[in] bc_values1 Array of Dirichlet condition values for dofs local to
+/// process
+/// @param[in] bc_markers1 Array indicating what dofs local to process is in a
+/// DirichletBC
+/// @param[in] mpc1 Multipoint constraints to apply to the rows of the vector
+/// @param[in] fetch_cells Function that fetches the cell index for each active
+/// entity
+/// @param[in] lift_local_vector Function that lift local matrix Ae into local
+/// vector be, i.e. be <- be - scale * (A (g - x0))
 template <typename T, typename E_DESC>
 void _lift_bc_entities(
     xtl::span<T> b, const std::vector<E_DESC>& active_entities,
@@ -68,21 +83,23 @@ void _lift_bc_entities(
 
     // Check if bc is applied to entity
     bool has_bc = false;
-    for (std::size_t j = 0; j < dmap1.size(); ++j)
-    {
-      for (int k = 0; k < bs1; ++k)
-      {
-        assert(bs1 * dmap1[j] + k < (int)bc_markers1.size());
-        if (bc_markers1[bs1 * dmap1[j] + k])
-        {
-          has_bc = true;
-          break;
-        }
-      }
-    }
+    std::for_each(dmap1.cbegin(), dmap1.cend(),
+                  [&bc_markers1, bs1, &has_bc](const auto dof)
+                  {
+                    for (int k = 0; k < bs1; ++k)
+                    {
+                      assert(bs1 * dof + k < (int)bc_markers1.size());
+                      if (bc_markers1[bs1 * dof + k])
+                      {
+                        has_bc = true;
+                        break;
+                      }
+                    }
+                  });
     if (!has_bc)
       continue;
-    // // Lift into local element vector
+
+    // Lift into local element vector
     const xtl::span<T> _be(be);
     const xtl::span<T> _Ae(Ae);
     lift_local_vector(_be, _Ae, num_rows, num_cols, active_entities[e], e);

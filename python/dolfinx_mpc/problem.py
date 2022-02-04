@@ -12,7 +12,7 @@ from dolfinx import cpp as _cpp
 from dolfinx import fem as _fem
 from petsc4py import PETSc
 
-from .assemble_matrix import assemble_matrix
+from .assemble_matrix import assemble_matrix, create_sparsity_pattern
 from .assemble_vector import apply_lifting, assemble_vector
 from .multipointconstraint import MultiPointConstraint
 
@@ -78,7 +78,7 @@ class LinearProblem(_fem.LinearProblem):
         self.u = _fem.Function(self._mpc.function_space)
 
         # Create MPC matrix
-        pattern = self._mpc.create_sparsity_pattern(self._a)
+        pattern = create_sparsity_pattern(self._a, self._mpc)
         pattern.assemble()
         self._A = _cpp.la.petsc.create_matrix(self._mpc.function_space.mesh.comm, pattern)
 
