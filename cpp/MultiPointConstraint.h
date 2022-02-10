@@ -136,6 +136,13 @@ public:
         vector[slave]
             += coeffs[k] * vector[masters[k]]; //+ _mpc_constants[slave];
     }
+  };  
+  
+  /// Homogenize slave DoFs (particularly useful for nonlinear problems)
+  void homogenize(xtl::span<T> vector)
+  {
+    for (auto slave : _slaves)
+        vector[slave] = 0.0;
   };
 
   /// Return map from cell to slaves contained in that cell

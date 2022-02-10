@@ -357,6 +357,21 @@ class MultiPointConstraint():
             self._cpp_object.backsubstitution(vector_local.array_w)
         vector.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
 
+    def homogenize(self, vector: _PETSc.Vec) -> None:
+        """
+        For a vector, homogenize (set to zero) the vector components at
+        the multi-point constraint slave DoF indices. This is particularly useful
+        for nonlinear problems.
+
+        Parameters
+        ----------
+        vector
+            The input vector
+        """
+        with vector.localForm() as vector_local:
+            self._cpp_object.homogenize(vector_local.array_w)
+        vector.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
+
     def _already_finalized(self):
         """
         Check if we have already finalized the multi point constraint

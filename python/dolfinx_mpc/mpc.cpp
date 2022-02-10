@@ -138,7 +138,15 @@ void mpc(py::module& m)
             self.backsubstitution(
                 xtl::span<PetscScalar>(u.mutable_data(), u.size()));
           },
-          py::arg("u"), "Backsubstitute slave values into vector");
+          py::arg("u"), "Backsubstitute slave values into vector")
+      .def(
+          "homogenize",
+          [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
+             py::array_t<PetscScalar, py::array::c_style> u) {
+            self.homogenize(
+                xtl::span<PetscScalar>(u.mutable_data(), u.size()));
+          },
+          py::arg("u"), "Homogenize (set to zero) values at slave DoF indices");
 
   py::class_<dolfinx_mpc::mpc_data, std::shared_ptr<dolfinx_mpc::mpc_data>>
       mpc_data(m, "mpc_data", "Object with data arrays for mpc");
