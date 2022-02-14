@@ -44,7 +44,7 @@ class NewtonSolverMPC(dolfinx._cpp.nls.NewtonSolver):
         """A Newton solver for non-linear MPC problems."""
         super().__init__(comm)
         self.mpc = mpc
-        self.u_mid = dolfinx.fem.Function(mpc.function_space)
+        self.u_mpc = dolfinx.fem.Function(mpc.function_space)
 
         # Create matrix and vector to be used for assembly of the non-linear
         # MPC problem
@@ -61,12 +61,14 @@ class NewtonSolverMPC(dolfinx._cpp.nls.NewtonSolver):
 
     def update(self, solver: dolfinx._cpp.nls.NewtonSolver,
                dx: PETSc.Vec, x: PETSc.Vec):
-        self.u_mid.vector.axpy(-1.0, dx)
-        self.u_mid.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                      mode=PETSc.ScatterMode.FORWARD)
-        self.mpc.homogenize(self.u_mid.vector)
-        self.mpc.backsubstitution(self.u_mid.vector)
-        x.array = self.u_mid.vector.array_r
+        # We need to use a vector created on the MPC's space to update ghosts
+        self.u_mpc.vector.array = x.array_r
+        self.u_mpc.vector.axpy(-1.0, dx)
+        self.u_mpc.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
+                                      mode=PETSc.ScatterMode.FORWARD)
+        self.mpc.homogenize(self.u_mpc.vector)
+        self.mpc.backsubstitution(self.u_mpc.vector)
+        x.array = self.u_mpc.vector.array_r
         x.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
 
@@ -158,6 +160,8 @@ def test_nonlinear_possion(poly_order):
         problem = NonlinearMPCProblem(F, u, mpc, bcs=bcs, J=J)
         solver = NewtonSolverMPC(mesh.comm, problem, mpc)
 
+        # Ensure the solver works with nonzero initial guess
+        u.interpolate(lambda x: x[0]**2*x[1]**2)
         solver.solve(u)
 
         l2_error_local = dolfinx.fem.assemble_scalar(
