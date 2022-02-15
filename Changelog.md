@@ -2,6 +2,8 @@
 
 ## main
 - **API**:
+  - Updated user interface for `dolfinx_mpc.create_slip_constraint`. See documentation for details.
+  - **New feature**: Support for periodic constraints on sub-spaces. See `dolfinx_mpc.create_periodic_constraint` for details.
   - **New feature**: `assemble_matrix_nest` and `assemble_vector_nest` by @nate-sime allows for block assembly of rectangular matrices, with different MPCs applied for rows and columns. This is highlighed in `demo_stokes_nest.py`
   - `assemble_matrix` and `assemble_vector` now only accepts compiled DOLFINx forms as opposed to `ufl`-forms. `LinearProblem` still accepts `ufl`-forms
   - `dolfinx_mpc.utils.create_normal_approximation` now takes in the meshtag and the marker, instead of the marked entities

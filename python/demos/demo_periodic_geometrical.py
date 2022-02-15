@@ -61,7 +61,7 @@ def periodic_relation(x):
 
 with Timer("~PERIODIC: Initialize MPC"):
     mpc = MultiPointConstraint(V)
-    mpc.create_periodic_constraint_geometrical(periodic_boundary, periodic_relation, bcs)
+    mpc.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_relation, bcs)
     mpc.finalize()
 
 # Define variational problem

@@ -98,20 +98,23 @@ dolfinx_mpc::create_cell_to_dofs_map(
 //-----------------------------------------------------------------------------
 std::vector<std::int32_t> dolfinx_mpc::map_dofs_global_to_local(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    std::vector<std::int64_t>& global_dofs)
+    const std::vector<std::int64_t>& global_dofs)
 {
   const std::size_t num_dofs = global_dofs.size();
   const std::int32_t& block_size = V->dofmap()->index_map_bs();
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
-  std::vector<std::int64_t> global_blocks(num_dofs);
-  std::vector<std::int32_t> remainders(num_dofs);
-  for (std::size_t i = 0; i < num_dofs; ++i)
-  {
-    const std::ldiv_t div = std::div(global_dofs[i], std::int64_t(block_size));
-    global_blocks[i] = div.quot;
-    remainders[i] = div.rem;
-  }
+
+  std::vector<std::int64_t> global_blocks;
+  global_blocks.reserve(num_dofs);
+  std::vector<std::int32_t> remainders;
+  remainders.reserve(num_dofs);
+  std::for_each(global_dofs.cbegin(), global_dofs.cend(),
+                [block_size, &global_blocks, &remainders](const auto slave)
+                {
+                  global_blocks.push_back(slave / block_size);
+                  remainders.push_back(slave % block_size);
+                });
   // Compute the new local index of the master blocks
   std::vector<std::int32_t> local_blocks(num_dofs);
   imap->global_to_local(global_blocks, local_blocks);
@@ -124,7 +127,8 @@ std::vector<std::int32_t> dolfinx_mpc::map_dofs_global_to_local(
 //-----------------------------------------------------------------------------
 dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    std::vector<std::int64_t>& global_dofs, std::vector<std::int32_t>& owners)
+    const std::vector<std::int64_t>& global_dofs,
+    const std::vector<std::int32_t>& owners)
 {
   dolfinx::common::Timer timer(
       "~MPC: Create new index map with additional ghosts");
@@ -138,11 +142,9 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
   const std::size_t num_dofs = global_dofs.size();
   std::vector<std::int64_t> global_blocks(num_dofs);
   std::vector<std::int32_t> local_blocks(num_dofs);
-  for (std::size_t i = 0; i < num_dofs; ++i)
-  {
-    const std::ldiv_t div = std::div(global_dofs[i], std::int64_t(block_size));
-    global_blocks[i] = div.quot;
-  }
+  std::transform(global_dofs.cbegin(), global_dofs.cend(),
+                 global_blocks.begin(),
+                 [block_size](const auto dof) { return dof / block_size; });
 
   int mpi_size = -1;
   MPI_Comm_size(comm, &mpi_size);

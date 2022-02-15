@@ -71,8 +71,9 @@ xt::xtensor<T, 2> create_stripped_matrix(
 
 template <typename T>
 void modify_mpc_cell(
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>& mat_set,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>)>& mat_set,
     const std::array<const std::uint32_t, 2>& num_dofs, xt::xtensor<T, 2>& Ae,
     const std::array<const xtl::span<const int32_t>, 2>& dofs,
     const std::array<const int, 2>& bs,
@@ -85,7 +86,6 @@ void modify_mpc_cell(
         coeffs,
     const std::array<const std::vector<std::int8_t>, 2>& is_slave)
 {
-
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
   std::array<std::vector<std::int32_t>, 2> local_index;
   for (int axis = 0; axis < 2; ++axis)
@@ -178,7 +178,7 @@ void modify_mpc_cell(
 
     // Insert modified entries
     row[0] = flattened_masters[0][i];
-    mat_set(1, row.data(), int(ndim1), unrolled_dofs.data(), Acol.data());
+    mat_set(row, unrolled_dofs, Acol);
   }
 
   // Loop over all masters for the MPC applied to columns.
@@ -196,7 +196,7 @@ void modify_mpc_cell(
 
     // Insert modified entries
     col[0] = flattened_masters[1][i];
-    mat_set(int(ndim0), unrolled_dofs.data(), 1, col.data(), Arow.data());
+    mat_set(unrolled_dofs, col, Arow);
   }
 
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
@@ -209,7 +209,7 @@ void modify_mpc_cell(
       col[0] = flattened_masters[1][j];
       A0[0] = flattened_coeffs[0][i] * flattened_coeffs[1][j]
               * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
-      mat_set(1, row.data(), 1, col.data(), A0.data());
+      mat_set(row, col, A0);
     }
   }
 } // namespace
@@ -217,11 +217,12 @@ void modify_mpc_cell(
 //-----------------------------------------------------------------------------
 template <typename T>
 void assemble_exterior_facets(
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>&
-        mat_add_block_values,
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>& mat_add_values,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>)>& mat_add_block_values,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>)>& mat_add_values,
     const dolfinx::mesh::Mesh& mesh,
     const std::vector<std::pair<std::int32_t, int>>& facets,
     const std::function<void(const xtl::span<T>&,
@@ -343,18 +344,18 @@ void assemble_exterior_facets(
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
                          masters, coefficients, is_slave);
     }
-    mat_add_block_values(dmap0.size(), dmap0.data(), dmap1.size(), dmap1.data(),
-                         Ae.data());
+    mat_add_block_values(dmap0, dmap1, Ae);
   }
 } // namespace
 //-----------------------------------------------------------------------------
 template <typename T>
 void assemble_cells_impl(
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>&
-        mat_add_block_values,
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>& mat_add_values,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>)>& mat_add_block_values,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>)>& mat_add_values,
     const dolfinx::mesh::Geometry& geometry,
     const std::vector<std::int32_t>& active_cells,
     std::function<void(xtl::span<T>, const xtl::span<const std::uint32_t>,
@@ -462,18 +463,18 @@ void assemble_cells_impl(
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
                          masters, coefficients, is_slave);
     }
-    mat_add_block_values(dofs0.size(), dofs0.data(), dofs1.size(), dofs1.data(),
-                         Ae.data());
+    mat_add_block_values(dofs0, dofs1, Ae);
   }
 }
 //-----------------------------------------------------------------------------
 template <typename T>
 void assemble_matrix_impl(
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>&
-        mat_add_block_values,
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>& mat_add_values,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>)>& mat_add_block_values,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>)>& mat_add_values,
     const dolfinx::fem::Form<T>& a, const std::vector<std::int8_t>& bc0,
     const std::vector<std::int8_t>& bc1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
@@ -572,10 +573,12 @@ void assemble_matrix_impl(
 //-----------------------------------------------------------------------------
 template <typename T>
 void _assemble_matrix(
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>& mat_add_block,
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const T*)>& mat_add,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>&)>& mat_add_block,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const T>&)>& mat_add,
     const dolfinx::fem::Form<T>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
@@ -627,7 +630,7 @@ void _assemble_matrix(
     for (std::int32_t i = 0; i < num_local_slaves; ++i)
     {
       diag_dof[0] = slaves[i];
-      mat_add(1, diag_dof.data(), 1, diag_dof.data(), diag_value.data());
+      mat_add(diag_dof, diag_dof, diag_value);
     }
   }
   timer.stop();
@@ -635,10 +638,12 @@ void _assemble_matrix(
 } // namespace
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const double*)>& mat_add_block,
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const double*)>& mat_add,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const double>&)>& mat_add_block,
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const double>&)>& mat_add,
     const dolfinx::fem::Form<double>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
         mpc0,
@@ -652,11 +657,13 @@ void dolfinx_mpc::assemble_matrix(
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const std::complex<double>*)>&
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::complex<double>>&)>&
         mat_add_block,
-    const std::function<int(std::int32_t, const std::int32_t*, std::int32_t,
-                            const std::int32_t*, const std::complex<double>*)>&
+    const std::function<int(const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::int32_t>&,
+                            const xtl::span<const std::complex<double>>&)>&
         mat_add,
     const dolfinx::fem::Form<std::complex<double>>& a,
     const std::shared_ptr<

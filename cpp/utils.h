@@ -7,6 +7,7 @@
 #pragma once
 
 #include "MultiPointConstraint.h"
+#include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/Function.h>
 #include <dolfinx/fem/FunctionSpace.h>
@@ -141,10 +142,10 @@ std::vector<std::int32_t>
 create_block_to_cell_map(const dolfinx::fem::FunctionSpace& V,
                          tcb::span<const std::int32_t> blocks);
 
-/// Add sparsity pattern for multi-point constraints to existing
-/// sparsity pattern
+/// Create sparsity pattern with multi point constraint additions to the rows
+/// and the columns
 /// @param[in] a bi-linear form for the current variational problem
-/// (The one used to generate input sparsity-pattern)
+/// (The one used to generate the standard sparsity-pattern)
 /// @param[in] mpc0 The multi point constraint to apply to the rows of the
 /// matrix.
 /// @param[in] mpc1 The multi point constraint to apply to the columns of the
@@ -166,14 +167,6 @@ typename U::value_type dot(const U& u, const V& v)
   assert(v.size() == 3);
   return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
 }
-
-/// Given a list of global degrees of freedom, map them to their local index
-/// @param[in] V The original function space
-/// @param[in] global_dofs The list of dofs (global index)
-/// @returns List of local dofs
-std::vector<std::int32_t>
-map_dofs_global_to_local(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-                         std::vector<std::int64_t>& global_dofs);
 
 /// Create an function space with an extended index map, where all input dofs
 /// (global index) is added to the local index map as ghosts.
@@ -204,8 +197,7 @@ dolfinx::fem::FunctionSpace create_extended_functionspace(
 /// dofs (global indices), the coefficients and owners
 template <typename T>
 recv_data<T> send_master_data_to_owner(
-    MPI_Comm& master_to_slave,
-    const std::vector<std::int32_t>& num_remote_masters,
+    MPI_Comm& master_to_slave, std::vector<std::int32_t>& num_remote_masters,
     const std::vector<std::int32_t>& num_remote_slaves,
     const std::vector<std::int32_t>& num_incoming_slaves,
     const std::vector<std::int32_t>& num_masters_per_slave,
@@ -219,13 +211,15 @@ recv_data<T> send_master_data_to_owner(
                                  &weighted);
 
   // Communicate how many masters has been found on the other process
-  std::vector<std::int32_t> num_recv_masters(indegree);
+  std::vector<std::int32_t> num_recv_masters(indegree + 1);
+  num_remote_masters.push_back(0);
   MPI_Request request_m;
   MPI_Ineighbor_alltoall(
       num_remote_masters.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
       num_recv_masters.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
       master_to_slave, &request_m);
-
+  num_recv_masters.pop_back();
+  num_remote_masters.pop_back();
   std::vector<std::int32_t> remote_slave_disp_out(outdegree + 1, 0);
   std::partial_sum(num_remote_slaves.begin(), num_remote_slaves.end(),
                    remote_slave_disp_out.begin() + 1);
@@ -409,8 +403,8 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
       = slave_to_ghost.compute_shared_indices();
   const std::size_t num_inc_proc = src_ranks_ghosts.size();
   const std::size_t num_out_proc = dest_ranks_ghosts.size();
-  std::vector<std::int32_t> out_num_slaves(num_out_proc, 0);
-  std::vector<std::int32_t> out_num_masters(num_out_proc, 0);
+  std::vector<std::int32_t> out_num_slaves(num_out_proc + 1, 0);
+  std::vector<std::int32_t> out_num_masters(num_out_proc + 1, 0);
   for (std::size_t i = 0; i < slaves.size(); ++i)
   {
     // Find ghost processes for the ith local slave
@@ -427,17 +421,20 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
   }
 
   // Communicate number of incoming slaves and masters
-  std::vector<int> in_num_slaves(num_inc_proc);
-  std::vector<int> in_num_masters(num_inc_proc);
+  std::vector<int> in_num_slaves(num_inc_proc + 1);
+  std::vector<int> in_num_masters(num_inc_proc + 1);
   std::array<MPI_Request, 2> requests;
   std::array<MPI_Status, 2> states;
   MPI_Ineighbor_alltoall(out_num_slaves.data(), 1, MPI_INT,
                          in_num_slaves.data(), 1, MPI_INT, local_to_ghost,
                          &requests[0]);
+  out_num_slaves.pop_back();
+  in_num_slaves.pop_back();
   MPI_Ineighbor_alltoall(out_num_masters.data(), 1, MPI_INT,
                          in_num_masters.data(), 1, MPI_INT, local_to_ghost,
                          &requests[1]);
-
+  out_num_masters.pop_back();
+  in_num_masters.pop_back();
   // Compute out displacements for slaves and masters
   std::vector<std::int32_t> disp_out_masters(num_out_proc + 1, 0);
   std::partial_sum(out_num_masters.begin(), out_num_masters.end(),
@@ -545,14 +542,12 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
   recv_block.reserve(recv_slaves.size());
   std::vector<std::int32_t> recv_rem;
   recv_rem.reserve(recv_slaves.size());
-  std::transform(recv_slaves.cbegin(), recv_slaves.cend(),
-                 std::back_inserter(recv_block),
-                 [bs, &recv_rem](const auto dof)
-                 {
-                   std::ldiv_t div = std::div(dof, (std::int64_t)bs);
-                   recv_rem.push_back((std::int32_t)div.rem);
-                   return div.quot;
-                 });
+  std::for_each(recv_slaves.cbegin(), recv_slaves.cend(),
+                [bs, &recv_rem, &recv_block](const auto dof)
+                {
+                  recv_rem.push_back(dof % bs);
+                  recv_block.push_back(dof / bs);
+                });
   std::vector<std::int32_t> recv_local(recv_slaves.size());
   imap->global_to_local(recv_block, recv_local);
   for (std::size_t i = 0; i < recv_local.size(); i++)
@@ -611,7 +606,7 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
 /// @returns basis values (not unrolled for block size) for each point. shape
 /// (num_points, number_of_dofs, value_size)
 xt::xtensor<double, 3>
-evaluate_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+evaluate_basis_functions(const dolfinx::fem::FunctionSpace& V,
                          const xt::xtensor<double, 2>& x,
                          const xtl::span<const std::int32_t>& cells);
 
@@ -641,5 +636,49 @@ std::vector<std::int32_t>
 find_local_collisions(const dolfinx::mesh::Mesh& mesh,
                       const dolfinx::geometry::BoundingBoxTree& tree,
                       const xt::xtensor<double, 2>& points);
+
+/// Given an input array of dofs from a function space, return an array with
+/// true/false if the degree of freedom is in a DirichletBC
+/// @param[in] V The function space
+/// @param[in] blocks The degrees of freedom (not unrolled for dofmap block
+/// size)
+/// @param[in] bcs List of Dirichlet BCs on V
+template <typename T>
+std::vector<std::int8_t> is_bc(
+    const dolfinx::fem::FunctionSpace& V, tcb::span<const std::int32_t> blocks,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs)
+{
+  auto dofmap = V.dofmap();
+  assert(dofmap);
+  auto imap = dofmap->index_map;
+  assert(imap);
+  const int bs = dofmap->index_map_bs();
+  std::int32_t dim = bs * (imap->size_local() + imap->num_ghosts());
+  std::vector<std::int8_t> dof_marker(dim, false);
+  std::for_each(bcs.begin(), bcs.end(),
+                [&dof_marker, &V](auto bc)
+                {
+                  assert(bc);
+                  assert(bc->function_space());
+                  if (bc->function_space()->contains(V))
+                    bc->mark_dofs(dof_marker);
+                });
+  // Remove slave blocks contained in DirichletBC
+  std::vector<std::int8_t> bc_marker(blocks.size(), 0);
+  const int dofmap_bs = dofmap->bs();
+  for (std::size_t i = 0; i < blocks.size(); i++)
+  {
+    auto& block = blocks[i];
+    for (int j = 0; j < dofmap_bs; j++)
+    {
+      if (dof_marker[block * dofmap_bs + j])
+      {
+        bc_marker[i] = 1;
+        break;
+      }
+    }
+  }
+  return bc_marker;
+}
 
 } // namespace dolfinx_mpc

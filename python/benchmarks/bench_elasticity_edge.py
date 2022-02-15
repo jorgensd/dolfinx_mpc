@@ -61,10 +61,11 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     with Timer("~Elasticity: Initialize MPC"):
         edim = mesh.topology.dim - 2
         edges = locate_entities_boundary(mesh, edim, PeriodicBoundary)
-        periodic_mt = MeshTags(mesh, edim, edges, np.full(len(edges), 2, dtype=np.int32))
+        arg_sort = np.argsort(edges)
+        periodic_mt = MeshTags(mesh, edim, edges[arg_sort], np.full(len(edges), 2, dtype=np.int32))
 
         mpc = MultiPointConstraint(V)
-        mpc.create_periodic_constraint_topological(periodic_mt, 2, periodic_relation, bcs, scale=0.5)
+        mpc.create_periodic_constraint_topological(V, periodic_mt, 2, periodic_relation, bcs, scale=0.5)
         mpc.finalize()
 
     # Create traction meshtag
@@ -73,7 +74,8 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         return np.isclose(x[0], 1)
     t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
-    mt = MeshTags(mesh, fdim, t_facets, facet_values)
+    arg_sort = np.argsort(t_facets)
+    mt = MeshTags(mesh, fdim, t_facets[arg_sort], facet_values)
 
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e4)

@@ -45,7 +45,8 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     def top(x):
         return np.isclose(x[1], 1)
     top_facets = locate_entities_boundary(mesh, 1, top)
-    mt = MeshTags(mesh, fdim, top_facets, 3)
+    arg_sort = np.argsort(top_facets)
+    mt = MeshTags(mesh, fdim, top_facets[arg_sort], np.full(len(top_facets), 3, dtype=np.int32))
 
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
     g = fem.Constant(mesh, PETSc.ScalarType((0, -9.81e2)))
