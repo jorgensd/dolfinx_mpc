@@ -95,31 +95,31 @@ jobs:
       - name: Run tests and demos
         run: |
           python3 -m pytest python/tests -vs
-          mpirun -n 2 python3 -m pytest python/tests/test_cube_contact.py::test_cube_contact[False-C++]
-          # mpirun -n 3 python3 -m pytest python/tests
-          # mpirun -n 4 python3 -m pytest python/tests
-          # cd python/benchmarks
-          # mkdir results
-          # mkdir meshes
-          # mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --gamg --timings
-          # mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
-          # mpirun -n 4 python3 bench_contact_3D.py
-          # cd ../demos
-          # mkdir meshes
-          # mkdir results
-          # python3 demo_elasticity.py
-          # mpirun -n 4 python3 demo_elasticity.py
-          # python3 demo_periodic_geometrical.py
-          # mpirun -n 4 python3 demo_periodic_geometrical.py
-          # python3 demo_stokes.py
-          # mpirun -n 4 python3 demo_stokes.py
-          # python3 demo_periodic3d_topological.py
-          # mpirun -n 4 python3 demo_periodic3d_topological.py
-          # python3 demo_elasticity_disconnect_2D.py
-          # mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
-          # python3 demo_elasticity_disconnect.py
-          # mpirun -n 4 python3 demo_elasticity_disconnect.py
-          # make contact2D-serial
-          # make contact2D-parallel
-          # make contact3D-serial
-          # make contact3D-parallel
+          mpirun -n 2 python3 -m pytest python/tests
+          mpirun -n 3 python3 -m pytest python/tests
+          mpirun -n 4 python3 -m pytest python/tests
+          cd python/benchmarks
+          mkdir results
+          mkdir meshes
+          mpirun -n 4 python3 bench_periodic.py --nref=2 --tet --gamg --timings
+          mpirun -n 4 python3 bench_elasticity_edge.py --nref=2 --gamg --timings
+          mpirun -n 4 python3 bench_contact_3D.py
+          cd ../demos
+          mkdir meshes
+          mkdir results
+          python3 demo_elasticity.py
+          mpirun -n 4 python3 demo_elasticity.py
+          python3 demo_periodic_geometrical.py
+          mpirun -n 4 python3 demo_periodic_geometrical.py
+          python3 demo_stokes.py
+          mpirun -n 4 python3 demo_stokes.py
+          python3 demo_periodic3d_topological.py
+          mpirun -n 4 python3 demo_periodic3d_topological.py
+          python3 demo_elasticity_disconnect_2D.py
+          mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
+          python3 demo_elasticity_disconnect.py
+          mpirun -n 4 python3 demo_elasticity_disconnect.py
+          make contact2D-serial
+          make contact2D-parallel
+          make contact3D-serial
+          make contact3D-parallel
