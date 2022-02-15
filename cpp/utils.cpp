@@ -641,8 +641,8 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
 }
 
 xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
-    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    const xt::xtensor<double, 2>& x, const xtl::span<const std::int32_t>& cells)
+    const dolfinx::fem::FunctionSpace& V, const xt::xtensor<double, 2>& x,
+    const xtl::span<const std::int32_t>& cells)
 {
   if (x.shape(0) != cells.size())
   {
@@ -650,8 +650,7 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
         "Number of points and number of cells must be equal.");
   }
   // Get mesh
-  assert(V);
-  std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
+  std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V.mesh();
   assert(mesh);
   const std::size_t gdim = mesh->geometry().dim();
   const std::size_t tdim = mesh->topology().dim();
@@ -668,8 +667,8 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
 
   // Get element
-  assert(V->element());
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element = V->element();
+  assert(V.element());
+  std::shared_ptr<const dolfinx::fem::FiniteElement> element = V.element();
   assert(element);
   const int bs_element = element->block_size();
   const std::size_t reference_value_size
@@ -693,7 +692,7 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   }
 
   // Get dofmap
-  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V->dofmap();
+  std::shared_ptr<const dolfinx::fem::DofMap> dofmap = V.dofmap();
   assert(dofmap);
 
   xtl::span<const std::uint32_t> cell_info;

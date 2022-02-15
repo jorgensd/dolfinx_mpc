@@ -1,4 +1,4 @@
-# Copyright (C) 2021 fmonteghetti and Jørgen S. Dokken
+# Copyright (C) 2021-2022 fmonteghetti and Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -25,6 +25,7 @@ from typing import List, Tuple
 
 import dolfinx.fem as fem
 import numpy as np
+from dolfinx.io import XDMFFile
 from dolfinx.mesh import MeshTags, create_unit_square, locate_entities_boundary
 from dolfinx_mpc import MultiPointConstraint, assemble_matrix
 from mpi4py import MPI
@@ -114,13 +115,13 @@ def EPS_get_spectrum(EPS: SLEPc.EPS,
     eigvec_r = list()
     eigvec_i = list()
     V = mpc.function_space
-    vr = fem.Function(V).vector
-    vi = vr.copy()
     for i in range(EPS.getConverged()):
-        EPS.getEigenvector(i, vr, vi)
-        eigvec_r.append(vr.copy())
-        eigvec_i.append(vi.copy())
-    # Sort by increasing real parts
+        vr = fem.Function(V)
+        vi = fem.Function(V)
+
+        EPS.getEigenvector(i, vr.vector, vi.vector)
+        eigvec_r.append(vr)
+        eigvec_i.append(vi)    # Sort by increasing real parts
     idx = np.argsort(np.real(np.array(eigval)), axis=0)
     eigval = [eigval[i] for i in idx]
     eigvec_r = [eigvec_r[i] for i in idx]
@@ -131,7 +132,7 @@ def EPS_get_spectrum(EPS: SLEPc.EPS,
 def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
                           problem_type: SLEPc.EPS.ProblemType = SLEPc.EPS.ProblemType.GNHEP,
                           solver: SLEPc.EPS.Type = SLEPc.EPS.Type.KRYLOVSCHUR,
-                          nev: int = 10, tol: float = 1e-6, max_it: int = 10,
+                          nev: int = 10, tol: float = 1e-7, max_it: int = 10,
                           target: float = 0.0, shift: float = 0.0) -> SLEPc.EPS:
     """
     Solve generalized eigenvalue problem A*x=lambda*B*x using shift-and-invert
@@ -224,7 +225,8 @@ def periodicboundary(x):
 
 
 facets = locate_entities_boundary(mesh, fdim, periodicboundary)
-mt = MeshTags(mesh, fdim, facets, np.full(len(facets), 2, dtype=np.int32))
+arg_sort = np.argsort(facets)
+mt = MeshTags(mesh, fdim, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
 
 
 def periodic_relation(x):
@@ -236,7 +238,7 @@ def periodic_relation(x):
 
 
 mpc = MultiPointConstraint(V)
-mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs)
+mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, bcs)
 mpc.finalize()
 # Define variational problem
 u = TrialFunction(V)
@@ -251,25 +253,27 @@ stiffness_form = fem.form(b)
 # which is far from the region of interest.
 diagval_A = 1e2
 diagval_B = 1e-2
-
 A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
 B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
-
 Nev = 10  # number of requested eigenvalues
 EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,
                             solver=SLEPc.EPS.Type.KRYLOVSCHUR,
-                            nev=Nev, tol=1e-6, max_it=10,
+                            nev=Nev, tol=1e-7, max_it=10,
                             target=1.5, shift=1.5)
 (eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
-
 # update slave DoF
 for i in range(len(eigval)):
-    mpc.backsubstitution(eigvec_r[i])
-    mpc.backsubstitution(eigvec_i[i])
+    mpc.backsubstitution(eigvec_r[i].vector)
+    mpc.backsubstitution(eigvec_i[i].vector)
 print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
-
 # Exact eigenvalues
 l_exact = list(set([(i * np.pi)**2 + (2 * j * np.pi)**2 for i in range(Nev) for j in range(Nev)]))
 l_exact.remove(0)
 l_exact.sort()
 print0(f"Exact eigenvalues:\n {np.around(l_exact[0:Nev-1],decimals=2)}")
+
+
+# Save first eigenvector
+with XDMFFile(MPI.COMM_WORLD, "results/eigenvector_0.xdmf", "w", encoding=XDMFFile.Encoding.HDF5) as xdmf:
+    xdmf.write_mesh(mesh)
+    xdmf.write_function(eigvec_r[0])

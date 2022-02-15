@@ -28,7 +28,7 @@ from dolfinx_mpc import LinearProblem
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
-                 inner, pi, sin)
+                 inner, pi, sin, as_vector)
 
 # Get PETSc int and scalar types
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
@@ -38,21 +38,21 @@ def demo_periodic3D(celltype):
     # Create mesh and finite element
     if celltype == CellType.tetrahedron:
         # Tet setup
-        N = 5
+        N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
-        V = fem.FunctionSpace(mesh, ("CG", 3))
+        V = fem.VectorFunctionSpace(mesh, ("CG", 1))
     else:
         # Hex setup
         N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
-        V = fem.FunctionSpace(mesh, ("CG", 2))
+        V = fem.VectorFunctionSpace(mesh, ("CG", 2))
 
     def dirichletboundary(x):
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
     # Create Dirichlet boundary condition
-    zero = PETSc.ScalarType(0)
+    zero = PETSc.ScalarType([0, 0, 0])
     geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
     bc = fem.dirichletbc(zero, geometrical_dofs, V)
     bcs = [bc]
@@ -61,7 +61,8 @@ def demo_periodic3D(celltype):
         return np.isclose(x[0], 1)
 
     facets = locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
-    mt = MeshTags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
+    arg_sort = np.argsort(facets)
+    mt = MeshTags(mesh, mesh.topology.dim - 1, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)
@@ -69,12 +70,10 @@ def demo_periodic3D(celltype):
         out_x[1] = x[1]
         out_x[2] = x[2]
         return out_x
-
     with Timer("~~Periodic: Compute mpc condition"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint_topological(mt, 2, periodic_relation, bcs, 1)
+        mpc.create_periodic_constraint_topological(V.sub(0), mt, 2, periodic_relation, bcs, 1)
         mpc.finalize()
-
     # Define variational problem
     u = TrialFunction(V)
     v = TestFunction(V)
@@ -84,8 +83,8 @@ def demo_periodic3D(celltype):
     dx_ = x[0] - 0.9
     dy_ = x[1] - 0.5
     dz_ = x[2] - 0.1
-    f = x[0] * sin(5.0 * pi * x[1]) \
-        + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_ + dz_ * dz_) / 0.02)
+    f = as_vector((x[0] * sin(5.0 * pi * x[1])
+                   + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_ + dz_ * dz_) / 0.02), 0.1 * dx_ * dz_, 0.1 * dx_ * dy_))
 
     rhs = inner(f, v) * dx
 
@@ -102,7 +101,7 @@ def demo_periodic3D(celltype):
 
     # --------------------VERIFICATION-------------------------
     print("----Verification----")
-    u_ = u_h.copy()
+    u_ = fem.Function(V)
     u_.x.array[:] = 0
     org_problem = fem.LinearProblem(a, rhs, u=u_, bcs=bcs, petsc_options=petsc_options)
     with Timer("~Periodic: Unconstrained solve"):
@@ -113,9 +112,17 @@ def demo_periodic3D(celltype):
     # Write solutions to file
     ext = "tet" if celltype == CellType.tetrahedron else "hex"
     u_.name = "u_" + ext + "_unconstrained"
-    u_h.name = "u_" + ext
+
+    # NOTE: Workaround as tabulate dof coordinates does not like extra ghosts
+    u_out = fem.Function(V)
+    old_local = u_out.x.map.size_local * u_out.x.bs
+    old_ghosts = u_out.x.map.num_ghosts * u_out.x.bs
+    mpc_local = u_h.x.map.size_local * u_h.x.bs
+    assert(old_local == mpc_local)
+    u_out.x.array[:old_local + old_ghosts] = u_h.x.array[:mpc_local + old_ghosts]
+    u_out.name = "u_" + ext
     fname = f"results/demo_periodic3d_{ext}.bp"
-    out_periodic = VTXWriter(MPI.COMM_WORLD, fname, [u_h._cpp_object, u_._cpp_object])
+    out_periodic = VTXWriter(MPI.COMM_WORLD, fname, [u_out._cpp_object])
     out_periodic.write(0)
     out_periodic.close()
 

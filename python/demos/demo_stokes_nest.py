@@ -133,7 +133,7 @@ bcs = [bc1]
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
 with dolfinx.common.Timer("~Stokes: Create slip constraint"):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_slip_constraint((mt, 1), n, bcs=bcs)
+    mpc.create_slip_constraint(V, (mt, 1), n, bcs=bcs)
 mpc.finalize()
 
 mpc_q = dolfinx_mpc.MultiPointConstraint(Q)
@@ -287,7 +287,7 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
     with dolfinx.common.Timer("~Stokes: Create slip constraint"):
         mpc = dolfinx_mpc.MultiPointConstraint(W)
-        mpc.create_slip_constraint((mt, 1), n, sub_space=W.sub(0), sub_map=V_to_W, bcs=bcs)
+        mpc.create_slip_constraint(W.sub(0), (mt, 1), n, bcs=bcs)
     mpc.finalize()
 
     (u, p) = ufl.TrialFunctions(W)

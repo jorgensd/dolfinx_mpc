@@ -108,14 +108,14 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
 
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
-        mpc.create_slip_constraint((mt, 5), bottom_normal, bcs=bcs)
+        mpc.create_slip_constraint(V, (mt, 5), bottom_normal, bcs=bcs)
 
     with Timer("~Contact: Add tangential constraint at one point"):
         vertex = locate_entities_boundary(mesh, 0, left_corner)
 
         tangent = facet_normal_approximation(V, mt, 3, tangent=True)
         mtv = MeshTags(mesh, 0, vertex, np.full(len(vertex), 6, dtype=np.int32))
-        mpc.create_slip_constraint((mtv, 6), tangent, bcs=bcs)
+        mpc.create_slip_constraint(V, (mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
     rtol = 1e-9

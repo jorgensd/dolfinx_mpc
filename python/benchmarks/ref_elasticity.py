@@ -64,7 +64,8 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: h5py.File = Non
         return np.isclose(x[0], 1)
     t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
-    mt = MeshTags(mesh, fdim, t_facets, facet_values)
+    arg_sort = np.argsort(t_facets)
+    mt = MeshTags(mesh, fdim, t_facets[arg_sort], facet_values[arg_sort])
 
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e4)

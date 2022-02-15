@@ -9,19 +9,16 @@
 # The demos solves the Stokes problem
 
 
+import dolfinx.cpp.io
 import dolfinx.fem as fem
 import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import scipy.sparse.linalg
-
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.io import XDMFFile
-from dolfinx_mpc import (MultiPointConstraint, LinearProblem)
-
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from mpi4py import MPI
 from petsc4py import PETSc
-
 from ufl import (FacetNormal, FiniteElement, Identity, Measure, TestFunctions,
                  TrialFunctions, VectorElement, div, dot, dx, grad, inner,
                  outer, sym)
@@ -138,7 +135,7 @@ bcs = [bc1]
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
 with Timer("~Stokes: Create slip constraint"):
     mpc = MultiPointConstraint(W)
-    mpc.create_slip_constraint((mt, 1), n, sub_space=W.sub(0), sub_map=V_to_W, bcs=bcs)
+    mpc.create_slip_constraint(W.sub(0), (mt, 1), n, bcs=bcs)
 mpc.finalize()
 
 
@@ -189,11 +186,11 @@ u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 u.name = "u"
 p.name = "p"
-with XDMFFile(MPI.COMM_WORLD, "results/demo_stokes.xdmf", "w") as outfile:
-    outfile.write_mesh(mesh)
-    outfile.write_meshtags(mt)
-    outfile.write_function(u)
-    outfile.write_function(p)
+
+with dolfinx.cpp.io.VTXWriter(mesh.comm, "results/demo_stokes_u.bp", [u._cpp_object]) as vtx:
+    vtx.write(0.0)
+with dolfinx.cpp.io.VTXWriter(mesh.comm, "results/demo_stokes_p.bp", [p._cpp_object]) as vtx:
+    vtx.write(0.0)
 
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison

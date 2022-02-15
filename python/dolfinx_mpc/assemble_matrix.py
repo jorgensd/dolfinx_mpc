@@ -5,7 +5,6 @@
 # SPDX-License-Identifier:    MIT
 
 from typing import Sequence, Union
-import collections
 
 import dolfinx.fem as _fem
 import dolfinx.cpp as _cpp
@@ -43,7 +42,7 @@ def assemble_matrix(form: _fem.FormMetaClass,
     _PETSc.Mat
         The assembled bi-linear form
     """
-    if not isinstance(constraint, collections.Sequence):
+    if not isinstance(constraint, Sequence):
         assert(form.function_spaces[0] == form.function_spaces[1])
         constraint = (constraint, constraint)
 
