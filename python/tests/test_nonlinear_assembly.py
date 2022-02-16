@@ -90,6 +90,8 @@ class NewtonSolverMPC(dolfinx._cpp.nls.NewtonSolver):
         return self._b
 
 
+@pytest.mark.skipif(np.issubdtype(PETSc.ScalarType, np.complexfloating),
+                    reason="This test does not work in complex mode.")
 @pytest.mark.parametrize("poly_order", [1, 2, 3])
 def test_nonlinear_possion(poly_order):
     # Solve a standard Poisson problem with known solution which has
