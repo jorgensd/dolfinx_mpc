@@ -93,7 +93,7 @@ class MultiPointConstraint():
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
-    def create_periodic_constraint_topological(self, meshtag: _mesh.MeshTags, tag: int,
+    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: list([_fem.DirichletBCMetaClass]), scale: _PETSc.ScalarType = 1):
         """
@@ -103,6 +103,8 @@ class MultiPointConstraint():
 
         Parameters
         ----------
+        V
+            The function space to assign the condition to. Should either be the space of the MPC or a sub space.
         meshtag
             MeshTag for entity to apply the periodic condition on
         tag
@@ -115,11 +117,18 @@ class MultiPointConstraint():
         scale
             Float for scaling bc
         """
-        mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-            self.V._cpp_object, meshtag, tag, relation, bcs, scale)
+        if (V.id == self.V.id):
+            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
+                self.V._cpp_object, meshtag, tag, relation, bcs, scale, False)
+        elif self.V.contains(V):
+            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
+                V._cpp_object, meshtag, tag, relation, bcs, scale, True)
+        else:
+            raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_periodic_constraint_geometrical(self, indicator: Callable[[numpy.ndarray], numpy.ndarray],
+    def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpace,
+                                               indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
@@ -128,6 +137,8 @@ class MultiPointConstraint():
 
         Parameters
         ----------
+        V
+            The function space to assign the condition to. Should either be the space of the MPC or a sub space.
         indicator
             Lambda-function to locate degrees of freedom that should be slaves
         relation
@@ -138,60 +149,68 @@ class MultiPointConstraint():
         scale
             Float for scaling bc
         """
-        mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-            self.V._cpp_object, indicator, relation, bcs, 1)
+
+        if (V.id == self.V.id):
+            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
+                self.V._cpp_object, indicator, relation, bcs, scale, False)
+        elif self.V.contains(V):
+            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
+                V._cpp_object, indicator, relation, bcs, scale, True)
+        else:
+            raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, facet_marker: tuple([_mesh.MeshTags, int]), v: _fem.Function,
-                               sub_space: _fem.FunctionSpace = None, sub_map: numpy.ndarray = numpy.array([]),
-                               bcs: list([_fem.DirichletBCMetaClass]) = []):
+    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple([_mesh.MeshTags, int]),
+                               v: _fem.Function, bcs: list([_fem.DirichletBCMetaClass]) = []):
         """
         Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.mesh.MeshTags`
         marked with index i. normal is the normal vector defined as a vector function.
 
         Parameters
         ----------
+        space
+            Function space (possible sub space) to apply the MPC to
         facet_marker
             Tuple containg the mesh tag and marker used to locate degrees of freedom that should be constrained
         v
             Dolfin function containing the directional vector to dot your slip condition (most commonly a normal vector)
-        sub_space
-           If the vector v is in a sub space of the multi point function space, supply the sub space
-        sub_map
-           Map from sub-space to parent space
         bcs
            List of Dirichlet BCs (slip conditions will be ignored on these dofs)
 
         Example
         -------
         Create constaint dot(u, n)=0 of all indices in mt marked with i
-             create_slip_constaint((mt,i), n)
+            V = VectorFunctionSpace(mesh, ("CG", 1))
+            mpc = MultiPointConstraint(V)
+            n = Function(V)
+            mpc.create_slip_constaint(V, (mt,i), n)
 
-        Create slip constaint for u when in a sub space:
+        Create slip constaint for a mixed function space:
              me = MixedElement(VectorElement("CG", triangle, 2), FiniteElement("CG", triangle 1))
              W = FunctionSpace(mesh, me)
-             V, V_to_W = W.sub(0).collapse(True)
-             n = Function(V)
-             create_slip_constraint((mt, i), normal, V, V_to_W, bcs=[])
+             mpc = MultiPointConstraint()
+             n_space = FunctionSpace(mesh, VectorElement("CG", triangle, 2))
+             normal = Function(n_space)
+             mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[])
 
         A slip condition cannot be applied on the same degrees of freedom as a Dirichlet BC, and therefore
         any Dirichlet bc for the space of the multi point constraint should be supplied.
              me = MixedElement(VectorElement("CG", triangle, 2), FiniteElement("CG", triangle 1))
              W = FunctionSpace(mesh, me)
-             W0 = W.sub(0)
-             V, V_to_W = W0.collapse(True)
-             n = Function(V)
-             bc = dirichletbc(inlet_velocity, dofs, W0)
-             create_slip_constraint((mt, i), normal, V, V_to_W, bcs=[bc])
+             mpc = MultiPointConstraint()
+             n_space = FunctionSpace(mesh, VectorElement("CG", triangle, 2))
+             normal = Function(n_space)
+             bc = dirichletbc(inlet_velocity, dofs, W.sub(0))
+             mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[bc])
         """
-        if sub_space is None:
-            W = [self.V._cpp_object]
+        if (space.id == self.V.id):
+            sub_space = False
+        elif self.V.contains(space):
+            sub_space = True
         else:
-            W = [self.V._cpp_object, sub_space._cpp_object]
-        mesh_tag, marker = facet_marker
-        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(W, mesh_tag, marker, v._cpp_object,
-                                                             numpy.asarray(sub_map, dtype=numpy.int32),
-                                                             bcs)
+            raise ValueError("Input space has to be a sub space of the MPC space")
+        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(
+            space._cpp_object, facet_marker[0], facet_marker[1], v._cpp_object, bcs, sub_space)
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_general_constraint(self, slave_master_dict: Dict[bytes, Dict[bytes, float]],

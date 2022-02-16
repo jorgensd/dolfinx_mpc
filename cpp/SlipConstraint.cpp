@@ -6,57 +6,102 @@
 
 #include "SlipConstraint.h"
 #include <dolfinx/common/MPI.h>
+#include <dolfinx/common/sort.h>
 #include <xtensor/xadapt.hpp>
+#include <xtensor/xio.hpp>
 #include <xtensor/xsort.hpp>
 using namespace dolfinx_mpc;
 
 mpc_data dolfinx_mpc::create_slip_condition(
-    std::vector<std::shared_ptr<dolfinx::fem::FunctionSpace>> spaces,
-    dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t marker,
-    std::shared_ptr<dolfinx::fem::Function<PetscScalar>> v,
-    tcb::span<const std::int32_t> sub_map,
+    std::shared_ptr<dolfinx::fem::FunctionSpace>& space,
+    const dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t marker,
+    const dolfinx::fem::Function<PetscScalar>& v,
     std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<PetscScalar>>>
-        bcs)
+        bcs,
+    const bool sub_space)
 {
-  // Determine if v is from a sub space
-  bool v_in_sub;
-  if (spaces.size() == 1)
-    v_in_sub = false;
-  else if (spaces.size() == 2)
-    v_in_sub = true;
-  else
-    throw std::runtime_error("Number of input spaces can either be 1 or 2.");
+  // Map from collapsed sub space to parent space
+  std::function<const std::int32_t(const std::int32_t&)> parent_map;
 
-  auto mesh = spaces[0]->mesh();
+  // Interpolate input function into suitable space
+  std::shared_ptr<dolfinx::fem::Function<PetscScalar>> n;
+  if (sub_space)
+  {
+    std::pair<dolfinx::fem::FunctionSpace, std::vector<int32_t>> collapsed_space
+        = space->collapse();
+    auto V_ptr = std::make_shared<dolfinx::fem::FunctionSpace>(
+        std::move(collapsed_space.first));
+    n = std::make_shared<dolfinx::fem::Function<PetscScalar>>(V_ptr);
+    n->interpolate(v);
+    parent_map = [sub_map = collapsed_space.second](const std::int32_t dof)
+    { return sub_map[dof]; };
+  }
+  else
+  {
+    parent_map = [](const std::int32_t dof) { return dof; };
+    n = std::make_shared<dolfinx::fem::Function<PetscScalar>>(space);
+    n->interpolate(v);
+  }
+
+  // Create view of n as xtensor
+  const tcb::span<const PetscScalar>& n_vec = n->x()->array();
+  std::array<std::size_t, 1> shape = {n_vec.size()};
+  auto n_xt = xt::adapt(n_vec.data(), n_vec.size(), xt::no_ownership(), shape);
+
+  // Info from parent space
+  auto W_imap = space->dofmap()->index_map;
+  std::vector<std::int32_t> W_ghost_owners = W_imap->ghost_owner_rank();
+  const int W_bs = space->dofmap()->index_map_bs();
+  const int W_local_size = W_imap->size_local();
+
+  const std::vector<std::int32_t> slave_facets = meshtags.find(marker);
+
+  auto mesh = space->mesh();
   MPI_Comm comm = mesh->comm();
   const int rank = dolfinx::MPI::rank(comm);
 
-  // Create view of v as xtensor
-  const tcb::span<const PetscScalar>& v_vec = v->x()->array();
-  std::array<std::size_t, 1> shape = {v_vec.size()};
-  auto v_xt = xt::adapt(v_vec.data(), v_vec.size(), xt::no_ownership(), shape);
+  // Array containing blocks of the MPC slaves
+  std::vector<std::int32_t> slave_blocks;
+  std::int32_t num_normal_components;
 
-  // Info from parent space
-  auto W_imap = spaces[0]->dofmap()->index_map;
-  std::vector<std::int32_t> W_ghost_owners = W_imap->ghost_owner_rank();
-  const int W_bs = spaces[0]->dofmap()->index_map_bs();
-  const int W_local_size = W_imap->size_local();
-
-  // Stack all Dirichlet BC dofs in one array, as MPCs cannot be used on
-  // Dirichlet dofs
-  std::vector<std::int32_t> bc_dofs;
-  for (auto bc : bcs)
+  // Find blocks in collapsed space and remove DirichletBC dofs
+  if (sub_space)
   {
-    auto dof_indices = bc->dof_indices();
-    bc_dofs.insert(bc_dofs.end(), dof_indices.first.begin(),
-                   dof_indices.first.end());
-  }
 
-  // Extract slave_facets
-  std::vector<std::int32_t> slave_facets;
-  for (std::size_t i = 0; i < meshtags.indices().size(); ++i)
-    if (meshtags.values()[i] == marker)
-      slave_facets.push_back(meshtags.indices()[i]);
+    // Get all degrees of freedom in the sub-space on the given facets
+    std::array<std::vector<std::int32_t>, 2> entity_dofs
+        = dolfinx::fem::locate_dofs_topological({*space, *n->function_space()},
+                                                meshtags.dim(), slave_facets);
+
+    // Remove Dirichlet BC dofs
+    const std::vector<std::int8_t> bc_marker
+        = dolfinx_mpc::is_bc<PetscScalar>(*space, entity_dofs[0], bcs);
+    num_normal_components = n->function_space()->dofmap()->index_map_bs();
+    slave_blocks.reserve(entity_dofs[0].size());
+    for (std::size_t i = 0; i < bc_marker.size(); i++)
+      if (!bc_marker[i])
+        slave_blocks.push_back(entity_dofs[1][i] / num_normal_components);
+    // Erase blocks duplicate blocks
+    dolfinx::radix_sort(xtl::span<std::int32_t>(slave_blocks));
+    slave_blocks.erase(std::unique(slave_blocks.begin(), slave_blocks.end()),
+                       slave_blocks.end());
+  }
+  else
+  {
+    num_normal_components = W_bs;
+    std::vector<std::int32_t> all_slave_blocks
+        = dolfinx::fem::locate_dofs_topological(*space, meshtags.dim(),
+                                                slave_facets);
+    // Remove Dirichlet BC dofs
+    const std::vector<std::int8_t> bc_marker
+        = dolfinx_mpc::is_bc<PetscScalar>(*space, all_slave_blocks, bcs);
+    for (std::size_t i = 0; i < bc_marker.size(); i++)
+      if (!bc_marker[i])
+        slave_blocks.push_back(all_slave_blocks[i]);
+  }
+  // Create array to hold degrees of freedom from the subspace of v for each
+  // block
+  std::vector<std::int32_t> normal_dofs(num_normal_components);
 
   // Arrays holding MPC data
   std::vector<std::int32_t> slaves;
@@ -65,82 +110,58 @@ mpc_data dolfinx_mpc::create_slip_condition(
   std::vector<std::int32_t> owners;
   std::vector<std::int32_t> offsets(1, 0);
 
-  // Get all degrees of freedom in the vector sub-space on the given facets
-  std::vector<std::int32_t> entity_dofs = dolfinx::fem::locate_dofs_topological(
-      {*v->function_space().get()}, meshtags.dim(), slave_facets);
-
-  // Create array to hold degrees of freedom from the subspace of v for each
-  // block
-  std::int32_t num_normal_components;
-  if (v_in_sub)
-    num_normal_components = v->function_space()->dofmap()->index_map_bs();
-  else
-    num_normal_components = W_bs;
-  std::vector<std::int32_t> normal_dofs(num_normal_components);
-
-  // Create map from a given index in a block of v to the parent space
-  std::function<std::int32_t(const std::int32_t)> v_to_parent;
-  if (v_in_sub)
-  {
-    v_to_parent = [sub_map, &normal_dofs](const std::int32_t index)
-    { return sub_map[normal_dofs[index]]; };
-  }
-  else
-  {
-    v_to_parent = [&normal_dofs](const std::int32_t index)
-    { return normal_dofs[index]; };
-  }
-  for (auto block : entity_dofs)
+  // Temporary arrays used to hold information about masters
+  std::vector<std::int64_t> pair_m;
+  for (auto block : slave_blocks)
   {
     // Obtain degrees of freedom for normal vector at slave dof
     for (std::int32_t i = 0; i < num_normal_components; ++i)
       normal_dofs[i] = block * num_normal_components + i;
     // Determine slave dof by component with biggest normal vector (to avoid
     // issues with grids aligned with coordiante system)
-    auto normal = xt::view(v_xt, xt::keep(normal_dofs));
+    auto normal = xt::view(n_xt, xt::keep(normal_dofs));
     std::int32_t slave_index = xt::argmax(xt::abs(normal))(0, 0);
 
-    // Only add slave if no Dirichlet condition has been imposed on the dof
-    std::int32_t parent_slave = v_to_parent(slave_index);
-    const auto it = std::find(bc_dofs.begin(), bc_dofs.end(), parent_slave);
-    if (it == bc_dofs.end())
-    {
-      std::vector<std::int32_t> parent_masters;
-      std::vector<PetscScalar> pair_c;
-      std::vector<std::int32_t> pair_o;
-      for (std::int32_t i = 0; i < num_normal_components; ++i)
-      {
-        if (i != slave_index)
-        {
-          PetscScalar coeff = -normal[i] / normal[slave_index];
-          parent_masters.push_back(v_to_parent(i));
-          pair_c.push_back(coeff);
-          if (v_to_parent(i) < W_local_size * W_bs)
-            pair_o.push_back(rank);
-          else
-            pair_o.push_back(
-                W_ghost_owners[v_to_parent(i) / W_bs - W_local_size]);
-        }
-      }
+    std::int32_t parent_slave
+        = parent_map(block * num_normal_components + slave_index);
+    slaves.push_back(parent_slave);
 
-      std::vector<std::int64_t> pair_m(parent_masters.size());
-      // Convert local parent dof to local parent block
-      std::vector<std::int32_t> parent_blocks(parent_masters);
-      for (std::size_t i = 0; i < parent_blocks.size(); ++i)
-        parent_blocks[i] /= W_bs;
-      W_imap->local_to_global(parent_blocks, pair_m);
-      // Convert global parent block to the dofs
-      for (std::size_t i = 0; i < parent_masters.size(); ++i)
+    std::vector<std::int32_t> parent_masters;
+    std::vector<PetscScalar> pair_c;
+    std::vector<std::int32_t> pair_o;
+    for (std::int32_t i = 0; i < num_normal_components; ++i)
+    {
+      if (i != slave_index)
       {
-        std::div_t div = std::div(parent_masters[i], W_bs);
-        pair_m[i] = pair_m[i] * W_bs + div.rem;
+        const std::int32_t parent_dof
+            = parent_map(block * num_normal_components + i);
+        PetscScalar coeff = -normal[i] / normal[slave_index];
+        parent_masters.push_back(parent_dof);
+        pair_c.push_back(coeff);
+        const std::int32_t m_rank
+            = parent_dof < W_local_size * W_bs
+                  ? rank
+                  : W_ghost_owners[parent_dof / W_bs - W_local_size];
+        pair_o.push_back(m_rank);
       }
-      slaves.push_back(parent_slave);
-      masters.insert(masters.end(), pair_m.begin(), pair_m.end());
-      coeffs.insert(coeffs.end(), pair_c.begin(), pair_c.end());
-      offsets.push_back(masters.size());
-      owners.insert(owners.end(), pair_o.begin(), pair_o.end());
     }
+    // Convert local parent dof to local parent block
+    std::vector<std::int32_t> parent_blocks = parent_masters;
+    std::for_each(parent_blocks.begin(), parent_blocks.end(),
+                  [W_bs](auto& b) { b /= W_bs; });
+    // Map blocks from local to global
+    pair_m.resize(parent_masters.size());
+    W_imap->local_to_global(parent_blocks, pair_m);
+    // Convert global parent block to the dofs
+    for (std::size_t i = 0; i < parent_masters.size(); ++i)
+    {
+      std::div_t div = std::div(parent_masters[i], W_bs);
+      pair_m[i] = pair_m[i] * W_bs + div.rem;
+    }
+    masters.insert(masters.end(), pair_m.begin(), pair_m.end());
+    coeffs.insert(coeffs.end(), pair_c.begin(), pair_c.end());
+    offsets.push_back(masters.size());
+    owners.insert(owners.end(), pair_o.begin(), pair_o.end());
   }
 
   mpc_data data;

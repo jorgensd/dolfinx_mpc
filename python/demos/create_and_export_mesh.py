@@ -512,7 +512,8 @@ def mesh_2D_dolfin(celltype, theta=0):
         for key in markers.keys():
             indices = np.append(indices, markers[key])
             values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
-        mt = _mesh.MeshTags(mesh, fdim, indices, values)
+        arg_sort = np.argsort(indices)
+        mt = _mesh.MeshTags(mesh, fdim, indices[arg_sort], values[arg_sort])
         mt.name = "facet_tags"
         with _io.XDMFFile(MPI.COMM_SELF, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "w") as o_f:
             o_f.write_mesh(mesh)
@@ -633,7 +634,8 @@ def mesh_3D_dolfin(theta=0, ct=_mesh.CellType.tetrahedron, ext="tetrahedron", re
         for key in markers.keys():
             indices = np.append(indices, markers[key])
             values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
-        mt = _mesh.MeshTags(mesh, fdim, indices, values)
+        arg_sort = np.argsort(indices)
+        mt = _mesh.MeshTags(mesh, fdim, indices[arg_sort], values[arg_sort])
         mt.name = "facet_tags"
         fname = f"meshes/mesh_{ext}_{theta:.2f}.xdmf"
 

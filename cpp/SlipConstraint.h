@@ -13,11 +13,11 @@ namespace dolfinx_mpc
 
 //
 mpc_data create_slip_condition(
-    std::vector<std::shared_ptr<dolfinx::fem::FunctionSpace>> spaces,
-    dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t marker,
-    std::shared_ptr<dolfinx::fem::Function<PetscScalar>> v,
-    tcb::span<const std::int32_t> sub_map,
+    std::shared_ptr<dolfinx::fem::FunctionSpace>& space,
+    const dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t marker,
+    const dolfinx::fem::Function<PetscScalar>& v,
     std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<PetscScalar>>>
-        bcs);
+        bcs,
+    const bool sub_space);
 
 } // namespace dolfinx_mpc

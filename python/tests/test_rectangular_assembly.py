@@ -28,6 +28,15 @@ def test_mixed_element(cell_type, ghost_mode):
     mesh = dolfinx.mesh.create_unit_square(
         MPI.COMM_WORLD, N, N, cell_type=cell_type, ghost_mode=ghost_mode)
 
+    # Inlet velocity Dirichlet BC
+    bc_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0))
+    other_facets = dolfinx.mesh.locate_entities_boundary(
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0))
+    arg_sort = np.argsort(other_facets)
+    mt = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim - 1,
+                               other_facets[arg_sort], np.full_like(other_facets, 1))
+
     # Rotate the mesh to induce more interesting slip BCs
     th = np.pi / 4.0
     rot = np.array([[np.cos(th), -np.sin(th)],
@@ -42,15 +51,6 @@ def test_mixed_element(cell_type, ghost_mode):
     Q = dolfinx.fem.FunctionSpace(mesh, Qe)
     W = dolfinx.fem.FunctionSpace(mesh, Ve * Qe)
 
-    # Inlet velocity Dirichlet BC
-    bc_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0))
-    other_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0))
-
-    mt = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim - 1,
-                               other_facets, np.full_like(other_facets, 1))
-
     inlet_velocity = dolfinx.fem.Function(V)
     inlet_velocity.interpolate(
         lambda x: np.zeros((mesh.geometry.dim, x[0].shape[0]), dtype=np.double))
@@ -62,10 +62,9 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # Collect Dirichlet boundary conditions
     bcs = [bc1]
-
     mpc_v = dolfinx_mpc.MultiPointConstraint(V)
     n_approx = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
-    mpc_v.create_slip_constraint((mt, 1), n_approx, bcs=bcs)
+    mpc_v.create_slip_constraint(V, (mt, 1), n_approx, bcs=bcs)
     mpc_v.finalize()
 
     mpc_q = dolfinx_mpc.MultiPointConstraint(Q)
@@ -135,8 +134,7 @@ def test_mixed_element(cell_type, ghost_mode):
     V, V_to_W = W.sub(0).collapse()
     mpc_vq = dolfinx_mpc.MultiPointConstraint(W)
     n_approx = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
-    mpc_vq.create_slip_constraint((mt, 1), n_approx, sub_space=W.sub(0),
-                                  sub_map=V_to_W, bcs=bcs)
+    mpc_vq.create_slip_constraint(W.sub(0), (mt, 1), n_approx, bcs=bcs)
     mpc_vq.finalize()
 
     f = dolfinx.fem.Constant(mesh, PETSc.ScalarType((0, 0)))
