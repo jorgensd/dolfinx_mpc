@@ -38,7 +38,7 @@ class NonlinearMPCProblem(dolfinx.fem.NonlinearProblem):
         A.assemble()
 
 
-class NewtonSolverMPC(dolfinx._cpp.nls.NewtonSolver):
+class NewtonSolverMPC(dolfinx._cpp.nls.petsc.NewtonSolver):
     def __init__(self, comm: MPI.Intracomm, problem: NonlinearMPCProblem,
                  mpc: dolfinx_mpc.MultiPointConstraint):
         """A Newton solver for non-linear MPC problems."""
@@ -59,7 +59,7 @@ class NewtonSolverMPC(dolfinx._cpp.nls.NewtonSolver):
         self.set_form(problem.form)
         self.set_update(self.update)
 
-    def update(self, solver: dolfinx._cpp.nls.NewtonSolver,
+    def update(self, solver: dolfinx._cpp.nls.petsc.NewtonSolver,
                dx: PETSc.Vec, x: PETSc.Vec):
         # We need to use a vector created on the MPC's space to update ghosts
         self.u_mpc.vector.array = x.array_r
