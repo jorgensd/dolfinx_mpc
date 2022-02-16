@@ -146,7 +146,7 @@ def test_nonlinear_possion(poly_order):
 
         mpc = dolfinx_mpc.MultiPointConstraint(V)
         mpc.create_periodic_constraint_geometrical(
-            periodic_boundary, periodic_relation, bcs)
+            V, periodic_boundary, periodic_relation, bcs)
         mpc.finalize()
 
         # Sanity check that the MPC class has some constraints to impose
@@ -195,7 +195,7 @@ def test_homogenize(element, poly_order):
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_periodic_constraint_geometrical(
-        periodic_boundary, periodic_relation, [])
+        V, periodic_boundary, periodic_relation, [])
     mpc.finalize()
 
     # Sanity check that the MPC class has some constraints to impose
