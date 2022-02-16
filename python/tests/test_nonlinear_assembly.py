@@ -123,10 +123,10 @@ def test_nonlinear_possion(poly_order):
         v = ufl.TestFunction(V)
         x = ufl.SpatialCoordinate(mesh)
 
-        u_soln = ufl.sin(ufl.pi*x[0])*ufl.sin(ufl.pi*x[1])
-        f = -ufl.div((1 + u_soln**2)*ufl.grad(u_soln))
+        u_soln = ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+        f = -ufl.div((1 + u_soln**2) * ufl.grad(u_soln))
 
-        F = ufl.inner((1 + u**2)*ufl.grad(u), ufl.grad(v)) * ufl.dx \
+        F = ufl.inner((1 + u**2) * ufl.grad(u), ufl.grad(v)) * ufl.dx \
             - ufl.inner(f, v) * ufl.dx
         J = ufl.derivative(F, u)
 
@@ -135,7 +135,7 @@ def test_nonlinear_possion(poly_order):
         def periodic_boundary(x):
             eps = 1e-10
             return np.isclose(x[0], 0.5) & (
-                    (x[1] < 0.5 - eps) | (x[1] > 0.5 + eps))
+                (x[1] < 0.5 - eps) | (x[1] > 0.5 + eps))
 
         def periodic_relation(x):
             out_x = np.zeros(x.shape)
@@ -161,7 +161,7 @@ def test_nonlinear_possion(poly_order):
         solver = NewtonSolverMPC(mesh.comm, problem, mpc)
 
         # Ensure the solver works with nonzero initial guess
-        u.interpolate(lambda x: x[0]**2*x[1]**2)
+        u.interpolate(lambda x: x[0]**2 * x[1]**2)
         solver.solve(u)
 
         l2_error_local = dolfinx.fem.assemble_scalar(
@@ -211,7 +211,7 @@ def test_homogenize(element, poly_order):
     mpc.homogenize(u.vector)
 
     with u.vector.localForm() as u_:
-        for i in range(V.dofmap.index_map.size_local*V.dofmap.index_map_bs):
+        for i in range(V.dofmap.index_map.size_local * V.dofmap.index_map_bs):
             if i in mpc.slaves:
                 assert np.isclose(u_.array_r[i], 0.0)
             else:
