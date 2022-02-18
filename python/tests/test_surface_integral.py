@@ -113,9 +113,9 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     # Generate reference matrices and unconstrained solution
-    A_org = fem.assemble_matrix(bilinear_form, bcs)
+    A_org = fem.petsc.assemble_matrix(bilinear_form, bcs)
     A_org.assemble()
-    L_org = fem.assemble_vector(linear_form)
+    L_org = fem.petsc.assemble_vector(linear_form)
     fem.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)
@@ -196,10 +196,10 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
     # and numpy solvers to get reference values
 
     # Generate reference matrices and unconstrained solution
-    A_org = fem.assemble_matrix(bilinear_form)
+    A_org = fem.petsc.assemble_matrix(bilinear_form)
     A_org.assemble()
 
-    L_org = fem.assemble_vector(linear_form)
+    L_org = fem.petsc.assemble_vector(linear_form)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     root = 0

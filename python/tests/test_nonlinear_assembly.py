@@ -12,14 +12,14 @@ import dolfinx_mpc
 import ufl
 
 
-class NonlinearMPCProblem(dolfinx.fem.NonlinearProblem):
+class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
 
-    def __init__(self, F, u, mpc, bcs=[], J=None, form_compiler_parameters={},
-                 jit_parameters={}):
+    def __init__(self, F, u, mpc, bcs=[], J=None, form_compiler_params={},
+                 jit_params={}):
         self.mpc = mpc
         super().__init__(F, u, bcs=bcs, J=J,
-                         form_compiler_parameters=form_compiler_parameters,
-                         jit_parameters=jit_parameters)
+                         form_compiler_params=form_compiler_params,
+                         jit_params=jit_params)
 
     def F(self, x: PETSc.Vec, F: PETSc.Vec):
         with F.localForm() as F_local:
@@ -38,7 +38,7 @@ class NonlinearMPCProblem(dolfinx.fem.NonlinearProblem):
         A.assemble()
 
 
-class NewtonSolverMPC(dolfinx._cpp.nls.petsc.NewtonSolver):
+class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
     def __init__(self, comm: MPI.Intracomm, problem: NonlinearMPCProblem,
                  mpc: dolfinx_mpc.MultiPointConstraint):
         """A Newton solver for non-linear MPC problems."""
@@ -50,7 +50,7 @@ class NewtonSolverMPC(dolfinx._cpp.nls.petsc.NewtonSolver):
         # MPC problem
         self._A = dolfinx_mpc.cpp.mpc.create_matrix(
             problem.a, mpc._cpp_object)
-        self._b = dolfinx._cpp.la.petsc.create_vector(
+        self._b = dolfinx.cpp.la.petsc.create_vector(
             mpc.function_space.dofmap.index_map,
             mpc.function_space.dofmap.index_map_bs)
 
@@ -59,7 +59,7 @@ class NewtonSolverMPC(dolfinx._cpp.nls.petsc.NewtonSolver):
         self.set_form(problem.form)
         self.set_update(self.update)
 
-    def update(self, solver: dolfinx._cpp.nls.petsc.NewtonSolver,
+    def update(self, solver: dolfinx.nls.petsc.NewtonSolver,
                dx: PETSc.Vec, x: PETSc.Vec):
         # We need to use a vector created on the MPC's space to update ghosts
         self.u_mpc.vector.array = x.array_r

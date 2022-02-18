@@ -101,29 +101,29 @@ def test_mixed_element(cell_type, ghost_mode):
     A_nest.assemble()
 
     # Assemble original nest matrix
-    A_org_nest = dolfinx.fem.assemble_matrix_nest(a_nest, bcs)
+    A_org_nest = dolfinx.fem.petsc.assemble_matrix_nest(a_nest, bcs)
     A_org_nest.assemble()
 
     # MPC nested rhs
     b_nest = dolfinx_mpc.create_vector_nest(L_nest, [mpc_v, mpc_q])
     dolfinx_mpc.assemble_vector_nest(b_nest, L_nest, [mpc_v, mpc_q])
 
-    dolfinx.fem.assemble.apply_lifting_nest(b_nest, a_nest, bcs)
+    dolfinx.fem.petsc.apply_lifting_nest(b_nest, a_nest, bcs)
     for b_sub in b_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD,
                           mode=PETSc.ScatterMode.REVERSE)
 
     bcs0 = dolfinx.fem.bcs_by_block(
         dolfinx.fem.extract_function_spaces(L_nest), bcs)
-    dolfinx.fem.assemble.set_bc_nest(b_nest, bcs0)
+    dolfinx.fem.petsc.set_bc_nest(b_nest, bcs0)
 
     # Original dolfinx rhs
-    b_org_nest = dolfinx.fem.assemble_vector_nest(L_nest)
-    dolfinx.fem.assemble.apply_lifting_nest(b_org_nest, a_nest, bcs)
+    b_org_nest = dolfinx.fem.petsc.assemble_vector_nest(L_nest)
+    dolfinx.fem.petsc.apply_lifting_nest(b_org_nest, a_nest, bcs)
     for b_sub in b_org_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD,
                           mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.assemble.set_bc_nest(b_org_nest, bcs0)
+    dolfinx.fem.petsc.set_bc_nest(b_org_nest, bcs0)
 
     # -- Monolithic assembly
     dofs = dolfinx.fem.locate_dofs_topological((W.sub(0), V), 1, bc_facets)
@@ -166,11 +166,11 @@ def test_mixed_element(cell_type, ghost_mode):
     # Assemble LHS matrix and RHS vector
     A = dolfinx_mpc.assemble_matrix(a, mpc_vq, bcs)
     A.assemble()
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org = dolfinx.fem.petsc.assemble_matrix(a, bcs)
     A_org.assemble()
 
     b = dolfinx_mpc.assemble_vector(L, mpc_vq)
-    b_org = dolfinx.fem.assemble_vector(L)
+    b_org = dolfinx.fem.petsc.assemble_vector(L)
 
     # Set Dirichlet boundary condition values in the RHS
     dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])

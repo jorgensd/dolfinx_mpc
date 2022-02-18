@@ -103,7 +103,7 @@ def demo_periodic3D(celltype):
     print("----Verification----")
     u_ = fem.Function(V)
     u_.x.array[:] = 0
-    org_problem = fem.LinearProblem(a, rhs, u=u_, bcs=bcs, petsc_options=petsc_options)
+    org_problem = fem.petsc.LinearProblem(a, rhs, u=u_, bcs=bcs, petsc_options=petsc_options)
     with Timer("~Periodic: Unconstrained solve"):
         org_problem.solve()
         it = org_problem.solver.getIterationNumber()

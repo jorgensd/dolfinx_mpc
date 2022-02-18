@@ -553,7 +553,7 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
                mpc,
            const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar>>
                mpc_off_axis,
-           const auto& pattern_inserter, const auto& master_inserter) -> void
+           const auto& pattern_inserter, const auto& master_inserter)
   {
     const auto& V = mpc->function_space();
     const auto& V_off_axis = mpc_off_axis->function_space();

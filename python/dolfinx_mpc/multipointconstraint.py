@@ -13,6 +13,7 @@ from petsc4py import PETSc as _PETSc
 import dolfinx_mpc.cpp
 import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
+import dolfinx.cpp as _cpp
 from .dictcondition import create_dictionary_constraint
 
 
@@ -243,7 +244,7 @@ class MultiPointConstraint():
             self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_contact_slip_condition(self, meshtags: _mesh.MeshTags, slave_marker: int, master_marker: int,
+    def create_contact_slip_condition(self, meshtags: _cpp.mesh.MeshTags_int32, slave_marker: int, master_marker: int,
                                       normal: _fem.Function):
         """
         Create a slip condition between two sets of facets marker with individual markers.
@@ -266,7 +267,7 @@ class MultiPointConstraint():
             self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
-    def create_contact_inelastic_condition(self, meshtags: _mesh.MeshTags, slave_marker: int, master_marker: int):
+    def create_contact_inelastic_condition(self, meshtags: _cpp.mesh.MeshTags_int32, slave_marker: int, master_marker: int):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.

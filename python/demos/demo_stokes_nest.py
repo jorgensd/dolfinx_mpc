@@ -197,17 +197,17 @@ with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
     dolfinx_mpc.assemble_vector_nest(b, L, [mpc, mpc_q])
 
 # Set Dirichlet boundary condition values in the RHS
-dolfinx.fem.assemble.apply_lifting_nest(b, a, bcs)
+dolfinx.fem.petsc.apply_lifting_nest(b, a, bcs)
 for b_sub in b.getNestSubVecs():
     b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
 # bcs0 = dolfinx.cpp.fem.bcs_rows(
 #     dolfinx.fem.assemble._create_cpp_form(L), bcs)
 bcs0 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(L), bcs)
-dolfinx.fem.assemble.set_bc_nest(b, bcs0)
+dolfinx.fem.petsc.set_bc_nest(b, bcs0)
 
 # Preconditioner
-P11 = dolfinx.fem.assemble_matrix(dolfinx.fem.form(p * q * ufl.dx))
+P11 = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(p * q * ufl.dx))
 P = PETSc.Mat().createNest([[A.getNestSubMatrix(0, 0), None], [None, P11]])
 P.assemble()
 
@@ -307,9 +307,9 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     # Generate reference matrices and unconstrained solution
-    A_org = dolfinx.fem.assemble_matrix(a, bcs)
+    A_org = dolfinx.fem.petsc.assemble_matrix(a, bcs)
     A_org.assemble()
-    L_org = dolfinx.fem.assemble_vector(L)
+    L_org = dolfinx.fem.petsc.assemble_vector(L)
 
     dolfinx.fem.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)

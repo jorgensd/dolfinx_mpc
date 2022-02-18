@@ -47,9 +47,9 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     linear_form = fem.form(rhs)
 
     # Generate reference matrices
-    A_org = fem.assemble_matrix(bilinear_form)
+    A_org = fem.petsc.assemble_matrix(bilinear_form)
     A_org.assemble()
-    L_org = fem.assemble_vector(linear_form)
+    L_org = fem.petsc.assemble_vector(linear_form)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     # Create multipoint constraint
@@ -125,9 +125,9 @@ def test_linearproblem(master_point):
     a = d * g * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
     rhs = h * ufl.inner(f, v) * ufl.dx
     # Generate reference matrices
-    A_org = fem.assemble_matrix(fem.form(a))
+    A_org = fem.petsc.assemble_matrix(fem.form(a))
     A_org.assemble()
-    L_org = fem.assemble_vector(fem.form(rhs))
+    L_org = fem.petsc.assemble_vector(fem.form(rhs))
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     # Create multipoint constraint
