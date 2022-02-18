@@ -13,9 +13,10 @@ from time import perf_counter
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace,
-                         apply_lifting, assemble_matrix, assemble_vector,
-                         dirichletbc, form, locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
+                         form, locate_dofs_topological)
+from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
+                               set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
 from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,

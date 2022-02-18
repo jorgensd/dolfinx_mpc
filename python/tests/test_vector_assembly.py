@@ -49,7 +49,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     # Reduce system with global matrix K after assembly
-    L_org = fem.assemble_vector(linear_form)
+    L_org = fem.petsc.assemble_vector(linear_form)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     root = 0
     comm = mesh.comm

@@ -118,7 +118,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim, cells, cell_values)
         mesh.topology.create_connectivity(mesh.topology.dim, 0)
         adj = AdjacencyList_int32(local_entities)
-        ct = create_meshtags(mesh, mesh.topology.dim, adj, numpy.int32(local_values))
+        ct = create_meshtags(mesh, mesh.topology.dim, adj, numpy.asarray(local_values, dtype=numpy.int32))
         ct.name = "Cell tags"
 
     # Create MeshTags for facets
@@ -131,7 +131,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim - 1, marked_facets, facet_values)
         mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
         adj = AdjacencyList_int32(local_entities)
-        ft = create_meshtags(mesh, mesh.topology.dim - 1, adj, numpy.int32(local_values))
+        ft = create_meshtags(mesh, mesh.topology.dim - 1, adj, numpy.asarray(local_values, dtype=numpy.int32))
         ft.name = "Facet tags"
 
     if cell_data and facet_data:

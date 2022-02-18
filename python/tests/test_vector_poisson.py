@@ -85,10 +85,10 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     mpc.backsubstitution(uh)
 
     # Generate reference matrices for unconstrained problem
-    A_org = fem.assemble_matrix(bilinear_form, bcs)
+    A_org = fem.petsc.assemble_matrix(bilinear_form, bcs)
     A_org.assemble()
 
-    L_org = fem.assemble_vector(linear_form)
+    L_org = fem.petsc.assemble_vector(linear_form)
     fem.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.set_bc(L_org, bcs)

@@ -58,9 +58,9 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     linear_form = fem.form(rhs)
 
     # Generate reference matrices
-    A_org = fem.assemble_matrix(bilinear_form)
+    A_org = fem.petsc.assemble_matrix(bilinear_form)
     A_org.assemble()
-    L_org = fem.assemble_vector(linear_form)
+    L_org = fem.petsc.assemble_vector(linear_form)
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     def l2b(li):
