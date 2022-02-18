@@ -267,7 +267,8 @@ class MultiPointConstraint():
             self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
-    def create_contact_inelastic_condition(self, meshtags: _cpp.mesh.MeshTags_int32, slave_marker: int, master_marker: int):
+    def create_contact_inelastic_condition(self, meshtags: _cpp.mesh.MeshTags_int32,
+                                           slave_marker: int, master_marker: int):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
