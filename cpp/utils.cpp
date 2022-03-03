@@ -764,14 +764,13 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
       cmap.pull_back_nonaffine(_Xp, xp, coordinate_dofs);
       cmap.tabulate(1, _Xp, phi);
       dphi = xt::view(phi, xt::range(1, tdim + 1), 0, xt::all(), 0);
-      J.fill(0);
       dolfinx::fem::CoordinateElement::compute_jacobian(dphi, coordinate_dofs,
                                                         _J);
       dolfinx::fem::CoordinateElement::compute_jacobian_inverse(_J, _K);
       detJ[p]
           = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(_J);
     }
-    xt::row(X, p) = xt::row(_Xp, 9);
+    xt::row(X, p) = xt::row(_Xp, 0);
   }
 
   // Prepare basis function data structures
