@@ -24,7 +24,8 @@ class LinearProblem(_fem.petsc.LinearProblem):
     """
 
     def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint,
-                 bcs: typing.List[_fem.DirichletBCMetaClass] = None, petsc_options: dict = None,
+                 bcs: typing.List[_fem.DirichletBCMetaClass] = None, 
+                 u: _fem.Function = None, petsc_options: dict = None,
                  form_compiler_params: dict = None, jit_params: dict = None):
         """Initialize solver for a linear variational problem.
 
@@ -75,7 +76,10 @@ class LinearProblem(_fem.petsc.LinearProblem):
             raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
         self._mpc = mpc
         # Create function containing solution vector
-        self.u = _fem.Function(self._mpc.function_space)
+        if u is None:
+            self.u = _fem.Function(self._mpc.function_space)
+        else:
+            self.u = u
 
         # Create MPC matrix
         pattern = create_sparsity_pattern(self._a, self._mpc)
