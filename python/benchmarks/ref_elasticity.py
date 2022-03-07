@@ -19,8 +19,8 @@ from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
-from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
-                          locate_entities_boundary, refine)
+from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
+                          meshtags, refine)
 from dolfinx_mpc.utils import rigid_motions_nullspace
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -66,7 +66,7 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: h5py.File = Non
     t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
     arg_sort = np.argsort(t_facets)
-    mt = MeshTags(mesh, fdim, t_facets[arg_sort], facet_values[arg_sort])
+    mt = meshtags(mesh, fdim, t_facets[arg_sort], facet_values[arg_sort])
 
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e4)

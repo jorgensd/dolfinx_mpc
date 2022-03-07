@@ -13,7 +13,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.mesh import MeshTags, create_unit_square, locate_entities_boundary
+from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -46,7 +46,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
         return np.isclose(x[1], 1)
     top_facets = locate_entities_boundary(mesh, 1, top)
     arg_sort = np.argsort(top_facets)
-    mt = MeshTags(mesh, fdim, top_facets[arg_sort], np.full(len(top_facets), 3, dtype=np.int32))
+    mt = meshtags(mesh, fdim, top_facets[arg_sort], np.full(len(top_facets), 3, dtype=np.int32))
 
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
     g = fem.Constant(mesh, PETSc.ScalarType((0, -9.81e2)))
@@ -164,7 +164,7 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
         indices = np.append(indices, markers[key])
         values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
     sort = np.argsort(indices)
-    mt = MeshTags(mesh, mesh.topology.dim - 1, np.array(indices[sort], dtype=np.intc),
+    mt = meshtags(mesh, mesh.topology.dim - 1, np.array(indices[sort], dtype=np.intc),
                   np.array(values[sort], dtype=np.intc))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
     g = fem.Constant(mesh, PETSc.ScalarType((2, 1)))

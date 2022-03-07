@@ -11,8 +11,8 @@
 #  block preconditioners with PETSc
 
 
-import dolfinx.io
 import dolfinx.cpp.io
+import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import gmsh
@@ -94,7 +94,7 @@ def create_mesh_gmsh(L: int = 2, H: int = 1, res: np.float64 = 0.1, theta: np.fl
 
         # Generate mesh
         gmsh.model.mesh.generate(2)
-    # Convert gmsh model to DOLFINx Mesh and MeshTags
+    # Convert gmsh model to DOLFINx Mesh and meshtags
     mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True, gdim=2)
     gmsh.finalize()
     return mesh, ft

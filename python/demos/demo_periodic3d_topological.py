@@ -22,13 +22,13 @@ import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.cpp.io import VTXWriter
-from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
-                          locate_entities_boundary)
+from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
+                          meshtags)
 from dolfinx_mpc import LinearProblem
 from mpi4py import MPI
 from petsc4py import PETSc
-from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
-                 inner, pi, sin, as_vector)
+from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
+                 exp, grad, inner, pi, sin)
 
 # Get PETSc int and scalar types
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
@@ -62,7 +62,7 @@ def demo_periodic3D(celltype):
 
     facets = locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
     arg_sort = np.argsort(facets)
-    mt = MeshTags(mesh, mesh.topology.dim - 1, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
+    mt = meshtags(mesh, mesh.topology.dim - 1, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)

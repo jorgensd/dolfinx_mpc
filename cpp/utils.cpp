@@ -9,7 +9,7 @@
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
 #include <xtensor/xcomplex.hpp>
-
+#include <xtensor/xsort.hpp>
 using namespace dolfinx_mpc;
 
 namespace
@@ -926,11 +926,50 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
 
   return coords;
 }
+
+//-----------------------------------------------------------------------------
+dolfinx::graph::AdjacencyList<std::int32_t>
+dolfinx_mpc::compute_colliding_cells(
+    const dolfinx::mesh::Mesh& mesh,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& candidate_cells,
+    const xt::xtensor<double, 2>& points, const double eps2)
+{
+  std::vector<std::int32_t> offsets = {0};
+  offsets.reserve(candidate_cells.num_nodes() + 1);
+  std::vector<std::int32_t> colliding_cells;
+  const int tdim = mesh.topology().dim();
+  std::vector<std::int32_t> result;
+  for (std::int32_t i = 0; i < candidate_cells.num_nodes(); i++)
+  {
+    auto cells = candidate_cells.links(i);
+    if (cells.empty())
+    {
+      offsets.push_back((std::int32_t)colliding_cells.size());
+      continue;
+    }
+    xt::xtensor<double, 2> _point({cells.size(), 3});
+    for (std::size_t j = 0; j < cells.size(); j++)
+      xt::row(_point, j) = xt::row(points, i);
+
+    xt::xtensor<double, 1> distances_sq
+        = dolfinx::geometry::squared_distance(mesh, tdim, cells, _point);
+    // Only push back closest cell
+    if (std::size_t cell_idx = xt::argmin(distances_sq)();
+        distances_sq[cell_idx] < eps2)
+    {
+      colliding_cells.push_back(cells[cell_idx]);
+    }
+    offsets.push_back((std::int32_t)colliding_cells.size());
+  }
+
+  return dolfinx::graph::AdjacencyList<std::int32_t>(std::move(colliding_cells),
+                                                     std::move(offsets));
+}
 //-----------------------------------------------------------------------------
 std::vector<std::int32_t> dolfinx_mpc::find_local_collisions(
     const dolfinx::mesh::Mesh& mesh,
     const dolfinx::geometry::BoundingBoxTree& tree,
-    const xt::xtensor<double, 2>& points)
+    const xt::xtensor<double, 2>& points, const double eps2)
 {
   assert(points.shape(1) == 3);
 
@@ -938,8 +977,8 @@ std::vector<std::int32_t> dolfinx_mpc::find_local_collisions(
   auto bbox_collisions = dolfinx::geometry::compute_collisions(tree, points);
 
   // Compute exact collision
-  auto cell_collisions = dolfinx::geometry::compute_colliding_cells(
-      mesh, bbox_collisions, points);
+  auto cell_collisions = dolfinx_mpc::compute_colliding_cells(
+      mesh, bbox_collisions, points, eps2);
 
   // Extract first collision
   std::vector<std::int32_t> collisions(points.shape(0), -1);

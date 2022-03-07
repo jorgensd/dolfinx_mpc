@@ -160,7 +160,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
     }
     masters.insert(masters.end(), pair_m.begin(), pair_m.end());
     coeffs.insert(coeffs.end(), pair_c.begin(), pair_c.end());
-    offsets.push_back(masters.size());
+    offsets.push_back((std::int32_t)masters.size());
     owners.insert(owners.end(), pair_o.begin(), pair_o.end());
   }
 

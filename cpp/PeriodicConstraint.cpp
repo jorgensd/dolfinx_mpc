@@ -125,7 +125,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
       = dolfinx::geometry::compute_collisions(process_tree, mapped_T);
 
   std::vector<std::int32_t> local_cell_collisions
-      = dolfinx_mpc::find_local_collisions(*mesh, tree, mapped_T);
+      = dolfinx_mpc::find_local_collisions(*mesh, tree, mapped_T, 1e-20);
   dolfinx::common::Timer t0("~~Periodic: Local cell and eval basis");
   xt::xtensor<double, 3> tabulated_basis_values
       = dolfinx_mpc::evaluate_basis_functions(V, mapped_T,
@@ -337,7 +337,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
   num_masters_per_slave_remote.reserve(bs * coords_recv.size() / 3);
 
   std::vector<std::int32_t> remote_cell_collisions
-      = dolfinx_mpc::find_local_collisions(*mesh, tree, coords_recv);
+      = dolfinx_mpc::find_local_collisions(*mesh, tree, coords_recv, 1e-20);
   xt::xtensor<double, 3> remote_basis_values
       = dolfinx_mpc::evaluate_basis_functions(V, coords_recv,
                                               remote_cell_collisions);

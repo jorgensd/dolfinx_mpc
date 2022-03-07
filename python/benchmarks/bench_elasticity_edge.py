@@ -14,8 +14,8 @@ from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
                          form, locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import (CellType, MeshTags, create_unit_cube,
-                          locate_entities_boundary)
+from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
+                          meshtags)
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
@@ -62,7 +62,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         edim = mesh.topology.dim - 2
         edges = locate_entities_boundary(mesh, edim, PeriodicBoundary)
         arg_sort = np.argsort(edges)
-        periodic_mt = MeshTags(mesh, edim, edges[arg_sort], np.full(len(edges), 2, dtype=np.int32))
+        periodic_mt = meshtags(mesh, edim, edges[arg_sort], np.full(len(edges), 2, dtype=np.int32))
 
         mpc = MultiPointConstraint(V)
         mpc.create_periodic_constraint_topological(V, periodic_mt, 2, periodic_relation, bcs, scale=0.5)
@@ -75,7 +75,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
     arg_sort = np.argsort(t_facets)
-    mt = MeshTags(mesh, fdim, t_facets[arg_sort], facet_values)
+    mt = meshtags(mesh, fdim, t_facets[arg_sort], facet_values)
 
     # Elasticity parameters
     E = PETSc.ScalarType(1.0e4)

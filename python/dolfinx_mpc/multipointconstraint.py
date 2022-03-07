@@ -4,16 +4,15 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Callable, List, Dict
+from typing import Callable, Dict, List
 
-
+import dolfinx.fem as _fem
+import dolfinx.mesh as _mesh
 import numpy
 from petsc4py import PETSc as _PETSc
 
 import dolfinx_mpc.cpp
-import dolfinx.fem as _fem
-import dolfinx.mesh as _mesh
-import dolfinx.cpp as _cpp
+
 from .dictcondition import create_dictionary_constraint
 
 
@@ -94,7 +93,7 @@ class MultiPointConstraint():
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
-    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTags, tag: int,
+    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTagsMetaClass, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: list([_fem.DirichletBCMetaClass]), scale: _PETSc.ScalarType = 1):
         """
@@ -161,10 +160,10 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple([_mesh.MeshTags, int]),
+    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple([_mesh.MeshTagsMetaClass, int]),
                                v: _fem.Function, bcs: list([_fem.DirichletBCMetaClass]) = []):
         """
-        Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.mesh.MeshTags`
+        Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.mesh.MeshTagsMetaClass`
         marked with index i. normal is the normal vector defined as a vector function.
 
         Parameters
@@ -244,8 +243,8 @@ class MultiPointConstraint():
             self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_contact_slip_condition(self, meshtags: _cpp.mesh.MeshTags_int32, slave_marker: int, master_marker: int,
-                                      normal: _fem.Function):
+    def create_contact_slip_condition(self, meshtags: _mesh.MeshTagsMetaClass, slave_marker: int, master_marker: int,
+                                      normal: _fem.Function, eps2: numpy.float64 = 1e-20):
         """
         Create a slip condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
@@ -262,13 +261,15 @@ class MultiPointConstraint():
             The marker of the master facets
         normal
             The function used in the dot-product of the constraint
+        eps2
+            The tolerance for the squared distance between cells to be considered as a collision
         """
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-            self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object)
+            self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object, eps2)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
-    def create_contact_inelastic_condition(self, meshtags: _cpp.mesh.MeshTags_int32,
-                                           slave_marker: int, master_marker: int):
+    def create_contact_inelastic_condition(self, meshtags: _mesh.MeshTagsMetaClass,
+                                           slave_marker: int, master_marker: int, eps2: numpy.float64 = 1e-20):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
@@ -283,9 +284,11 @@ class MultiPointConstraint():
             The marker of the slave facets
         master_marker
             The marker of the master facets
+        eps2
+            The tolerance for the squared distance between cells to be considered as a collision
         """
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
-            self.V._cpp_object, meshtags, slave_marker, master_marker)
+            self.V._cpp_object, meshtags, slave_marker, master_marker, eps2)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
     @property

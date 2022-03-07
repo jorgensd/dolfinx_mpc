@@ -23,7 +23,7 @@ from dolfinx.fem import (Constant, VectorFunctionSpace, apply_lifting,
                          locate_dofs_geometrical, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, set_log_level
-from dolfinx.mesh import MeshTags, locate_entities_boundary
+from dolfinx.mesh import locate_entities_boundary, meshtags
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
                                create_normal_approximation,
@@ -63,7 +63,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
             mesh.topology.create_connectivity(fdim, tdim)
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
 
-    # Helper until MeshTags can be read in from xdmf
+    # Helper until meshtags can be read in from xdmf
     V = VectorFunctionSpace(mesh, ("Lagrange", 1))
 
     r_matrix = rotation_matrix([0, 0, 1], theta)
@@ -114,7 +114,7 @@ def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res
         vertex = locate_entities_boundary(mesh, 0, left_corner)
 
         tangent = facet_normal_approximation(V, mt, 3, tangent=True)
-        mtv = MeshTags(mesh, 0, vertex, np.full(len(vertex), 6, dtype=np.int32))
+        mtv = meshtags(mesh, 0, vertex, np.full(len(vertex), 6, dtype=np.int32))
         mpc.create_slip_constraint(V, (mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()

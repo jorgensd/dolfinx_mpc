@@ -12,11 +12,12 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
-from dolfinx.fem import (Constant, dirichletbc, Function, VectorFunctionSpace,
-                         locate_dofs_topological, set_bc, form)
+from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
+                         form, locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import (CellType, MeshTags, compute_midpoints, create_mesh,
-                          locate_entities_boundary, refine, create_unit_cube)
+from dolfinx.mesh import (CellType, compute_midpoints, create_mesh,
+                          create_unit_cube, locate_entities_boundary, meshtags,
+                          refine)
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import (create_normal_approximation, log_info,
@@ -96,7 +97,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
     tdim = mesh.topology.dim
     fdim = tdim - 1
-    # Find information about facets to be used in MeshTags
+    # Find information about facets to be used in meshtags
     bottom_points = np.dot(r_matrix, np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]]).T)
     bottom = find_plane_function(bottom_points[:, 0], bottom_points[:, 1], bottom_points[:, 2])
     bottom_facets = locate_entities_boundary(mesh, fdim, bottom)
@@ -136,7 +137,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         if top_cube(cell_midpoints[cell_index]):
             indices.append(cell_index)
             values.append(top_cube_marker)
-    ct = MeshTags(mesh, tdim, np.array(indices, dtype=np.intc), np.array(values, dtype=np.intc))
+    ct = meshtags(mesh, tdim, np.array(indices, dtype=np.intc), np.array(values, dtype=np.intc))
 
     # Create meshtags for facet data
     markers = {3: top_facets, 4: bottom_interface, 9: top_interface,
@@ -147,7 +148,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         indices = np.append(indices, markers[key])
         values = np.append(values, np.full(len(markers[key]), key, dtype=np.intc))
     sorted_indices = np.argsort(indices)
-    mt = MeshTags(mesh, fdim, indices[sorted_indices], values[sorted_indices])
+    mt = meshtags(mesh, fdim, indices[sorted_indices], values[sorted_indices])
     mt.name = "facet_tags"
     fname = f"meshes/mesh_{ext}_{theta:.2f}.xdmf"
 

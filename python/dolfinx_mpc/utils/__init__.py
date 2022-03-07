@@ -13,4 +13,4 @@ from .utils import (rotation_matrix, facet_normal_approximation,
                     log_info, rigid_motions_nullspace,
                     determine_closest_block, create_normal_approximation,
                     create_point_to_point_constraint)
-from .io import (read_from_msh, gmsh_model_to_mesh)
+from .mpc_io import (read_from_msh, gmsh_model_to_mesh)
