@@ -12,7 +12,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.mesh import MeshTags, compute_midpoints, create_unit_square
+from dolfinx.mesh import compute_midpoints, create_unit_square, meshtags
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -38,7 +38,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     values = np.ones(num_cells, dtype=np.intc)
     # All cells on right side marked one, all other with 1
     values += left_side(cell_midpoints.T)
-    ct = MeshTags(mesh, mesh.topology.dim, np.arange(num_cells, dtype=np.int32), values)
+    ct = meshtags(mesh, mesh.topology.dim, np.arange(num_cells, dtype=np.int32), values)
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)

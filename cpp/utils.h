@@ -623,6 +623,24 @@ tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
                          tcb::span<const std::int32_t> dofs,
                          tcb::span<const std::int32_t> cells);
 
+/// From a Mesh, find which cells collide with a set of points.
+/// @note Uses the GJK algorithm, see dolfinx::geometry::compute_distance_gjk
+/// for details
+/// @param[in] mesh The mesh
+/// @param[in] candidate_cells List of candidate colliding cells for the
+/// ith point in `points`
+/// @param[in] points The points to check for collision
+/// (shape=(num_points, 3))
+/// @param[in] eps2 The tolerance for the squared distance to be considered a
+/// collision
+/// @return Adjacency list where the ith node is the closest entity whose
+/// squared distance is within eps2
+/// @note There may be nodes with no entries in the adjacency list
+dolfinx::graph::AdjacencyList<int> compute_colliding_cells(
+    const dolfinx::mesh::Mesh& mesh,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& candidate_cells,
+    const xt::xtensor<double, 2>& points, const double eps2);
+
 /// Given a mesh and corresponding bounding box tree and a set of points,check
 /// which cells (local to process) collide with each point.
 /// Return an array of the same size as the number of points, where the ith
@@ -632,10 +650,12 @@ tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
 /// @param[in] tree The boundingbox tree of all cells (local to process) in the
 /// mesh
 /// @param[in] points The points to check collision with, shape (num_points, 3)
+/// @param[in] eps2 The tolerance for the squared distance to be considered a
+/// collision
 std::vector<std::int32_t>
 find_local_collisions(const dolfinx::mesh::Mesh& mesh,
                       const dolfinx::geometry::BoundingBoxTree& tree,
-                      const xt::xtensor<double, 2>& points);
+                      const xt::xtensor<double, 2>& points, const double eps2);
 
 /// Given an input array of dofs from a function space, return an array with
 /// true/false if the degree of freedom is in a DirichletBC

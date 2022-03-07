@@ -6,19 +6,18 @@
 
 from contextlib import ExitStack
 
+import dolfinx.common as _common
+import dolfinx.cpp as _cpp
+import dolfinx.fem as _fem
+import dolfinx.geometry as _geometry
+import dolfinx.la as _la
+import dolfinx.log as _log
+import dolfinx.mesh as _mesh
 import dolfinx_mpc.cpp
 import numpy as np
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
-
-import dolfinx.cpp as _cpp
-import dolfinx.la as _la
-import dolfinx.fem as _fem
-import dolfinx.mesh as _mesh
-import dolfinx.common as _common
-import dolfinx.geometry as _geometry
-import dolfinx.log as _log
 
 __all__ = ["rotation_matrix", "facet_normal_approximation", "log_info", "rigid_motions_nullspace",
            "determine_closest_block", "create_normal_approximation", "create_point_to_point_constraint"]
@@ -42,7 +41,7 @@ def rotation_matrix(axis, angle):
     return np.sin(angle) * axis_x + identity + outer
 
 
-def facet_normal_approximation(V, mt, mt_id, tangent=False, jit_params: dict = {},
+def facet_normal_approximation(V, mt: _mesh.MeshTagsMetaClass, mt_id, tangent=False, jit_params: dict = {},
                                form_compiler_params: dict = {}):
     """
     Approximate the facet normal by projecting it into the function space for a set of facets
@@ -52,7 +51,7 @@ def facet_normal_approximation(V, mt, mt_id, tangent=False, jit_params: dict = {
     V
         The function space to project into
     mt
-        The `dolfinx.mesh.MeshTags` containing facet markers
+        The `dolfinx.mesh.MeshTagsMetaClass` containing facet markers
     mt_id
         The id for the facets in `mt` we want to represent the normal at
     tangent
@@ -408,7 +407,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     return slaves, masters, coeffs, owners, offsets
 
 
-def create_normal_approximation(V: _fem.FunctionSpace, mt: _mesh.MeshTags, value: int):
+def create_normal_approximation(V: _fem.FunctionSpace, mt: _mesh.MeshTagsMetaClass, value: int):
     """
     Creates a normal approximation for the dofs in the closure of the attached entities.
     Where a dof is attached to entities facets, an average is computed

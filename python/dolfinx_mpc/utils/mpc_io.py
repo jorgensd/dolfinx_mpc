@@ -6,13 +6,13 @@
 
 import gmsh as _gmsh
 import numpy
-from mpi4py import MPI as _MPI
-from dolfinx.cpp.io import perm_gmsh, distribute_entity_data
 from dolfinx.cpp.graph import AdjacencyList_int32
-from dolfinx.cpp.mesh import to_type, cell_entity_type
+from dolfinx.cpp.io import distribute_entity_data, perm_gmsh
+from dolfinx.cpp.mesh import cell_entity_type, to_type
+from dolfinx.io import (extract_gmsh_geometry,
+                        extract_gmsh_topology_and_markers, ufl_mesh_from_gmsh)
 from dolfinx.mesh import create_mesh, create_meshtags
-from dolfinx.io import ufl_mesh_from_gmsh
-from dolfinx.io import extract_gmsh_geometry, extract_gmsh_topology_and_markers
+from mpi4py import MPI as _MPI
 
 
 def read_from_msh(filename: str, cell_data=False, facet_data=False, gdim=None):
@@ -47,7 +47,7 @@ def read_from_msh(filename: str, cell_data=False, facet_data=False, gdim=None):
 
 def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
     """
-    Given a GMSH model, create a DOLFIN-X mesh and MeshTags.
+    Given a GMSH model, create a DOLFIN-X mesh and meshtags.
         model: The GMSH model
         cell_data: Boolean, True of a mesh tag for cell data should be returned
                    (Default: False)
@@ -113,7 +113,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
     gmsh_cell_perm = perm_gmsh(to_type(str(ufl_domain.ufl_cell())), num_nodes)
     cells = numpy.asarray(cells[:, gmsh_cell_perm], dtype=numpy.int64)
     mesh = create_mesh(_MPI.COMM_WORLD, cells, x[:, :gdim], ufl_domain)
-    # Create MeshTags for cells
+    # Create meshtags for cells
     if cell_data:
         local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim, cells, cell_values)
         mesh.topology.create_connectivity(mesh.topology.dim, 0)
@@ -121,7 +121,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         ct = create_meshtags(mesh, mesh.topology.dim, adj, numpy.asarray(local_values, dtype=numpy.int32))
         ct.name = "Cell tags"
 
-    # Create MeshTags for facets
+    # Create meshtags for facets
     if facet_data:
         # Permute facets from MSH to Dolfin-X ordering
         # FIXME: We need to account for multiple facet types in prism meshes, then last argument has to change

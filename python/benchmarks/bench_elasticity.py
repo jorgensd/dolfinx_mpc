@@ -14,7 +14,7 @@ from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
                          form, locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import (MeshTags, create_unit_cube, locate_entities_boundary,
+from dolfinx.mesh import (create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
@@ -54,7 +54,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: h5py.File = None,
     t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
     arg_sort = np.argsort(t_facets)
-    mt = MeshTags(mesh, fdim, t_facets[arg_sort], facet_values[arg_sort])
+    mt = meshtags(mesh, fdim, t_facets[arg_sort], facet_values[arg_sort])
 
     # Define variational problem
     u = TrialFunction(V)

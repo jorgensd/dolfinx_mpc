@@ -26,7 +26,7 @@ from typing import List, Tuple
 import dolfinx.fem as fem
 import numpy as np
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import MeshTags, create_unit_square, locate_entities_boundary
+from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 from dolfinx_mpc import MultiPointConstraint, assemble_matrix
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -226,7 +226,7 @@ def periodicboundary(x):
 
 facets = locate_entities_boundary(mesh, fdim, periodicboundary)
 arg_sort = np.argsort(facets)
-mt = MeshTags(mesh, fdim, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
+mt = meshtags(mesh, fdim, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
 
 
 def periodic_relation(x):

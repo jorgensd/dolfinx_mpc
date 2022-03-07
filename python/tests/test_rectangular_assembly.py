@@ -4,14 +4,13 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import pytest
-
 import dolfinx
-import dolfinx.mesh
 import dolfinx.fem
+import dolfinx.mesh
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
+import pytest
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -34,7 +33,7 @@ def test_mixed_element(cell_type, ghost_mode):
     other_facets = dolfinx.mesh.locate_entities_boundary(
         mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0))
     arg_sort = np.argsort(other_facets)
-    mt = dolfinx.mesh.MeshTags(mesh, mesh.topology.dim - 1,
+    mt = dolfinx.mesh.meshtags(mesh, mesh.topology.dim - 1,
                                other_facets[arg_sort], np.full_like(other_facets, 1))
 
     # Rotate the mesh to induce more interesting slip BCs
