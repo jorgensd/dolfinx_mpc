@@ -174,11 +174,11 @@ def test_mixed_element(cell_type, ghost_mode):
     # Set Dirichlet boundary condition values in the RHS
     dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b, bcs)
+    dolfinx.fem.petsc.set_bc(b, bcs)
 
     dolfinx.fem.assemble.apply_lifting(b_org, [a], [bcs])
     b_org.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(b_org, bcs)
+    dolfinx.fem.petsc.set_bc(b_org, bcs)
 
     # -- Verification
     def nest_matrix_norm(A):

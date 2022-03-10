@@ -254,7 +254,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
 
     dolfinx_mpc.apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(b, bcs)
+    fem.petsc.set_bc(b, bcs)
 
     with Timer("~MPC: Solve"):
         solver.setOperators(A)
@@ -283,9 +283,9 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
         A_org = fem.petsc.assemble_matrix(bilinear_form, bcs)
         A_org.assemble()
         L_org = fem.petsc.assemble_vector(linear_form)
-        fem.apply_lifting(L_org, [bilinear_form], [bcs])
+        fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        fem.set_bc(L_org, bcs)
+        fem.petsc.set_bc(L_org, bcs)
 
     with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)

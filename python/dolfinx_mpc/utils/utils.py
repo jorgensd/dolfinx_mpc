@@ -117,7 +117,7 @@ def facet_normal_approximation(V, mt: _mesh.MeshTagsMetaClass, mt_id, tangent=Fa
     form_coeffs = _cpp.fem.pack_coefficients(bilinear_form)
     form_consts = _cpp.fem.pack_constants(bilinear_form)
     _cpp.fem.petsc.assemble_matrix(A, bilinear_form, form_consts, form_coeffs, [bc_deac])
-    if bilinear_form.function_spaces[0].id == bilinear_form.function_spaces[1].id:
+    if bilinear_form.function_spaces[0] is bilinear_form.function_spaces[1]:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
         _cpp.fem.petsc.insert_diagonal(A, bilinear_form.function_spaces[0], [bc_deac], 1.0)
@@ -126,9 +126,9 @@ def facet_normal_approximation(V, mt: _mesh.MeshTagsMetaClass, mt_id, tangent=Fa
                             form_compiler_params=form_compiler_params)
     b = _fem.petsc.assemble_vector(linear_form)
 
-    _fem.apply_lifting(b, [bilinear_form], [[bc_deac]])
+    _fem.petsc.apply_lifting(b, [bilinear_form], [[bc_deac]])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    _fem.set_bc(b, [bc_deac])
+    _fem.petsc.set_bc(b, [bc_deac])
 
     # Solve Linear problem
     solver = PETSc.KSP().create(MPI.COMM_WORLD)

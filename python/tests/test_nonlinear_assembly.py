@@ -30,7 +30,7 @@ class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
         dolfinx_mpc.apply_lifting(F, [self._a], bcs=[self.bcs],
                                   constraint=self.mpc, x0=[x], scale=-1.0)
         F.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-        dolfinx.fem.set_bc(F, self.bcs, x, -1.0)
+        dolfinx.fem.petsc.set_bc(F, self.bcs, x, -1.0)
 
     def J(self, x: PETSc.Vec, A: PETSc.Mat):
         A.zeroEntries()

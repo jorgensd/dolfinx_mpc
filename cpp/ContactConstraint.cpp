@@ -823,12 +823,15 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
     std::vector<int> slave_ranks(ghost_slave_blocks.size());
     for (std::size_t i = 0; i < ghost_slave_blocks.size(); ++i)
       slave_ranks[i] = ghost_owners[ghost_slave_blocks[i] - size_local];
+
+    std::vector<int> src_ranks = slave_ranks;
+    std::sort(src_ranks.begin(), src_ranks.end());
+    src_ranks.erase(std::unique(src_ranks.begin(), src_ranks.end()),
+                    src_ranks.end());
+    auto dest_ranks
+        = dolfinx::MPI::compute_graph_edges_nbx(MPI_COMM_WORLD, src_ranks);
     slave_index_map = std::make_shared<dolfinx::common::IndexMap>(
-        comm, imap->size_local(),
-        dolfinx::MPI::compute_graph_edges(
-            MPI_COMM_WORLD,
-            std::set<int>(slave_ranks.begin(), slave_ranks.end())),
-        ghosts_as_global, slave_ranks);
+        comm, imap->size_local(), dest_ranks, ghosts_as_global, slave_ranks);
   }
   MPI_Comm slave_to_ghost = create_owner_to_ghost_comm(
       local_slave_blocks, ghost_slave_blocks, imap);
@@ -1168,14 +1171,16 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     std::vector<int> slave_ranks(ghost_blocks.size());
     for (std::size_t i = 0; i < ghost_blocks.size(); ++i)
       slave_ranks[i] = ghost_owners[ghost_blocks[i] - size_local];
+    std::vector<int> src_ranks = slave_ranks;
+    std::sort(src_ranks.begin(), src_ranks.end());
+    src_ranks.erase(std::unique(src_ranks.begin(), src_ranks.end()),
+                    src_ranks.end());
+    auto dest_ranks
+        = dolfinx::MPI::compute_graph_edges_nbx(MPI_COMM_WORLD, src_ranks);
     std::vector<std::int64_t> ghosts_as_global(ghost_blocks.size());
     imap->local_to_global(ghost_blocks, ghosts_as_global);
     slave_index_map = std::make_shared<dolfinx::common::IndexMap>(
-        comm, imap->size_local(),
-        dolfinx::MPI::compute_graph_edges(
-            MPI_COMM_WORLD,
-            std::set<int>(slave_ranks.begin(), slave_ranks.end())),
-        ghosts_as_global, slave_ranks);
+        comm, imap->size_local(), dest_ranks, ghosts_as_global, slave_ranks);
   }
 
   // Create boundingboxtree for master surface

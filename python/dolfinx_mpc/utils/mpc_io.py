@@ -11,7 +11,7 @@ from dolfinx.cpp.io import distribute_entity_data, perm_gmsh
 from dolfinx.cpp.mesh import cell_entity_type, to_type
 from dolfinx.io import (extract_gmsh_geometry,
                         extract_gmsh_topology_and_markers, ufl_mesh_from_gmsh)
-from dolfinx.mesh import create_mesh, create_meshtags
+from dolfinx.mesh import create_mesh, meshtags_from_entities
 from mpi4py import MPI as _MPI
 
 
@@ -118,7 +118,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim, cells, cell_values)
         mesh.topology.create_connectivity(mesh.topology.dim, 0)
         adj = AdjacencyList_int32(local_entities)
-        ct = create_meshtags(mesh, mesh.topology.dim, adj, numpy.asarray(local_values, dtype=numpy.int32))
+        ct = meshtags_from_entities(mesh, mesh.topology.dim, adj, numpy.asarray(local_values, dtype=numpy.int32))
         ct.name = "Cell tags"
 
     # Create meshtags for facets
@@ -131,7 +131,7 @@ def gmsh_model_to_mesh(model, cell_data=False, facet_data=False, gdim=None):
         local_entities, local_values = distribute_entity_data(mesh, mesh.topology.dim - 1, marked_facets, facet_values)
         mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
         adj = AdjacencyList_int32(local_entities)
-        ft = create_meshtags(mesh, mesh.topology.dim - 1, adj, numpy.asarray(local_values, dtype=numpy.int32))
+        ft = meshtags_from_entities(mesh, mesh.topology.dim - 1, adj, numpy.asarray(local_values, dtype=numpy.int32))
         ft.name = "Facet tags"
 
     if cell_data and facet_data:

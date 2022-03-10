@@ -24,7 +24,8 @@ class LinearProblem(_fem.petsc.LinearProblem):
     """
 
     def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint,
-                 bcs: typing.List[_fem.DirichletBCMetaClass] = None, petsc_options: dict = None,
+                 bcs: typing.List[_fem.DirichletBCMetaClass] = None, u: _fem.Function = None,
+                 petsc_options: dict = None,
                  form_compiler_params: dict = None, jit_params: dict = None):
         """Initialize solver for a linear variational problem.
 
@@ -43,7 +44,10 @@ class LinearProblem(_fem.petsc.LinearProblem):
             A list of Dirichlet boundary conditions.
 
         u
-            The solution function. It will be created if not provided.
+            The solution function. It will be created if not provided. The function has
+            to be based on the functionspace in the mpc, i.e.
+            .. code-block:: python
+                u = dolfinx.fem.Function(mpc.function_space)
 
         petsc_options
             Parameters that is passed to the linear algebra backend PETSc.
@@ -75,8 +79,14 @@ class LinearProblem(_fem.petsc.LinearProblem):
             raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
         self._mpc = mpc
         # Create function containing solution vector
-        self.u = _fem.Function(self._mpc.function_space)
-
+        if u is None:
+            self.u = _fem.Function(self._mpc.function_space)
+        else:
+            if u.function_space is self._mpc.function_space:
+                self.u = u
+            else:
+                raise ValueError("The input function has to be in the function space in the multi-point constraint",
+                                 "i.e. u = dolfinx.fem.Function(mpc.function_space)")
         # Create MPC matrix
         pattern = create_sparsity_pattern(self._a, self._mpc)
         pattern.assemble()
@@ -118,7 +128,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
         # Apply boundary conditions to the rhs
         apply_lifting(self._b, [self._a], [self.bcs], self._mpc)
         self._b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-        _fem.set_bc(self._b, self.bcs)
+        _fem.petsc.set_bc(self._b, self.bcs)
 
         # Solve linear system and update ghost values in the solution
         self._solver.solve(self._b, self.u.vector)

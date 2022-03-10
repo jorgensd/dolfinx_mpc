@@ -205,9 +205,9 @@ with Timer("~Stokes: Verification of problem by global matrix reduction"):
     linear_form = fem.form(L)
     L_org = fem.petsc.assemble_vector(linear_form)
 
-    fem.apply_lifting(L_org, [bilinear_form], [bcs])
+    fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(L_org, bcs)
+    fem.petsc.set_bc(L_org, bcs)
     root = 0
     dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem.A, mpc, root=root)
     dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem.b, mpc, root=root)

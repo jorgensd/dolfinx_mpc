@@ -311,9 +311,9 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     A_org.assemble()
     L_org = dolfinx.fem.petsc.assemble_vector(L)
 
-    dolfinx.fem.apply_lifting(L_org, [a], [bcs])
+    dolfinx.fem.petsc.apply_lifting(L_org, [a], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.set_bc(L_org, bcs)
+    dolfinx.fem.petsc.set_bc(L_org, bcs)
     root = 0
 
     # Gather LHS, RHS and solution on one process
