@@ -117,7 +117,7 @@ class MultiPointConstraint():
         scale
             Float for scaling bc
         """
-        if (V.id == self.V.id):
+        if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
                 self.V._cpp_object, meshtag, tag, relation, bcs, scale, False)
         elif self.V.contains(V):
@@ -150,7 +150,7 @@ class MultiPointConstraint():
             Float for scaling bc
         """
 
-        if (V.id == self.V.id):
+        if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
                 self.V._cpp_object, indicator, relation, bcs, scale, False)
         elif self.V.contains(V):
@@ -203,7 +203,7 @@ class MultiPointConstraint():
              bc = dirichletbc(inlet_velocity, dofs, W.sub(0))
              mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[bc])
         """
-        if (space.id == self.V.id):
+        if (space is self.V):
             sub_space = False
         elif self.V.contains(space):
             sub_space = True

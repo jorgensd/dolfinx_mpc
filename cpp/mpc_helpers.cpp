@@ -192,13 +192,16 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
       ghosts[num_ghosts + i] = new_ghosts[i];
       ranks[num_ghosts + i] = new_ranks[i];
     }
+    std::vector<int> src_ranks = ranks;
+    std::sort(src_ranks.begin(), src_ranks.end());
+    src_ranks.erase(std::unique(src_ranks.begin(), src_ranks.end()),
+                    src_ranks.end());
+    auto dest_ranks
+        = dolfinx::MPI::compute_graph_edges_nbx(MPI_COMM_WORLD, src_ranks);
 
     // Create new indexmap with ghosts for master blocks added
     new_index_map = std::make_shared<dolfinx::common::IndexMap>(
-        comm, index_map->size_local(),
-        dolfinx::MPI::compute_graph_edges(
-            MPI_COMM_WORLD, std::set<int>(ranks.begin(), ranks.end())),
-        ghosts, ranks);
+        comm, index_map->size_local(), dest_ranks, ghosts, ranks);
   }
 
   // Extract information from the old dofmap to create a new one

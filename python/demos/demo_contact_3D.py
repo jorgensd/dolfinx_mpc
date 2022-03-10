@@ -125,7 +125,7 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
 
     apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(b, bcs)
+    fem.petsc.set_bc(b, bcs)
 
     # Solve Linear problem
     opts = PETSc.Options()
@@ -180,9 +180,9 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
         A_org = fem.petsc.assemble_matrix(bilinear_form, bcs)
         A_org.assemble()
         L_org = fem.petsc.assemble_vector(linear_form)
-        fem.apply_lifting(L_org, [bilinear_form], [bcs])
+        fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
         L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        fem.set_bc(L_org, bcs)
+        fem.petsc.set_bc(L_org, bcs)
 
     root = 0
     with Timer("~~Contact: Compare LHS, RHS and solution"):

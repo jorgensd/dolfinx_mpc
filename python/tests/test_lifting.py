@@ -59,9 +59,9 @@ def test_lifting(get_assemblers):  # noqa: F811
     A_org = fem.petsc.assemble_matrix(bilinear_form, bcs=bcs)
     A_org.assemble()
     L_org = fem.petsc.assemble_vector(linear_form)
-    fem.apply_lifting(L_org, [bilinear_form], [bcs])
+    fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-    fem.set_bc(L_org, bcs)
+    fem.petsc.set_bc(L_org, bcs)
 
     # Create multipoint constraint
 
@@ -78,7 +78,7 @@ def test_lifting(get_assemblers):  # noqa: F811
     dolfinx_mpc.apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
-    fem.set_bc(b, bcs)
+    fem.petsc.set_bc(b, bcs)
 
     solver = PETSc.KSP().create(MPI.COMM_WORLD)
     solver.setType(PETSc.KSP.Type.PREONLY)

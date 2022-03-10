@@ -57,7 +57,7 @@ def assemble_matrix(form: _fem.FormMetaClass,
                             constraint[1]._cpp_object, bcs, diagval)
 
     # Add one on diagonal for Dirichlet boundary conditions
-    if form.function_spaces[0].id == form.function_spaces[1].id:
+    if form.function_spaces[0] is form.function_spaces[1]:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)
         _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0], bcs, diagval)

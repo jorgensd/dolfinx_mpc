@@ -159,7 +159,7 @@ def assemble_matrix(form: _fem.FormMetaClass, constraint: MultiPointConstraint,
 
     # Add one on diagonal for diriclet bc and slave dofs
     # NOTE: In the future one could use a constant in the dirichletbc
-    if form.function_spaces[0].id == form.function_spaces[1].id:
+    if form.function_spaces[0] is form.function_spaces[1]:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)
         _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0], bcs, diagval)
