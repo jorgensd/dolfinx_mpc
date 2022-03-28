@@ -21,7 +21,7 @@ import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.cpp.io import VTXWriter
+from dolfinx.io import VTXWriter
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
 from dolfinx_mpc import LinearProblem
@@ -122,7 +122,7 @@ def demo_periodic3D(celltype):
     u_out.x.array[:old_local + old_ghosts] = u_h.x.array[:mpc_local + old_ghosts]
     u_out.name = "u_" + ext
     fname = f"results/demo_periodic3d_{ext}.bp"
-    out_periodic = VTXWriter(MPI.COMM_WORLD, fname, [u_out._cpp_object])
+    out_periodic = VTXWriter(MPI.COMM_WORLD, fname, u_out)
     out_periodic.write(0)
     out_periodic.close()
 

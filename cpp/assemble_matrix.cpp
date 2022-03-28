@@ -131,8 +131,8 @@ void modify_mpc_cell(
                     Ae[row * ndim1 + dof] = 0.0;
                 });
 
-  // Flatten slaves, masters and coeffs for efficient modification of the
-  // matrices
+  // Flatten slaves, masters and coeffs for efficient
+  // modification of the matrices
   std::array<std::vector<std::int32_t>, 2> flattened_masters;
   std::array<std::vector<std::int32_t>, 2> flattened_slaves;
   std::array<std::vector<T>, 2> flattened_coeffs;

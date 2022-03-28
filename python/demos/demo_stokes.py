@@ -9,12 +9,11 @@
 # The demos solves the Stokes problem
 
 
-import dolfinx.cpp.io
-import dolfinx.fem as fem
 import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import scipy.sparse.linalg
+from dolfinx import fem, io
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from mpi4py import MPI
@@ -187,9 +186,9 @@ p = U.sub(1).collapse()
 u.name = "u"
 p.name = "p"
 
-with dolfinx.cpp.io.VTXWriter(mesh.comm, "results/demo_stokes_u.bp", [u._cpp_object]) as vtx:
+with io.VTXWriter(mesh.comm, "results/demo_stokes_u.bp", u) as vtx:
     vtx.write(0.0)
-with dolfinx.cpp.io.VTXWriter(mesh.comm, "results/demo_stokes_p.bp", [p._cpp_object]) as vtx:
+with io.VTXWriter(mesh.comm, "results/demo_stokes_p.bp", p) as vtx:
     vtx.write(0.0)
 
 # -------------------- Verification --------------------------------
