@@ -133,8 +133,9 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
   dolfinx::common::Timer timer(
       "~MPC: Create new index map with additional ghosts");
   MPI_Comm comm = V->mesh()->comm();
-  const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
-  std::shared_ptr<const dolfinx::common::IndexMap> index_map = dofmap.index_map;
+  const dolfinx::fem::DofMap& old_dofmap = *(V->dofmap());
+  std::shared_ptr<const dolfinx::common::IndexMap> old_index_map
+      = old_dofmap.index_map;
 
   const std::int32_t& block_size = V->dofmap()->index_map_bs();
 
@@ -151,7 +152,7 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
   std::shared_ptr<const dolfinx::common::IndexMap> new_index_map;
   if (mpi_size == 1)
   {
-    new_index_map = index_map;
+    new_index_map = old_index_map;
   }
   else
   {
@@ -182,8 +183,8 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
 
     // Append new ghosts (and corresponding rank) at the end of the old set of
     // ghosts originating from the old index map
-    std::vector<std::int32_t> ranks = index_map->ghost_owner_rank();
-    std::vector<std::int64_t> ghosts = index_map->ghosts();
+    std::vector<std::int32_t> ranks = old_index_map->ghost_owner_rank();
+    std::vector<std::int64_t> ghosts = old_index_map->ghosts();
     const std::int32_t num_ghosts = ghosts.size();
     ghosts.resize(num_ghosts + new_ghosts.size());
     ranks.resize(num_ghosts + new_ghosts.size());
@@ -201,44 +202,20 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
 
     // Create new indexmap with ghosts for master blocks added
     new_index_map = std::make_shared<dolfinx::common::IndexMap>(
-        comm, index_map->size_local(), dest_ranks, ghosts, ranks);
+        comm, old_index_map->size_local(), dest_ranks, ghosts, ranks);
   }
 
   // Extract information from the old dofmap to create a new one
-  const dolfinx::fem::DofMap* old_dofmap = V->dofmap().get();
   dolfinx::mesh::Topology topology = V->mesh()->topology();
-  dolfinx::fem::ElementDofLayout layout = old_dofmap->element_dof_layout();
-
-  // Create new dofmap based on the MPC index map
-  // NOTE: This is a workaround to get the Adjacency list and block size
-  // used to initialize the original dofmap
-  auto [_, bs, dofmap_adj] = dolfinx::fem::build_dofmap_data(
-      V->mesh()->comm(), topology, layout,
-      [](const dolfinx::graph::AdjacencyList<std::int32_t>& g)
-      { return dolfinx::graph::reorder_gps(g); });
-
-  // Permute dofmap as done in DOLFINx
-  // If the element's DOF transformations are permutations, permute the DOF
-  // numbering on each cell
+  dolfinx::fem::ElementDofLayout layout = old_dofmap.element_dof_layout();
+  dolfinx::graph::AdjacencyList<std::int32_t> dofmap_adj = old_dofmap.list();
   std::shared_ptr<const dolfinx::fem::FiniteElement> element = V->element();
-  if (element->needs_dof_permutations())
-  {
-    const int D = topology.dim();
-    const int num_cells = topology.connectivity(D, 0)->num_nodes();
-    topology.create_entity_permutations();
-    const std::vector<std::uint32_t>& cell_info
-        = topology.get_cell_permutation_info();
-
-    const std::function<void(const xtl::span<std::int32_t>&, std::uint32_t)>
-        unpermute_dofs = element->get_dof_permutation_function(true, true);
-    for (std::int32_t cell = 0; cell < num_cells; ++cell)
-      unpermute_dofs(dofmap_adj.links(cell), cell_info[cell]);
-  }
 
   // Create the new dofmap based on the extended index map
   std::shared_ptr<dolfinx::fem::DofMap> new_dofmap
-      = std::make_shared<dolfinx::fem::DofMap>(
-          old_dofmap->element_dof_layout(), new_index_map, bs, dofmap_adj, bs);
+      = std::make_shared<dolfinx::fem::DofMap>(old_dofmap.element_dof_layout(),
+                                               new_index_map, old_dofmap.bs(),
+                                               dofmap_adj, old_dofmap.bs());
 
   return dolfinx::fem::FunctionSpace(V->mesh(), element, new_dofmap);
 }

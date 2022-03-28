@@ -11,7 +11,6 @@
 #  block preconditioners with PETSc
 
 
-import dolfinx.cpp.io
 import dolfinx.io
 import dolfinx_mpc
 import dolfinx_mpc.utils
@@ -262,7 +261,7 @@ with dolfinx.io.XDMFFile(
     outfile.write_function(uh)
     outfile.write_function(ph)
 
-with dolfinx.cpp.io.VTXWriter(mesh.comm, "results/stokes_nest.bp", [uh._cpp_object]) as vtx:
+with dolfinx.io.VTXWriter(mesh.comm, "results/stokes_nest.bp", uh) as vtx:
     vtx.write(0.0)
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison
