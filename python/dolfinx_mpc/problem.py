@@ -119,6 +119,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
         self._A.zeroEntries()
         assemble_matrix(self._a, self._mpc, bcs=self.bcs, A=self._A)
         self._A.assemble()
+        assert self._A.assembled
 
         # Assemble rhs
         with self._b.localForm() as b_loc:

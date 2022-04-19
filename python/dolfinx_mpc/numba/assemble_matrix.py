@@ -321,10 +321,9 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
     m0 = numpy.zeros(1, dtype=numpy.int32)
     m1 = numpy.zeros(1, dtype=numpy.int32)
     Am0m1 = numpy.zeros((1, 1), dtype=_PETSc.ScalarType)
-    Arow = numpy.zeros((block_size * num_dofs, 1), dtype=_PETSc.ScalarType)
-    Acol = numpy.zeros((1, block_size * num_dofs), dtype=_PETSc.ScalarType)
+    Arow = numpy.zeros(block_size * num_dofs, dtype=_PETSc.ScalarType)
+    Acol = numpy.zeros(block_size * num_dofs, dtype=_PETSc.ScalarType)
     mpc_dofs = numpy.zeros(block_size * num_dofs, dtype=numpy.int32)
-
     ffi_fb = ffi.from_buffer
     for i in range(num_flattened_masters):
         local_index = flattened_slaves[i]
@@ -333,8 +332,8 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
         Ae[:, local_index] = 0
         Ae[local_index, :] = 0
         m0[0] = master
-        Arow[:, 0] = coeff * Ae_stripped[:, local_index]
-        Acol[0, :] = coeff * Ae_stripped[local_index, :]
+        Arow[:] = coeff * Ae_stripped[:, local_index]
+        Acol[:] = coeff * Ae_stripped[local_index, :]
         Am0m1[0, 0] = coeff**2 * Ae_original[local_index, local_index]
         for j in range(num_dofs):
             for k in range(block_size):

@@ -41,9 +41,11 @@ if MPI.COMM_WORLD.rank == 0:
     gmsh.model.setPhysicalName(2, right_tag, "Right square")
     gmsh.model.addPhysicalGroup(2, [left_rectangle], tag=left_tag)
     gmsh.model.setPhysicalName(2, left_tag, "Left square")
-
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", 1)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", 1)
     # Generate mesh
     gmsh.model.mesh.generate(2)
+
     # gmsh.option.setNumber("General.Terminal", 1)
     gmsh.model.mesh.optimize("Netgen")
 
@@ -52,7 +54,8 @@ gmsh.clear()
 gmsh.finalize()
 MPI.COMM_WORLD.barrier()
 
-
+with XDMFFile(mesh.comm, "test.xdmf", "w") as xdmf:
+    xdmf.write_mesh(mesh)
 V = VectorFunctionSpace(mesh, ("Lagrange", 1))
 tdim = mesh.topology.dim
 fdim = tdim - 1
@@ -145,13 +148,26 @@ for i, pair in enumerate(pairs):
     mpc.add_constraint(V, sl, ms, co, ow, off)
 mpc.finalize()
 
-petsc_options = {"ksp_rtol": 1.0e-8, "pc_type": "gamg", "pc_gamg_type": "agg",
-                 "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
-                 "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
-                 "mg_levels_esteig_ksp_type": "cg", "matptap_via": "scalable",
-                 "pc_gamg_square_graph": 2, "pc_gamg_threshold": 0.02
-                 # ,"help": None, "ksp_view": None
-                 }
+# Add back once PETSc release has added fix for
+# https://gitlab.com/petsc/petsc/-/issues/1149
+# petsc_options = {"ksp_rtol": 1.0e-8,
+#                  "ksp_type": "cg",
+#                  "pc_type": "gamg",
+#                  "pc_gamg_type": "agg",
+#                  "pc_gamg_coarse_eq_limit": 1000,
+#                  "pc_gamg_sym_graph": True,
+#                  "pc_gamg_square_graph": 2,
+#                  "pc_gamg_threshold": 0.02,
+#                  "mg_levels_ksp_type": "chebyshev",
+#                  "mg_levels_pc_type": "jacobi",
+#                  "mg_levels_esteig_ksp_type": "cg",
+#                  #  "matptap_via": "scalable",
+#                  "ksp_view": None,
+#                  "help": None,
+#                  "ksp_monitor": None
+#                  }
+petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
+
 problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
 # Build near nullspace
