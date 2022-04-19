@@ -106,8 +106,8 @@ def test_mixed_element(cell_type, ghost_mode):
     # MPC nested rhs
     b_nest = dolfinx_mpc.create_vector_nest(L_nest, [mpc_v, mpc_q])
     dolfinx_mpc.assemble_vector_nest(b_nest, L_nest, [mpc_v, mpc_q])
-
     dolfinx.fem.petsc.apply_lifting_nest(b_nest, a_nest, bcs)
+
     for b_sub in b_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD,
                           mode=PETSc.ScatterMode.REVERSE)
@@ -119,6 +119,7 @@ def test_mixed_element(cell_type, ghost_mode):
     # Original dolfinx rhs
     b_org_nest = dolfinx.fem.petsc.assemble_vector_nest(L_nest)
     dolfinx.fem.petsc.apply_lifting_nest(b_org_nest, a_nest, bcs)
+
     for b_sub in b_org_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD,
                           mode=PETSc.ScatterMode.REVERSE)
@@ -172,11 +173,10 @@ def test_mixed_element(cell_type, ghost_mode):
     b_org = dolfinx.fem.petsc.assemble_vector(L)
 
     # Set Dirichlet boundary condition values in the RHS
-    dolfinx.fem.assemble.apply_lifting(b, [a], [bcs])
+    dolfinx_mpc.apply_lifting(b, [a], [bcs], mpc_vq)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.petsc.set_bc(b, bcs)
-
-    dolfinx.fem.assemble.apply_lifting(b_org, [a], [bcs])
+    dolfinx.fem.petsc.apply_lifting(b_org, [a], [bcs])
     b_org.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.petsc.set_bc(b_org, bcs)
 
