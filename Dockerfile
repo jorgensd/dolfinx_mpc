@@ -1,4 +1,4 @@
-FROM dolfinx/dolfinx as dolfinx-mpc
+FROM dolfinx/dolfinx:v0.4.0 as dolfinx-mpc
 WORKDIR /tmp
 # Set env variables
 ENV HDF5_MPI="ON" \
