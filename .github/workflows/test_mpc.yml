@@ -58,7 +58,7 @@ jobs:
           cmake --build build-basix --parallel 3
           cmake --install build-basix
           BUILD_TYPE="Release" pip3 install ./basix/python
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@v0.4.0
+          python3 -m pip install git+https://github.com/FEniCS/ufl.git@2022.1.0
           python3 -m pip install git+https://github.com/FEniCS/ffcx.git@v0.4.0
 
       - name: Get DOLFINx
