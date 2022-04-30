@@ -28,10 +28,10 @@ These assemblers are written in C++, but have equivalent Python assemblers in th
 
 # Installation
 
-Version 0.3.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
+Version 0.4.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
 and can be ran using
 ```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:0.3.0
+docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:0.4.0
 ```
 
 To install the latest version (master branch), you need to install the latest release of [dolfinx](https://github.com/FEniCS/dolfinx).
