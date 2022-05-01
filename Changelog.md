@@ -1,6 +1,9 @@
 # Changelog
 
 ## main
+ - No changes
+
+## v0.4.0 (30.04.2022)
 - **API**:
   - **New feature**: Support for nonlinear problems (by @nate-sime) for mpc, see `test_nonlinear_assembly.py` for usage
   - Updated user interface for `dolfinx_mpc.create_slip_constraint`. See documentation for details.
