@@ -6,7 +6,7 @@ quick-tests:
     - master
     - schedules
   image:
-    name: dolfinx/dolfinx@v0.4.0
+    name: dolfinx/dolfinx:v0.4.0
     entrypoint: [""]
   parallel:
     matrix:
