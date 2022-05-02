@@ -121,7 +121,15 @@ mpc_data compute_master_contributions(
   std::vector<std::int64_t> masters_other_side(masters_offsets.back());
   std::vector<PetscScalar> coefficients_other_side(masters_offsets.back());
   std::vector<std::int32_t> owners_other_side(masters_offsets.back());
-  std::vector<std::int32_t> ghost_owners = imap->ghost_owner_rank();
+  std::vector<int> ghost_owners;
+  {
+    std::vector<int> neighbors = dolfinx::MPI::neighbors(
+        imap->comm(dolfinx::common::IndexMap::Direction::forward))[0];
+    ghost_owners = imap->ghost_owners();
+    std::transform(ghost_owners.cbegin(), ghost_owners.cend(),
+                   ghost_owners.begin(),
+                   [&neighbors](auto r) { return neighbors[r]; });
+  }
 
   // Temporary array holding global indices
   std::vector<std::int64_t> global_blocks;
@@ -813,7 +821,16 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   }
 
   // Create new index-map where there are only ghosts for slaves
-  std::vector<std::int32_t> ghost_owners = imap->ghost_owner_rank();
+  std::vector<int> ghost_owners;
+  {
+    std::vector<int> neighbors = dolfinx::MPI::neighbors(
+        imap->comm(dolfinx::common::IndexMap::Direction::forward))[0];
+    ghost_owners = imap->ghost_owners();
+    std::transform(ghost_owners.cbegin(), ghost_owners.cend(),
+                   ghost_owners.begin(),
+                   [&neighbors](auto r) { return neighbors[r]; });
+  }
+
   std::shared_ptr<const dolfinx::common::IndexMap> slave_index_map;
   {
     // Compute quotients and remainders for all ghost blocks
@@ -1165,7 +1182,16 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       = create_owner_to_ghost_comm(local_blocks, ghost_blocks, imap);
 
   // Create new index-map where there are only ghosts for slaves
-  std::vector<std::int32_t> ghost_owners = imap->ghost_owner_rank();
+  std::vector<int> ghost_owners;
+  {
+    std::vector<int> neighbors = dolfinx::MPI::neighbors(
+        imap->comm(dolfinx::common::IndexMap::Direction::forward))[0];
+    ghost_owners = imap->ghost_owners();
+    std::transform(ghost_owners.cbegin(), ghost_owners.cend(),
+                   ghost_owners.begin(),
+                   [&neighbors](auto r) { return neighbors[r]; });
+  }
+
   std::shared_ptr<const dolfinx::common::IndexMap> slave_index_map;
   {
     std::vector<int> slave_ranks(ghost_blocks.size());

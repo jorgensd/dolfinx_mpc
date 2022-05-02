@@ -50,7 +50,16 @@ mpc_data dolfinx_mpc::create_slip_condition(
 
   // Info from parent space
   auto W_imap = space->dofmap()->index_map;
-  std::vector<std::int32_t> W_ghost_owners = W_imap->ghost_owner_rank();
+  std::vector<int> W_ghost_owners;
+  {
+    std::vector<int> neighbors = dolfinx::MPI::neighbors(
+        W_imap->comm(dolfinx::common::IndexMap::Direction::forward))[0];
+    W_ghost_owners = W_imap->ghost_owners();
+    std::transform(W_ghost_owners.cbegin(), W_ghost_owners.cend(),
+                   W_ghost_owners.begin(),
+                   [&neighbors](auto r) { return neighbors[r]; });
+  }
+
   const int W_bs = space->dofmap()->index_map_bs();
   const int W_local_size = W_imap->size_local();
 

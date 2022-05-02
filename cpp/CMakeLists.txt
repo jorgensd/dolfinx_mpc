@@ -4,8 +4,7 @@ cmake_minimum_required(VERSION 3.10)
 
 #------------------------------------------------------------------------------
 # Set project name and version number
-
-project(DOLFINX_MPC VERSION "0.4.0.0")
+project(DOLFINX_MPC VERSION "0.4.1.0")
 
 #------------------------------------------------------------------------------
 # Set CMake options, see `cmake --help-policy CMP000x`
@@ -91,13 +90,13 @@ set_package_properties(UFC PROPERTIES TYPE REQUIRED
   URL "https://github.com/fenics/ffcx")
 
 # Check for required package DOLFINX
-find_package(DOLFINX 0.4.0 REQUIRED)
+find_package(DOLFINX 0.4.1 REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     DESCRIPTION "New generation Dynamic Object-oriented Library for - FINite element computation"
     URL "https://github.com/FEniCS/dolfinx"
     PURPOSE "Main dependency of library")
 
-find_package(Basix 0.4.0 REQUIRED)
+find_package(Basix 0.4.1 REQUIRED)
 set_package_properties(basix PROPERTIES TYPE REQUIRED
       DESCRIPTION "FEniCS tabulation library"
       URL "https://github.com/fenics/basix")
