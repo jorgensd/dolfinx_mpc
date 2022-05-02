@@ -8,11 +8,11 @@ from distutils.version import LooseVersion
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
-if sys.version_info < (3, 7):
+if sys.version_info <= (3, 7):
     print("Python 3.7 or higher required, please upgrade.")
     sys.exit(1)
 
-VERSION = "0.4.0.0"
+VERSION = "0.4.1"
 
 REQUIREMENTS = []
 

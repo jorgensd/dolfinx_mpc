@@ -183,7 +183,14 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
 
     // Append new ghosts (and corresponding rank) at the end of the old set of
     // ghosts originating from the old index map
-    std::vector<std::int32_t> ranks = old_index_map->ghost_owner_rank();
+    std::vector<int> ranks;
+    {
+      std::vector<int> neighbors = dolfinx::MPI::neighbors(old_index_map->comm(
+          dolfinx::common::IndexMap::Direction::forward))[0];
+      ranks = old_index_map->ghost_owners();
+      std::transform(ranks.cbegin(), ranks.cend(), ranks.begin(),
+                     [&neighbors](auto r) { return neighbors[r]; });
+    }
     std::vector<std::int64_t> ghosts = old_index_map->ghosts();
     const std::int32_t num_ghosts = ghosts.size();
     ghosts.resize(num_ghosts + new_ghosts.size());

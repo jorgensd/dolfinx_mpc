@@ -243,7 +243,10 @@ def determine_closest_block(V, point):
 
     dofmap = V.dofmap
     imap = dofmap.index_map
-    ghost_owner = imap.ghost_owner_rank()
+    ghost_owner = imap.ghost_owners()
+    comm = imap.comm(_common.Direction.forward)
+    ranks = np.array(comm.Get_dist_neighbors()[0])
+    ghost_owner = ranks[ghost_owner]
     local_max = imap.size_local
     # Determine which block of dofs is closest
     min_distance = max(R, 1e5)

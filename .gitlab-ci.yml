@@ -6,7 +6,7 @@ quick-tests:
     - master
     - schedules
   image:
-    name: dolfinx/dolfinx:v0.4.0
+    name: dolfinx/dolfinx
     entrypoint: [""]
   parallel:
     matrix:
@@ -42,7 +42,7 @@ run-demos:
   tags:
     - docker
   image:
-    name: dolfinx/dev-env:v0.4.0
+    name: dolfinx/dev-env
     entrypoint: [""]
   parallel:
     matrix:
@@ -50,7 +50,7 @@ run-demos:
   variables:
     PETSC_ARCH: "linux-gnu-${PETSC_TYPE}-32"
     DOLFINX_DIR: "dolfinx-${PETSC_TYPE}"
-    DOLFINX_BRANCH: "v0.4.0"
+    DOLFINX_BRANCH: "main"
     PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.8/dist-packages:/usr/local/lib"
     LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
     MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
@@ -70,7 +70,7 @@ run-demos:
     - cmake --build build-basix --parallel 3
     - cmake --install build-basix
     - BUILD_TYPE="Release" pip3 install ./basix/python
-    - python3 -m pip install git+https://github.com/FEniCS/ufl.git@2022.1.0
+    - python3 -m pip install git+https://github.com/FEniCS/ufl.git
     - python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${DOLFINX_BRANCH}
     - git clone https://github.com/fenics/dolfinx.git
     - cd dolfinx

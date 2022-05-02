@@ -1,4 +1,4 @@
-FROM dolfinx/dolfinx:v0.4.0 as dolfinx-mpc
+FROM dolfinx/dolfinx as dolfinx-mpc
 WORKDIR /tmp
 # Set env variables
 ENV HDF5_MPI="ON" \
@@ -8,7 +8,7 @@ ENV HDF5_MPI="ON" \
 # Install dolfinx_mpc
 RUN  git clone https://github.com/jorgensd/dolfinx_mpc.git  && \
     cd dolfinx_mpc && \
-    git checkout v0.4.0 && \
+    git checkout main && \
     cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dir cpp/ && \
     ninja install -j4  -C build-dir && \
     pip3 install python/. --upgrade

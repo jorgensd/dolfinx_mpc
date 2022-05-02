@@ -85,7 +85,15 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
   auto imap = dofmap->index_map;
   const int bs = dofmap->index_map_bs();
   const int size_local = imap->size_local();
-  std::vector<std::int32_t> ghost_owners = imap->ghost_owner_rank();
+  std::vector<int> ghost_owners;
+  {
+    std::vector<int> neighbors = dolfinx::MPI::neighbors(
+        imap->comm(dolfinx::common::IndexMap::Direction::forward))[0];
+    ghost_owners = imap->ghost_owners();
+    std::transform(ghost_owners.cbegin(), ghost_owners.cend(),
+                   ghost_owners.begin(),
+                   [&neighbors](auto r) { return neighbors[r]; });
+  }
 
   // Only work with local blocks
   std::vector<std::int32_t> local_blocks;
