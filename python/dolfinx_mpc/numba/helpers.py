@@ -6,10 +6,17 @@
 
 import numba
 import numpy
+import numpy.typing as npt
+from typing import Union
+import dolfinx.cpp as _cpp
+
+_forms = Union[_cpp.fem.Form_float32, _cpp.fem.Form_float64, _cpp.fem.Form_complex128]
+_bcs = Union[_cpp.fem.DirichletBC_float32, _cpp.fem.DirichletBC_float64,
+             _cpp.fem.DirichletBC_complex64, _cpp.fem.DirichletBC_complex128]
 
 
 @numba.njit(fastmath=True, cache=True)
-def extract_slave_cells(cell_offset: "numpy.ndarray[numpy.int32]") -> "numpy.ndarray[numpy.int32]":
+def extract_slave_cells(cell_offset: npt.NDArray[numpy.int32]) -> npt.NDArray[numpy.int32]:
     """ From an offset determine which entries are nonzero"""
     slave_cells = numpy.zeros(len(cell_offset) - 1, dtype=numpy.int32)
     c = 0
@@ -22,8 +29,8 @@ def extract_slave_cells(cell_offset: "numpy.ndarray[numpy.int32]") -> "numpy.nda
 
 
 @numba.njit(fastmath=True, cache=True)
-def pack_slave_facet_info(facets: 'numpy.ndarray[numpy.int32, int]',
-                          slave_cells: 'numpy.ndarray[numpy.int32]') -> 'numpy.ndarray[numpy.int32, int]':
+def pack_slave_facet_info(facets: npt.NDArray[numpy.int32],
+                          slave_cells: npt.NDArray[numpy.int32]) -> npt.NDArray[numpy.int32]:
     """
     Given an MPC and a set of facets (cell index, local_facet_index),
     compress the set to those that only contain slave cells

@@ -8,13 +8,13 @@ from distutils.version import LooseVersion
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
-if sys.version_info <= (3, 7):
-    print("Python 3.7 or higher required, please upgrade.")
+if sys.version_info <= (3, 8):
+    print("Python 3.8 or higher required, please upgrade.")
     sys.exit(1)
 
 VERSION = "0.4.1"
 
-REQUIREMENTS = []
+REQUIREMENTS = ["numpy>=1.21", ]
 
 
 class CMakeExtension(Extension):
@@ -80,6 +80,8 @@ setup(name='dolfinx-mpc',
       long_description='',
       packages=["dolfinx_mpc", "dolfinx_mpc.utils", "dolfinx_mpc.numba"],
       ext_modules=[CMakeExtension('dolfinx_mpc.cpp')],
+      package_data={'dolfinx_mpc.wrappers': ['*.h'], 'dolfinx_mpc': ['py.typed'],
+                    'dolfinx_mpc.numba': ['py.typed'], 'dolfinx_mpc.utils': ['py.typed']},
       cmdclass=dict(build_ext=CMakeBuild),
       install_requires=REQUIREMENTS,
       zip_safe=False)

@@ -1,4 +1,4 @@
-// Copyright (C) 2020 Jorgen S. Dokken
+// Copyright (C) 2020-2022 Jorgen S. Dokken
 //
 // This file is part of DOLFINX_MPC
 //
@@ -7,6 +7,8 @@
 #pragma once
 
 #include "MultiPointConstraint.h"
+#include "mpi_utils.h"
+#include <dolfinx/common/sort.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/Function.h>
@@ -51,7 +53,7 @@ get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
                     const xt::xtensor<double, 2>& x, const int index);
 
 /// Given a function space, compute its shared entities
-std::map<std::int32_t, std::set<int>>
+dolfinx::graph::AdjacencyList<int>
 compute_shared_indices(std::shared_ptr<dolfinx::fem::FunctionSpace> V);
 
 dolfinx::la::petsc::Matrix create_matrix(
@@ -361,55 +363,56 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
     const std::vector<std::int32_t>& num_masters_per_slave,
     std::shared_ptr<const dolfinx::common::IndexMap> imap, const int bs)
 {
-
-  // Create new index map for each slave block
-  std::vector<std::int32_t> blocks;
-  blocks.reserve(slaves.size());
-  std::transform(slaves.cbegin(), slaves.cend(), std::back_inserter(blocks),
-                 [bs](auto& dof) { return dof / bs; });
-  std::sort(blocks.begin(), blocks.end());
-  blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
-
-  std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
-      = imap->create_submap(blocks);
-
-  // Build map from new index map to slave indices (unrolled)
-  std::vector<std::size_t> parent_to_sub;
+  std::shared_ptr<const dolfinx::common::IndexMap> slave_to_ghost;
+  std::vector<int> parent_to_sub;
   parent_to_sub.reserve(slaves.size());
   std::vector<std::int32_t> slave_blocks;
   slave_blocks.reserve(slaves.size());
   std::vector<std::int32_t> slave_rems;
   slave_rems.reserve(slaves.size());
-  for (std::size_t i = 0; i < slaves.size(); i++)
+
+  // Create new index map for each slave block
   {
-    std::div_t div = std::div(slaves[i], bs);
-    slave_blocks[i] = div.quot;
-    slave_rems[i] = div.rem;
-    auto it = std::find(blocks.begin(), blocks.end(), div.quot);
-    assert(it != blocks.end());
-    auto index = std::distance(blocks.begin(), it);
-    parent_to_sub.push_back(index);
+    std::vector<std::int32_t> blocks;
+    blocks.reserve(slaves.size());
+    std::transform(slaves.cbegin(), slaves.cend(), std::back_inserter(blocks),
+                   [bs](auto& dof) { return dof / bs; });
+    std::sort(blocks.begin(), blocks.end());
+    blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
+
+    std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
+        = imap->create_submap(blocks);
+    slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
+        std::move(compressed_map.first));
+
+    // Build map from new index map to slave indices (unrolled)
+    for (std::size_t i = 0; i < slaves.size(); i++)
+    {
+      std::div_t div = std::div(slaves[i], bs);
+      slave_blocks[i] = div.quot;
+      slave_rems[i] = div.rem;
+      auto it = std::find(blocks.begin(), blocks.end(), div.quot);
+      assert(it != blocks.end());
+      auto index = std::distance(blocks.begin(), it);
+      parent_to_sub.push_back((int)index);
+    }
   }
 
   // Get communicator for owner->ghost
-  const dolfinx::common::IndexMap& slave_to_ghost = compressed_map.first;
-  MPI_Comm local_to_ghost
-      = slave_to_ghost.comm(dolfinx::common::IndexMap::Direction::forward);
-  auto [src_ranks_ghosts, dest_ranks_ghosts]
-      = dolfinx::MPI::neighbors(local_to_ghost);
+  MPI_Comm local_to_ghost = create_owner_to_ghost_comm(*slave_to_ghost);
+  const std::vector<std::int32_t>& src_ranks_ghosts = slave_to_ghost->src();
+  const std::vector<std::int32_t>& dest_ranks_ghosts = slave_to_ghost->dest();
 
-  // Count the number of outgoing slaves and masters from owner
-  std::map<std::int32_t, std::set<int>> shared_indices
-      = slave_to_ghost.compute_shared_indices();
+  // Compute number of outgoing slaves and masters for each process
+  dolfinx::graph::AdjacencyList<int> shared_indices
+      = slave_to_ghost->index_to_dest_ranks();
   const std::size_t num_inc_proc = src_ranks_ghosts.size();
   const std::size_t num_out_proc = dest_ranks_ghosts.size();
   std::vector<std::int32_t> out_num_slaves(num_out_proc + 1, 0);
   std::vector<std::int32_t> out_num_masters(num_out_proc + 1, 0);
   for (std::size_t i = 0; i < slaves.size(); ++i)
   {
-    // Find ghost processes for the ith local slave
-    std::set<int> ghost_procs = shared_indices[(std::int32_t)parent_to_sub[i]];
-    for (auto proc : ghost_procs)
+    for (auto proc : shared_indices.links(parent_to_sub[i]))
     {
       // Find index of process in local MPI communicator
       auto it
@@ -456,17 +459,15 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
   std::vector<std::int64_t> masters_out(disp_out_masters.back());
   std::vector<PetscScalar> coeffs_out(disp_out_masters.back());
   std::vector<std::int32_t> owners_out(disp_out_masters.back());
-  std::vector<std::int32_t> slaves_out_block(disp_out_slaves.back());
-  std::vector<std::int32_t> slaves_out_rem(disp_out_slaves.back());
+  std::vector<std::int32_t> slaves_out_loc(disp_out_slaves.back());
   std::vector<std::int64_t> slaves_out(disp_out_slaves.back());
   std::vector<std::int32_t> masters_per_slave(disp_out_slaves.back());
   for (std::size_t i = 0; i < slaves.size(); ++i)
   {
     // Find ghost processes for the ith local slave
-    std::set<int> ghost_procs = shared_indices[(std::int32_t)parent_to_sub[i]];
     const std::int32_t master_start = local_offsets[i];
     const std::int32_t master_end = local_offsets[i + 1];
-    for (auto proc : ghost_procs)
+    for (auto proc : shared_indices.links(parent_to_sub[i]))
     {
       // Find index of process in local MPI communicator
       auto it
@@ -474,10 +475,7 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
       const auto index = std::distance(dest_ranks_ghosts.begin(), it);
 
       // Insert slave and num masters per slave
-      slaves_out_block[disp_out_slaves[index] + insert_slaves[index]]
-          = slave_blocks[i];
-      slaves_out_rem[disp_out_slaves[index] + insert_slaves[index]]
-          = slave_rems[i];
+      slaves_out_loc[disp_out_slaves[index] + insert_slaves[index]] = slaves[i];
       masters_per_slave[disp_out_slaves[index] + insert_slaves[index]]
           = num_masters_per_slave[i];
       insert_slaves[index]++;
@@ -498,9 +496,20 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
     }
   }
   // Map slaves to global index
-  imap->local_to_global(slaves_out_block, slaves_out);
-  for (std::size_t i = 0; i < slaves_out.size(); i++)
-    slaves_out[i] = slaves_out[i] * bs + slaves_out_rem[i];
+  {
+    std::vector<std::int32_t> blocks(slaves_out_loc.size());
+    std::vector<std::int32_t> rems(slaves_out_loc.size());
+    for (std::size_t i = 0; i < blocks.size(); ++i)
+    {
+      std::div_t pos = std::div(slaves_out_loc[i], bs);
+      blocks[i] = pos.quot;
+      rems[i] = pos.rem;
+    }
+    imap->local_to_global(blocks, slaves_out);
+    std::transform(slaves_out.cbegin(), slaves_out.cend(), rems.cbegin(),
+                   slaves_out.begin(),
+                   [bs](auto dof, auto rem) { return dof * bs + rem; });
+  }
 
   // Create in displacements for slaves
   MPI_Wait(&requests[0], &states[0]);

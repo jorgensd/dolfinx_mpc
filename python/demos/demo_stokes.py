@@ -23,7 +23,7 @@ from ufl import (FacetNormal, FiniteElement, Identity, Measure, TestFunctions,
                  outer, sym)
 
 
-def create_mesh_gmsh(L: int = 2, H: int = 1, res: np.float64 = 0.1, theta: np.float64 = np.pi / 5,
+def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
                      wall_marker: int = 1, outlet_marker: int = 2, inlet_marker: int = 3):
     """
     Create a channel of length L, height H, rotated theta degrees

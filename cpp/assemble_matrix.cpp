@@ -78,12 +78,11 @@ void modify_mpc_cell(
     const std::array<const xtl::span<const int32_t>, 2>& dofs,
     const std::array<const int, 2>& bs,
     const std::array<const xtl::span<const int32_t>, 2>& slaves,
-    const std::array<const std::shared_ptr<
-                         const dolfinx::graph::AdjacencyList<std::int32_t>>,
-                     2>& masters,
     const std::array<
-        const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>&
-        coeffs,
+        std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>&
+        masters,
+    const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>,
+                     2>& coeffs,
     const std::array<const std::vector<std::int8_t>, 2>& is_slave)
 {
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
@@ -244,18 +243,15 @@ void assemble_exterior_facets(
 {
   // Get MPC data
   const std::array<
-      const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>,
-      2>
+      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       masters = {mpc0->masters(), mpc1->masters()};
-  const std::array<
-      const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
+  const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
       coefficients = {mpc0->coefficients(), mpc1->coefficients()};
   const std::array<const std::vector<std::int8_t>, 2> is_slave
       = {mpc0->is_slave(), mpc1->is_slave()};
 
   const std::array<
-      const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>,
-      2>
+      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
   // Get mesh data
@@ -377,11 +373,9 @@ void assemble_cells_impl(
 {
   // Get MPC data
   const std::array<
-      const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>,
-      2>
+      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       masters = {mpc0->masters(), mpc1->masters()};
-  const std::array<
-      const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
+  const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
       coefficients = {mpc0->coefficients(), mpc1->coefficients()};
   const std::array<const std::vector<std::int8_t>, 2> is_slave
       = {mpc0->is_slave(), mpc1->is_slave()};

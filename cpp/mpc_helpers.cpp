@@ -16,7 +16,7 @@
 #include <vector>
 
 //-----------------------------------------------------------------------------
-std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
 dolfinx_mpc::create_cell_to_dofs_map(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const xtl::span<const std::int32_t>& dofs)
@@ -31,19 +31,17 @@ dolfinx_mpc::create_cell_to_dofs_map(
   const std::int32_t block_size = dofmap.index_map_bs();
 
   // Create dof -> cells map where only slave dofs have entries
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> cell_map;
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>> cell_map;
   {
     std::vector<std::int32_t> num_slave_cells(local_size * block_size, 0);
 
     std::vector<std::int32_t> in_num_cells(local_size * block_size, 0);
     // Loop through all cells and count number of cells a dof occurs in
     for (std::int32_t i = 0; i < num_cells; i++)
-    {
-      auto blocks = dofmap.cell_dofs(i);
-      for (auto block : blocks)
+      for (auto block : dofmap.cell_dofs(i))
         for (std::int32_t j = 0; j < block_size; j++)
           in_num_cells[block * block_size + j]++;
-    }
+
     // Count only number of slave cells for dofs
     for (auto dof : dofs)
       num_slave_cells[dof] = in_num_cells[dof];
@@ -58,27 +56,29 @@ dolfinx_mpc::create_cell_to_dofs_map(
     // Accumulate those cells whose contains a slave dof
     for (std::int32_t i = 0; i < num_cells; i++)
     {
-      auto blocks = dofmap.cell_dofs(i);
-      for (auto block : blocks)
+      for (auto block : dofmap.cell_dofs(i))
+      {
         for (std::int32_t j = 0; j < block_size; j++)
         {
-          const std::int32_t dof = block * block_size + j;
-          if (num_slave_cells[dof] > 0)
+          if (const std::int32_t dof = block * block_size + j;
+              num_slave_cells[dof] > 0)
+          {
             cell_data[cell_offsets[dof] + insert_position[dof]++] = i;
+          }
         }
+      }
     }
-    cell_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-        cell_data, cell_offsets);
+    cell_map
+        = std::make_shared<const dolfinx::graph::AdjacencyList<std::int32_t>>(
+            cell_data, cell_offsets);
   }
 
   // Create inverse map (cells -> slave dofs)
   std::vector<std::int32_t> num_slaves(num_cells, 0);
   for (std::int32_t i = 0; i < cell_map->num_nodes(); i++)
-  {
-    auto cells = cell_map->links(i);
-    for (auto cell : cells)
+    for (auto cell : cell_map->links(i))
       num_slaves[cell]++;
-  }
+
   std::vector<std::int32_t> insert_position(num_cells, 0);
   std::vector<std::int32_t> dof_offsets(num_cells + 1);
   dof_offsets[0] = 0;
@@ -86,12 +86,10 @@ dolfinx_mpc::create_cell_to_dofs_map(
                       dof_offsets.begin() + 1);
   std::vector<std::int32_t> dof_data(dof_offsets.back());
   for (std::int32_t i = 0; i < cell_map->num_nodes(); i++)
-  {
-    auto cells = cell_map->links(i);
-    for (auto cell : cells)
+    for (auto cell : cell_map->links(i))
       dof_data[dof_offsets[cell] + insert_position[cell]++] = i;
-  }
-  return std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
+
+  return std::make_shared<const dolfinx::graph::AdjacencyList<std::int32_t>>(
       dof_data, dof_offsets);
 }
 
@@ -162,67 +160,50 @@ dolfinx::fem::FunctionSpace dolfinx_mpc::create_extended_functionspace(
     // Check which local masters that are not on the process already
     std::vector<std::int64_t> new_ghosts;
     new_ghosts.reserve(num_dofs);
-    std::vector<std::int32_t> new_ranks;
-    new_ranks.reserve(num_dofs);
+    std::vector<std::int32_t> new_owners;
+    new_owners.reserve(num_dofs);
     for (std::size_t i = 0; i < num_dofs; i++)
     {
-      // Check if master block already has a local index
-      if (local_blocks[i] == -1)
+      // Check if master block already has a local index and
+      // if has has already been ghosted, which is the case
+      // when we have multiple masters from the same block
+
+      if ((local_blocks[i] == -1)
+          and (std::find(new_ghosts.begin(), new_ghosts.end(), global_blocks[i])
+               == new_ghosts.end()))
       {
-        // Check if master block has already been ghosted, which is the case
-        // when we have multiple masters from the same block
-        auto already_ghosted
-            = std::find(new_ghosts.begin(), new_ghosts.end(), global_blocks[i]);
-        if (already_ghosted == new_ghosts.end())
-        {
-          new_ghosts.push_back(global_blocks[i]);
-          new_ranks.push_back(owners[i]);
-        }
+        new_ghosts.push_back(global_blocks[i]);
+        new_owners.push_back(owners[i]);
       }
     }
 
     // Append new ghosts (and corresponding rank) at the end of the old set of
     // ghosts originating from the old index map
-    std::vector<int> ranks;
-    {
-      std::vector<int> neighbors = dolfinx::MPI::neighbors(old_index_map->comm(
-          dolfinx::common::IndexMap::Direction::forward))[0];
-      ranks = old_index_map->ghost_owners();
-      std::transform(ranks.cbegin(), ranks.cend(), ranks.begin(),
-                     [&neighbors](auto r) { return neighbors[r]; });
-    }
+    std::vector<int> ghost_owners = old_index_map->owners();
+
     std::vector<std::int64_t> ghosts = old_index_map->ghosts();
     const std::int32_t num_ghosts = ghosts.size();
     ghosts.resize(num_ghosts + new_ghosts.size());
-    ranks.resize(num_ghosts + new_ghosts.size());
+    ghost_owners.resize(num_ghosts + new_ghosts.size());
     for (std::size_t i = 0; i < new_ghosts.size(); i++)
     {
       ghosts[num_ghosts + i] = new_ghosts[i];
-      ranks[num_ghosts + i] = new_ranks[i];
+      ghost_owners[num_ghosts + i] = new_owners[i];
     }
-    std::vector<int> src_ranks = ranks;
-    std::sort(src_ranks.begin(), src_ranks.end());
-    src_ranks.erase(std::unique(src_ranks.begin(), src_ranks.end()),
-                    src_ranks.end());
-    auto dest_ranks
-        = dolfinx::MPI::compute_graph_edges_nbx(MPI_COMM_WORLD, src_ranks);
-
     // Create new indexmap with ghosts for master blocks added
     new_index_map = std::make_shared<dolfinx::common::IndexMap>(
-        comm, old_index_map->size_local(), dest_ranks, ghosts, ranks);
+        comm, old_index_map->size_local(), ghosts, ghost_owners);
   }
 
   // Extract information from the old dofmap to create a new one
-  dolfinx::mesh::Topology topology = V->mesh()->topology();
-  dolfinx::fem::ElementDofLayout layout = old_dofmap.element_dof_layout();
-  dolfinx::graph::AdjacencyList<std::int32_t> dofmap_adj = old_dofmap.list();
+  const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap_adj
+      = old_dofmap.list();
   std::shared_ptr<const dolfinx::fem::FiniteElement> element = V->element();
 
   // Create the new dofmap based on the extended index map
-  std::shared_ptr<dolfinx::fem::DofMap> new_dofmap
-      = std::make_shared<dolfinx::fem::DofMap>(old_dofmap.element_dof_layout(),
-                                               new_index_map, old_dofmap.bs(),
-                                               dofmap_adj, old_dofmap.bs());
+  auto new_dofmap = std::make_shared<const dolfinx::fem::DofMap>(
+      old_dofmap.element_dof_layout(), new_index_map, old_dofmap.bs(),
+      dofmap_adj, old_dofmap.bs());
 
   return dolfinx::fem::FunctionSpace(V->mesh(), element, new_dofmap);
 }

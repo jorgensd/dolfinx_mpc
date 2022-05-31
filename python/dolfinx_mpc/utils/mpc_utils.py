@@ -41,7 +41,7 @@ def rotation_matrix(axis, angle):
     return np.sin(angle) * axis_x + identity + outer
 
 
-def facet_normal_approximation(V, mt: _mesh.MeshTagsMetaClass, mt_id, tangent=False, jit_params: dict = {},
+def facet_normal_approximation(V, mt: _cpp.mesh.MeshTags_int32, mt_id: np.int32, tangent=False, jit_params: dict = {},
                                form_compiler_params: dict = {}):
     """
     Approximate the facet normal by projecting it into the function space for a set of facets
@@ -211,7 +211,7 @@ def determine_closest_block(V, point):
     """
     # Create boundingboxtree of cells connected to boundary facets
     tdim = V.mesh.topology.dim
-    boundary_facets = np.flatnonzero(_cpp.mesh.compute_boundary_facets(V.mesh.topology))
+    boundary_facets = _mesh.exterior_facet_indices(V.mesh.topology)
     V.mesh.topology.create_connectivity(tdim - 1, tdim)
     f_to_c = V.mesh.topology.connectivity(tdim - 1, tdim)
     boundary_cells = []
@@ -243,10 +243,7 @@ def determine_closest_block(V, point):
 
     dofmap = V.dofmap
     imap = dofmap.index_map
-    ghost_owner = imap.ghost_owners()
-    comm = imap.comm(_common.Direction.forward)
-    ranks = np.array(comm.Get_dist_neighbors()[0])
-    ghost_owner = ranks[ghost_owner]
+    ghost_owner = imap.owners
     local_max = imap.size_local
     # Determine which block of dofs is closest
     min_distance = max(R, 1e5)
@@ -369,8 +366,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
                 offsets = np.arange(0, len(slaves) + 1, dtype=np.int32)
             else:
                 offsets = np.array([0, len(masters)], dtype=np.int32)
-            if slave_block[0] in shared_indices.keys():
-                ghost_processors = list(shared_indices[slave_block[0]])
+            ghost_processors = shared_indices.links(slave_block[0])
 
     # Broadcast processors containg slave
     ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)
@@ -410,7 +406,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     return slaves, masters, coeffs, owners, offsets
 
 
-def create_normal_approximation(V: _fem.FunctionSpace, mt: _mesh.MeshTagsMetaClass, value: int):
+def create_normal_approximation(V: _fem.FunctionSpace, mt: _cpp.mesh.MeshTags_int32, value: int):
     """
     Creates a normal approximation for the dofs in the closure of the attached entities.
     Where a dof is attached to entities facets, an average is computed

@@ -20,6 +20,7 @@ def close_to(point):
     return lambda x: np.isclose(x, point).all(axis=0)
 
 
+@typing.no_type_check
 def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
                                  typing.Dict[bytes, typing.Dict[bytes, float]],
                                  subspace_slave: int = None, subspace_master: int = None):
@@ -196,16 +197,16 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
     slaves, masters, coeffs, owners, offsets = [], [], [], [], [0]
     for slave_index in slaves_local.keys():
         slaves.append(slaves_local[slave_index])
-        masters.extend(owned_slaves[slave_index]["masters"])
-        owners.extend(owned_slaves[slave_index]["owners"])
-        coeffs.extend(owned_slaves[slave_index]["coeffs"])
+        masters.extend(owned_slaves[slave_index]["masters"])  # type: ignore
+        owners.extend(owned_slaves[slave_index]["owners"])  # type: ignore
+        coeffs.extend(owned_slaves[slave_index]["coeffs"])  # type: ignore
         offsets.append(len(masters))
 
     for slave_index in slaves_ghost.keys():
         slaves.append(slaves_ghost[slave_index])
-        masters.extend(ghosted_slaves[slave_index]["masters"])
-        owners.extend(ghosted_slaves[slave_index]["owners"])
-        coeffs.extend(ghosted_slaves[slave_index]["coeffs"])
+        masters.extend(ghosted_slaves[slave_index]["masters"])  # type: ignore
+        owners.extend(ghosted_slaves[slave_index]["owners"])  # type: ignore
+        coeffs.extend(ghosted_slaves[slave_index]["coeffs"])  # type: ignore
         offsets.append(len(masters))
     return (np.asarray(slaves, dtype=np.int32), np.asarray(masters, dtype=np.int64),
             np.asarray(coeffs, dtype=PETSc.ScalarType), np.asarray(owners, dtype=np.int32),

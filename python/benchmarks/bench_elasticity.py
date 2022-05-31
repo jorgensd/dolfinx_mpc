@@ -168,7 +168,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: h5py.File = None,
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
+    parser.add_argument("--nref", default=1, type=int, dest="n_ref",
                         help="Number of spatial refinements")
     parser.add_argument('--xdmf', action='store_true', dest="xdmf",
                         help="XDMF-output of function (Default false)")
@@ -185,10 +185,12 @@ if __name__ == "__main__":
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
-    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
-
-    for key in vars(args):
-        setattr(thismodule, key, getattr(args, key))
+    n_ref: int = args.n_ref
+    timings: bool = args.timings
+    boomeramg: bool = args.boomeramg
+    kspview: bool = args.kspview
+    hdf5: str = args.hdf5
+    xdmf: bool = args.xdmf
 
     N = n_ref + 1
 

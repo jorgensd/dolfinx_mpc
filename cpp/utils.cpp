@@ -244,10 +244,10 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   return basis_array;
 }
 //-----------------------------------------------------------------------------
-std::map<std::int32_t, std::set<int>> dolfinx_mpc::compute_shared_indices(
+dolfinx::graph::AdjacencyList<int> dolfinx_mpc::compute_shared_indices(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V)
 {
-  return V->dofmap()->index_map->compute_shared_indices();
+  return V->dofmap()->index_map->index_to_dest_ranks();
 }
 //-----------------------------------------------------------------------------
 dolfinx::la::petsc::Matrix dolfinx_mpc::create_matrix(
@@ -350,20 +350,12 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
     std::shared_ptr<const dolfinx::common::IndexMap> index_map)
 {
   // Get data from IndexMap
-  std::vector<int> ghost_owners;
-  {
-    std::vector<int> neighbors = dolfinx::MPI::neighbors(
-        index_map->comm(dolfinx::common::IndexMap::Direction::forward))[0];
-    ghost_owners = index_map->ghost_owners();
-    std::transform(ghost_owners.cbegin(), ghost_owners.cend(),
-                   ghost_owners.begin(),
-                   [&neighbors](auto r) { return neighbors[r]; });
-  }
+  const std::vector<int>& ghost_owners = index_map->owners();
   const std::int32_t size_local = index_map->size_local();
-  std::map<std::int32_t, std::set<int>> shared_indices
-      = index_map->compute_shared_indices();
-  MPI_Comm comm
-      = index_map->comm(dolfinx::common::IndexMap::Direction::forward);
+  dolfinx::graph::AdjacencyList<int> shared_indices
+      = index_map->index_to_dest_ranks();
+
+  MPI_Comm comm = create_owner_to_ghost_comm(*index_map);
 
   // Array of processors sending to the ghost_dofs
   std::set<std::int32_t> src_edges;
@@ -373,17 +365,12 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
   MPI_Comm_rank(comm, &rank);
 
   for (auto block : local_blocks)
-  {
-    const std::set<int> procs = shared_indices[block];
-    for (auto proc : procs)
+    for (auto proc : shared_indices.links(block))
       dst_edges.insert(proc);
-  }
 
   for (auto block : ghost_blocks)
-  {
-    const std::int32_t proc = ghost_owners[block - size_local];
-    src_edges.insert(proc);
-  }
+    src_edges.insert(ghost_owners[block - size_local]);
+
   MPI_Comm comm_loc = MPI_COMM_NULL;
   // Create communicator with edges owners (sources) -> ghosts (destinations)
   std::vector<std::int32_t> source_edges;
@@ -428,9 +415,10 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
     if (ents.empty())
       continue;
     // Sum all normal for entities
-    xt::xtensor<double, 2> normals
+    std::vector<double> _normals
         = dolfinx::mesh::cell_normals(*V->mesh(), dim, ents);
-
+    auto normals
+        = xt::adapt(_normals, std::vector<std::size_t>{_normals.size() / 3, 3});
     auto n_0 = xt::row(normals, 0);
     normal = n_0;
     for (std::size_t i = 1; i < normals.shape(0); ++i)
@@ -483,15 +471,7 @@ dolfinx_mpc::create_block_to_cell_map(const dolfinx::fem::FunctionSpace& V,
   auto dofmap = V.dofmap();
   auto imap = dofmap->index_map;
   const int size_local = imap->size_local();
-  std::vector<int> ghost_owners;
-  {
-    std::vector<int> neighbors = dolfinx::MPI::neighbors(
-        imap->comm(dolfinx::common::IndexMap::Direction::forward))[0];
-    ghost_owners = imap->ghost_owners();
-    std::transform(ghost_owners.cbegin(), ghost_owners.cend(),
-                   ghost_owners.begin(),
-                   [&neighbors](auto r) { return neighbors[r]; });
-  }
+  const std::vector<int>& ghost_owners = imap->owners();
   std::vector<std::int32_t> num_cells_per_dof(size_local + ghost_owners.size());
 
   const int tdim = mesh->topology().dim();
@@ -579,18 +559,19 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
     std::array<std::int32_t, 1> other_master_block;
 
     // Map from cell index (local to mpc) to slave indices in the cell
-    const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
         cell_to_slaves = mpc->cell_to_slaves();
 
     // For each cell (local to process) having a slave, get all slaves in main
     // constraint, and all dofs in off-axis constraint in the cell
     for (std::int32_t i = 0; i < cell_to_slaves->num_nodes(); ++i)
     {
-      if (cell_to_slaves->num_links(i) == 0)
+      xtl::span<const std::int32_t> slaves = cell_to_slaves->links(i);
+      if (slaves.empty())
         continue;
 
-      xtl::span<int32_t> slaves = cell_to_slaves->links(i);
-      xtl::span<const int32_t> cell_dofs = V_off_axis->dofmap()->cell_dofs(i);
+      xtl::span<const std::int32_t> cell_dofs
+          = V_off_axis->dofmap()->cell_dofs(i);
 
       // Arrays for flattened master slave data
       std::vector<std::int32_t> flattened_masters;
@@ -599,8 +580,7 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
       // For each slave find all master degrees of freedom and flatten them
       for (auto slave : slaves)
       {
-        const auto& local_masters = mpc->masters()->links(slave);
-        for (auto master : local_masters)
+        for (auto master : mpc->masters()->links(slave))
         {
           const std::div_t div = std::div(master, V->dofmap()->index_map_bs());
           flattened_masters.push_back(div.quot);
@@ -668,19 +648,20 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   // Get mesh
   std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V.mesh();
   assert(mesh);
-  const std::size_t gdim = mesh->geometry().dim();
-  const std::size_t tdim = mesh->topology().dim();
-  auto map = mesh->topology().index_map((int)tdim);
+
+  // Get topology data
+  const dolfinx::mesh::Topology& topology = mesh->topology();
+  const std::size_t tdim = topology.dim();
+  auto map = topology.index_map((int)tdim);
 
   // Get geometry data
+  const dolfinx::mesh::Geometry& geometry = mesh->geometry();
+  const std::size_t gdim = geometry.dim();
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = mesh->geometry().dofmap();
-  // FIXME: Add proper interface for num coordinate dofs
-  const std::size_t num_dofs_g = x_dofmap.num_links(0);
-  xtl::span<const double> x_g = mesh->geometry().x();
-
-  // Get coordinate map
-  const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
+      = geometry.dofmap();
+  const dolfinx::fem::CoordinateElement& cmap = geometry.cmap();
+  const std::size_t num_dofs_g = cmap.dim();
+  xtl::span<const double> x_g = geometry.x();
 
   // Get element
   assert(V.element());

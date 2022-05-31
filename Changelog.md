@@ -1,7 +1,9 @@
 # Changelog
 
 ## main
- - No changes
+ - Various API changes in DOLFINx relating to `dolfinx.common.IndexMap`.
+ - Made code [mypy](https://mypy.readthedocs.io/en/stable/)-compatible (tests added to CI). 
+ - Made code [PEP-561](https://peps.python.org/pep-0561/) compatible.
 
 ## v0.4.0 (30.04.2022)
 - **API**:

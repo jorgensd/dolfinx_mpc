@@ -5,7 +5,6 @@
 # SPDX-License-Identifier:    MIT
 
 import resource
-import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
 import h5py
@@ -205,11 +204,15 @@ if __name__ == "__main__":
     solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
-    n_ref = degree = hdf5 = xdmf = tetra = None
-    info = timings = boomeramg = kspview = None
-    thismodule = sys.modules[__name__]
-    for key in vars(args):
-        setattr(thismodule, key, getattr(args, key))
+    n_ref: int = args.n_ref
+    degree: int = args.degree
+    hdf5: bool = args.hdf5
+    xdmf: bool = args.xdmf
+    tetra: bool = args.tetra
+    info: bool = args.info
+    timings: bool = args.timings
+    boomeramg: bool = args.boomeramg
+    kspview: bool = args.kspview
     N = n_ref + 1
 
     h5f = h5py.File('bench_edge_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)

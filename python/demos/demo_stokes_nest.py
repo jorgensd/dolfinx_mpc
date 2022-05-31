@@ -22,7 +22,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 
-def create_mesh_gmsh(L: int = 2, H: int = 1, res: np.float64 = 0.1, theta: np.float64 = np.pi / 5,
+def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
                      wall_marker: int = 1, outlet_marker: int = 2, inlet_marker: int = 3):
     """
     Create a channel of length L, height H, rotated theta degrees
@@ -182,9 +182,9 @@ a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(
     - p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
 L0 += ufl.inner(g_tau, v) * ds
 
-a = ((dolfinx.fem.form(a00), dolfinx.fem.form(a01)),
-     (dolfinx.fem.form(a10), dolfinx.fem.form(a11)))
-L = (dolfinx.fem.form(L0), dolfinx.fem.form(L1))
+a = [[dolfinx.fem.form(a00), dolfinx.fem.form(a01)],
+     [dolfinx.fem.form(a10), dolfinx.fem.form(a11)]]
+L = [dolfinx.fem.form(L0), dolfinx.fem.form(L1)]
 
 # Assemble LHS matrix and RHS vector
 with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
@@ -268,7 +268,6 @@ with dolfinx.io.VTXWriter(mesh.comm, "results/stokes_nest.bp", uh) as vtx:
 with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix reduction"):
     W = dolfinx.fem.FunctionSpace(mesh, Ve * Qe)
     V, V_to_W = W.sub(0).collapse()
-    Q = W.sub(1).collapse()
 
     # Inlet velocity Dirichlet BC
     inlet_facets = mt.indices[mt.values == 3]

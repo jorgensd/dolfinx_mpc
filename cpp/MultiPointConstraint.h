@@ -33,10 +33,11 @@ public:
   /// @param[in] owners Owners for each master
   /// @param[in] offsets Offsets for masters
   MultiPointConstraint(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-                       std::vector<std::int32_t> slaves,
-                       std::vector<std::int64_t> masters, std::vector<T> coeffs,
-                       std::vector<std::int32_t> owners,
-                       std::vector<std::int32_t> offsets)
+                       const std::vector<std::int32_t>& slaves,
+                       const std::vector<std::int64_t>& masters,
+                       const std::vector<T>& coeffs,
+                       const std::vector<std::int32_t>& owners,
+                       const std::vector<std::int32_t>& offsets)
       : _slaves(), _is_slave(), _cell_to_slaves_map(), _num_local_slaves(),
         _master_map(), _coeff_map(), _owner_map(), _mpc_constants(), _V()
   {
@@ -146,26 +147,26 @@ public:
   };
 
   /// Return map from cell to slaves contained in that cell
-  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
   cell_to_slaves() const
   {
     return _cell_to_slaves_map;
   }
   /// Return map from slave to masters (local_index)
-  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
   masters() const
   {
     return _master_map;
   }
 
   /// Return map from slave to coefficients
-  const std::shared_ptr<dolfinx::graph::AdjacencyList<T>>& coefficients() const
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients() const
   {
     return _coeff_map;
   }
 
   /// Return map from slave to masters (global index)
-  const std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
   owners() const
   {
     return _owner_map;
@@ -200,16 +201,17 @@ private:
   std::vector<T> _mpc_constants;
 
   // Map from slave cell to index in _slaves for a given slave cell
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       _cell_to_slaves_map;
 
   // Number of slaves owned by the process
   std::int32_t _num_local_slaves;
   // Map from slave (local to process) to masters (local to process)
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _master_map;
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
+      _master_map;
   // Map from slave (local to process)to coefficients
-  std::shared_ptr<dolfinx::graph::AdjacencyList<T>> _coeff_map;
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> _coeff_map;
   // Map from slave( local to process) to rank of process owning master
-  std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
+  std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
 };
 } // namespace dolfinx_mpc

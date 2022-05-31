@@ -80,13 +80,18 @@ def create_sparsity_pattern(form: _fem.FormMetaClass,
         For square forms, the MPC. For rectangular forms a list of 2 MPCs on
         axis 0 & 1, respectively
     """
-    if not isinstance(mpc, list):
-        mpc = [mpc, mpc]
-    assert len(mpc) == 2
-    for mpc_ in mpc:
-        mpc_._not_finalized()
-    return cpp.mpc.create_sparsity_pattern(form, mpc[0]._cpp_object,
-                                           mpc[1]._cpp_object)
+    if isinstance(mpc, MultiPointConstraint):
+        mpc._not_finalized()
+        return cpp.mpc.create_sparsity_pattern(form, mpc._cpp_object,
+                                               mpc._cpp_object)
+    elif isinstance(mpc, list):
+        assert len(mpc) == 2
+        for mpc_ in mpc:
+            mpc_._not_finalized()
+            return cpp.mpc.create_sparsity_pattern(form, mpc[0]._cpp_object,
+                                                   mpc[1]._cpp_object)
+    else:
+        raise ValueError(f"Unknown input type {type(mpc)}")
 
 
 def create_matrix_nest(

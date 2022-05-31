@@ -41,6 +41,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Flake8 code
+        run: flake8 python/
+
+      - name: Mypy check
+        run: |
+           pip3 install mypy
+           cd python
+           python3 -m mypy . --exclude=build
+
       - name: Install h5py
         run: |
           pip3 install --no-cache-dir --no-binary=h5py h5py
@@ -88,9 +97,6 @@ jobs:
 
       - name: Install DOLFINx-MPC (Python)
         run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/
-
-      - name: Flake8 code
-        run: flake8 python/
 
       - name: Run tests
         run: |
