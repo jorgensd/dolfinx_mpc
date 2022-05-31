@@ -172,15 +172,16 @@ def gather_PETScMatrix(A: PETSc.Mat, root=0) -> scipy.sparse.csr_matrix:
     a scipy CSR matrix
     """
     ai, aj, av = A.getValuesCSR()
-    aj_all = MPI.COMM_WORLD.gather(aj, root=root)
-    av_all = MPI.COMM_WORLD.gather(av, root=root)
-    ai_all = MPI.COMM_WORLD.gather(ai, root=root)
+    aj_all = MPI.COMM_WORLD.gather(aj, root=root)  # type: ignore
+    av_all = MPI.COMM_WORLD.gather(av, root=root)  # type: ignore
+    ai_all = MPI.COMM_WORLD.gather(ai, root=root)  # type: ignore
     if MPI.COMM_WORLD.rank == root:
         ai_cum = [0]
-        for ai in ai_all:
+        for ai in ai_all:  # type: ignore
             offsets = ai[1:] + ai_cum[-1]
             ai_cum.extend(offsets)
-        return scipy.sparse.csr_matrix((np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())
+        return scipy.sparse.csr_matrix(
+            (np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())  # type: ignore
 
 
 def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:
@@ -192,8 +193,7 @@ def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
     numpy_vec[l_min: l_max] += vector.array
-    numpy_vec = sum(MPI.COMM_WORLD.allgather(numpy_vec))
-    return numpy_vec
+    return np.asarray(sum(MPI.COMM_WORLD.allgather(numpy_vec)))
 
 
 def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-10):
@@ -241,8 +241,8 @@ def compare_mpc_rhs(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.Mult
     Compare an unconstrained RHS with an MPC rhs.
     """
     glob_slaves = _gather_slaves_global(constraint)
-    b_org_np = dolfinx_mpc.utils.gather_PETScVector(b_org, root=root)
-    b_np = dolfinx_mpc.utils.gather_PETScVector(b, root=root)
+    b_org_np = gather_PETScVector(b_org, root=root)
+    b_np = gather_PETScVector(b, root=root)
     K = gather_transformation_matrix(constraint, root=root)
     # constants = gather_constants(constraint)
     comm = constraint.V.mesh.comm

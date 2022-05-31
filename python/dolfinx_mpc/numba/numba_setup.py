@@ -12,7 +12,7 @@ import os
 import numba
 import numba.core.typing.cffi_utils as cffi_support
 import numpy as np
-
+import typing
 import cffi
 import petsc4py.lib
 from mpi4py import MPI
@@ -20,7 +20,7 @@ from petsc4py import get_config as PETSc_get_config
 from petsc4py import PETSc
 
 
-def initialize_petsc():
+def initialize_petsc() -> typing.Tuple[cffi.FFI, typing.Any]:
     """
     Initialize petsc and CFFI for usage in numba
     """
@@ -33,13 +33,12 @@ def initialize_petsc():
 
     scalar_size = np.dtype(PETSc.ScalarType).itemsize
     index_size = np.dtype(PETSc.IntType).itemsize
-
     if index_size == 8:
         c_int_t = "int64_t"
-        ctypes_index = ctypes.c_int64
+        ctypes_index = ctypes.c_int64  # type: ignore
     elif index_size == 4:
         c_int_t = "int32_t"
-        ctypes_index = ctypes.c_int32
+        ctypes_index = ctypes.c_int32  # type: ignore
     else:
         raise RuntimeError(
             "Cannot translate PETSc index size into a C type, index_size: {}."

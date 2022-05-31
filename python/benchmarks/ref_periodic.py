@@ -192,10 +192,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     thismodule = sys.modules[__name__]
-    n_ref = timings = boomeramg = kspview = degree = hdf5 = xdmf = tetra = None
-
-    for key in vars(args):
-        setattr(thismodule, key, getattr(args, key))
+    n_ref: int = args.n_ref
+    timings: bool = args.timings
+    boomeramg: bool = args.boomeramg
+    kspview: bool = args.kspview
+    degree: int = args.degree
+    hdf5: bool = args.hdf5
+    xdmf: bool = args.xdmf
+    tetra: bool = args.tetra
 
     N = n_ref + 1
 
@@ -218,7 +222,7 @@ if __name__ == "__main__":
 
         reference_periodic(tetra, r_lvl=i, out_hdf5=h5f,
                            xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
-                           degree=int(degree))
+                           degree=degree)
 
         if timings and i == N - 1:
             list_timings(MPI.COMM_WORLD, [TimingType.wall])

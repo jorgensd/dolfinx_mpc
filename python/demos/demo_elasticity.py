@@ -147,9 +147,11 @@ def demo_elasticity():
             master_owner = master
             break
     if slave_owner != master_owner and MPI.COMM_WORLD.rank == master_owner:
-        bs = mpc.function_space.dofmap.index_map_bs
+        dofmap = mpc.function_space.dofmap
+        bs = dofmap.index_map_bs
         in_data = MPI.COMM_WORLD.recv(source=MPI.ANY_SOURCE, tag=1)
-        l2g = mpc.function_space.dofmap.index_map.global_indices()
+        num_local = dofmap.index_map.size_local + dofmap.index_map.num_ghosts
+        l2g = dofmap.index_map.local_to_global(np.arange(num_local, dtype=np.int32))
         l_index = np.flatnonzero(l2g == in_data[0] // bs)[0]
         print("Master*Coeff (on other proc): {0:.5e}"
               .format(u_h.x.array[l_index * bs + in_data[0] % bs] * in_data[1]))

@@ -85,15 +85,9 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
   auto imap = dofmap->index_map;
   const int bs = dofmap->index_map_bs();
   const int size_local = imap->size_local();
-  std::vector<int> ghost_owners;
-  {
-    std::vector<int> neighbors = dolfinx::MPI::neighbors(
-        imap->comm(dolfinx::common::IndexMap::Direction::forward))[0];
-    ghost_owners = imap->ghost_owners();
-    std::transform(ghost_owners.cbegin(), ghost_owners.cend(),
-                   ghost_owners.begin(),
-                   [&neighbors](auto r) { return neighbors[r]; });
-  }
+
+  /// Compute which rank (relative to neighbourhood) to send each ghost to
+  const std::vector<int>& ghost_owners = imap->owners();
 
   // Only work with local blocks
   std::vector<std::int32_t> local_blocks;
@@ -532,12 +526,12 @@ dolfinx_mpc::mpc_data geometrical_condition(
   }
 }
 
-/// Create a periodic MPC on a given set of mesh entities, mapped to the master
-/// surface by a relation function.
+/// Create a periodic MPC on a given set of mesh entities, mapped to the
+/// master surface by a relation function.
 /// @param[in] V The input function space (possibly a sub space)
 /// @param[in] meshtag Meshtag with set of entities
-/// @param[in] tag The value of the mesh tag entities that should bec considered
-/// as entities
+/// @param[in] tag The value of the mesh tag entities that should bec
+/// considered as entities
 /// @param[in] relation Function relating coordinates of the slave surface to
 /// the master surface
 /// @param[in] bcs List of Dirichlet BCs on the input space

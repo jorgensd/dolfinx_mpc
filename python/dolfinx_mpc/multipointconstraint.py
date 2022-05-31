@@ -5,7 +5,7 @@
 # SPDX-License-Identifier:    MIT
 
 from typing import Callable, Dict, List
-
+import numpy.typing as npt
 import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
 import numpy
@@ -35,24 +35,24 @@ class MultiPointConstraint():
         self.V = V
         self.finalized = False
 
-    def add_constraint(self, V: _fem.FunctionSpace, slaves_: "numpy.ndarray[numpy.int32]",
-                       masters_: "numpy.ndarray[numpy.int64]", coeffs_: "numpy.ndarray[_PETSc.ScalarType]",
-                       owners_: "numpy.ndarray[numpy.int32]", offsets_: "numpy.ndarray[numpy.int32]"):
+    def add_constraint(self, V: _fem.FunctionSpace, slaves: npt.NDArray[numpy.int32],
+                       masters: npt.NDArray[numpy.int64], coeffs: npt.NDArray[_PETSc.ScalarType],
+                       owners: npt.NDArray[numpy.int32], offsets: npt.NDArray[numpy.int32]):
         """
         Add new constraint given by numpy arrays.
         Parameters
         ----------
             V
                 The function space for the constraint
-            slaves_
+            slaves
                 List of all slave dofs (using local dof numbering) on this process
-            masters_
+            masters
                 List of all master dofs (using global dof numbering) on this process
-            coeffs_
+            coeffs
                 The coefficients corresponding to each master.
-            owners_
+            owners
                 The process each master is owned by.
-            offsets_
+            offsets
                 Array indicating the location in the masters array for the i-th slave
                 in the slaves arrays. I.e.
                 masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
@@ -61,12 +61,12 @@ class MultiPointConstraint():
         assert(V == self.V)
         self._already_finalized()
 
-        if len(slaves_) > 0:
-            self._offsets = numpy.append(self._offsets, offsets_[1:] + len(self._masters))
-            self._slaves = numpy.append(self._slaves, slaves_)
-            self._masters = numpy.append(self._masters, masters_)
-            self._coeffs = numpy.append(self._coeffs, coeffs_)
-            self._owners = numpy.append(self._owners, owners_)
+        if len(slaves) > 0:
+            self._offsets = numpy.append(self._offsets, offsets[1:] + len(self._masters))
+            self._slaves = numpy.append(self._slaves, slaves)
+            self._masters = numpy.append(self._masters, masters)
+            self._coeffs = numpy.append(self._coeffs, coeffs)
+            self._owners = numpy.append(self._owners, owners)
 
     def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
         """
@@ -95,7 +95,7 @@ class MultiPointConstraint():
 
     def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTagsMetaClass, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: list([_fem.DirichletBCMetaClass]), scale: _PETSc.ScalarType = 1):
+                                               bcs: list[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
         Create periodic condition for all dofs in MeshTag with given marker:
         u(x_i) = scale * u(relation(x_i))
@@ -160,8 +160,8 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple([_mesh.MeshTagsMetaClass, int]),
-                               v: _fem.Function, bcs: list([_fem.DirichletBCMetaClass]) = []):
+    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple[_mesh.MeshTagsMetaClass, int],
+                               v: _fem.Function, bcs: list[_fem.DirichletBCMetaClass] = []):
         """
         Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.mesh.MeshTagsMetaClass`
         marked with index i. normal is the normal vector defined as a vector function.
@@ -244,7 +244,7 @@ class MultiPointConstraint():
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def create_contact_slip_condition(self, meshtags: _mesh.MeshTagsMetaClass, slave_marker: int, master_marker: int,
-                                      normal: _fem.Function, eps2: numpy.float64 = 1e-20):
+                                      normal: _fem.Function, eps2: float = 1e-20):
         """
         Create a slip condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
@@ -269,7 +269,7 @@ class MultiPointConstraint():
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
     def create_contact_inelastic_condition(self, meshtags: _mesh.MeshTagsMetaClass,
-                                           slave_marker: int, master_marker: int, eps2: numpy.float64 = 1e-20):
+                                           slave_marker: int, master_marker: int, eps2: float = 1e-20):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.

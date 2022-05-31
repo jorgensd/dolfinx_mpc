@@ -4,20 +4,22 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import List, Optional, Sequence
-import dolfinx.fem as _fem
-import dolfinx.cpp as _cpp
-import ufl
-import numpy
-import dolfinx_mpc.cpp
-from .multipointconstraint import MultiPointConstraint
-from petsc4py import PETSc as _PETSc
 import contextlib
+from typing import List, Sequence
+
+import dolfinx.cpp as _cpp
+import dolfinx.fem as _fem
+import ufl
 from dolfinx.common import Timer
+from petsc4py import PETSc as _PETSc
+
+import dolfinx_mpc.cpp
+
+from .multipointconstraint import MultiPointConstraint
 
 
 def apply_lifting(b: _PETSc.Vec, form: List[_fem.FormMetaClass], bcs: List[List[_fem.DirichletBCMetaClass]],
-                  constraint: MultiPointConstraint, x0: Optional[List[_PETSc.Vec]] = [], scale: numpy.float64 = 1.0):
+                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: float = 1.0):
     """
     Apply lifting to vector b, i.e.
 

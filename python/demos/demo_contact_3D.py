@@ -31,7 +31,7 @@ from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 
 
 def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellType.tetrahedron,
-                       compare: bool = True, res: np.float64 = 0.1, noslip: bool = False):
+                       compare: bool = True, res: float = 0.1, noslip: bool = False):
     celltype = "hexahedron" if ct == CellType.hexahedron else "tetrahedron"
     type_ext = "no_slip" if noslip else "slip"
     mesh_ext = "_gmsh_" if gmsh else "_"

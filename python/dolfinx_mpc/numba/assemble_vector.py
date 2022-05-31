@@ -6,23 +6,25 @@
 
 from typing import Tuple
 
+import cffi
 import dolfinx.cpp as _cpp
-import dolfinx.log as _log
 import dolfinx.fem as _fem
+import dolfinx.log as _log
 import numpy
+import numpy.typing as npt
 from dolfinx.common import Timer
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 from petsc4py import PETSc as _PETSc
 
 import numba
 
-from .helpers import extract_slave_cells, pack_slave_facet_info
+from .helpers import _forms, extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc
 
 ffi, _ = initialize_petsc()
 
 
-def assemble_vector(form: _fem.FormMetaClass, constraint: MultiPointConstraint, b: _PETSc.Vec = None) -> _PETSc.Vec:
+def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: _PETSc.Vec = None) -> _PETSc.Vec:
     """
     Assemble a compiled DOLFINx form into vector b.
 
@@ -130,19 +132,19 @@ def assemble_vector(form: _fem.FormMetaClass, constraint: MultiPointConstraint, 
 
 
 @numba.njit
-def assemble_cells(b: 'numpy.ndarray[_PETSc.ScalarType]',
-                   kernel: ffi.CData, active_cells: 'numpy.ndarray[numpy.int32]',
-                   mesh: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                               'numpy.ndarray[numpy.float64]'],
-                   coeffs: 'numpy.ndarray[_PETSc.ScalarType]',
-                   constants: 'numpy.ndarray[_PETSc.ScalarType]',
-                   permutation_info: 'numpy.ndarray[numpy.uint32]',
-                   dofmap: 'numpy.ndarray[numpy.int32]',
+def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
+                   kernel: cffi.FFI, active_cells: npt.NDArray[numpy.int32],
+                   mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                               npt.NDArray[numpy.float64]],
+                   coeffs: npt.NDArray[_PETSc.ScalarType],
+                   constants: npt.NDArray[_PETSc.ScalarType],
+                   permutation_info: npt.NDArray[numpy.uint32],
+                   dofmap: npt.NDArray[numpy.int32],
                    block_size: int,
                    num_dofs_per_element: int,
-                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[_PETSc.ScalarType]',
-                              'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                              'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]']):
+                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+                              npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                              npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]]):
     """Assemble additional MPC contributions for cell integrals"""
     ffi_fb = ffi.from_buffer
 
@@ -182,20 +184,20 @@ def assemble_cells(b: 'numpy.ndarray[_PETSc.ScalarType]',
 
 
 @numba.njit
-def assemble_exterior_slave_facets(b: 'numpy.ndarray[_PETSc.ScalarType]',
-                                   kernel: ffi.CData,
-                                   facet_info: 'numpy.ndarray[numpy.int32]',
-                                   mesh: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                                               'numpy.ndarray[numpy.float64]'],
-                                   coeffs: 'numpy.ndarray[_PETSc.ScalarType]',
-                                   constants: 'numpy.ndarray[_PETSc.ScalarType]',
-                                   permutation_info: 'numpy.ndarray[numpy.uint32]',
-                                   dofmap: 'numpy.ndarray[numpy.int32]',
+def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
+                                   kernel: cffi.FFI,
+                                   facet_info: npt.NDArray[numpy.int32],
+                                   mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                                               npt.NDArray[numpy.float64]],
+                                   coeffs: npt.NDArray[_PETSc.ScalarType],
+                                   constants: npt.NDArray[_PETSc.ScalarType],
+                                   permutation_info: npt.NDArray[numpy.uint32],
+                                   dofmap: npt.NDArray[numpy.int32],
                                    block_size: int,
                                    num_dofs_per_element: int,
-                                   mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[_PETSc.ScalarType]',
-                                              'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                                              'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
+                                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+                                              npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                                              npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]],
                                    num_facets_per_cell: int):
     """Assemble additional MPC contributions for facets"""
     ffi_fb = ffi.from_buffer
@@ -239,13 +241,13 @@ def assemble_exterior_slave_facets(b: 'numpy.ndarray[_PETSc.ScalarType]',
 
 
 @numba.njit(cache=True)
-def modify_mpc_contributions(b: 'numpy.ndarray[_PETSc.ScalarType]', cell_index: int,
-                             b_local: 'numpy.ndarray[_PETSc.ScalarType]',
-                             b_copy: 'numpy.ndarray[_PETSc.ScalarType]',
-                             mpc: Tuple['numpy.ndarray[numpy.int32]', 'numpy.ndarray[_PETSc.ScalarType]',
-                                        'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]',
-                                        'numpy.ndarray[numpy.int32]', 'numpy.ndarray[numpy.int32]'],
-                             dofmap: 'numpy.ndarray[numpy.int32]',
+def modify_mpc_contributions(b: npt.NDArray[_PETSc.ScalarType], cell_index: int,
+                             b_local: npt.NDArray[_PETSc.ScalarType],
+                             b_copy: npt.NDArray[_PETSc.ScalarType],
+                             mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+                                        npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                                        npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]],
+                             dofmap: npt.NDArray[numpy.int32],
                              block_size: int,
                              num_dofs_per_element: int):
     """

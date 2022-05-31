@@ -12,6 +12,7 @@
 # SPDX-License-Identifier:    MIT
 
 
+from typing import Union
 import dolfinx.fem as fem
 import dolfinx_mpc.utils
 import numpy as np
@@ -87,7 +88,7 @@ solver = problem.solver
 solver_prefix = "dolfinx_mpc_solve_{}".format(id(solver))
 solver.setOptionsPrefix(solver_prefix)
 
-
+petsc_options: dict[str, Union[str, int, float]]
 if complex_mode:
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:

@@ -16,7 +16,7 @@ namespace dolfinx_mpc
 /// @param[in] The degrees of freedom (local to process)
 /// @returns The map from cell index (local to process) to dofs (local to
 /// process) in the cell
-std::shared_ptr<dolfinx::graph::AdjacencyList<std::int32_t>>
+std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
 create_cell_to_dofs_map(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
                         const xtl::span<const std::int32_t>& dofs);
 

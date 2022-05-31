@@ -80,9 +80,8 @@ void mpc(py::module& m)
       .def("coefficients",
            [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self)
            {
-             const std::shared_ptr<dolfinx::graph::AdjacencyList<PetscScalar>>&
-                 adj
-                 = self.coefficients();
+             std::shared_ptr<const dolfinx::graph::AdjacencyList<PetscScalar>>
+                 adj = self.coefficients();
              const std::vector<std::int32_t>& offsets = adj->offsets();
              const std::vector<PetscScalar>& data = adj->array();
 
@@ -143,8 +142,7 @@ void mpc(py::module& m)
           "homogenize",
           [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
              py::array_t<PetscScalar, py::array::c_style> u) {
-            self.homogenize(
-                xtl::span<PetscScalar>(u.mutable_data(), u.size()));
+            self.homogenize(xtl::span<PetscScalar>(u.mutable_data(), u.size()));
           },
           py::arg("u"), "Homogenize (set to zero) values at slave DoF indices");
 
