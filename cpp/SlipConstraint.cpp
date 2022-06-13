@@ -44,7 +44,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
   }
 
   // Create view of n as xtensor
-  const tcb::span<const PetscScalar>& n_vec = n->x()->array();
+  const xtl::span<const PetscScalar>& n_vec = n->x()->array();
   std::array<std::size_t, 1> shape = {n_vec.size()};
   auto n_xt = xt::adapt(n_vec.data(), n_vec.size(), xt::no_ownership(), shape);
 

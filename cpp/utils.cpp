@@ -460,7 +460,7 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
 
 std::vector<std::int32_t>
 dolfinx_mpc::create_block_to_cell_map(const dolfinx::fem::FunctionSpace& V,
-                                      tcb::span<const std::int32_t> blocks)
+                                      xtl::span<const std::int32_t> blocks)
 {
   std::vector<std::int32_t> cells;
   cells.reserve(blocks.size());
@@ -821,8 +821,8 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
 //-----------------------------------------------------------------------------
 xt::xtensor<double, 2>
 dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
-                                      tcb::span<const std::int32_t> dofs,
-                                      tcb::span<const std::int32_t> cells)
+                                      xtl::span<const std::int32_t> dofs,
+                                      xtl::span<const std::int32_t> cells)
 {
   if (!V.component().empty())
   {

@@ -40,17 +40,20 @@ namespace
 /// entity
 /// @param[in] lift_local_vector Function that lift local matrix Ae into local
 /// vector be, i.e. be <- be - scale * (A (g - x0))
-template <typename T, typename E_DESC>
+/// @tparam T Scalartype of local vector
+/// @tparam estride Stride in actiave entities
+template <typename T, std::size_t estride>
 void _lift_bc_entities(
-    xtl::span<T> b, const std::vector<E_DESC>& active_entities,
+    xtl::span<T> b, xtl::span<const std::int32_t> active_entities,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs0,
     int bs1, const xtl::span<const T>& bc_values1,
     const std::vector<std::int8_t>& bc_markers1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
-    const std::function<const std::int32_t(const E_DESC&)> fetch_cells,
+    const std::function<const std::int32_t(xtl::span<const std::int32_t>)>
+        fetch_cells,
     const std::function<void(xtl::span<T>, xtl::span<T>, const int, const int,
-                             E_DESC, std::size_t)>
+                             xtl::span<const std::int32_t>, std::size_t)>
         lift_local_vector)
 {
 
@@ -70,9 +73,10 @@ void _lift_bc_entities(
   std::vector<T> Ae;
 
   // Assemble over all entities
-  for (std::size_t e = 0; e < active_entities.size(); ++e)
+  for (std::size_t e = 0; e < active_entities.size(); e += estride)
   {
-    const std::int32_t cell = fetch_cells(active_entities[e]);
+    auto entity = active_entities.subspan(e, estride);
+    const std::int32_t cell = fetch_cells(entity);
     // Size data structure for assembly
     auto dmap0 = dofmap0.links(cell);
     auto dmap1 = dofmap1.links(cell);
@@ -102,8 +106,7 @@ void _lift_bc_entities(
     // Lift into local element vector
     const xtl::span<T> _be(be);
     const xtl::span<T> _Ae(Ae);
-    lift_local_vector(_be, _Ae, num_rows, num_cols, active_entities[e], e);
-
+    lift_local_vector(_be, _Ae, num_rows, num_cols, entity, e / estride);
     // Modify local element matrix if entity is connected to a slave cell
     xtl::span<const int32_t> slaves = cell_to_slaves->links(cell);
 
@@ -213,7 +216,8 @@ void _apply_lifting(
   // Loop over cell integrals and lift bc
   if (a->num_integrals(dolfinx::fem::IntegralType::cell) > 0)
   {
-    const auto fetch_cells = [&](const std::int32_t& entity) { return entity; };
+    const auto fetch_cells
+        = [&](xtl::span<const std::int32_t> entity) { return entity.front(); };
     for (int i : a->integral_ids(dolfinx::fem::IntegralType::cell))
     {
       const auto& coeffs
@@ -223,8 +227,10 @@ void _apply_lifting(
       // Function that lift bcs for cell kernels
       const auto lift_bcs_cell
           = [&](xtl::span<T> be, xtl::span<T> Ae, std::int32_t num_rows,
-                std::int32_t num_cols, std::int32_t cell, std::size_t index)
+                std::int32_t num_cols, xtl::span<const std::int32_t> entity,
+                std::size_t index)
       {
+        auto cell = entity.front();
         // FIXME: Add proper interface for num coordinate dofs
         const std::size_t num_dofs_g = x_dofmap.num_links(cell);
         // FIXME: Reconsider when using mixed topology (mixed celltypes)
@@ -275,9 +281,8 @@ void _apply_lifting(
       };
       // Assemble over all active cells
       const std::vector<std::int32_t>& cells = a->cell_domains(i);
-      _lift_bc_entities<T, std::int32_t>(b, cells, dofmap0, dofmap1, bs0, bs1,
-                                         bc_values1, bc_markers1, mpc1,
-                                         fetch_cells, lift_bcs_cell);
+      _lift_bc_entities<T, 1>(b, cells, dofmap0, dofmap1, bs0, bs1, bc_values1,
+                              bc_markers1, mpc1, fetch_cells, lift_bcs_cell);
     }
   }
 
@@ -285,8 +290,8 @@ void _apply_lifting(
   if (a->num_integrals(dolfinx::fem::IntegralType::exterior_facet) > 0)
   {
     // Create lambda function fetching cell index from exterior facet entity
-    const auto fetch_cells_ext = [&](const std::pair<std::int32_t, int>& entity)
-    { return entity.first; };
+    const auto fetch_cell
+        = [&](xtl::span<const std::int32_t> entity) { return entity.front(); };
 
     // Get number of cells per facet to be able to get the facet permutation
     const int tdim = mesh->topology().dim();
@@ -307,11 +312,11 @@ void _apply_lifting(
       /// the appropriate coefficients)
       const auto lift_bc_exterior_facet
           = [&](xtl::span<T> be, xtl::span<T> Ae, int num_rows, int num_cols,
-                std::pair<std::int32_t, int> entity, std::size_t index)
+                xtl::span<const std::int32_t> entity, std::size_t index)
       {
         // Fetch the coordiantes of the cell
-        const std::int32_t cell = entity.first;
-        const int local_facet = entity.second;
+        const std::int32_t cell = entity[0];
+        const int local_facet = entity[1];
         const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         // FIXME: Add proper interface for num coordinate dofs
         const std::size_t num_dofs_g = x_dofmap.num_links(cell);
@@ -363,11 +368,11 @@ void _apply_lifting(
       };
 
       // Assemble over all active cells
-      const std::vector<std::pair<std::int32_t, int>>& active_facets
+      const std::vector<std::int32_t>& active_facets
           = a->exterior_facet_domains(i);
-      _lift_bc_entities<T, std::pair<std::int32_t, int>>(
-          b, active_facets, dofmap0, dofmap1, bs0, bs1, bc_values1, bc_markers1,
-          mpc1, fetch_cells_ext, lift_bc_exterior_facet);
+      _lift_bc_entities<T, 2>(b, active_facets, dofmap0, dofmap1, bs0, bs1,
+                              bc_values1, bc_markers1, mpc1, fetch_cell,
+                              lift_bc_exterior_facet);
     }
   }
   if (a->num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)

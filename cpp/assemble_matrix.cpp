@@ -223,7 +223,7 @@ void assemble_exterior_facets(
                             const xtl::span<const std::int32_t>&,
                             const xtl::span<const T>)>& mat_add_values,
     const dolfinx::mesh::Mesh& mesh,
-    const std::vector<std::pair<std::int32_t, int>>& facets,
+    const xtl::span<const std::int32_t>& facets,
     const std::function<void(const xtl::span<T>&,
                              const xtl::span<const std::uint32_t>&,
                              std::int32_t, int)>& apply_dof_transformation,
@@ -273,11 +273,11 @@ void assemble_exterior_facets(
   xt::xtensor<T, 2> Ae({ndim0, ndim1});
   const xtl::span<T> _Ae(Ae);
 
-  for (std::size_t l = 0; l < facets.size(); ++l)
+  for (std::size_t l = 0; l < facets.size(); l += 2)
   {
 
-    const std::int32_t cell = facets[l].first;
-    const int local_facet = facets[l].second;
+    const std::int32_t cell = facets[l];
+    const int local_facet = facets[l + 1];
 
     // Get cell vertex coordinates
     xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
@@ -289,7 +289,7 @@ void assemble_exterior_facets(
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-    kernel(Ae.data(), coeffs.data() + l * cstride, constants.data(),
+    kernel(Ae.data(), coeffs.data() + l / 2 * cstride, constants.data(),
            coordinate_dofs.data(), &local_facet, nullptr);
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
@@ -536,8 +536,7 @@ void assemble_matrix_impl(
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
     const auto& [coeffs, cstride]
         = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
-    const std::vector<std::pair<std::int32_t, int>>& facets
-        = a.exterior_facet_domains(i);
+    const std::vector<std::int32_t>& facets = a.exterior_facet_domains(i);
     assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
                                 facets, apply_dof_transformation, dofs0, bs0,
                                 apply_dof_transformation_to_transpose, dofs1,

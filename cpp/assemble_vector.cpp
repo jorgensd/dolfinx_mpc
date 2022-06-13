@@ -25,13 +25,17 @@ namespace
 /// in active_entities
 /// @param[in] assemble_local_element_matrix Function f(be, index) that
 /// assembles into a local element matrix for a given entity
-template <typename T, typename E_DESC>
+/// @tparam T Scalar type for vector
+/// @tparam e stride Stride for each entity in active_entities
+template <typename T, std::size_t estride>
 void _assemble_entities_impl(
-    xtl::span<T> b, const std::vector<E_DESC>& active_entities,
+    xtl::span<T> b, xtl::span<const std::int32_t> active_entities,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap, int bs,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc,
-    const std::function<const std::int32_t(const E_DESC&)> fetch_cells,
-    const std::function<void(xtl::span<T>, E_DESC, std::size_t)>
+    const std::function<const std::int32_t(xtl::span<const std::int32_t>)>
+        fetch_cells,
+    const std::function<void(xtl::span<T>, xtl::span<const std::int32_t>,
+                             std::size_t)>
         assemble_local_element_vector)
 {
 
@@ -52,16 +56,17 @@ void _assemble_entities_impl(
   const xtl::span<T> _be_copy(be_copy);
 
   // Assemble over all entities
-  for (std::size_t e = 0; e < active_entities.size(); ++e)
+  for (std::size_t e = 0; e < active_entities.size(); e += estride)
   {
+    auto entity = active_entities.subspan(e, estride);
     // Assemble into element vector
-    assemble_local_element_vector(_be, active_entities[e], e);
+    assemble_local_element_vector(_be, entity, e / estride);
 
-    const std::int32_t cell = fetch_cells(active_entities[e]);
+    const std::int32_t cell = fetch_cells(entity);
     auto dofs = dofmap.links(cell);
     // Modify local element matrix if entity is connected to a slave cell
     xtl::span<const int32_t> slaves = cell_to_slaves->links(cell);
-    if (slaves.size() > 0)
+    if (!slaves.empty())
     {
       // Modify element vector for MPC and insert into b for non-local
       // contributions
@@ -126,7 +131,8 @@ void _assemble_vector(
 
   if (L.num_integrals(dolfinx::fem::IntegralType::cell) > 0)
   {
-    const auto fetch_cells = [&](const std::int32_t& entity) { return entity; };
+    const auto fetch_cell
+        = [&](xtl::span<const std::int32_t> entity) { return entity.front(); };
     for (int i : L.integral_ids(dolfinx::fem::IntegralType::cell))
     {
       const auto& coeffs
@@ -138,8 +144,11 @@ void _assemble_vector(
       /// @param[in] index The index of the cell in the active_cells (To fetch
       /// the appropriate coefficients)
       const auto assemble_local_cell_vector
-          = [&](xtl::span<T> be, std::int32_t cell, std::int32_t index)
+          = [&](xtl::span<T> be, xtl::span<const std::int32_t> entity,
+                std::int32_t index)
       {
+        auto cell = entity.front();
+
         // Fetch the coordinates of the cell
         const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
@@ -159,9 +168,8 @@ void _assemble_vector(
 
       // Assemble over all active cells
       const std::vector<std::int32_t>& active_cells = L.cell_domains(i);
-      _assemble_entities_impl<T, std::int32_t>(b, active_cells, dofs, bs, mpc,
-                                               fetch_cells,
-                                               assemble_local_cell_vector);
+      _assemble_entities_impl<T, 1>(b, active_cells, dofs, bs, mpc, fetch_cell,
+                                    assemble_local_cell_vector);
     }
   }
   // Prepare permutations for exterior and interior facet integrals
@@ -169,8 +177,7 @@ void _assemble_vector(
   {
 
     // Create lambda function fetching cell index from exterior facet entity
-    const auto fetch_cells_ext = [&](const std::pair<std::int32_t, int>& entity)
-    { return entity.first; };
+    auto fetch_cell = [](auto entity) { return entity.front(); };
 
     // Assemble exterior facet integral kernels
     for (int i : L.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
@@ -184,12 +191,12 @@ void _assemble_vector(
       /// index relative to the cell
       /// @param[in] index The index of entity in active_facets
       const auto assemble_local_exterior_facet_vector
-          = [&](xtl::span<T> be, std::pair<std::int32_t, int> entity,
+          = [&](xtl::span<T> be, xtl::span<const std::int32_t> entity,
                 std::size_t index)
       {
-        // Fetch the coordiantes of the cell
-        const std::int32_t cell = entity.first;
-        const int local_facet = entity.second;
+        // Fetch the coordinates of the cell
+        const std::int32_t cell = entity[0];
+        const int local_facet = entity[1];
         const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
@@ -208,11 +215,10 @@ void _assemble_vector(
       };
 
       // Assemble over all active cells
-      const std::vector<std::pair<std::int32_t, int>>& active_facets
+      const std::vector<std::int32_t>& active_facets
           = L.exterior_facet_domains(i);
-      _assemble_entities_impl<T, std::pair<std::int32_t, int>>(
-          b, active_facets, dofs, bs, mpc, fetch_cells_ext,
-          assemble_local_exterior_facet_vector);
+      _assemble_entities_impl<T, 2>(b, active_facets, dofs, bs, mpc, fetch_cell,
+                                    assemble_local_exterior_facet_vector);
     }
   }
 

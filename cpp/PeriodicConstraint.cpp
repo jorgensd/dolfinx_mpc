@@ -27,7 +27,7 @@ namespace
 /// @returns The multi point constraint
 template <typename T>
 dolfinx_mpc::mpc_data _create_periodic_condition(
-    const dolfinx::fem::FunctionSpace& V, tcb::span<std::int32_t> slave_blocks,
+    const dolfinx::fem::FunctionSpace& V, xtl::span<std::int32_t> slave_blocks,
     const std::function<xt::xarray<double>(const xt::xtensor<double, 2>&)>&
         relation,
     double scale,
