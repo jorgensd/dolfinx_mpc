@@ -67,8 +67,8 @@ create_boundingbox_tree(const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
 /// cells at the given coordinates
 /// @returns The mpc data (exluding slave indices)
 mpc_data compute_master_contributions(
-    const tcb::span<const std::int32_t>& local_rems,
-    const tcb::span<const std::int32_t>& local_colliding_cell,
+    const xtl::span<const std::int32_t>& local_rems,
+    const xtl::span<const std::int32_t>& local_colliding_cell,
     const xt::xtensor<PetscScalar, 2>& normals,
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     xt::xtensor<double, 3> tabulated_basis_values)
@@ -394,7 +394,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // Determine component of each block has the largest normal value, and use
   // it as slave dofs to avoid zero division in constraint
   std::vector<std::int32_t> dofs(block_size);
-  tcb::span<const PetscScalar> normal_array = nh->x()->array();
+  xtl::span<const PetscScalar> normal_array = nh->x()->array();
   const auto largest_normal_component
       = [&dofs, block_size, &normal_array,
          gdim](const std::int32_t block,
