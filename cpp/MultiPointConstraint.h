@@ -44,7 +44,7 @@ public:
     assert(slaves.size() == offsets.size() - 1);
     assert(masters.size() == coeffs.size());
     assert(coeffs.size() == owners.size());
-    assert(offsets[-1] == owners.size());
+    assert(offsets.back() == owners.size());
 
     // Create list indicating which dofs on the process are slaves
     const dolfinx::fem::DofMap& dofmap = *(V->dofmap());

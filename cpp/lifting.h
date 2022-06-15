@@ -424,7 +424,7 @@ void apply_lifting(
         std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>>&
         bcs1,
     const std::vector<xtl::span<const double>>& x0, double scale,
-    std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
