@@ -16,6 +16,8 @@
 #
 # SPDX-License-Identifier:    MIT
 
+from typing import Dict, Union
+
 import dolfinx.fem as fem
 import dolfinx_mpc.utils
 import numpy as np
@@ -26,6 +28,7 @@ from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
 from dolfinx_mpc import LinearProblem
 from mpi4py import MPI
+from numpy.typing import NDArray
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)
@@ -34,7 +37,7 @@ from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 
 
-def demo_periodic3D(celltype):
+def demo_periodic3D(celltype: CellType):
     # Create mesh and finite element
     if celltype == CellType.tetrahedron:
         # Tet setup
@@ -47,7 +50,7 @@ def demo_periodic3D(celltype):
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
         V = fem.VectorFunctionSpace(mesh, ("CG", 2))
 
-    def dirichletboundary(x):
+    def dirichletboundary(x: NDArray[np.float64]) -> NDArray[np.bool_]:
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
@@ -88,6 +91,7 @@ def demo_periodic3D(celltype):
 
     rhs = inner(f, v) * dx
 
+    petsc_options: Dict[str, Union[str, float, int]]
     if complex_mode:
         rtol = 1e-16
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}

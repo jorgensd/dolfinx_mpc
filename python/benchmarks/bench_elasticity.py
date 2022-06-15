@@ -5,7 +5,6 @@
 # SPDX-License-Identifier:    MIT
 
 import resource
-import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
 import h5py
@@ -184,28 +183,21 @@ if __name__ == "__main__":
     solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
-    thismodule = sys.modules[__name__]
-    n_ref: int = args.n_ref
-    timings: bool = args.timings
-    boomeramg: bool = args.boomeramg
-    kspview: bool = args.kspview
-    hdf5: str = args.hdf5
-    xdmf: bool = args.xdmf
 
-    N = n_ref + 1
+    N = args.n_ref + 1
 
     # Setup hd5f output file
-    h5f = h5py.File(hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
+    h5f = h5py.File(args.hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
-    solver = "BoomerAMG" if boomeramg else "GAMG"
+    solver = "BoomerAMG" if args.boomeramg else "GAMG"
     sd.attrs["solver"] = np.string_(solver)
 
     # Loop over refinement levels
     for i in range(N):
         log_info(f"Run {i} in progress")
-        bench_elasticity_one(r_lvl=i, out_hdf5=h5f, xdmf=xdmf, boomeramg=boomeramg, kspview=kspview)
-        if timings and i == N - 1:
+        bench_elasticity_one(r_lvl=i, out_hdf5=h5f, xdmf=args.xdmf, boomeramg=args.boomeramg, kspview=args.kspview)
+        if args.timings and i == N - 1:
             list_timings(MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()

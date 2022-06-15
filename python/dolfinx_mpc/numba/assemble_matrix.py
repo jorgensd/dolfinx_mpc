@@ -248,7 +248,7 @@ def assemble_slave_cells(A: int,
                     A_local[j * block_size + k, :] = 0
                     A_local[:, j * block_size + k] = 0
 
-        A_local_copy = A_local.copy()
+        A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()
 
         # Find local position of slaves
         slaves = c_to_s[c_to_s_off[cell]: c_to_s_off[cell + 1]]
@@ -433,7 +433,7 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
                     A_local[j * block_size + k, :] = 0
                     A_local[:, j * block_size + k] = 0
 
-        A_local_copy = A_local.copy()
+        A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()
         slaves = c_to_s[c_to_s_off[cell_index]: c_to_s_off[cell_index + 1]]
         mpc_cell = (slaves, masters, coefficients, offsets, is_slave)
         modify_mpc_cell(A, num_dofs_per_element, block_size, A_local, local_blocks, mpc_cell)

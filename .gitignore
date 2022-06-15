@@ -16,3 +16,4 @@ CMakeFiles
 *.hdf5
 *.o
 .mypy_cache
+*.bp

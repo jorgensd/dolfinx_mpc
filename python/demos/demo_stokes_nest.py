@@ -20,6 +20,7 @@ import scipy.sparse.linalg
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
+from ufl.core.expr import Expr
 
 
 def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
@@ -118,11 +119,10 @@ def inlet_velocity_expression(x):
 
 # ----------------------Defining boundary conditions----------------------
 # Inlet velocity Dirichlet BC
-inlet_facets = mt.indices[mt.values == 3]
 inlet_velocity = dolfinx.fem.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
 inlet_velocity.x.scatter_forward()
-dofs = dolfinx.fem.locate_dofs_topological(V, 1, inlet_facets)
+dofs = dolfinx.fem.locate_dofs_topological(V, 1, mt.find(3))
 bc1 = dolfinx.fem.dirichletbc(inlet_velocity, dofs)
 
 # Collect Dirichlet boundary conditions
@@ -139,7 +139,7 @@ mpc_q = dolfinx_mpc.MultiPointConstraint(Q)
 mpc_q.finalize()
 
 
-def tangential_proj(u, n):
+def tangential_proj(u: Expr, n: Expr):
     """
     See for instance:
     https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf
@@ -147,11 +147,11 @@ def tangential_proj(u, n):
     return (ufl.Identity(u.ufl_shape[0]) - ufl.outer(n, n)) * u
 
 
-def sym_grad(u):
+def sym_grad(u: Expr):
     return ufl.sym(ufl.grad(u))
 
 
-def T(u, p, mu):
+def T(u: Expr, p: Expr, mu: Expr):
     return 2 * mu * sym_grad(u) - p * ufl.Identity(u.ufl_shape[0])
 
 
@@ -270,12 +270,11 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     V, V_to_W = W.sub(0).collapse()
 
     # Inlet velocity Dirichlet BC
-    inlet_facets = mt.indices[mt.values == 3]
     inlet_velocity = dolfinx.fem.Function(V)
     inlet_velocity.interpolate(inlet_velocity_expression)
     inlet_velocity.x.scatter_forward()
     W0 = W.sub(0)
-    dofs = dolfinx.fem.locate_dofs_topological((W0, V), 1, inlet_facets)
+    dofs = dolfinx.fem.locate_dofs_topological((W0, V), 1, mt.find(3))
     bc1 = dolfinx.fem.dirichletbc(inlet_velocity, dofs, W0)
 
     # Collect Dirichlet boundary conditions

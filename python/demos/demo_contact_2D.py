@@ -41,7 +41,8 @@ from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 set_log_level(LogLevel.ERROR)
 
 
-def demo_stacked_cubes(outfile, theta, gmsh=True, quad=False, compare=False, res=0.1):
+def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad: bool = False,
+                       compare: bool = False, res: float = 0.1):
     log_info(f"Run theta:{theta:.2f}, Quad: {quad}, Gmsh {gmsh}, Res {res:.2e}")
 
     celltype = "quadrilateral" if quad else "triangle"

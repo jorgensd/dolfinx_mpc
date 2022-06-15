@@ -5,10 +5,11 @@
 # SPDX-License-Identifier:    MIT
 
 from typing import Callable, Dict, List
-import numpy.typing as npt
+
+import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
-import dolfinx.mesh as _mesh
 import numpy
+import numpy.typing as npt
 from petsc4py import PETSc as _PETSc
 
 import dolfinx_mpc.cpp
@@ -93,7 +94,7 @@ class MultiPointConstraint():
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
-    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTagsMetaClass, tag: int,
+    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _cpp.mesh.MeshTags_int32, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: list[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
@@ -160,10 +161,10 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple[_mesh.MeshTagsMetaClass, int],
+    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple[_cpp.mesh.MeshTags_int32, int],
                                v: _fem.Function, bcs: list[_fem.DirichletBCMetaClass] = []):
         """
-        Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.mesh.MeshTagsMetaClass`
+        Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.cpp.mesh.MeshTags_int32`
         marked with index i. normal is the normal vector defined as a vector function.
 
         Parameters
@@ -243,7 +244,7 @@ class MultiPointConstraint():
             self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_contact_slip_condition(self, meshtags: _mesh.MeshTagsMetaClass, slave_marker: int, master_marker: int,
+    def create_contact_slip_condition(self, meshtags: _cpp.mesh.MeshTags_int32, slave_marker: int, master_marker: int,
                                       normal: _fem.Function, eps2: float = 1e-20):
         """
         Create a slip condition between two sets of facets marker with individual markers.
@@ -268,7 +269,7 @@ class MultiPointConstraint():
             self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object, eps2)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
-    def create_contact_inelastic_condition(self, meshtags: _mesh.MeshTagsMetaClass,
+    def create_contact_inelastic_condition(self, meshtags: _cpp.mesh.MeshTags_int32,
                                            slave_marker: int, master_marker: int, eps2: float = 1e-20):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.

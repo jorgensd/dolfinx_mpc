@@ -30,7 +30,7 @@ from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 
 
-def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellType.tetrahedron,
+def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: CellType = CellType.tetrahedron,
                        compare: bool = True, res: float = 0.1, noslip: bool = False):
     celltype = "hexahedron" if ct == CellType.hexahedron else "tetrahedron"
     type_ext = "no_slip" if noslip else "slip"
@@ -62,8 +62,7 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
     # Define boundary conditions
 
     # Bottom boundary is fixed in all directions
-    bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
-    bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
+    bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))  # type: ignore
     u_bc = np.array((0, ) * mesh.geometry.dim, dtype=PETSc.ScalarType)
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs, V)
 
@@ -75,8 +74,7 @@ def demo_stacked_cubes(outfile, theta, gmsh: bool = False, ct: CellType = CellTy
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, g_vec)
 
-    top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
-    top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
+    top_dofs = fem.locate_dofs_topological(V, fdim, mt.find(3))  # type: ignore
     bc_top = fem.dirichletbc(g_vec, top_dofs, V)
 
     bcs = [bc_bottom, bc_top]

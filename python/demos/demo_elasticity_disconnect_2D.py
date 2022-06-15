@@ -62,10 +62,8 @@ fdim = tdim - 1
 
 # Locate cells with different elasticity parameters
 DG0 = FunctionSpace(mesh, ("DG", 0))
-left_cells = ct.indices[ct.values == left_tag]
-right_cells = ct.indices[ct.values == right_tag]
-left_dofs = locate_dofs_topological(DG0, tdim, left_cells)
-right_dofs = locate_dofs_topological(DG0, tdim, right_cells)
+left_dofs = locate_dofs_topological(DG0, tdim, ct.find(left_tag))
+right_dofs = locate_dofs_topological(DG0, tdim, ct.find(right_tag))
 
 # Elasticity parameters
 E_right = 1e2
@@ -105,7 +103,7 @@ bc_fix = dirichletbc(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0]
 bcs = [bc_push, bc_fix]
 
 
-def gather_dof_coordinates(V, dofs):
+def gather_dof_coordinates(V: FunctionSpace, dofs: np.ndarray):
     """
     Distributes the dof coordinates of this subset of dofs to all processors
     """

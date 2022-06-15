@@ -108,10 +108,8 @@ tdim = mesh.topology.dim
 fdim = tdim - 1
 
 DG0 = FunctionSpace(mesh, ("DG", 0))
-outer_cells = ct.indices[ct.values == outer_tag]
-inner_cells = ct.indices[ct.values == inner_tag]
-outer_dofs = locate_dofs_topological(DG0, tdim, outer_cells)
-inner_dofs = locate_dofs_topological(DG0, tdim, inner_cells)
+outer_dofs = locate_dofs_topological(DG0, tdim, ct.find(outer_tag))
+inner_dofs = locate_dofs_topological(DG0, tdim, ct.find(inner_tag))
 
 # Elasticity parameters
 E_outer = 1e3

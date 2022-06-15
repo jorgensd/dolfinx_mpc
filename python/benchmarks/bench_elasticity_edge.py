@@ -194,7 +194,6 @@ if __name__ == "__main__":
     parser.add_argument('--info', action='store_true', dest="info",
                         help="Set loglevel to info (Default false)", default=False)
     parser.add_argument('--kspview', action='store_true', dest="kspview", help="View PETSc progress")
-    parser.add_argument("-o", default='elasticity_one.hdf5', dest="hdf5", help="Name of HDF5 output file")
     ct_parser = parser.add_mutually_exclusive_group(required=False)
     ct_parser.add_argument('--tet', dest='tetra', action='store_true', help="Tetrahedron elements")
     ct_parser.add_argument('--hex', dest='tetra', action='store_false', help="Hexahedron elements")
@@ -204,33 +203,25 @@ if __name__ == "__main__":
     solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
-    n_ref: int = args.n_ref
-    degree: int = args.degree
-    hdf5: bool = args.hdf5
-    xdmf: bool = args.xdmf
-    tetra: bool = args.tetra
-    info: bool = args.info
-    timings: bool = args.timings
-    boomeramg: bool = args.boomeramg
-    kspview: bool = args.kspview
-    N = n_ref + 1
+    N = args.n_ref + 1
 
     h5f = h5py.File('bench_edge_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     h5f.create_dataset("num_slaves", (N, MPI.COMM_WORLD.size), dtype=np.int32)
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
-    solver = "BoomerAMG" if boomeramg else "GAMG"
-    ct = "Tet" if tetra else "Hex"
+    solver = "BoomerAMG" if args.boomeramg else "GAMG"
+    ct = "Tet" if args.tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)
-    sd.attrs["degree"] = np.string_(str(int(degree)))
+    sd.attrs["degree"] = np.string_(str(int(args.degree)))
     sd.attrs["ct"] = np.string_(ct)
 
     for i in range(N):
         log_info(f"Run {i} in progress")
-        bench_elasticity_edge(tetra=tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
-                              degree=degree, info=info)
+        bench_elasticity_edge(tetra=args.tetra, r_lvl=i, out_hdf5=h5f, xdmf=args.xdmf,
+                              boomeramg=args.boomeramg, kspview=args.kspview,
+                              degree=args.degree, info=args.info)
 
-        if timings and i == N - 1:
+        if args.timings and i == N - 1:
             list_timings(MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()
