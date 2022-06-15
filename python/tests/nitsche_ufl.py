@@ -155,8 +155,7 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[_cpp.mesh.MeshTags_int32, int
         u_D.name = "u_D"
         u_D.x.scatter_forward()
         tdim = mesh.topology.dim
-        dirichlet_dofs = _fem.locate_dofs_topological(
-            V, tdim - 1, facet_marker.indices[facet_marker.values == top_value])
+        dirichlet_dofs = _fem.locate_dofs_topological(V, tdim - 1, facet_marker.find(top_value))
         bc = _fem.dirichletbc(u_D, dirichlet_dofs)
         bcs = [bc]
 

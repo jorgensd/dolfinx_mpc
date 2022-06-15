@@ -41,7 +41,7 @@ def rotation_matrix(axis, angle):
     return np.sin(angle) * axis_x + identity + outer
 
 
-def facet_normal_approximation(V, mt: _cpp.mesh.MeshTags_int32, mt_id: np.int32, tangent=False, jit_params: dict = {},
+def facet_normal_approximation(V, mt: _cpp.mesh.MeshTags_int32, mt_id: int, tangent=False, jit_params: dict = {},
                                form_compiler_params: dict = {}):
     """
     Approximate the facet normal by projecting it into the function space for a set of facets
@@ -95,8 +95,7 @@ def facet_normal_approximation(V, mt: _cpp.mesh.MeshTags_int32, mt_id: np.int32,
     # Find all dofs that are not boundary dofs
     imap = V.dofmap.index_map
     all_blocks = np.arange(imap.size_local, dtype=np.int32)
-    top_facets = mt.indices[np.flatnonzero(mt.values == mt_id)]
-    top_blocks = _fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, top_facets)
+    top_blocks = _fem.locate_dofs_topological(V, V.mesh.topology.dim - 1, mt.find(mt_id))
     deac_blocks = all_blocks[np.isin(all_blocks, top_blocks, invert=True)]
 
     # Note there should be a better way to do this
@@ -424,9 +423,7 @@ def create_normal_approximation(V: _fem.FunctionSpace, mt: _cpp.mesh.MeshTags_in
     nh
         The normal vector
     """
-    dim = mt.dim
-    entities = mt.indices[mt.values == value]
     nh = _fem.Function(V)
-    n_cpp = dolfinx_mpc.cpp.mpc.create_normal_approximation(V._cpp_object, dim, entities)
+    n_cpp = dolfinx_mpc.cpp.mpc.create_normal_approximation(V._cpp_object, mt.dim, mt.find(value))
     nh._cpp_object = n_cpp
     return nh

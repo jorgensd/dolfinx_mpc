@@ -12,7 +12,6 @@
 # SPDX-License-Identifier:    MIT
 
 
-import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
 import h5py
@@ -200,37 +199,28 @@ if __name__ == "__main__":
                                help="Use PETSc GAMG preconditioner")
 
     args = parser.parse_args()
-    thismodule = sys.modules[__name__]
-    n_ref: int = args.n_ref
-    timings: bool = args.timings
-    boomeramg: bool = args.boomeramg
-    kspview: bool = args.kspview
-    degree: int = args.degree
-    hdf5: bool = args.hdf5
-    xdmf: bool = args.xdmf
-    tetra: bool = args.tetra
 
-    N = n_ref + 1
+    N = args.n_ref + 1
 
     # Prepare output HDF5 file
-    h5f = h5py.File(hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
+    h5f = h5py.File(args.hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     h5f.create_dataset("num_slaves", (N, MPI.COMM_WORLD.size), dtype=np.int32)
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
-    solver = "BoomerAMG" if boomeramg else "GAMG"
-    ct = "Tet" if tetra else "Hex"
+    solver = "BoomerAMG" if args.boomeramg else "GAMG"
+    ct = "Tet" if args.tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)
-    sd.attrs["degree"] = np.string_(str(int(degree)))
+    sd.attrs["degree"] = np.string_(str(int(args.degree)))
     sd.attrs["ct"] = np.string_(ct)
 
     # Loop over refinements
     for i in range(N):
         log_info(f"Run {i} in progress")
-        demo_periodic3D(tetra, r_lvl=i, out_hdf5=h5f, xdmf=xdmf,
-                        boomeramg=boomeramg, kspview=kspview, degree=int(degree))
+        demo_periodic3D(args.tetra, r_lvl=i, out_hdf5=h5f, xdmf=args.xdmf,
+                        boomeramg=args.boomeramg, kspview=args.kspview, degree=int(args.degree))
 
         # List_timings
-        if timings and i == N - 1:
+        if args.timings and i == N - 1:
             list_timings(MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()

@@ -185,8 +185,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
-    bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
-    bottom_dofs = locate_dofs_topological(V, fdim, bottom_facets)
+    bottom_dofs = locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = dirichletbc(u_bc, bottom_dofs)
 
     g_vec = [0, 0, -4.25e-1]
@@ -207,8 +206,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     u_top.interpolate(top_v)
     u_top.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
 
-    top_facets = mt.indices[mt.values == 3]
-    top_dofs = locate_dofs_topological(V, fdim, top_facets)
+    top_dofs = locate_dofs_topological(V, fdim, mt.find(3))
     bc_top = dirichletbc(u_top, top_dofs)
 
     bcs = [bc_bottom, bc_top]
@@ -343,15 +341,10 @@ if __name__ == "__main__":
                       help="Use no-slip constraint", default=False)
 
     args = parser.parse_args()
-    noslip = args.noslip
-    theta = args.theta
-    hex = args.hex
-    ref = args.ref
-    N0 = args.N0
-    ct = CellType.hexahedron if hex else CellType.tetrahedron
+    ct = CellType.hexahedron if args.hex else CellType.tetrahedron
 
     # Create cache
-    demo_stacked_cubes(theta=theta, ct=ct, num_refinements=0, N0=3, noslip=noslip, timings=False)
+    demo_stacked_cubes(theta=args.theta, ct=ct, num_refinements=0, N0=3, noslip=args.noslip, timings=False)
 
     # Run benchmark
-    demo_stacked_cubes(theta=theta, ct=ct, num_refinements=ref, N0=N0, noslip=noslip, timings=True)
+    demo_stacked_cubes(theta=args.theta, ct=ct, num_refinements=args.ref, N0=args.N0, noslip=args.noslip, timings=True)

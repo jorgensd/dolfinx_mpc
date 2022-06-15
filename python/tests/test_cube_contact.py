@@ -181,8 +181,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
 
-    bottom_facets = mt.indices[np.flatnonzero(mt.values == 5)]
-    bottom_dofs = fem.locate_dofs_topological(V, fdim, bottom_facets)
+    bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs)
 
     g_vec = [0, 0, -4.25e-1]
@@ -204,8 +203,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     u_top = fem.Function(V)
     u_top.interpolate(top_v)
 
-    top_facets = mt.indices[np.flatnonzero(mt.values == 3)]
-    top_dofs = fem.locate_dofs_topological(V, fdim, top_facets)
+    top_dofs = fem.locate_dofs_topological(V, fdim, mt.find(3))
     bc_top = fem.dirichletbc(u_top, top_dofs)
 
     bcs = [bc_bottom, bc_top]

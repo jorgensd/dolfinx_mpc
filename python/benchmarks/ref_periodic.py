@@ -17,7 +17,6 @@
 # SPDX-License-Identifier:    MIT
 
 
-import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from time import perf_counter
 
@@ -191,17 +190,8 @@ if __name__ == "__main__":
                                help="Use PETSc GAMG preconditioner")
 
     args = parser.parse_args()
-    thismodule = sys.modules[__name__]
-    n_ref: int = args.n_ref
-    timings: bool = args.timings
-    boomeramg: bool = args.boomeramg
-    kspview: bool = args.kspview
-    degree: int = args.degree
-    hdf5: bool = args.hdf5
-    xdmf: bool = args.xdmf
-    tetra: bool = args.tetra
 
-    N = n_ref + 1
+    N = args.n_ref + 1
 
     h5f = h5py.File('periodic_ref_output.hdf5', 'w',
                     driver='mpio', comm=MPI.COMM_WORLD)
@@ -209,10 +199,10 @@ if __name__ == "__main__":
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     sd = h5f.create_dataset("solve_time",
                             (N, MPI.COMM_WORLD.size), dtype=np.float64)
-    solver = "BoomerAMG" if boomeramg else "GAMG"
-    ct = "Tet" if tetra else "Hex"
+    solver = "BoomerAMG" if args.boomeramg else "GAMG"
+    ct = "Tet" if args.tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)
-    sd.attrs["degree"] = np.string_(str(int(degree)))
+    sd.attrs["degree"] = np.string_(str(int(args.degree)))
     sd.attrs["ct"] = np.string_(ct)
     for i in range(N):
         if MPI.COMM_WORLD.rank == 0:
@@ -220,10 +210,10 @@ if __name__ == "__main__":
             log(LogLevel.INFO, "Run {0:1d} in progress".format(i))
             set_log_level(LogLevel.ERROR)
 
-        reference_periodic(tetra, r_lvl=i, out_hdf5=h5f,
-                           xdmf=xdmf, boomeramg=boomeramg, kspview=kspview,
-                           degree=degree)
+        reference_periodic(args.tetra, r_lvl=i, out_hdf5=h5f,
+                           xdmf=args.xdmf, boomeramg=args.boomeramg, kspview=args.kspview,
+                           degree=args.degree)
 
-        if timings and i == N - 1:
+        if args.timings and i == N - 1:
             list_timings(MPI.COMM_WORLD, [TimingType.wall])
     h5f.close()
