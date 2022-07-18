@@ -90,7 +90,7 @@ MPI_Comm create_owner_to_ghost_comm(
 dolfinx::fem::Function<PetscScalar>
 create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
                             std::int32_t dim,
-                            const xtl::span<const std::int32_t>& entities);
+                            const std::span<const std::int32_t>& entities);
 
 /// Append standard sparsity pattern for a given form to a pre-initialized
 /// pattern and a DofMap
@@ -142,7 +142,7 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 /// @param[in] blocks The blocks (local to process) we want to map
 std::vector<std::int32_t>
 create_block_to_cell_map(const dolfinx::fem::FunctionSpace& V,
-                         xtl::span<const std::int32_t> blocks);
+                         std::span<const std::int32_t> blocks);
 
 /// Create sparsity pattern with multi point constraint additions to the rows
 /// and the columns
@@ -617,7 +617,7 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
 xt::xtensor<double, 3>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace& V,
                          const xt::xtensor<double, 2>& x,
-                         const xtl::span<const std::int32_t>& cells);
+                         const std::span<const std::int32_t>& cells);
 
 //-----------------------------------------------------------------------------
 /// Tabuilate dof coordinates (not unrolled for block size) for a set of points
@@ -629,8 +629,8 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace& V,
 /// @returns The dof coordinates, where the ith row corresponds to the ith dof
 xt::xtensor<double, 2>
 tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
-                         xtl::span<const std::int32_t> dofs,
-                         xtl::span<const std::int32_t> cells);
+                         std::span<const std::int32_t> dofs,
+                         std::span<const std::int32_t> cells);
 
 /// From a Mesh, find which cells collide with a set of points.
 /// @note Uses the GJK algorithm, see dolfinx::geometry::compute_distance_gjk
@@ -674,7 +674,7 @@ find_local_collisions(const dolfinx::mesh::Mesh& mesh,
 /// @param[in] bcs List of Dirichlet BCs on V
 template <typename T>
 std::vector<std::int8_t> is_bc(
-    const dolfinx::fem::FunctionSpace& V, xtl::span<const std::int32_t> blocks,
+    const dolfinx::fem::FunctionSpace& V, std::span<const std::int32_t> blocks,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs)
 {
   auto dofmap = V.dofmap();

@@ -7,7 +7,6 @@
 
 # flake8: noqa
 
-from .mpc_io import gmsh_model_to_mesh, read_from_msh
 from .test import (compare_CSR, compare_mpc_lhs, compare_mpc_rhs,
                    gather_constants, gather_PETScMatrix, gather_PETScVector,
                    gather_transformation_matrix, get_assemblers)
@@ -21,4 +20,4 @@ __all__ = ["get_assemblers", "gather_PETScVector", "gather_PETScMatrix", "compar
            "rotation_matrix", "facet_normal_approximation",
            "log_info", "rigid_motions_nullspace",
            "determine_closest_block", "create_normal_approximation",
-           "create_point_to_point_constraint", "read_from_msh", "gmsh_model_to_mesh"]
+           "create_point_to_point_constraint"]

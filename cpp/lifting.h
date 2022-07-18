@@ -15,7 +15,6 @@
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Geometry.h>
-#include <xtl/xspan.hpp>
 
 namespace
 {
@@ -44,16 +43,16 @@ namespace
 /// @tparam estride Stride in actiave entities
 template <typename T, std::size_t estride>
 void _lift_bc_entities(
-    xtl::span<T> b, xtl::span<const std::int32_t> active_entities,
+    std::span<T> b, std::span<const std::int32_t> active_entities,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs0,
-    int bs1, const xtl::span<const T>& bc_values1,
+    int bs1, const std::span<const T>& bc_values1,
     const std::vector<std::int8_t>& bc_markers1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
-    const std::function<const std::int32_t(xtl::span<const std::int32_t>)>
+    const std::function<const std::int32_t(std::span<const std::int32_t>)>
         fetch_cells,
-    const std::function<void(xtl::span<T>, xtl::span<T>, const int, const int,
-                             xtl::span<const std::int32_t>, std::size_t)>
+    const std::function<void(std::span<T>, std::span<T>, const int, const int,
+                             std::span<const std::int32_t>, std::size_t)>
         lift_local_vector)
 {
 
@@ -87,7 +86,7 @@ void _lift_bc_entities(
 
     // Check if bc is applied to entity
     bool has_bc = false;
-    std::for_each(dmap1.cbegin(), dmap1.cend(),
+    std::for_each(dmap1.begin(), dmap1.end(),
                   [&bc_markers1, bs1, &has_bc](const auto dof)
                   {
                     for (int k = 0; k < bs1; ++k)
@@ -104,11 +103,11 @@ void _lift_bc_entities(
       continue;
 
     // Lift into local element vector
-    const xtl::span<T> _be(be);
-    const xtl::span<T> _Ae(Ae);
+    const std::span<T> _be(be);
+    const std::span<T> _Ae(Ae);
     lift_local_vector(_be, _Ae, num_rows, num_cols, entity, e / estride);
     // Modify local element matrix if entity is connected to a slave cell
-    xtl::span<const int32_t> slaves = cell_to_slaves->links(cell);
+    std::span<const int32_t> slaves = cell_to_slaves->links(cell);
 
     if (slaves.size() > 0)
     {
@@ -116,7 +115,7 @@ void _lift_bc_entities(
       // contributions
       be_copy.resize(num_rows);
       std::copy(be.begin(), be.end(), be_copy.begin());
-      const xtl::span<T> _be_copy(be_copy);
+      const std::span<T> _be_copy(be_copy);
       dolfinx_mpc::modify_mpc_vec<T>(b, _be, _be_copy, dmap0, dmap0.size(), bs0,
                                      is_slave, slaves, masters, coefficients);
     }
@@ -143,9 +142,9 @@ void _lift_bc_entities(
 /// @param[in] mpc1 The multi point constraints
 template <typename T>
 void _apply_lifting(
-    xtl::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
+    std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    const xtl::span<const T>& x0, double scale,
+    const std::span<const T>& x0, double scale,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
 {
   const std::vector<T> constants = pack_constants(*a);
@@ -192,23 +191,23 @@ void _apply_lifting(
   // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
       = mesh->geometry().dofmap();
-  xtl::span<const double> x_g = mesh->geometry().x();
+  std::span<const double> x_g = mesh->geometry().x();
   const int tdim = mesh->topology().dim();
 
-  xtl::span<const std::uint32_t> cell_info;
+  std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
   {
     mesh->topology_mutable().create_entity_permutations();
-    cell_info = xtl::span(mesh->topology().get_cell_permutation_info());
+    cell_info = std::span(mesh->topology().get_cell_permutation_info());
   }
 
   // Get dof-transformations for the element matrix
-  const std::function<void(const xtl::span<T>&,
-                           const xtl::span<const std::uint32_t>&, std::int32_t,
+  const std::function<void(const std::span<T>&,
+                           const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
       dof_transform = element0->get_dof_transformation_function<T>();
-  const std::function<void(const xtl::span<T>&,
-                           const xtl::span<const std::uint32_t>&, std::int32_t,
+  const std::function<void(const std::span<T>&,
+                           const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
       dof_transform_to_transpose
       = element1->get_dof_transformation_to_transpose_function<T>();
@@ -217,7 +216,7 @@ void _apply_lifting(
   if (a->num_integrals(dolfinx::fem::IntegralType::cell) > 0)
   {
     const auto fetch_cells
-        = [&](xtl::span<const std::int32_t> entity) { return entity.front(); };
+        = [&](std::span<const std::int32_t> entity) { return entity.front(); };
     for (int i : a->integral_ids(dolfinx::fem::IntegralType::cell))
     {
       const auto& coeffs
@@ -226,8 +225,8 @@ void _apply_lifting(
 
       // Function that lift bcs for cell kernels
       const auto lift_bcs_cell
-          = [&](xtl::span<T> be, xtl::span<T> Ae, std::int32_t num_rows,
-                std::int32_t num_cols, xtl::span<const std::int32_t> entity,
+          = [&](std::span<T> be, std::span<T> Ae, std::int32_t num_rows,
+                std::int32_t num_cols, std::span<const std::int32_t> entity,
                 std::size_t index)
       {
         auto cell = entity.front();
@@ -237,7 +236,7 @@ void _apply_lifting(
         std::vector<double> coordinate_dofs(3 * num_dofs_g);
 
         // Fetch the coordinates of the cell
-        const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
+        const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           dolfinx::common::impl::copy_N<3>(
@@ -291,7 +290,7 @@ void _apply_lifting(
   {
     // Create lambda function fetching cell index from exterior facet entity
     const auto fetch_cell
-        = [&](xtl::span<const std::int32_t> entity) { return entity.front(); };
+        = [&](std::span<const std::int32_t> entity) { return entity.front(); };
 
     // Get number of cells per facet to be able to get the facet permutation
     const int tdim = mesh->topology().dim();
@@ -311,13 +310,13 @@ void _apply_lifting(
       /// @param[in] index The index of the facet in the active_facets (To fetch
       /// the appropriate coefficients)
       const auto lift_bc_exterior_facet
-          = [&](xtl::span<T> be, xtl::span<T> Ae, int num_rows, int num_cols,
-                xtl::span<const std::int32_t> entity, std::size_t index)
+          = [&](std::span<T> be, std::span<T> Ae, int num_rows, int num_cols,
+                std::span<const std::int32_t> entity, std::size_t index)
       {
         // Fetch the coordiantes of the cell
         const std::int32_t cell = entity[0];
         const int local_facet = entity[1];
-        const xtl::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
+        const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         // FIXME: Add proper interface for num coordinate dofs
         const std::size_t num_dofs_g = x_dofmap.num_links(cell);
         // FIXME: Reconsider when using mixed topology (mixed celltypes)
@@ -418,12 +417,12 @@ namespace dolfinx_mpc
 /// @param[in] scale Scaling to apply
 /// @param[in] mpc The multi point constraints
 void apply_lifting(
-    xtl::span<double> b,
+    std::span<double> b,
     const std::vector<std::shared_ptr<const dolfinx::fem::Form<double>>> a,
     const std::vector<
         std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>>&
         bcs1,
-    const std::vector<xtl::span<const double>>& x0, double scale,
+    const std::vector<std::span<const double>>& x0, double scale,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc)
 {
   if (!x0.empty() and x0.size() != a.size())
@@ -441,7 +440,7 @@ void apply_lifting(
   {
     if (x0.empty())
     {
-      _apply_lifting<double>(b, a[j], bcs1[j], xtl::span<const double>(), scale,
+      _apply_lifting<double>(b, a[j], bcs1[j], std::span<const double>(), scale,
                              mpc);
     }
     else
@@ -470,13 +469,13 @@ void apply_lifting(
 /// @param[in] scale Scaling to apply
 /// @param[in] mpc The multi point constraints
 void apply_lifting(
-    xtl::span<std::complex<double>> b,
+    std::span<std::complex<double>> b,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::Form<std::complex<double>>>>
         a,
     const std::vector<std::vector<std::shared_ptr<
         const dolfinx::fem::DirichletBC<std::complex<double>>>>>& bcs1,
-    const std::vector<xtl::span<const std::complex<double>>>& x0, double scale,
+    const std::vector<std::span<const std::complex<double>>>& x0, double scale,
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc)
@@ -497,7 +496,7 @@ void apply_lifting(
     if (x0.empty())
     {
       _apply_lifting<std::complex<double>>(
-          b, a[j], bcs1[j], xtl::span<const std::complex<double>>(), scale,
+          b, a[j], bcs1[j], std::span<const std::complex<double>>(), scale,
           mpc);
     }
     else

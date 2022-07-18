@@ -7,7 +7,10 @@ Author: Jørgen S. Dokken
 
 This library contains an add-on to FEniCS_X enabling the possibilities
 of enforce multi-point constraints, such as 
-$u_i =\sum_{j=0,i{\not=}j}^n \alpha_j u_j, i\in I_N$
+
+$$u_i =\sum_{j=0,i \neq j}^n \alpha_j u_j, i\in I_N,$$
+
+where $I_N$ is the set of degrees of freedom to constrain.
 
 This can be used to for instance enforce slip conditions strongly.
 
@@ -28,10 +31,10 @@ These assemblers are written in C++, but have equivalent Python assemblers in th
 
 # Installation
 
-Version 0.4.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
+Version 0.4.1 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
 and can be ran using
 ```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:v0.4.0
+docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:v0.4.1
 ```
 
 To install the latest version (master branch), you need to install the latest release of [dolfinx](https://github.com/FEniCS/dolfinx).

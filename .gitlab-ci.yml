@@ -54,6 +54,9 @@ run-demos:
   variables:
     PETSC_ARCH: "linux-gnu-${PETSC_TYPE}-32"
     DOLFINX_DIR: "dolfinx-${PETSC_TYPE}"
+    BASIX_BRANCH: "main"
+    FFCX_BRANCH: "main"
+    UFL_BRANCH: "main"
     DOLFINX_BRANCH: "main"
     PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib/"
     LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local/lib/"
@@ -72,14 +75,14 @@ run-demos:
     - pip3 install --no-cache-dir --no-binary=h5py h5py
     - git clone https://github.com/FEniCS/basix.git
     - cd basix
-    - git checkout ${DOLFINX_BRANCH}
+    - git checkout ${BASIX_BRANCH}
     - cd ..
     - cmake -G Ninja -B build-basix -DCMAKE_BUILD_TYPE="Release" -S ./basix/cpp/
     - cmake --build build-basix --parallel 3
     - cmake --install build-basix
     - BUILD_TYPE="Release" pip3 install ./basix/python
-    - python3 -m pip install git+https://github.com/FEniCS/ufl.git
-    - python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${DOLFINX_BRANCH}
+    - python3 -m pip install git+https://github.com/FEniCS/ufl.git@${UFL_BRANCH}
+    - python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${FFCX_BRANCH}
     - git clone https://github.com/fenics/dolfinx.git
     - cd dolfinx
     - git checkout ${DOLFINX_BRANCH}

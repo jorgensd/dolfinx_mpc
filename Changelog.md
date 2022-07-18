@@ -1,6 +1,8 @@
 # Changelog
 
 ## main
+ - Minimal C++ standard is now [C++20](https://en.cppreference.com/w/cpp/20)
+ - Deprecating GMSH IO functions from `dolfinx_mpc.utils`, see: [DOLFINx PR: 2261](https://github.com/FEniCS/dolfinx/pull/2261) for details.
  - Various API changes in DOLFINx relating to `dolfinx.common.IndexMap`.
  - Made code [mypy](https://mypy.readthedocs.io/en/stable/)-compatible (tests added to CI). 
  - Made code [PEP-561](https://peps.python.org/pep-0561/) compatible.

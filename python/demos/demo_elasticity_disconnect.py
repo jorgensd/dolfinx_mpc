@@ -9,12 +9,13 @@
 
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, dirichletbc, Function, FunctionSpace,
-                         VectorFunctionSpace, locate_dofs_topological)
-from dolfinx.io import XDMFFile
-from dolfinx_mpc import (MultiPointConstraint, LinearProblem)
+from dolfinx.fem import (Constant, Function, FunctionSpace,
+                         VectorFunctionSpace, dirichletbc,
+                         locate_dofs_topological)
+from dolfinx.io import XDMFFile, gmshio
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               determine_closest_block, gmsh_model_to_mesh,
+                               determine_closest_block,
                                rigid_motions_nullspace)
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -96,7 +97,7 @@ if MPI.COMM_WORLD.rank == 0:
     gmsh.model.mesh.setOrder(2)
 
 
-mesh, ct, ft = gmsh_model_to_mesh(gmsh.model, facet_data=True, cell_data=True)
+mesh, ct, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=3)
 
 gmsh.clear()
 gmsh.finalize()

@@ -3,6 +3,7 @@ from typing import Dict, List, Sequence, Tuple
 import dolfinx.common as _common
 import dolfinx.cpp as _cpp
 import dolfinx.io as _io
+from dolfinx.io import gmshio
 import dolfinx.mesh as _mesh
 import dolfinx_mpc.utils as _utils
 import gmsh
@@ -165,7 +166,7 @@ def generate_tet_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, ft = _utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
+    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.finalize()
     return mesh, ft
 
@@ -213,7 +214,7 @@ def generate_hex_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, ft = _utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
+    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.clear()
     gmsh.finalize()
     MPI.COMM_WORLD.barrier()
@@ -322,8 +323,7 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False):
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(2)
         gmsh.model.mesh.setOrder(1)
-
-    mesh, ft = _utils.gmsh_model_to_mesh(gmsh.model, facet_data=True, gdim=2)
+    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
     r_matrix = _utils.rotation_matrix([0, 0, 1], theta)
 
     # NOTE: Hex mesh must be rotated after generation due to gmsh API

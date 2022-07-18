@@ -29,7 +29,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <xtensor/xtensor.hpp>
-#include <xtl/xspan.hpp>
 namespace py = pybind11;
 
 namespace dolfinx_mpc_wrappers
@@ -135,14 +134,14 @@ void mpc(py::module& m)
           [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
              py::array_t<PetscScalar, py::array::c_style> u) {
             self.backsubstitution(
-                xtl::span<PetscScalar>(u.mutable_data(), u.size()));
+                std::span<PetscScalar>(u.mutable_data(), u.size()));
           },
           py::arg("u"), "Backsubstitute slave values into vector")
       .def(
           "homogenize",
           [](dolfinx_mpc::MultiPointConstraint<PetscScalar>& self,
              py::array_t<PetscScalar, py::array::c_style> u) {
-            self.homogenize(xtl::span<PetscScalar>(u.mutable_data(), u.size()));
+            self.homogenize(std::span<PetscScalar>(u.mutable_data(), u.size()));
           },
           py::arg("u"), "Homogenize (set to zero) values at slave DoF indices");
 
@@ -215,7 +214,7 @@ void mpc(py::module& m)
          const std::shared_ptr<
              const dolfinx_mpc::MultiPointConstraint<PetscScalar>>& mpc)
       {
-        dolfinx_mpc::assemble_vector(xtl::span(b.mutable_data(), b.size()), L,
+        dolfinx_mpc::assemble_vector(std::span(b.mutable_data(), b.size()), L,
                                      mpc);
       },
       py::arg("b"), py::arg("L"), py::arg("mpc"),
@@ -232,11 +231,11 @@ void mpc(py::module& m)
          std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<PetscScalar>>&
              mpc)
       {
-        std::vector<xtl::span<const PetscScalar>> _x0;
+        std::vector<std::span<const PetscScalar>> _x0;
         for (const auto& x : x0)
           _x0.emplace_back(x.data(), x.size());
 
-        dolfinx_mpc::apply_lifting(xtl::span(b.mutable_data(), b.size()), a,
+        dolfinx_mpc::apply_lifting(std::span(b.mutable_data(), b.size()), a,
                                    bcs1, _x0, scale, mpc);
       },
       py::arg("b"), py::arg("a"), py::arg("bcs"), py::arg("x0"),
@@ -282,7 +281,7 @@ void mpc(py::module& m)
         {
           return dolfinx_mpc::create_normal_approximation(
               V, dim,
-              xtl::span<const std::int32_t>(entities.data(), entities.size()));
+              std::span<const std::int32_t>(entities.data(), entities.size()));
         });
 
   m.def("create_periodic_constraint_geometrical",

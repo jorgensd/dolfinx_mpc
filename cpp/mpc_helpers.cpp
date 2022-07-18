@@ -19,7 +19,7 @@
 std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
 dolfinx_mpc::create_cell_to_dofs_map(
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    const xtl::span<const std::int32_t>& dofs)
+    const std::span<const std::int32_t>& dofs)
 {
   const dolfinx::mesh::Mesh& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());

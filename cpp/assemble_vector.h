@@ -32,11 +32,11 @@ class MultiPointConstraint;
 /// @param [in] coeffs Adjacency list with the master coefficients
 template <typename T>
 void modify_mpc_vec(
-    const xtl::span<T>& b, const xtl::span<T>& b_local,
-    const xtl::span<T>& b_local_copy,
-    const xtl::span<const std::int32_t>& cell_blocks, const int num_dofs,
+    const std::span<T>& b, const std::span<T>& b_local,
+    const std::span<T>& b_local_copy,
+    const std::span<const std::int32_t>& cell_blocks, const int num_dofs,
     const int bs, const std::vector<std::int8_t>& is_slave,
-    const xtl::span<const std::int32_t>& slaves,
+    const std::span<const std::int32_t>& slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
         masters,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coeffs)
@@ -67,7 +67,7 @@ void modify_mpc_vec(
 /// @param[in] L The linear forms to assemble into b
 /// @param[in] mpc The multi-point constraint
 void assemble_vector(
-    xtl::span<double> b, const dolfinx::fem::Form<double>& L,
+    std::span<double> b, const dolfinx::fem::Form<double>& L,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
         mpc);
 
@@ -77,7 +77,7 @@ void assemble_vector(
 /// @param[in] L The linear forms to assemble into b
 /// @param[in] mpc The multi-point constraint
 void assemble_vector(
-    xtl::span<std::complex<double>> b,
+    std::span<std::complex<double>> b,
     const dolfinx::fem::Form<std::complex<double>>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc);

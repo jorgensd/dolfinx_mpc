@@ -8,8 +8,8 @@
 #include <algorithm>
 
 std::vector<std::int32_t> dolfinx_mpc::compute_local_slave_index(
-    const xtl::span<const int32_t>& slaves, const std::uint32_t num_dofs,
-    const int bs, const xtl::span<const int32_t> cell_dofs,
+    const std::span<const std::int32_t>& slaves, const std::uint32_t num_dofs,
+    const int bs, const std::span<const std::int32_t> cell_dofs,
     const std::vector<std::int8_t>& is_slave)
 {
   std::vector<std::int32_t> local_index(slaves.size());

@@ -92,7 +92,7 @@ petsc_options: dict[str, Union[str, int, float]]
 if complex_mode:
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:
-    petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_typ": "boomeramg",
+    petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
                      "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v"  # ,
                      # "pc_hypre_boomeramg_print_statistics": 1
                      }
