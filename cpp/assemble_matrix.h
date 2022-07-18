@@ -26,12 +26,12 @@ class MultiPointConstraint;
 /// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
 /// Dirichlet BC (default=1)
 void assemble_matrix(
-    const std::function<int(const xtl::span<const std::int32_t>&,
-                            const xtl::span<const std::int32_t>&,
-                            const xtl::span<const double>&)>& mat_add_block,
-    const std::function<int(const xtl::span<const std::int32_t>&,
-                            const xtl::span<const std::int32_t>&,
-                            const xtl::span<const double>&)>& mat_add,
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const double>&)>& mat_add_block,
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const double>&)>& mat_add,
     const dolfinx::fem::Form<double>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
         mpc0,
@@ -52,13 +52,13 @@ void assemble_matrix(
 /// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
 /// Dirichlet BC (default=1)
 void assemble_matrix(
-    const std::function<int(const xtl::span<const std::int32_t>&,
-                            const xtl::span<const std::int32_t>&,
-                            const xtl::span<const std::complex<double>>&)>&
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const std::complex<double>>&)>&
         mat_add_block,
-    const std::function<int(const xtl::span<const std::int32_t>&,
-                            const xtl::span<const std::int32_t>&,
-                            const xtl::span<const std::complex<double>>&)>&
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const std::complex<double>>&)>&
         mat_add,
     const dolfinx::fem::Form<std::complex<double>>& a,
     const std::shared_ptr<

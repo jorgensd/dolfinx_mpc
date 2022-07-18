@@ -7,7 +7,6 @@
 #pragma once
 #include <dolfinx/fem/FunctionSpace.h>
 #include <dolfinx/graph/AdjacencyList.h>
-#include <xtl/xspan.hpp>
 
 namespace dolfinx_mpc
 {
@@ -18,7 +17,7 @@ namespace dolfinx_mpc
 /// process) in the cell
 std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
 create_cell_to_dofs_map(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-                        const xtl::span<const std::int32_t>& dofs);
+                        const std::span<const std::int32_t>& dofs);
 
 /// Given a list of global degrees of freedom, map them to their local index
 /// @param[in] V The original function space

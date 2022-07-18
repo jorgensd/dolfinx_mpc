@@ -27,7 +27,7 @@ namespace
 /// @returns The multi point constraint
 template <typename T>
 dolfinx_mpc::mpc_data _create_periodic_condition(
-    const dolfinx::fem::FunctionSpace& V, xtl::span<std::int32_t> slave_blocks,
+    const dolfinx::fem::FunctionSpace& V, std::span<std::int32_t> slave_blocks,
     const std::function<xt::xarray<double>(const xt::xtensor<double, 2>&)>&
         relation,
     double scale,
@@ -506,7 +506,7 @@ dolfinx_mpc::mpc_data geometrical_condition(
     // Create sub space to parent map
     auto sub_map
         = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
-    return _create_periodic_condition<T>(V_sub, tcb::make_span(reduced_blocks),
+    return _create_periodic_condition<T>(V_sub, std::span(reduced_blocks),
                                          relation, scale, sub_map, *V);
   }
   else
@@ -521,7 +521,7 @@ dolfinx_mpc::mpc_data geometrical_condition(
       if (!bc_marker[i])
         reduced_blocks.push_back(slave_blocks[i]);
     auto sub_map = [](const std::int32_t& dof) { return dof; };
-    return _create_periodic_condition<T>(*V, tcb::make_span(reduced_blocks),
+    return _create_periodic_condition<T>(*V, std::span(reduced_blocks),
                                          relation, scale, sub_map, *V);
   }
 }
@@ -574,7 +574,7 @@ dolfinx_mpc::mpc_data topological_condition(
         = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
     // Create mpc on sub space
     dolfinx_mpc::mpc_data sub_data = _create_periodic_condition<T>(
-        V_sub, tcb::make_span(reduced_blocks), relation, scale, sub_map, *V);
+        V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V);
     return sub_data;
   }
   else
@@ -591,7 +591,7 @@ dolfinx_mpc::mpc_data topological_condition(
     // Identity map
     const auto sub_map = [](const std::int32_t& dof) { return dof; };
 
-    return _create_periodic_condition<T>(*V, tcb::make_span(reduced_blocks),
+    return _create_periodic_condition<T>(*V, std::span(reduced_blocks),
                                          relation, scale, sub_map, *V);
   }
 };

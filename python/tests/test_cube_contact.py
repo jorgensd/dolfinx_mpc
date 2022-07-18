@@ -19,7 +19,7 @@ from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
-
+from dolfinx.io import gmshio
 theta = np.pi / 5
 
 
@@ -153,7 +153,7 @@ def generate_hex_boxes():
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True)
+    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.clear()
     gmsh.finalize()
     # NOTE: Hex mesh must be rotated after generation due to gmsh API

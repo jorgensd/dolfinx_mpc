@@ -97,7 +97,7 @@ def demo_periodic3D(celltype: CellType):
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
         rtol = 1e-8
-        petsc_options = {"ksp_type": "cg", "ksp_rtol": rtol, "pc_type": "hypre", "pc_hypre_typ": "boomeramg",
+        petsc_options = {"ksp_type": "cg", "ksp_rtol": rtol, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
                          "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
                          "pc_hypre_boomeramg_print_statistics": 1}
     problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)

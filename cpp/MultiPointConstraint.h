@@ -126,7 +126,7 @@ public:
   }
   //-----------------------------------------------------------------------------
   /// Backsubstitute slave/master constraint for a given function
-  void backsubstitution(xtl::span<T> vector)
+  void backsubstitution(std::span<T> vector)
   {
     for (auto slave : _slaves)
     {
@@ -140,7 +140,7 @@ public:
   };
 
   /// Homogenize slave DoFs (particularly useful for nonlinear problems)
-  void homogenize(xtl::span<T> vector) const
+  void homogenize(std::span<T> vector) const
   {
     for (auto slave : _slaves)
       vector[slave] = 0.0;

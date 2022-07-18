@@ -44,7 +44,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
   }
 
   // Create view of n as xtensor
-  const xtl::span<const PetscScalar>& n_vec = n->x()->array();
+  const std::span<const PetscScalar>& n_vec = n->x()->array();
   std::array<std::size_t, 1> shape = {n_vec.size()};
   auto n_xt = xt::adapt(n_vec.data(), n_vec.size(), xt::no_ownership(), shape);
 
@@ -83,7 +83,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
       if (!bc_marker[i])
         slave_blocks.push_back(entity_dofs[1][i] / num_normal_components);
     // Erase blocks duplicate blocks
-    dolfinx::radix_sort(xtl::span<std::int32_t>(slave_blocks));
+    dolfinx::radix_sort(std::span<std::int32_t>(slave_blocks));
     slave_blocks.erase(std::unique(slave_blocks.begin(), slave_blocks.end()),
                        slave_blocks.end());
   }

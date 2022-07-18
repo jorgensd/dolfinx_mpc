@@ -9,14 +9,14 @@
 
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, dirichletbc, Function, FunctionSpace,
-                         VectorFunctionSpace, locate_dofs_geometrical,
-                         locate_dofs_topological)
-from dolfinx.io import XDMFFile
+from dolfinx.fem import (Constant, Function, FunctionSpace,
+                         VectorFunctionSpace, dirichletbc,
+                         locate_dofs_geometrical, locate_dofs_topological)
+from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               gmsh_model_to_mesh, rigid_motions_nullspace)
+                               rigid_motions_nullspace)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
@@ -49,7 +49,7 @@ if MPI.COMM_WORLD.rank == 0:
     # gmsh.option.setNumber("General.Terminal", 1)
     gmsh.model.mesh.optimize("Netgen")
 
-mesh, ct = gmsh_model_to_mesh(gmsh.model, cell_data=True, gdim=2)
+mesh, ct, _ = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
 gmsh.clear()
 gmsh.finalize()
 MPI.COMM_WORLD.barrier()

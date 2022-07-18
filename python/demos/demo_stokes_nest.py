@@ -18,6 +18,7 @@ import gmsh
 import numpy as np
 import scipy.sparse.linalg
 import ufl
+from dolfinx.io import gmshio
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl.core.expr import Expr
@@ -95,7 +96,7 @@ def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np
         # Generate mesh
         gmsh.model.mesh.generate(2)
     # Convert gmsh model to DOLFINx Mesh and meshtags
-    mesh, ft = dolfinx_mpc.utils.gmsh_model_to_mesh(gmsh.model, facet_data=True, gdim=2)
+    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
     gmsh.finalize()
     return mesh, ft
 
