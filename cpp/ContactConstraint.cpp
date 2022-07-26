@@ -13,6 +13,7 @@
 #include <dolfinx/geometry/utils.h>
 #include <xtensor/xcomplex.hpp>
 #include <xtensor/xsort.hpp>
+#include <xtensor/xview.hpp>
 using namespace dolfinx_mpc;
 
 namespace

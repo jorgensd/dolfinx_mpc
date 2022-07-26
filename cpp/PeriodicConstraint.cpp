@@ -10,7 +10,7 @@
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <xtensor/xadapt.hpp>
-
+#include <xtensor/xview.hpp>
 namespace
 {
 

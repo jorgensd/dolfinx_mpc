@@ -10,6 +10,7 @@
 #include <xtensor/xadapt.hpp>
 #include <xtensor/xio.hpp>
 #include <xtensor/xsort.hpp>
+#include <xtensor/xview.hpp>
 using namespace dolfinx_mpc;
 
 mpc_data dolfinx_mpc::create_slip_condition(

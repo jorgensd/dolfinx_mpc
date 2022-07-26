@@ -11,6 +11,7 @@
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 #include <xtensor/xtensor.hpp>
+#include <xtensor/xview.hpp>
 namespace
 {
 

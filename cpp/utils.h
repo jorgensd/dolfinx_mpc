@@ -18,6 +18,7 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/petsc.h>
+#include <span>
 #include <xtensor/xtensor.hpp>
 namespace dolfinx_mpc
 {
@@ -44,13 +45,13 @@ struct mpc_data
 template <typename T>
 class MultiPointConstraint;
 
-/// Get basis values for all degrees at point x in a given cell
+/// Get basis values for all degrees at physical coordiante in a given cell
 /// @param[in] V       The function space
-/// @param[in] x       The physical coordinate
+/// @param[in] x   The physical coordinate
 /// @param[in] index   The cell_index
 xt::xtensor<double, 2>
 get_basis_functions(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-                    const xt::xtensor<double, 2>& x, const int index);
+                    std::span<const double> x, const int index);
 
 /// Given a function space, compute its shared entities
 dolfinx::graph::AdjacencyList<int>
