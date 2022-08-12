@@ -1,14 +1,20 @@
-# Copyright (C) 2021-2022 fmonteghetti and Jørgen S. Dokken
+# Copyright (C) 2021-2022 fmonteghetti and Jorgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
-# This demo, adapted from 'demo_periodic.py', solves
+# This demo solves the Laplace eigenvalue problem
 #
 #     - div grad u(x, y) = lambda*u(x, y)
 #
-# on the unit square with homogeneous Dirichlet boundary conditions
-# at y = 0, 1 and periodic boundary conditions at x = 0, 1.
+# on the unit square with two sets of boundary conditions:
+#
+#   u(x=0) = u(x=1) and u(y=0) = u(y=1) = 0,
+#
+# or
+#
+#   u(x=0) = u(x=1) and u(y=0) = u(y=1).
+#
 # The weak form reads
 #
 #       (grad(u),grad(v)) = lambda * (u,v),
@@ -133,7 +139,8 @@ def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
                           problem_type: SLEPc.EPS.ProblemType = SLEPc.EPS.ProblemType.GNHEP,
                           solver: SLEPc.EPS.Type = SLEPc.EPS.Type.KRYLOVSCHUR,
                           nev: int = 10, tol: float = 1e-7, max_it: int = 10,
-                          target: float = 0.0, shift: float = 0.0) -> SLEPc.EPS:
+                          target: float = 0.0, shift: float = 0.0,
+                          comm: MPI.Intracomm = MPI.COMM_WORLD) -> SLEPc.EPS:
     """
     Solve generalized eigenvalue problem A*x=lambda*B*x using shift-and-invert
     as spectral transform method.
@@ -167,7 +174,7 @@ def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
 
     # Build an Eigenvalue Problem Solver object
     EPS = SLEPc.EPS()
-    EPS.create(comm=MPI.COMM_WORLD)
+    EPS.create(comm=comm)
     EPS.setOperators(A, B)
     EPS.setProblemType(problem_type)
     # set the number of eigenvalues requested
@@ -198,82 +205,141 @@ def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
     return EPS
 
 
-# Create mesh and finite element
-N = 50
-mesh = create_unit_square(MPI.COMM_WORLD, N, N)
-V = fem.FunctionSpace(mesh, ("CG", 1))
+def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
+                       Nev: int = 10):
+    """
+    Assemble and solve the Laplace eigenvalue problem on the unit square with
+    the prescribed boundary conditions.
 
-# Create Dirichlet boundary condition
-u_bc = fem.Function(V)
-with u_bc.vector.localForm() as u_local:
-    u_local.set(0.0)
+    Parameters
+    ----------
+    boundary_condition
+        First item describes b.c. on {x=0} and {x=1}
+        Second item describes b.c. on {y=0} and {y=1}
+    Nev
+        Number of requested eigenvalues. The default is 10.
+    """
+    comm = MPI.COMM_WORLD
+    # Create mesh and finite element
+    N = 50
+    mesh = create_unit_square(MPI.COMM_WORLD, N, N)
+    V = fem.FunctionSpace(mesh, ("CG", 1))
+    fdim = mesh.topology.dim - 1
+    
+    bcs = []
+    # Dirichlet boundary condition on {y=0} and {y=1}
+    if boundary_condition[1]=="dirichlet":
+        u_bc = fem.Function(V)
+        with u_bc.vector.localForm() as u_local:
+            u_local.set(0.0)
+        def dirichletboundary(x):
+            return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
+        facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
+        topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
+        bc = fem.dirichletbc(u_bc, topological_dofs)
+        bcs = [bc]
+    
+    # Periodic boundary condition: {x=0} -> {x=1}
+    if boundary_condition[0]=="periodic":
+        pbc_hor_slave_tag = 2
+        pbc_hor_is_slave = lambda x: np.isclose(x[0],1) # identifier for slave boundary
+        pbc_hor_is_master = lambda x: np.isclose(x[0],0) # identifier for master boundary
+        def pbc_hor_slave_to_master_map(x):
+            out_x = np.zeros(x.shape)
+            out_x[0] = x[0] - 1
+            out_x[1] = x[1]
+            out_x[2] = x[2]
+            return out_x
+        facets = locate_entities_boundary(mesh, fdim, pbc_hor_is_slave)
+        arg_sort = np.argsort(facets)
+        pbc_hor_mt = meshtags(mesh, fdim, facets[arg_sort], np.full(len(facets), pbc_hor_slave_tag, dtype=np.int32))
+        
+    # Periodic boundary condition: {y=0} -> {y=1}
+    if boundary_condition[1]=="periodic":
+        pbc_vert_slave_tag = 3
+        pbc_vert_is_slave = lambda x: np.isclose(x[1],1)
+        def pbc_vert_slave_to_master_map(x):
+            out_x = np.zeros(x.shape)
+            out_x[0] = x[0]
+            out_x[1] = x[1] - 1
+            out_x[2] = x[2]
+            return out_x
+        facets = locate_entities_boundary(mesh, fdim, pbc_vert_is_slave)
+        arg_sort = np.argsort(facets)
+        pbc_vert_mt = meshtags(mesh, fdim, facets[arg_sort], np.full(len(facets), pbc_vert_slave_tag, dtype=np.int32))
+        
+    # Create MultiPointConstraint object
+    mpc = MultiPointConstraint(V)
+    if boundary_condition[0]=="periodic":
+        mpc.create_periodic_constraint_topological(V, pbc_hor_mt, 
+                                                   pbc_hor_slave_tag,
+                                                   pbc_hor_slave_to_master_map, 
+                                                   bcs)
+    if boundary_condition[1]=="periodic":
+        if boundary_condition[0]=="periodic":
+            # Redefine slave_to_master map to exclude dofs that are slave or 
+            # master of the previous periodic boundary condition
+            tmp = pbc_vert_slave_to_master_map
+            def pbc_vert_slave_to_master_map(x):
+                out_x = tmp(x)
+                idx = pbc_hor_is_slave(x) + pbc_hor_is_master(x)
+                out_x[0][idx] = np.nan
+                return out_x
+        mpc.create_periodic_constraint_topological(V, pbc_vert_mt, 
+                                                   pbc_vert_slave_tag,
+                                                   pbc_vert_slave_to_master_map, 
+                                                   bcs)
+    mpc.finalize()
+    # Define variational problem
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    a = inner(grad(u), grad(v)) * dx
+    b = inner(u, v) * dx
+    mass_form = fem.form(a)
+    stiffness_form = fem.form(b)
+    # Diagonal values for slave and Dirichlet DoF
+    # The generalized eigenvalue problem will have spurious eigenvalues at
+    # lambda_spurious = diagval_A/diagval_B. Here we choose lambda_spurious=1e4,
+    # which is far from the region of interest.
+    diagval_A = 1e2
+    diagval_B = 1e-2
+    A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
+    B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
+    EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,
+                                solver=SLEPc.EPS.Type.KRYLOVSCHUR,
+                                nev=Nev, tol=1e-7, max_it=10,
+                                target=1.5, shift=1.5,comm=comm)
+    (eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
+    # update slave DoF
+    for i in range(len(eigval)):
+        mpc.backsubstitution(eigvec_r[i].vector)
+        mpc.backsubstitution(eigvec_i[i].vector)
+    print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
+
+    # Save first eigenvector
+    with XDMFFile(MPI.COMM_WORLD, "results/eigenvector_0.xdmf", "w", encoding=XDMFFile.Encoding.HDF5) as xdmf:
+        xdmf.write_mesh(mesh)
+        xdmf.write_function(eigvec_r[0])
+    
+def print_exact_eigenvalues(boundary_condition: List[str], N: int):
+    L = [1,1]
+    if boundary_condition[0]=="periodic":
+        ev_x  = [(n*2*np.pi/L[0])**2 for n in range(-N,N)]
+    if boundary_condition[1]=="dirichlet":
+        ev_y = [(n*np.pi/L[1])**2 for n in range(1,N+1)]
+    elif boundary_condition[1]=="periodic":
+        ev_y  = [(n*2*np.pi/L[1])**2 for n in range(-N,N)]
+    ev_ex = np.sort([r+q for r in ev_x for q in ev_y])
+    ev_ex = ev_ex[0:N]
+    print0(f"Exact eigenvalues (repeated with multiplicity):\n {np.around(ev_ex,decimals=2)}")
 
 
-def dirichletboundary(x):
-    return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
+# Periodic boundary condition: {x=0} -> {x=1}
+# Dirichlet boundary condition on {y=0} and {y=1}
+assemble_and_solve(["periodic","dirichlet"],10)
+print_exact_eigenvalues(["periodic","dirichlet"],10)
 
-
-fdim = mesh.topology.dim - 1
-facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
-topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
-bc = fem.dirichletbc(u_bc, topological_dofs)
-bcs = [bc]
-
-
-def periodicboundary(x):
-    return np.isclose(x[0], 1)
-
-
-facets = locate_entities_boundary(mesh, fdim, periodicboundary)
-arg_sort = np.argsort(facets)
-mt = meshtags(mesh, fdim, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
-
-
-def periodic_relation(x):
-    out_x = np.zeros(x.shape)
-    out_x[0] = 1 - x[0]
-    out_x[1] = x[1]
-    out_x[2] = x[2]
-    return out_x
-
-
-mpc = MultiPointConstraint(V)
-mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, bcs)
-mpc.finalize()
-# Define variational problem
-u = TrialFunction(V)
-v = TestFunction(V)
-a = inner(grad(u), grad(v)) * dx
-b = inner(u, v) * dx
-mass_form = fem.form(a)
-stiffness_form = fem.form(b)
-# Diagonal values for slave and Dirichlet DoF
-# The generalized eigenvalue problem will have spurious eigenvalues at
-# lambda_spurious = diagval_A/diagval_B. Here we choose lambda_spurious=1e4,
-# which is far from the region of interest.
-diagval_A = 1e2
-diagval_B = 1e-2
-A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
-B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
-Nev = 10  # number of requested eigenvalues
-EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,
-                            solver=SLEPc.EPS.Type.KRYLOVSCHUR,
-                            nev=Nev, tol=1e-7, max_it=10,
-                            target=1.5, shift=1.5)
-(eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
-# update slave DoF
-for i in range(len(eigval)):
-    mpc.backsubstitution(eigvec_r[i].vector)
-    mpc.backsubstitution(eigvec_i[i].vector)
-print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
-# Exact eigenvalues
-l_exact = list(set([(i * np.pi)**2 + (2 * j * np.pi)**2 for i in range(Nev) for j in range(Nev)]))
-l_exact.remove(0)
-l_exact.sort()
-print0(f"Exact eigenvalues:\n {np.around(l_exact[0:Nev-1],decimals=2)}")
-
-
-# Save first eigenvector
-with XDMFFile(MPI.COMM_WORLD, "results/eigenvector_0.xdmf", "w", encoding=XDMFFile.Encoding.HDF5) as xdmf:
-    xdmf.write_mesh(mesh)
-    xdmf.write_function(eigvec_r[0])
+# Periodic boundary condition: {x=0} -> {x=1}
+# Periodic boundary condition: {y=0} -> {y=1}
+assemble_and_solve(["periodic","periodic"],10)
+print_exact_eigenvalues(["periodic","periodic"],10)
