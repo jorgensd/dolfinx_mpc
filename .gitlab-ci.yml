@@ -34,20 +34,15 @@ run-demos:
     - python3 -m mypy . --exclude=build
     - cd ..
     - pip3 install --no-cache-dir --no-binary=h5py h5py
-    - git clone https://github.com/FEniCS/basix.git
-    - cd basix
-    - git checkout ${BASIX_BRANCH}
-    - cd ..
+    - git clone -b ${BASIX_BRANCH} --single-branch --depth 1 https://github.com/FEniCS/basix.git
     - cmake -G Ninja -B build-basix -DCMAKE_BUILD_TYPE="Release" -S ./basix/cpp/
     - cmake --build build-basix --parallel 3
     - cmake --install build-basix
     - BUILD_TYPE="Release" pip3 install ./basix/python
     - python3 -m pip install git+https://github.com/FEniCS/ufl.git@${UFL_BRANCH}
     - python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${FFCX_BRANCH}
-    - git clone https://github.com/fenics/dolfinx.git
-    - cd dolfinx
-    - git checkout ${DOLFINX_BRANCH}
-    - cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./cpp/
+    - git clone -b ${DOLFINX_BRANCH} --single-branch --depth 1 https://github.com/FEniCS/dolfinx.git && \
+    - cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
     - cmake --build build-dolfinx
     - cmake --install build-dolfinx
     - BUILD_TYPE="Release" python3 -m pip -v install ./python/
