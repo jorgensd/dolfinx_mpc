@@ -15,7 +15,7 @@ jobs:
   build:
     if: "!(contains(github.event.head_commit.message, '[ci skip]') || contains(github.event.head_commit.message, '[skip ci]'))"
     runs-on: ubuntu-20.04
-    container: dolfinx/dev-env
+    container: dolfinx/dev-env:v0.5.0
 
     strategy:
       matrix:
@@ -32,7 +32,7 @@ jobs:
       OMPI_MCA_mpi_yield_when_idle: 1
       OMPI_MCA_hwloc_base_binding_policy: none
       HDF5_MPI: "ON"
-      HDF5_DIR: "/usr/lib/x86_64-linux-gnu/hdf5/mpich/"
+      HDF5_DIR: "/usr/local/"
       MPC_BUILD_MODE: "Debug"
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
       PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.8/dist-packages:/usr/local/lib"
@@ -59,7 +59,7 @@ jobs:
         with:
           path: ./basix
           repository: FEniCS/basix
-          ref: main
+          ref: v0.5.0
 
       - name: Install UFL, Basix, FFCx
         run: |
@@ -67,15 +67,15 @@ jobs:
           cmake --build build-basix --parallel 3
           cmake --install build-basix
           BUILD_TYPE="Release" pip3 install ./basix/python
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git
+          python3 -m pip install git+https://github.com/FEniCS/ufl.git@2022.2.0
+          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@v0.5.0
 
       - name: Get DOLFINx
         uses: actions/checkout@v2
         with:
           path: ./dolfinx
           repository: FEniCS/dolfinx
-          ref: main
+          ref: v0.5.0
 
       - name: Configure C++ (dolfinx)
         run: |
