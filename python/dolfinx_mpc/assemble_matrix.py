@@ -43,7 +43,7 @@ def assemble_matrix(form: _fem.FormMetaClass,
         The assembled bi-linear form
     """
     if not isinstance(constraint, Sequence):
-        assert(form.function_spaces[0] == form.function_spaces[1])
+        assert form.function_spaces[0] == form.function_spaces[1]
         constraint = (constraint, constraint)
 
     # Generate matrix with MPC sparsity pattern

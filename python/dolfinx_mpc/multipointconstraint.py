@@ -59,7 +59,7 @@ class MultiPointConstraint():
                 masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
 
         """
-        assert(V == self.V)
+        assert V == self.V
         self._already_finalized()
 
         if len(slaves) > 0:
