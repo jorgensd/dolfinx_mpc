@@ -45,8 +45,7 @@ run-demos:
     - cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
     - cmake --build build-dolfinx
     - cmake --install build-dolfinx
-    - BUILD_TYPE="Release" python3 -m pip -v install ./python/
-    - cd ..
+    - BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
     - cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
     - cmake --build build-dir --parallel 3
     - cmake --install build-dir
