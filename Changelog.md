@@ -1,6 +1,9 @@
 # Changelog
 
 ## main
+- No changes
+
+## v0.5.0 (12.08.2022)
  - Minimal C++ standard is now [C++20](https://en.cppreference.com/w/cpp/20)
  - Deprecating GMSH IO functions from `dolfinx_mpc.utils`, see: [DOLFINx PR: 2261](https://github.com/FEniCS/dolfinx/pull/2261) for details.
  - Various API changes in DOLFINx relating to `dolfinx.common.IndexMap`.

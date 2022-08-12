@@ -280,7 +280,7 @@ def determine_closest_block(V, point):
                     min_dof_owner = ghost_owner[block - local_max]
                 minimal_distance_block = block
                 min_distance = distance
-        assert(min_dof_owner == owning_processor)
+        assert min_dof_owner == owning_processor
         return owning_processor, [minimal_distance_block]
     else:
         return owning_processor, []
@@ -303,16 +303,16 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         zero_indices = np.argwhere(np.isclose(vector, 0)).T[0]
         slave_index = np.argmax(np.abs(vector))
     if is_slave_proc:
-        assert(len(slave_block) == 1)
+        assert len(slave_block) == 1
         slave_block_g = imap.local_to_global(slave_block)[0]
         if vector is None:
             slaves = np.arange(slave_block[0] * block_size, slave_block[0]
                                * block_size + block_size, dtype=np.int32)
         else:
-            assert(len(vector) == block_size)
+            assert len(vector) == block_size
             # Check for input vector (Should be of same length as number of slaves)
             # All entries should not be zero
-            assert(not np.isin(slave_index, zero_indices))
+            assert not np.isin(slave_index, zero_indices)
             # Check vector for zero contributions
             slaves = np.array([slave_block[0] * block_size + slave_index], dtype=np.int32)
             for i in range(block_size):
@@ -323,7 +323,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
 
     global_masters = None
     if is_master_proc:
-        assert(len(master_block) == 1)
+        assert len(master_block) == 1
         master_block_g = imap.local_to_global(master_block)[0]
         masters_as_glob = np.arange(master_block_g * block_size,
                                     master_block_g * block_size + block_size, dtype=np.int64)
