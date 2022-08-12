@@ -182,7 +182,7 @@ def add_diagonal(A: int, dofs: npt.NDArray[numpy.int32], diagval: _PETSc.ScalarT
     for dof in dofs:
         dof_list[0] = dof
         ierr_loc = set_values_local(A, 1, ffi_fb(dof_list), 1, ffi_fb(dof_list), ffi_fb(dof_value), mode)
-        assert(ierr_loc == 0)
+        assert ierr_loc == 0
     sink(dof_list, dof_value)
 
 
@@ -266,7 +266,7 @@ def assemble_slave_cells(A: int,
         # Insert local contribution
         ierr_loc = set_values_local(A, block_size * num_dofs_per_element, ffi_fb(local_dofs),
                                     block_size * num_dofs_per_element, ffi_fb(local_dofs), ffi_fb(A_contribution), mode)
-        assert(ierr_loc == 0)
+        assert ierr_loc == 0
 
     sink(A_contribution, local_dofs)
 
@@ -342,14 +342,14 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
                 mpc_dofs[j * block_size + k] = local_blocks[j] * block_size + k
         mpc_dofs[local_index] = master
         ierr_row = set_values_local(A, block_size * num_dofs, ffi_fb(mpc_dofs), 1, ffi_fb(m0), ffi_fb(Arow), mode)
-        assert(ierr_row == 0)
+        assert ierr_row == 0
 
         # Add slave row to master row
         ierr_col = set_values_local(A, 1, ffi_fb(m0), block_size * num_dofs, ffi_fb(mpc_dofs), ffi_fb(Acol), mode)
-        assert(ierr_col == 0)
+        assert ierr_col == 0
 
         ierr_master = set_values_local(A, 1, ffi_fb(m0), 1, ffi_fb(m0), ffi_fb(Am0m1), mode)
-        assert(ierr_master == 0)
+        assert ierr_master == 0
 
         # Add contributions for other masters relating to slaves on the given cell
         for j in range(num_flattened_masters):
@@ -361,7 +361,7 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
             m1[0] = other_master
             Am0m1[0, 0] = coeff * other_coeff * Ae_original[local_index, other_local_index]
             ierr_other_masters = set_values_local(A, 1, ffi_fb(m0), 1, ffi_fb(m1), ffi_fb(Am0m1), mode)
-            assert(ierr_other_masters == 0)
+            assert ierr_other_masters == 0
 
     sink(Arow, Acol, Am0m1, m0, m1, mpc_dofs)
 
@@ -450,6 +450,6 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
         ierr_loc = set_values_local(A, block_size * num_dofs_per_element, ffi.from_buffer(local_dofs),
                                     block_size * num_dofs_per_element, ffi.from_buffer(local_dofs),
                                     ffi.from_buffer(A_contribution), mode)
-        assert(ierr_loc == 0)
+        assert ierr_loc == 0
 
     sink(A_contribution, local_dofs)

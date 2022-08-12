@@ -84,7 +84,7 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[_cpp.mesh.MeshTags_int32, int
     gamma = nitsche_parameters.get("gamma", 1)
 
     (facet_marker, top_value, bottom_value) = mesh_data
-    assert(facet_marker.dim == mesh.topology.dim - 1)
+    assert facet_marker.dim == mesh.topology.dim - 1
 
     # Normal vector pointing into plane (but outward of the body coming into contact)
     # Similar to computing the normal by finding the gap vector between two meshes
@@ -216,6 +216,6 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[_cpp.mesh.MeshTags_int32, int
         n, converged = solver.solve(u)
     u.x.scatter_forward()
     if solver.error_on_nonconvergence:
-        assert(converged)
+        assert converged
     print(f"{num_dofs_global}, Number of interations: {n:d}")
     return u

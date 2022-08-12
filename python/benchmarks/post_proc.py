@@ -48,7 +48,7 @@ def visualize_side_by_side(dofs):
     ax.set_xticks(range(len(dofs)))
     labels = dofs
     ax.set_xticklabels(labels)
-    assert(np.allclose(procs, procs[0]))
+    assert np.allclose(procs, procs[0])
 
     # Shrink current axis by 20%
     box = ax.get_position()

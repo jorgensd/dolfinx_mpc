@@ -120,7 +120,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
     for facet in i_facets:
         i_cells = facet_to_cell.links(facet)
-        assert(len(i_cells == 1))
+        assert len(i_cells == 1)
         i_cell = i_cells[0]
         if top_cube(cell_midpoints[i_cell]):
             top_interface.append(facet)
