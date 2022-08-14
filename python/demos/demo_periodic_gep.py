@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright (C) 2021-2022 fmonteghetti and Jorgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
@@ -312,7 +313,9 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
     (eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
     # update slave DoF
     for i in range(len(eigval)):
+        eigvec_r[i].x.scatter_forward()
         mpc.backsubstitution(eigvec_r[i].vector)
+        eigvec_i[i].x.scatter_forward()
         mpc.backsubstitution(eigvec_i[i].vector)
     print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
 
