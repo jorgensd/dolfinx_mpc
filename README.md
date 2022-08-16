@@ -31,7 +31,7 @@ These assemblers are written in C++, but have equivalent Python assemblers in th
 
 # Installation
 
-
+A Docker image can be found in the [Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc) tab.
 
 ## Source
 
