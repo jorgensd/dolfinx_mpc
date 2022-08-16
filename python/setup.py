@@ -54,7 +54,7 @@ class CMakeBuild(build_ext):
       
         env = os.environ.copy()
         cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
-            # default to 3 build threads
+        # default to 3 build threads
         if "CMAKE_BUILD_PARALLEL_LEVEL" not in env:
             env["CMAKE_BUILD_PARALLEL_LEVEL"] = "3"
 
