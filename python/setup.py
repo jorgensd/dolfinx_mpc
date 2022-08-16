@@ -51,7 +51,7 @@ class CMakeBuild(build_ext):
 
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]
-      
+
         env = os.environ.copy()
         cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
         # default to 3 build threads
