@@ -1,4 +1,5 @@
 import os
+import shlex
 import platform
 import re
 import subprocess
@@ -12,9 +13,9 @@ if sys.version_info <= (3, 8):
     print("Python 3.8 or higher required, please upgrade.")
     sys.exit(1)
 
-VERSION = "0.5.0"
+VERSION = "0.5.1.dev0"
 
-REQUIREMENTS = ["numpy>=1.21", ]
+REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>=0.5.0"]
 
 
 class CMakeExtension(Extension):
@@ -44,23 +45,19 @@ class CMakeBuild(build_ext):
     def build_extension(self, ext):
         extdir = os.path.abspath(os.path.dirname(
             self.get_ext_fullpath(ext.name)))
+        cmake_args = shlex.split(os.environ.get("CMAKE_ARGS", ""))
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
                       '-DPYTHON_EXECUTABLE=' + sys.executable]
 
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]
-
-        if platform.system() == "Windows":
-            cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(
-                cfg.upper(), extdir)]
-            if sys.maxsize > 2**32:
-                cmake_args += ['-A', 'x64']
-            build_args += ['--', '/m']
-        else:
-            cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
-            build_args += ['--', '-j3']
-
+      
         env = os.environ.copy()
+        cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
+            # default to 3 build threads
+        if "CMAKE_BUILD_PARALLEL_LEVEL" not in env:
+            env["CMAKE_BUILD_PARALLEL_LEVEL"] = "3"
+
         import pybind11
         env['pybind11_DIR'] = pybind11.get_cmake_dir()
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(

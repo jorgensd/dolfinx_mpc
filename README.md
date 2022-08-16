@@ -5,7 +5,7 @@
 
 Author: Jørgen S. Dokken
 
-This library contains an add-on to FEniCS_X enabling the possibilities
+This library contains an add-on to FEniCSx enabling the possibilities
 of enforce multi-point constraints, such as 
 
 $$u_i =\sum_{j=0,i \neq j}^n \alpha_j u_j, i\in I_N,$$
