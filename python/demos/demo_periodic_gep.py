@@ -324,7 +324,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
     print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
 
     # Save first eigenvector
-    with XDMFFile(MPI.COMM_WORLD, "results/eigenvector_0.xdmf", "w", encoding=XDMFFile.Encoding.HDF5) as xdmf:
+    with XDMFFile(mesh.comm, "results/eigenvector_0.xdmf", "w") as xdmf:
         xdmf.write_mesh(mesh)
         xdmf.write_function(eigvec_r[0])
     
