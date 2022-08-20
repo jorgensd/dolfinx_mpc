@@ -222,7 +222,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
     comm = MPI.COMM_WORLD
     # Create mesh and finite element
     N = 50
-    mesh = create_unit_square(MPI.COMM_WORLD, N, N)
+    mesh = create_unit_square(comm, N, N)
     V = fem.FunctionSpace(mesh, ("CG", 1))
     fdim = mesh.topology.dim - 1
     
