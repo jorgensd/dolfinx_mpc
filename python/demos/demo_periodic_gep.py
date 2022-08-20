@@ -230,8 +230,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
     # Dirichlet boundary condition on {y=0} and {y=1}
     if boundary_condition[1] == "dirichlet":
         u_bc = fem.Function(V)
-        with u_bc.vector.localForm() as u_local:
-            u_local.set(0.0)
+        u_bc.x.array[:]  =0
         def dirichletboundary(x):
             return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
         facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
