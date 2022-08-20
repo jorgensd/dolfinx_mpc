@@ -301,6 +301,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
 
 
 
+
     # Diagonal values for slave and Dirichlet DoF
     # The generalized eigenvalue problem will have spurious eigenvalues at
     # lambda_spurious = diagval_A/diagval_B. Here we choose lambda_spurious=1e4,
