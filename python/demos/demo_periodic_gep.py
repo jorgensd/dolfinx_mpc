@@ -228,7 +228,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
     
     bcs = []
     # Dirichlet boundary condition on {y=0} and {y=1}
-    if boundary_condition[1]=="dirichlet":
+    if boundary_condition[1] == "dirichlet":
         u_bc = fem.Function(V)
         with u_bc.vector.localForm() as u_local:
             u_local.set(0.0)
