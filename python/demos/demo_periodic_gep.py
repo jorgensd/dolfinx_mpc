@@ -296,6 +296,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet","periodic"],
     b = inner(u, v) * dx
     mass_form = fem.form(a)
     stiffness_form = fem.form(b)
+
     # Diagonal values for slave and Dirichlet DoF
     # The generalized eigenvalue problem will have spurious eigenvalues at
     # lambda_spurious = diagval_A/diagval_B. Here we choose lambda_spurious=1e4,
