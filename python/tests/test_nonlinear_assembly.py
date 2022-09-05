@@ -14,11 +14,11 @@ import ufl
 
 class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
 
-    def __init__(self, F, u, mpc, bcs=[], J=None, form_compiler_params={},
+    def __init__(self, F, u, mpc, bcs=[], J=None, form_compiler_options={},
                  jit_params={}):
         self.mpc = mpc
         super().__init__(F, u, bcs=bcs, J=J,
-                         form_compiler_params=form_compiler_params,
+                         form_compiler_options=form_compiler_options,
                          jit_params=jit_params)
 
     def F(self, x: PETSc.Vec, F: PETSc.Vec):

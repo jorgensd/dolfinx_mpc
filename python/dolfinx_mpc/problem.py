@@ -26,7 +26,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
     def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint,
                  bcs: typing.List[_fem.DirichletBCMetaClass] = None, u: _fem.Function = None,
                  petsc_options: dict = None,
-                 form_compiler_params: dict = None, jit_params: dict = None):
+                 form_compiler_options: dict = None, jit_params: dict = None):
         """Initialize solver for a linear variational problem.
 
         Parameters
@@ -54,7 +54,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
             For available choices for the 'petsc_options' kwarg, see the
             `PETSc-documentation <https://www.mcs.anl.gov/petsc/documentation/index.html>`.
 
-        form_compiler_params
+        form_compiler_options
             Parameters used in FFCx compilation of this form. Run `ffcx --help` at
             the commandline to see all available options. Takes priority over all
             other parameter values, except for `scalar_type` which is determined by
@@ -70,10 +70,10 @@ class LinearProblem(_fem.petsc.LinearProblem):
         """
 
         # Compile forms
-        form_compiler_params = {} if form_compiler_params is None else form_compiler_params
+        form_compiler_options = {} if form_compiler_options is None else form_compiler_options
         jit_params = {} if jit_params is None else jit_params
-        self._a = _fem.form(a, jit_params=jit_params, form_compiler_params=form_compiler_params)
-        self._L = _fem.form(L, jit_params=jit_params, form_compiler_params=form_compiler_params)
+        self._a = _fem.form(a, jit_params=jit_params, form_compiler_options=form_compiler_options)
+        self._L = _fem.form(L, jit_params=jit_params, form_compiler_options=form_compiler_options)
 
         if not mpc.finalized:
             raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
