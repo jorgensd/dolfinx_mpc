@@ -199,7 +199,7 @@ def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:
 def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-10):
     """ Compare CSR matrices A and B """
     diff = np.abs(A - B)
-    assert(diff.max() < atol)
+    assert diff.max() < atol
 
 
 def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
@@ -213,7 +213,7 @@ def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
     timer = dolfinx.common.Timer("~MPC: Compare matrices")
     comm = mpc.V.mesh.comm
     V = mpc.V
-    assert(root < comm.size)
+    assert root < comm.size
 
     K = gather_transformation_matrix(mpc, root=root)
     A_csr = gather_PETScMatrix(A_org, root=root)

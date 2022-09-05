@@ -29,7 +29,7 @@ r1, r1_tag = 0.5, 2
 r2, r2_tag = 0.8, 3
 outer_tag = 1
 inner_tag = 2
-assert(r0 < r1 and r1 < r2)
+assert r0 < r1 and r1 < r2
 
 
 gmsh.initialize()

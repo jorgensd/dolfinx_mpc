@@ -10,11 +10,11 @@ on:
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
-    container: dolfinx/dev-env
+    runs-on: ubuntu-22.04
+    container: dolfinx/dev-env:nightly
     env:
       SONAR_SCANNER_VERSION:
-        4.6.2.2472 # Find the latest version in at:
+        4.7.0.2747 # Find the latest version in at:
         # https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
@@ -54,9 +54,9 @@ jobs:
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
       - name: Install FEniCS Python components
         run: |
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git
-          python3 -m pip install git+https://github.com/FEniCS/basix.git
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git
+          python3 -m pip install git+https://github.com/FEniCS/ufl.git@main
+          python3 -m pip install git+https://github.com/FEniCS/basix.git@main
+          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@main
 
       - name: Get DOLFINx
         uses: actions/checkout@v2

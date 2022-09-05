@@ -5,7 +5,7 @@
 
 Author: Jørgen S. Dokken
 
-This library contains an add-on to FEniCS_X enabling the possibilities
+This library contains an add-on to FEniCSx enabling the possibilities
 of enforce multi-point constraints, such as 
 
 $$u_i =\sum_{j=0,i \neq j}^n \alpha_j u_j, i\in I_N,$$
@@ -31,11 +31,9 @@ These assemblers are written in C++, but have equivalent Python assemblers in th
 
 # Installation
 
-Version 0.4.1 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
-and can be ran using
-```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:v0.4.1
-```
+A Docker image can be found in the [Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc) tab.
+
+## Source
 
 To install the latest version (master branch), you need to install the latest release of [dolfinx](https://github.com/FEniCS/dolfinx).
 Easiest way to install dolfinx is to use docker. The dolfinx docker images goes under the name [dolfinx/dolfinx](https://hub.docker.com/r/dolfinx/dolfinx)
@@ -45,4 +43,12 @@ To install the `dolfinx_mpc`-library run the following code from this directory:
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build-dir cpp/
 ninja -j3 install -C build-dir
 pip3 install python/. --upgrade
+```
+
+## Dockerhub
+
+Version 0.5.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
+and can be ran using
+```bash
+docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:v0.5.0
 ```

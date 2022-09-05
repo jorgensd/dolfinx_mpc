@@ -692,7 +692,7 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   }
 
   // Return early if we have no points
-  std::array<std::size_t, 4> basis_shape
+  [[maybe_unused]] std::array<std::size_t, 4> basis_shape
       = element->basix_element().tabulate_shape(0, x.shape(0));
   assert(basis_shape[2] == space_dimension);
   assert(basis_shape[3] == value_size);
