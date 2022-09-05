@@ -124,6 +124,7 @@ jobs:
           python3 demo_periodic3d_topological.py
           python3 demo_elasticity_disconnect_2D.py
           python3 demo_elasticity_disconnect.py
+          python3 demo_periodic_gep.py
           make contact2D-serial
           make contact3D-serial
 
@@ -136,5 +137,6 @@ jobs:
           mpirun -n 4 python3 demo_periodic3d_topological.py
           mpirun -n 4 python3 demo_elasticity_disconnect_2D.py
           mpirun -n 4 python3 demo_elasticity_disconnect.py
+          mpirun -n 4 python3 demo_periodic_gep.py
           make contact2D-parallel
           make contact3D-parallel
