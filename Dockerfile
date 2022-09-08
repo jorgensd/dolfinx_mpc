@@ -1,4 +1,4 @@
-FROM dolfinx/dolfinx:v0.5.0 as dolfinx-mpc
+FROM dolfinx/dolfinx:v0.5.1 as dolfinx-mpc
 WORKDIR /tmp
 # Set env variables
 ENV HDF5_MPI="ON" \
@@ -6,7 +6,7 @@ ENV HDF5_MPI="ON" \
     HDF5_DIR="/usr/local"
 
 # Install dolfinx_mpc
-RUN git clone -b v0.5.0 --single-branch --depth 1 https://github.com/jorgensd/dolfinx_mpc.git && \
+RUN git clone -b v0.5.1 --single-branch --depth 1 https://github.com/jorgensd/dolfinx_mpc.git && \
     cd dolfinx_mpc && \
     cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dir cpp/ && \
     ninja install -j4  -C build-dir && \

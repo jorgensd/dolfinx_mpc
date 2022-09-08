@@ -15,7 +15,7 @@ jobs:
   build:
     if: "!(contains(github.event.head_commit.message, '[ci skip]') || contains(github.event.head_commit.message, '[skip ci]'))"
     runs-on: ubuntu-20.04
-    container: dolfinx/dev-env:v0.5.0
+    container: dolfinx/dev-env:v0.5.1
 
     strategy:
       matrix:
@@ -59,7 +59,7 @@ jobs:
         with:
           path: ./basix
           repository: FEniCS/basix
-          ref: v0.5.0
+          ref: v0.5.0.post0
 
       - name: Install UFL, Basix, FFCx
         run: |
@@ -68,14 +68,14 @@ jobs:
           cmake --install build-basix
           BUILD_TYPE="Release" pip3 install ./basix/python
           python3 -m pip install git+https://github.com/FEniCS/ufl.git@2022.2.0
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@v0.5.0
+          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@v0.5.0.post0
 
       - name: Get DOLFINx
         uses: actions/checkout@v2
         with:
           path: ./dolfinx
           repository: FEniCS/dolfinx
-          ref: v0.5.0
+          ref: v0.5.1
 
       - name: Configure C++ (dolfinx)
         run: |
