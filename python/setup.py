@@ -12,9 +12,9 @@ if sys.version_info <= (3, 8):
     print("Python 3.8 or higher required, please upgrade.")
     sys.exit(1)
 
-VERSION = "0.5.0"
+VERSION = "0.5.0.post0"
 
-REQUIREMENTS = ["numpy>=1.21", ]
+REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>0.5.0"]
 
 
 class CMakeExtension(Extension):

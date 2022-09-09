@@ -1,10 +1,10 @@
 #------------------------------------------------------------------------------
 # Top level CMakeLists.txt file for DOLFIN
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 
 #------------------------------------------------------------------------------
 # Set project name and version number
-project(DOLFINX_MPC VERSION "0.5.0.0")
+project(DOLFINX_MPC VERSION "0.5.1.0")
 
 #------------------------------------------------------------------------------
 # Set CMake options, see `cmake --help-policy CMP000x`
