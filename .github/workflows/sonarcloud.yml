@@ -11,7 +11,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    container: dolfinx/dev-env
+    container: dolfinx/dev-env:v0.5.1
     env:
       SONAR_SCANNER_VERSION:
         4.7.0.2747 # Find the latest version in at:
