@@ -606,7 +606,7 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
 /// corresponding cells.
 /// @param[in] V The function space
 /// @param[in] x The coordinates of the points. It has shape
-/// (num_points, 3).
+/// (num_points, 3), flattened row major
 /// @param[in] cells An array of cell indices. cells[i] is the index
 /// of the cell that contains the point x(i). Negative cell indices
 /// can be passed, and the corresponding point will be ignored.
@@ -614,8 +614,8 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
 /// for points with a negative cell index. This argument must be
 /// passed with the correct size.
 /// @returns basis values (not unrolled for block size) for each point. shape
-/// (num_points, number_of_dofs, value_size)
-xt::xtensor<double, 3>
+/// (num_points, number_of_dofs, value_size). Flattened row major
+std::pair<std::vector<double>, std::array<std::size_t, 3>>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace& V,
                          const xt::xtensor<double, 2>& x,
                          const std::span<const std::int32_t>& cells);
@@ -627,8 +627,9 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace& V,
 /// @param[in] dofs Array of dofs (not unrolled with block size)
 /// @param[in] cells An array of cell indices. cells[i] is the index
 /// of a cell that contains dofs[i]
-/// @returns The dof coordinates, where the ith row corresponds to the ith dof
-xt::xtensor<double, 2>
+/// @returns The dof coordinates flattened in xyzxyz format, where the [3*i,
+/// 3*(i+1)] entries are the coordinates of the ith dof
+std::pair<std::vector<double>, std::array<std::size_t, 2>>
 tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
                          std::span<const std::int32_t> dofs,
                          std::span<const std::int32_t> cells);
@@ -639,8 +640,8 @@ tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
 /// @param[in] mesh The mesh
 /// @param[in] candidate_cells List of candidate colliding cells for the
 /// ith point in `points`
-/// @param[in] points The points to check for collision
-/// (shape=(num_points, 3))
+/// @param[in] points The points to check for collision, shape=(num_points, 3).
+/// Flattened row major.
 /// @param[in] eps2 The tolerance for the squared distance to be considered a
 /// collision
 /// @return Adjacency list where the ith node is the closest entity whose
@@ -649,7 +650,7 @@ tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
 dolfinx::graph::AdjacencyList<int> compute_colliding_cells(
     const dolfinx::mesh::Mesh& mesh,
     const dolfinx::graph::AdjacencyList<std::int32_t>& candidate_cells,
-    const xt::xtensor<double, 2>& points, const double eps2);
+    std::span<const double> points, const double eps2);
 
 /// Given a mesh and corresponding bounding box tree and a set of points,check
 /// which cells (local to process) collide with each point.
@@ -659,13 +660,14 @@ dolfinx::graph::AdjacencyList<int> compute_colliding_cells(
 /// @param[in] mesh The mesh
 /// @param[in] tree The boundingbox tree of all cells (local to process) in the
 /// mesh
-/// @param[in] points The points to check collision with, shape (num_points, 3)
+/// @param[in] points The points to check collision with, shape (num_points, 3).
+/// Flattened row major.
 /// @param[in] eps2 The tolerance for the squared distance to be considered a
 /// collision
 std::vector<std::int32_t>
 find_local_collisions(const dolfinx::mesh::Mesh& mesh,
                       const dolfinx::geometry::BoundingBoxTree& tree,
-                      const xt::xtensor<double, 2>& points, const double eps2);
+                      std::span<const double> points, const double eps2);
 
 /// Given an input array of dofs from a function space, return an array with
 /// true/false if the degree of freedom is in a DirichletBC

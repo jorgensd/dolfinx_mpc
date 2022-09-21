@@ -647,11 +647,14 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
   return pattern;
 }
 
-xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
-    const dolfinx::fem::FunctionSpace& V, const xt::xtensor<double, 2>& x,
+std::pair<std::vector<double>, std::array<std::size_t, 3>>
+dolfinx_mpc::evaluate_basis_functions(
+    const dolfinx::fem::FunctionSpace& V, std::span<const double> x,
     const std::span<const std::int32_t>& cells)
 {
-  if (x.shape(0) != cells.size())
+  assert(x.size() % 3 == 0);
+  const std::size_t num_points = x.size() / 3;
+  if (num_points != cells.size())
   {
     throw std::runtime_error(
         "Number of points and number of cells must be equal.");
@@ -692,14 +695,17 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   }
 
   // Return early if we have no points
-  [[maybe_unused]] std::array<std::size_t, 4> basis_shape
-      = element->basix_element().tabulate_shape(0, x.shape(0));
+  std::array<std::size_t, 4> basis_shape
+      = element->basix_element().tabulate_shape(0, num_points);
   assert(basis_shape[2] == space_dimension);
   assert(basis_shape[3] == value_size);
-  xt::xtensor<double, 3> basis_derivatives_reference_values_b
-      = xt::zeros<double>({x.shape(0), space_dimension, value_size});
-  if (x.shape(0) == 0)
-    return basis_derivatives_reference_values_b;
+  std::array<std::size_t, 3> reference_shape
+      = {basis_shape[1], basis_shape[2], basis_shape[3]};
+  std::vector<double> output_basis(std::reduce(
+      reference_shape.begin(), reference_shape.end(), 1, std::multiplies{}));
+
+  if (num_points == 0)
+    return {output_basis, reference_shape};
 
   // If the space has sub elements, concatenate the evaluations on the sub
   // elements
@@ -818,15 +824,14 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   }
 
   // Prepare basis function data structures
-  cmdspan4_t basis_derivatives_reference_values(
-      basis_derivatives_reference_values_b.data(), 1, x.shape(0),
-      space_dimension, reference_value_size);
+  cmdspan4_t basis_derivatives_reference_values(output_basis.data(), 1,
+                                                x.shape(0), space_dimension,
+                                                reference_value_size);
   std::vector<double> basis_values_b(space_dimension * value_size);
   mdspan2_t basis_values(basis_values_b.data(), space_dimension, value_size);
 
   // Compute basis on reference element
-  element->tabulate(basis_derivatives_reference_values_b, Xb,
-                    {X.extent(0), X.extent(1)}, 0);
+  element->tabulate(basis_reference_values, Xb, {X.extent(0), X.extent(1)}, 0);
 
   using xu_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
   using xU_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
@@ -859,11 +864,11 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
     auto _K = stdex::submdspan(K, p, stdex::full_extent, stdex::full_extent);
     push_forward_fn(basis_values, _U, _J, detJ[p], _K);
   }
-  return basis_derivatives_reference_values_b;
+  return {output_basis, reference_shape};
 }
 
 //-----------------------------------------------------------------------------
-xt::xtensor<double, 2>
+std::pair<std::vector<double>, std::array<std::size_t, 2>>
 dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
                                       std::span<const std::int32_t> dofs,
                                       std::span<const std::int32_t> cells)
@@ -916,10 +921,14 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
   const std::size_t num_dofs_g = x_dofmap.num_links(0);
 
   // Array to hold coordinates to return
-  const std::size_t shape_c0 = 3;
-  const std::size_t shape_c1 = dofs.size();
-  xt::xtensor<double, 2> coords = xt::zeros<double>({shape_c0, shape_c1});
   namespace stdex = std::experimental;
+  const std::array<std::size_t, 2> coord_shape = {3, dofs.size()};
+  std::vector<double> coordsb(std::reduce(
+      coord_shape.cbegin(), coord_shape.cend(), 1, std::multiplies{}));
+  stdex::mdspan<double, std::experimental::extents<
+                            std::size_t, 3, std::experimental::dynamic_extent>>
+      coords(coordsb.data(), coord_shape);
+
   using cmdspan4_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
   using mdspan2_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
@@ -981,7 +990,7 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
       coords(j, c) = xb[loc * gdim + j];
   }
 
-  return coords;
+  return {coordsb, coord_shape};
 }
 
 //-----------------------------------------------------------------------------
@@ -989,7 +998,7 @@ dolfinx::graph::AdjacencyList<std::int32_t>
 dolfinx_mpc::compute_colliding_cells(
     const dolfinx::mesh::Mesh& mesh,
     const dolfinx::graph::AdjacencyList<std::int32_t>& candidate_cells,
-    const xt::xtensor<double, 2>& points, const double eps2)
+    std::span<const double> points, const double eps2)
 {
   std::vector<std::int32_t> offsets = {0};
   offsets.reserve(candidate_cells.num_nodes() + 1);
@@ -1004,12 +1013,13 @@ dolfinx_mpc::compute_colliding_cells(
       offsets.push_back((std::int32_t)colliding_cells.size());
       continue;
     }
-    xt::xtensor<double, 2> _point({cells.size(), 3});
+    // Create span of
+    std::vector<double> distances_sq(cells.size());
     for (std::size_t j = 0; j < cells.size(); j++)
-      xt::row(_point, j) = xt::row(points, i);
-
-    const std::vector<double> distances_sq
-        = dolfinx::geometry::squared_distance(mesh, tdim, cells, _point);
+    {
+      distances_sq[j] = dolfinx::geometry::squared_distance(
+          mesh, tdim, cells.subspan(j, 1), points.subspan(3 * i, 3));
+    }
     // Only push back closest cell
     if (auto cell_idx
         = std::min_element(distances_sq.cbegin(), distances_sq.cend());
@@ -1028,14 +1038,13 @@ dolfinx_mpc::compute_colliding_cells(
 std::vector<std::int32_t> dolfinx_mpc::find_local_collisions(
     const dolfinx::mesh::Mesh& mesh,
     const dolfinx::geometry::BoundingBoxTree& tree,
-    const xt::xtensor<double, 2>& points, const double eps2)
+    std::span<const double> points, const double eps2)
 {
-  assert(points.shape(1) == 3);
+  assert(points.size() % 3 == 0);
 
   // Compute collisions for each point with BoundingBoxTree
   dolfinx::graph::AdjacencyList<std::int32_t> bbox_collisions
-      = dolfinx::geometry::compute_collisions(
-          tree, std::span(points.data(), points.shape(0) * points.shape(1)));
+      = dolfinx::geometry::compute_collisions(tree, points);
 
   // Compute exact collision
   auto cell_collisions = dolfinx_mpc::compute_colliding_cells(
