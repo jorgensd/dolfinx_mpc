@@ -617,7 +617,7 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
 /// (num_points, number_of_dofs, value_size). Flattened row major
 std::pair<std::vector<double>, std::array<std::size_t, 3>>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace& V,
-                         const xt::xtensor<double, 2>& x,
+                         std::span<const double> x,
                          const std::span<const std::int32_t>& cells);
 
 //-----------------------------------------------------------------------------

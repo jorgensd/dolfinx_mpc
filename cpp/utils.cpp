@@ -119,6 +119,7 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   namespace stdex = std::experimental;
   using cmdspan4_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
+  using mdspan3_t = stdex::mdspan<double, stdex::dextents<std::size_t, 3>>;
   using mdspan2_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
   using cmdspan2_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
@@ -419,30 +420,29 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
   std::span<PetscScalar> _n(array, n);
 
   const std::int32_t bs = V->dofmap()->index_map_bs();
-  xt::xtensor_fixed<double, xt::xshape<3>> normal;
+  std::array<double, 3> normal;
+  std::array<double, 3> n_0;
   for (std::int32_t i = 0; i < block_to_entities.num_nodes(); i++)
   {
     auto ents = block_to_entities.links(i);
     if (ents.empty())
       continue;
     // Sum all normal for entities
-    std::vector<double> _normals
+    std::vector<double> normals
         = dolfinx::mesh::cell_normals(*V->mesh(), dim, ents);
-    auto normals
-        = xt::adapt(_normals, std::vector<std::size_t>{_normals.size() / 3, 3});
-    auto n_0 = xt::row(normals, 0);
-    normal = n_0;
-    for (std::size_t i = 1; i < normals.shape(0); ++i)
+    std::copy_n(normals.begin(), 3, n_0.begin());
+    std::copy_n(normals.begin(), 3, normal.begin());
+    for (std::size_t i = 1; i < normals.size() / 3; ++i)
     {
       // Align direction of normal vectors
-      double n_ni = dot(n_0, xt::row(normals, i));
+      double n_ni = std::transform_reduce(
+          n_0.begin(), n_0.end(), std::next(normals.begin(), 3 * i), 0,
+          std::plus{}, [](auto x, auto y) { return x * y; });
       auto sign = n_ni / std::abs(n_ni);
-      normal += sign * xt::row(normals, i);
+      for (std::size_t j = 0; j < 3; ++j)
+        normal[j] += sign * normals[3 * i + j];
     }
-    for (std::int32_t j = 0; j < bs; j++)
-    {
-      _n[i * bs + j] = normal[j];
-    }
+    std::copy_n(normal.begin(), bs, std::next(_n.begin(), i * bs));
   }
   // Receive normals from other processes with dofs on the facets
   VecGhostUpdateBegin(n_vec.vec(), ADD_VALUES, SCATTER_REVERSE);
@@ -682,8 +682,6 @@ dolfinx_mpc::evaluate_basis_functions(
   const int bs_element = element->block_size();
   const std::size_t reference_value_size
       = element->reference_value_size() / bs_element;
-  const std::size_t value_size = element->value_size() / bs_element;
-  const std::size_t space_dimension = element->space_dimension() / bs_element;
 
   // If the space has sub elements, concatenate the evaluations on the
   // sub elements
@@ -697,8 +695,9 @@ dolfinx_mpc::evaluate_basis_functions(
   // Return early if we have no points
   std::array<std::size_t, 4> basis_shape
       = element->basix_element().tabulate_shape(0, num_points);
-  assert(basis_shape[2] == space_dimension);
-  assert(basis_shape[3] == value_size);
+
+  assert(basis_shape[2] == element->space_dimension() / bs_element);
+  assert(basis_shape[3] == element->value_size() / bs_element);
   std::array<std::size_t, 3> reference_shape
       = {basis_shape[1], basis_shape[2], basis_shape[3]};
   std::vector<double> output_basis(std::reduce(
@@ -755,15 +754,15 @@ dolfinx_mpc::evaluate_basis_functions(
       = stdex::submdspan(phi, std::pair(1, tdim + 1), 0, stdex::full_extent, 0);
 
   // Reference coordinates for each point
-  std::vector<double> Xb(x.shape(0) * tdim);
-  mdspan2_t X(Xb.data(), x.shape(0), tdim);
+  std::vector<double> Xb(num_points * tdim);
+  mdspan2_t X(Xb.data(), num_points, tdim);
 
   // Geometry data at each point
-  std::vector<double> J_b(x.shape(0) * gdim * tdim);
-  mdspan3_t J(J_b.data(), x.shape(0), gdim, tdim);
-  std::vector<double> K_b(x.shape(0) * tdim * gdim);
-  mdspan3_t K(K_b.data(), x.shape(0), tdim, gdim);
-  std::vector<double> detJ(x.shape(0));
+  std::vector<double> J_b(num_points * gdim * tdim);
+  mdspan3_t J(J_b.data(), num_points, gdim, tdim);
+  std::vector<double> K_b(num_points * tdim * gdim);
+  mdspan3_t K(K_b.data(), num_points, tdim, gdim);
+  std::vector<double> detJ(num_points);
   std::vector<double> det_scratch(2 * gdim * tdim);
 
   // Prepare geometry data in each cell
@@ -786,7 +785,7 @@ dolfinx_mpc::evaluate_basis_functions(
     }
 
     for (std::size_t j = 0; j < gdim; ++j)
-      xp(0, j) = x(p, j);
+      xp(0, j) = x[3 * p + j];
 
     auto _J = stdex::submdspan(J, p, stdex::full_extent, stdex::full_extent);
     auto _K = stdex::submdspan(K, p, stdex::full_extent, stdex::full_extent);
@@ -823,15 +822,15 @@ dolfinx_mpc::evaluate_basis_functions(
       X(p, j) = Xpb[j];
   }
 
-  // Prepare basis function data structures
-  cmdspan4_t basis_derivatives_reference_values(output_basis.data(), 1,
-                                                x.shape(0), space_dimension,
-                                                reference_value_size);
-  std::vector<double> basis_values_b(space_dimension * value_size);
-  mdspan2_t basis_values(basis_values_b.data(), space_dimension, value_size);
-
   // Compute basis on reference element
-  element->tabulate(basis_reference_values, Xb, {X.extent(0), X.extent(1)}, 0);
+  std::vector<double> reference_basisb(std::reduce(
+      basis_shape.begin(), basis_shape.end(), 1, std::multiplies{}));
+  element->tabulate(reference_basisb, Xb, {X.extent(0), X.extent(1)}, 0);
+
+  // Data structure to hold basis for transformation
+  const std::size_t num_basis_values = basis_shape[2] * basis_shape[3];
+  std::vector<double> basis_valuesb(num_basis_values);
+  mdspan2_t basis_values(basis_valuesb.data(), basis_shape[2], basis_shape[3]);
 
   using xu_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
   using xU_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
@@ -842,8 +841,8 @@ dolfinx_mpc::evaluate_basis_functions(
 
   auto apply_dof_transformation
       = element->get_dof_transformation_function<double>();
-  const std::size_t num_basis_values = space_dimension * reference_value_size;
 
+  mdspan3_t full_basis(output_basis.data(), reference_shape);
   for (std::size_t p = 0; p < cells.size(); ++p)
   {
     const int cell_index = cells[p];
@@ -852,17 +851,16 @@ dolfinx_mpc::evaluate_basis_functions(
       continue;
 
     // Permute the reference values to account for the cell's orientation
-    apply_dof_transformation(
-        std::span(basis_derivatives_reference_values_b.data()
-                      + p * num_basis_values,
-                  num_basis_values),
-        cell_info, cell_index, (int)reference_value_size);
+    std::copy_n(std::next(reference_basisb.begin(), num_basis_values * p),
+                num_basis_values, basis_valuesb.begin());
+    apply_dof_transformation(basis_valuesb, cell_info, cell_index,
+                             (int)reference_value_size);
 
-    auto _U = stdex::submdspan(basis_derivatives_reference_values, 0, p,
-                               stdex::full_extent, stdex::full_extent);
+    auto _U = stdex::submdspan(full_basis, p, stdex::full_extent,
+                               stdex::full_extent);
     auto _J = stdex::submdspan(J, p, stdex::full_extent, stdex::full_extent);
     auto _K = stdex::submdspan(K, p, stdex::full_extent, stdex::full_extent);
-    push_forward_fn(basis_values, _U, _J, detJ[p], _K);
+    push_forward_fn(_U, basis_values, _J, detJ[p], _K);
   }
   return {output_basis, reference_shape};
 }
@@ -1017,8 +1015,10 @@ dolfinx_mpc::compute_colliding_cells(
     std::vector<double> distances_sq(cells.size());
     for (std::size_t j = 0; j < cells.size(); j++)
     {
-      distances_sq[j] = dolfinx::geometry::squared_distance(
-          mesh, tdim, cells.subspan(j, 1), points.subspan(3 * i, 3));
+      distances_sq[j]
+          = dolfinx::geometry::squared_distance(mesh, tdim, cells.subspan(j, 1),
+                                                points.subspan(3 * i, 3))
+                .front();
     }
     // Only push back closest cell
     if (auto cell_idx
@@ -1051,7 +1051,7 @@ std::vector<std::int32_t> dolfinx_mpc::find_local_collisions(
       mesh, bbox_collisions, points, eps2);
 
   // Extract first collision
-  std::vector<std::int32_t> collisions(points.shape(0), -1);
+  std::vector<std::int32_t> collisions(points.size() / 3, -1);
   for (int i = 0; i < cell_collisions.num_nodes(); i++)
   {
     auto local_cells = cell_collisions.links(i);
