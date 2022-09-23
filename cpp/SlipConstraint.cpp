@@ -7,10 +7,7 @@
 #include "SlipConstraint.h"
 #include <dolfinx/common/MPI.h>
 #include <dolfinx/common/sort.h>
-#include <xtensor/xadapt.hpp>
-#include <xtensor/xio.hpp>
-#include <xtensor/xsort.hpp>
-#include <xtensor/xview.hpp>
+
 using namespace dolfinx_mpc;
 
 mpc_data dolfinx_mpc::create_slip_condition(
@@ -43,11 +40,6 @@ mpc_data dolfinx_mpc::create_slip_condition(
     n = std::make_shared<dolfinx::fem::Function<PetscScalar>>(space);
     n->interpolate(v);
   }
-
-  // Create view of n as xtensor
-  const std::span<const PetscScalar>& n_vec = n->x()->array();
-  std::array<std::size_t, 1> shape = {n_vec.size()};
-  auto n_xt = xt::adapt(n_vec.data(), n_vec.size(), xt::no_ownership(), shape);
 
   // Info from parent space
   auto W_imap = space->dofmap()->index_map;
@@ -103,7 +95,8 @@ mpc_data dolfinx_mpc::create_slip_condition(
   }
   // Create array to hold degrees of freedom from the subspace of v for each
   // block
-  std::vector<std::int32_t> normal_dofs(num_normal_components);
+  const std::span<const PetscScalar>& n_vec = n->x()->array();
+  std::vector<PetscScalar> normal(num_normal_components);
 
   // Arrays holding MPC data
   std::vector<std::int32_t> slaves;
@@ -111,18 +104,17 @@ mpc_data dolfinx_mpc::create_slip_condition(
   std::vector<PetscScalar> coeffs;
   std::vector<std::int32_t> owners;
   std::vector<std::int32_t> offsets(1, 0);
-
   // Temporary arrays used to hold information about masters
   std::vector<std::int64_t> pair_m;
   for (auto block : slave_blocks)
   {
     // Obtain degrees of freedom for normal vector at slave dof
     for (std::int32_t i = 0; i < num_normal_components; ++i)
-      normal_dofs[i] = block * num_normal_components + i;
+      normal[i] = n_vec[block * num_normal_components + i];
     // Determine slave dof by component with biggest normal vector (to avoid
     // issues with grids aligned with coordiante system)
-    auto normal = xt::view(n_xt, xt::keep(normal_dofs));
-    std::int32_t slave_index = xt::argmax(xt::abs(normal))(0, 0);
+    auto max_el = std::max_element(normal.begin(), normal.end());
+    auto slave_index = std::distance(normal.begin(), max_el);
 
     std::int32_t parent_slave
         = parent_map(block * num_normal_components + slave_index);

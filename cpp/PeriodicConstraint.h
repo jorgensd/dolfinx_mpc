@@ -6,8 +6,6 @@
 
 #include "ContactConstraint.h"
 #include <dolfinx/fem/DirichletBC.h>
-#include <xtensor/xarray.hpp>
-#include <xtensor/xtensor.hpp>
 
 namespace dolfinx_mpc
 

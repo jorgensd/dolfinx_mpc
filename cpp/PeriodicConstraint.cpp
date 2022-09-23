@@ -9,8 +9,6 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
-#include <xtensor/xadapt.hpp>
-#include <xtensor/xview.hpp>
 namespace
 {
 
@@ -604,7 +602,7 @@ dolfinx_mpc::mpc_data topological_condition(
         = dolfinx::fem::locate_dofs_topological(*V.get(), meshtag->dim(),
                                                 entities);
     const std::vector<std::int8_t> bc_marker
-        = dolfinx_mpc::is_bc<TCB_SPAN_HAVE_CPP17>(*V, slave_blocks, bcs);
+        = dolfinx_mpc::is_bc<T>(*V, slave_blocks, bcs);
     std::vector<std::int32_t> reduced_blocks;
     for (std::size_t i = 0; i < bc_marker.size(); i++)
       if (!bc_marker[i])

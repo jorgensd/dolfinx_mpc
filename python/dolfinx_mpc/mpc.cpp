@@ -28,8 +28,7 @@
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <xtensor/xadapt.hpp>
-#include <xtensor/xtensor.hpp>
+
 namespace py = pybind11;
 
 namespace dolfinx_mpc_wrappers
@@ -37,31 +36,6 @@ namespace dolfinx_mpc_wrappers
 void mpc(py::module& m)
 {
 
-  m.def("get_basis_functions",
-        [](std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-           const py::array_t<double, py::array::c_style>& x, const int index)
-        {
-          const std::size_t x_s0 = x.ndim() == 1 ? 1 : x.shape(0);
-          const std::int32_t gdim = V->mesh()->geometry().dim();
-          xt::xtensor<double, 2> _x
-              = xt::zeros<double>({x_s0, static_cast<std::size_t>(gdim)});
-          auto xx = x.unchecked();
-          if (xx.ndim() == 1)
-          {
-            for (py::ssize_t i = 0; i < gdim; i++)
-              _x(0, i) = xx(i);
-          }
-          else if (xx.ndim() == 2)
-          {
-            for (py::ssize_t i = 0; i < xx.shape(0); i++)
-              for (py::ssize_t j = 0; j < gdim; j++)
-                _x(i, j) = xx(i, j);
-          }
-          const xt::xtensor<double, 2> basis_function
-              = dolfinx_mpc::get_basis_functions(V, _x, index);
-          return py::array_t<double>(basis_function.shape(),
-                                     basis_function.data());
-        });
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices);
 
   // dolfinx_mpc::MultiPointConstraint
