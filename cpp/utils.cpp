@@ -119,7 +119,6 @@ xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
   namespace stdex = std::experimental;
   using cmdspan4_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
-  using mdspan3_t = stdex::mdspan<double, stdex::dextents<std::size_t, 3>>;
   using mdspan2_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
   using cmdspan2_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;

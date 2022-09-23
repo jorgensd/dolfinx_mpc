@@ -284,9 +284,8 @@ void assemble_exterior_facets(
     std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(
-          std::next(x_g.begin(), 3 * x_dofs[i]),3,
-          std::next(coordinate_dofs.begin(), 3 * i));
+      std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                  std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
@@ -411,9 +410,8 @@ void assemble_cells_impl(
     std::span<const int32_t> x_dofs = x_dofmap.links(cell);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(
-          std::next(x_g.begin(), 3 * x_dofs[i]),3,
-          std::next(coordinate_dofs.begin(), 3 * i));
+      std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                  std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
     std::fill(Ae.data(), Ae.data() + Ae.size(), 0);

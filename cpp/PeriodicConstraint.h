@@ -20,11 +20,7 @@ mpc_data create_periodic_condition_geometrical(
             std::experimental::extents<std::size_t, 3,
                                        std::experimental::dynamic_extent>>)>&
         indicator,
-    const std::function<std::vector<double>(
-        std::experimental::mdspan<
-            const double,
-            std::experimental::extents<
-                std::size_t, 3, std::experimental::dynamic_extent>>)>& relation,
+    const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     double scale, bool collapse);
@@ -37,11 +33,7 @@ mpc_data create_periodic_condition_geometrical(
             std::experimental::extents<std::size_t, 3,
                                        std::experimental::dynamic_extent>>)>&
         indicator,
-    const std::function<std::vector<double>(
-        std::experimental::mdspan<
-            const double,
-            std::experimental::extents<
-                std::size_t, 3, std::experimental::dynamic_extent>>)>& relation,
+    const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
@@ -51,11 +43,7 @@ mpc_data create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
-    const std::function<std::vector<double>(
-        std::experimental::mdspan<
-            const double,
-            std::experimental::extents<
-                std::size_t, 3, std::experimental::dynamic_extent>>)>& relation,
+    const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     double scale, bool collapse);
@@ -64,11 +52,7 @@ mpc_data create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
-    const std::function<std::vector<double>(
-        std::experimental::mdspan<
-            const double,
-            std::experimental::extents<
-                std::size_t, 3, std::experimental::dynamic_extent>>)>& relation,
+    const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,

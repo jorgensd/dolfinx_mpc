@@ -28,6 +28,7 @@
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <xtensor/xadapt.hpp>
 #include <xtensor/xtensor.hpp>
 namespace py = pybind11;
 
@@ -296,28 +297,29 @@ void mpc(py::module& m)
         {
           auto _indicator
               = [&indicator](
-                    const xt::xtensor<double, 2>& x) -> xt::xtensor<bool, 1>
+                    std::experimental::mdspan<
+                        const double,
+                        std::experimental::extents<
+                            std::size_t, 3, std::experimental::dynamic_extent>>
+                        x) -> std::vector<std::int8_t>
           {
-            auto strides = x.strides();
-            std::transform(strides.begin(), strides.end(), strides.begin(),
-                           [](auto s) { return s * sizeof(double); });
-            py::array_t _x(x.shape(), strides, x.data(), py::none());
+            assert(x.size() % 3 == 0);
+            const std::array<std::size_t, 2> shape = {3, x.size() / 3};
+            const py::array_t _x(shape, x.data_handle(), py::none());
             py::array_t m = indicator(_x);
-            std::vector<std::size_t> s(m.shape(), m.shape() + m.ndim());
-            return xt::adapt(m.data(), m.size(), xt::no_ownership(), s);
+            std::vector<std::int8_t> s(m.data(), m.data() + m.size());
+            return s;
           };
 
-          auto _relation =
-              [&relation](const xt::xtensor<double, 2>& x) -> xt::xarray<double>
+          auto _relation
+              = [&relation](std::span<const double> x) -> std::vector<double>
           {
-            auto strides = x.strides();
-            std::transform(strides.begin(), strides.end(), strides.begin(),
-                           [](auto s) { return s * sizeof(double); });
-            py::array_t _x(x.shape(), strides, x.data(), py::none());
+            assert(x.size() % 3 == 0);
+            const std::array<std::size_t, 2> shape = {3, x.size() / 3};
+            const py::array_t _x(shape, x.data(), py::none());
             py::array_t v = relation(_x);
-            std::vector<std::size_t> shape;
-            std::copy_n(v.shape(), v.ndim(), std::back_inserter(shape));
-            return xt::adapt(v.data(), shape);
+            std::vector<double> output(v.data(), v.data() + v.size());
+            return output;
           };
           return dolfinx_mpc::create_periodic_condition_geometrical(
               V, _indicator, _relation, bcs, scale, collapse);
@@ -334,17 +336,14 @@ void mpc(py::module& m)
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
            double scale, bool collapse)
         {
-          auto _relation =
-              [&relation](const xt::xtensor<double, 2>& x) -> xt::xarray<double>
+          auto _relation
+              = [&relation](std::span<const double> x) -> std::vector<double>
           {
-            auto strides = x.strides();
-            std::transform(strides.begin(), strides.end(), strides.begin(),
-                           [](auto s) { return s * sizeof(double); });
-            py::array_t _x(x.shape(), strides, x.data(), py::none());
+            const std::array<std::size_t, 2> shape = {3, x.size() / 3};
+            py::array_t _x(shape, x.data(), py::none());
             py::array_t v = relation(_x);
-            std::vector<std::size_t> shape;
-            std::copy_n(v.shape(), v.ndim(), std::back_inserter(shape));
-            return xt::adapt(v.data(), shape);
+            std::vector<double> output(v.data(), v.data() + v.size());
+            return output;
           };
           return dolfinx_mpc::create_periodic_condition_topological(
               V, meshtags, dim, _relation, bcs, scale, collapse);

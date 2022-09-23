@@ -68,11 +68,16 @@ create_boundingbox_tree(const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
 /// cells at the given coordinates
 /// @returns The mpc data (exluding slave indices)
 mpc_data compute_master_contributions(
-    const std::span<const std::int32_t>& local_rems,
-    const std::span<const std::int32_t>& local_colliding_cell,
-    const xt::xtensor<PetscScalar, 2>& normals,
+    std::span<const std::int32_t> local_rems,
+    std::span<const std::int32_t> local_colliding_cell,
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        normals,
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    xt::xtensor<double, 3> tabulated_basis_values)
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        tabulated_basis_values)
 {
   const double tol = 1e-6;
   auto mesh = V->mesh();
@@ -95,17 +100,14 @@ mpc_data compute_master_contributions(
   {
     if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      auto basis_values
-          = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
-
       auto cell_blocks = V->dofmap()->cell_dofs(cell);
       for (std::size_t j = 0; j < cell_blocks.size(); ++j)
       {
         for (int b = 0; b < bs; b++)
         {
           // NOTE: Assuming 0 value size
-          if (const PetscScalar val
-              = normals(i, b) / normals(i, local_rems[i]) * basis_values(j, 0);
+          if (const PetscScalar val = normals(i, b) / normals(i, local_rems[i])
+                                      * tabulated_basis_values(i, j);
               std::abs(val) > tol)
           {
             num_masters_local[i]++;
@@ -133,9 +135,6 @@ mpc_data compute_master_contributions(
   {
     if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      auto basis_values
-          = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
-
       auto cell_blocks = V->dofmap()->cell_dofs(cell);
       global_blocks.resize(cell_blocks.size());
       imap->local_to_global(cell_blocks, global_blocks);
@@ -146,8 +145,8 @@ mpc_data compute_master_contributions(
         for (int b = 0; b < bs; b++)
         {
           // NOTE: Assuming 0 value size
-          if (const PetscScalar val
-              = normals(i, b) / normals(i, local_rems[i]) * basis_values(j, 0);
+          if (const PetscScalar val = normals(i, b) / normals(i, local_rems[i])
+                                      * tabulated_basis_values(i, j);
               std::abs(val) > tol)
           {
             const std::int32_t m_pos
@@ -186,7 +185,7 @@ mpc_data compute_master_contributions(
 mpc_data compute_block_contributions(
     const std::vector<std::int32_t>& local_slaves,
     const std::vector<std::int32_t>& local_slave_blocks,
-    std::span<const PetscScalar, 2> normals,
+    std::span<const PetscScalar> normals,
     const std::shared_ptr<const dolfinx::common::IndexMap> imap,
     std::int32_t block_size, int rank)
 {
@@ -429,8 +428,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // Compute local contributions to constraint using helper function
   // i.e. compute dot(u, n) on slave side
   mpc_data mpc_in_cell = compute_block_contributions(
-      local_slaves, local_slave_blocks,
-      std::span(normals.data(), normals.size()), imap, block_size, rank);
+      local_slaves, local_slave_blocks, normals, imap, block_size, rank);
 
   dolfinx::geometry::BoundingBoxTree bb_tree
       = create_boundingbox_tree(meshtags, fdim, master_marker, std::sqrt(eps2));
@@ -442,420 +440,431 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   std::vector<std::int32_t> slave_cells
       = dolfinx_mpc::create_block_to_cell_map(*V, local_slave_blocks);
   std::vector<double> slave_coordinates;
+  std::array<std::size_t, 2> coord_shape;
   {
-    auto [coords, shape] = dolfinx_mpc::tabulate_dof_coordinates(
-        *V, local_slave_blocks, slave_cells);
-    slave_coordinates.resize(shape[0] * shape[1]);
+    std::tie(slave_coordinates, coord_shape)
+        = dolfinx_mpc::tabulate_dof_coordinates(*V, local_slave_blocks,
+                                                slave_cells);
+
+    std::vector<std::int32_t> local_cell_collisions
+        = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, slave_coordinates,
+                                             eps2);
+    auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, slave_coordinates, local_cell_collisions);
+    assert(basis_shape.back() == 1);
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis_span(basis.data(), basis_shape[0], basis_shape[1]);
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        normal_span(normals.data(), local_slave_blocks.size(), 3);
+    mpc_master_local = compute_master_contributions(
+        local_rems, local_cell_collisions, normal_span, V, basis_span);
   }
-  std::vector<std::int32_t> local_cell_collisions
-      = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, slave_coordinates,
-                                           eps2);
-  xt::xtensor<double, 3> tabulated_basis_values
-      = dolfinx_mpc::evaluate_basis_functions(*V, slave_coordinates,
-                                              local_cell_collisions);
-
-  mpc_master_local = compute_master_contributions(
-      local_rems, local_cell_collisions, normals, V, tabulated_basis_values);
-}
-// Find slave indices were contributions are not found on the process
-std::vector<std::int32_t>& l_offsets = mpc_master_local.offsets;
-std::vector<std::int32_t> slave_indices_remote;
-slave_indices_remote.reserve(local_rems.size());
-for (std::size_t i = 0; i < local_rems.size(); i++)
-{
-  if (l_offsets[i + 1] - l_offsets[i] == 0)
-    slave_indices_remote.push_back((int)i);
-}
-
-// Structure storing mpc arrays mpc_local
-mpc_local = concatenate(mpc_in_cell, mpc_master_local);
-
-// If serial, we gather the resulting mpc data as one constraint
-if (int mpi_size = dolfinx::MPI::size(comm); mpi_size == 1)
-{
-
-  if (!slave_indices_remote.empty())
+  // Find slave indices were contributions are not found on the process
+  std::vector<std::int32_t>& l_offsets = mpc_master_local.offsets;
+  std::vector<std::int32_t> slave_indices_remote;
+  slave_indices_remote.reserve(local_rems.size());
+  for (std::size_t i = 0; i < local_rems.size(); i++)
   {
-    throw std::runtime_error(
-        "No masters found on contact surface (when executed in serial). "
-        "Please make sure that the surfaces are in contact, or increase the "
-        "tolerance eps2.");
+    if (l_offsets[i + 1] - l_offsets[i] == 0)
+      slave_indices_remote.push_back((int)i);
   }
-  // Serial assumptions
-  mpc_local.slaves = local_slaves;
-  return mpc_local;
-}
 
-// Create slave_dofs->master facets and master->slave dofs neighborhood comms
-const bool has_slave = !local_slave_blocks.empty();
-std::array<MPI_Comm, 2> neighborhood_comms
-    = create_neighborhood_comms(meshtags, has_slave, master_marker);
+  // Structure storing mpc arrays mpc_local
+  mpc_local = concatenate(mpc_in_cell, mpc_master_local);
 
-// Get the  slave->master recv from and send to ranks
-int indegree(-1);
-int outdegree(-2);
-int weighted(-1);
-MPI_Dist_graph_neighbors_count(neighborhood_comms[0], &indegree, &outdegree,
-                               &weighted);
-
-// Convert slaves missing master contributions to global index
-// and prepare data (coordinates and normals) to send to other procs
-xt::xtensor<double, 2> coordinates_send({slave_indices_remote.size(), 3});
-xt::xtensor<PetscScalar, 2> normals_send({slave_indices_remote.size(), 3});
-std::vector<std::int32_t> send_rems(slave_indices_remote.size());
-for (std::size_t i = 0; i < slave_indices_remote.size(); ++i)
-{
-  const std::int32_t slave_idx = slave_indices_remote[i];
-  send_rems[i] = local_rems[slave_idx];
-  xt::row(coordinates_send, i) = xt::row(slave_coordinates, slave_idx);
-  xt::row(normals_send, i) = xt::row(normals, slave_idx);
-}
-
-// Figure out how much data to receive from each neighbor
-const std::size_t out_collision_slaves = slave_indices_remote.size();
-std::vector<std::int32_t> num_slaves_recv(indegree + 1);
-MPI_Neighbor_allgather(&out_collision_slaves, 1,
-                       dolfinx::MPI::mpi_type<std::int32_t>(),
-                       num_slaves_recv.data(), 1,
-                       dolfinx::MPI::mpi_type<std::int32_t>(),
-                       neighborhood_comms[0]);
-num_slaves_recv.pop_back();
-
-// Compute displacements for data to receive
-std::vector<int> disp(indegree + 1, 0);
-std::partial_sum(num_slaves_recv.begin(), num_slaves_recv.end(),
-                 disp.begin() + 1);
-
-// Send data to neighbors and receive data
-std::vector<std::int32_t> recv_rems(disp.back());
-MPI_Neighbor_allgatherv(send_rems.data(), (int)send_rems.size(),
-                        dolfinx::MPI::mpi_type<std::int32_t>(),
-                        recv_rems.data(), num_slaves_recv.data(), disp.data(),
-                        dolfinx::MPI::mpi_type<std::int32_t>(),
-                        neighborhood_comms[0]);
-
-// Multiply recv size by three to accommodate vector coordinates and
-// function data
-std::vector<std::int32_t> num_slaves_recv3;
-num_slaves_recv3.reserve(indegree);
-std::transform(num_slaves_recv.begin(), num_slaves_recv.end(),
-               std::back_inserter(num_slaves_recv3),
-               [](std::int32_t num_slaves) { return 3 * num_slaves; });
-std::vector<int> disp3(indegree + 1, 0);
-std::partial_sum(num_slaves_recv3.begin(), num_slaves_recv3.end(),
-                 disp3.begin() + 1);
-
-// Send slave normal and coordinate to neighbors
-xt::xtensor<double, 2> recv_coords({std::size_t(disp.back()), 3});
-MPI_Neighbor_allgatherv(coordinates_send.data(), (int)coordinates_send.size(),
-                        dolfinx::MPI::mpi_type<double>(), recv_coords.data(),
-                        num_slaves_recv3.data(), disp3.data(),
-                        dolfinx::MPI::mpi_type<double>(),
-                        neighborhood_comms[0]);
-xt::xtensor<PetscScalar, 2> slave_normals({std::size_t(disp.back()), 3});
-MPI_Neighbor_allgatherv(normals_send.data(), (int)normals_send.size(),
-                        dolfinx::MPI::mpi_type<PetscScalar>(),
-                        slave_normals.data(), num_slaves_recv3.data(),
-                        disp3.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
-                        neighborhood_comms[0]);
-
-// Compute off-process contributions
-mpc_data remote_data;
-{
-  std::vector<std::int32_t> remote_cell_collisions
-      = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, recv_coords, eps2);
-  xt::xtensor<double, 3> recv_tabulated_basis_values
-      = dolfinx_mpc::evaluate_basis_functions(*V, recv_coords,
-                                              remote_cell_collisions);
-
-  remote_data = compute_master_contributions(recv_rems, remote_cell_collisions,
-                                             slave_normals, V,
-                                             recv_tabulated_basis_values);
-}
-
-// Get info about reverse communicator
-auto [src_ranks_rev, dest_ranks_rev]
-    = dolfinx_mpc::compute_neighborhood(neighborhood_comms[1]);
-const std::size_t indegree_rev = src_ranks_rev.size();
-
-// Count number of masters found on the process and convert the offsets
-// to be per process
-std::vector<std::int32_t> num_collision_masters(indegree + 1, 0);
-std::vector<int> num_out_offsets;
-num_out_offsets.reserve(indegree);
-std::transform(num_slaves_recv.begin(), num_slaves_recv.end(),
-               std::back_inserter(num_out_offsets),
-               [](std::int32_t num_slaves) { return num_slaves + 1; });
-const std::int32_t num_offsets
-    = std::accumulate(num_out_offsets.begin(), num_out_offsets.end(), 0);
-std::vector<std::int32_t> offsets_remote(num_offsets);
-std::int32_t counter = 0;
-for (std::int32_t i = 0; i < indegree; ++i)
-{
-  const std::int32_t first_pos = disp[i];
-  const std::int32_t first_offset = remote_data.offsets[first_pos];
-  num_collision_masters[i] += remote_data.offsets[disp[i + 1]] - first_offset;
-  offsets_remote[first_pos + counter++] = 0;
-  for (std::int32_t j = first_pos; j < disp[i + 1]; ++j)
-    offsets_remote[j + counter] = remote_data.offsets[j + 1] - first_offset;
-}
-
-// Communicate number of incoming masters to each process after collision
-// detection
-std::vector<int> inc_num_collision_masters(indegree_rev + 1);
-MPI_Neighbor_alltoall(num_collision_masters.data(), 1, MPI_INT,
-                      inc_num_collision_masters.data(), 1, MPI_INT,
-                      neighborhood_comms[1]);
-inc_num_collision_masters.pop_back();
-num_collision_masters.pop_back();
-
-// Create displacement vector for masters and coefficients
-std::vector<int> disp_inc_masters(indegree_rev + 1, 0);
-std::partial_sum(inc_num_collision_masters.begin(),
-                 inc_num_collision_masters.end(), disp_inc_masters.begin() + 1);
-
-// Compute send offsets for masters and coefficients
-std::vector<int> send_disp_masters(indegree + 1, 0);
-std::partial_sum(num_collision_masters.begin(), num_collision_masters.end(),
-                 send_disp_masters.begin() + 1);
-
-// Create displacement vector for incoming offsets
-std::vector<int> inc_disp_offsets(indegree_rev + 1);
-std::vector<int> num_inc_offsets(indegree_rev,
-                                 (int)slave_indices_remote.size() + 1);
-std::partial_sum(num_inc_offsets.begin(), num_inc_offsets.end(),
-                 inc_disp_offsets.begin() + 1);
-
-// Compute send offsets for master offsets
-std::vector<int> send_disp_offsets(indegree + 1, 0);
-
-std::partial_sum(num_out_offsets.begin(), num_out_offsets.end(),
-                 send_disp_offsets.begin() + 1);
-
-// Get offsets for master dofs from remote process
-std::vector<MPI_Request> requests(4);
-std::vector<std::int32_t> remote_colliding_offsets(inc_disp_offsets.back());
-MPI_Ineighbor_alltoallv(offsets_remote.data(), num_out_offsets.data(),
-                        send_disp_offsets.data(),
-                        dolfinx::MPI::mpi_type<std::int32_t>(),
-                        remote_colliding_offsets.data(), num_inc_offsets.data(),
-                        inc_disp_offsets.data(),
-                        dolfinx::MPI::mpi_type<std::int32_t>(),
-                        neighborhood_comms[1], &requests[0]);
-// Receive colliding masters and relevant data from other processor
-std::vector<std::int64_t> remote_colliding_masters(disp_inc_masters.back());
-MPI_Ineighbor_alltoallv(remote_data.masters.data(),
-                        num_collision_masters.data(), send_disp_masters.data(),
-                        dolfinx::MPI::mpi_type<std::int64_t>(),
-                        remote_colliding_masters.data(),
-                        inc_num_collision_masters.data(),
-                        disp_inc_masters.data(),
-                        dolfinx::MPI::mpi_type<std::int64_t>(),
-                        neighborhood_comms[1], &requests[1]);
-std::vector<PetscScalar> remote_colliding_coeffs(disp_inc_masters.back());
-MPI_Ineighbor_alltoallv(remote_data.coeffs.data(), num_collision_masters.data(),
-                        send_disp_masters.data(),
-                        dolfinx::MPI::mpi_type<PetscScalar>(),
-                        remote_colliding_coeffs.data(),
-                        inc_num_collision_masters.data(),
-                        disp_inc_masters.data(),
-                        dolfinx::MPI::mpi_type<PetscScalar>(),
-                        neighborhood_comms[1], &requests[2]);
-std::vector<std::int32_t> remote_colliding_owners(disp_inc_masters.back());
-MPI_Ineighbor_alltoallv(remote_data.owners.data(), num_collision_masters.data(),
-                        send_disp_masters.data(),
-                        dolfinx::MPI::mpi_type<std::int32_t>(),
-                        remote_colliding_owners.data(),
-                        inc_num_collision_masters.data(),
-                        disp_inc_masters.data(),
-                        dolfinx::MPI::mpi_type<std::int32_t>(),
-                        neighborhood_comms[1], &requests[3]);
-
-// Wait for offsets to be sent
-std::vector<MPI_Status> status(4);
-MPI_Wait(&requests[0], &status[0]);
-
-std::vector<bool> slave_found(slave_indices_remote.size(), false);
-std::vector<std::int32_t> num_inc_masters(slave_indices_remote.size());
-// Iterate through the processors and find one set of inputs per slave that
-// was sent to the other processes
-for (std::size_t i = 0; i < src_ranks_rev.size(); ++i)
-{
-  [[maybe_unused]] const std::int32_t num_offsets_on_proc
-      = inc_disp_offsets[i + 1] - inc_disp_offsets[i];
-  assert(num_offsets_on_proc == std::int32_t(slave_indices_remote.size()) + 1);
-  for (std::size_t c = 0; c < slave_indices_remote.size(); c++)
-
+  // If serial, we gather the resulting mpc data as one constraint
+  if (int mpi_size = dolfinx::MPI::size(comm); mpi_size == 1)
   {
-    const std::int32_t slave_min
-        = remote_colliding_offsets[inc_disp_offsets[i] + c];
-    const std::int32_t slave_max
-        = remote_colliding_offsets[inc_disp_offsets[i] + c + 1];
-    if (const std::int32_t num_inc = slave_max - slave_min;
-        !(slave_found[c]) && (num_inc > 0))
+
+    if (!slave_indices_remote.empty())
     {
-      slave_found[c] = true;
-      num_inc_masters[c] = num_inc;
+      throw std::runtime_error(
+          "No masters found on contact surface (when executed in serial). "
+          "Please make sure that the surfaces are in contact, or increase the "
+          "tolerance eps2.");
     }
-  }
-}
-if (auto not_found = std::find(slave_found.begin(), slave_found.end(), false);
-    not_found != slave_found.end())
-{
-  std::runtime_error(
-      "Masters not found on contact surface with local search or remote "
-      "search. Consider running the code in serial to make sure that one can "
-      "detect the contact surface, or increase eps2.");
-}
-
-/// Wait for all communication to finish
-MPI_Waitall(4, requests.data(), status.data());
-
-// Move the masters, coeffs and owners from the input adjacency list
-// to one where each node corresponds to an entry in slave_indices_remote
-std::vector<std::int32_t> offproc_offsets(slave_indices_remote.size() + 1, 0);
-std::partial_sum(num_inc_masters.begin(), num_inc_masters.end(),
-                 offproc_offsets.begin() + 1);
-std::vector<std::int64_t> offproc_masters(offproc_offsets.back());
-std::vector<PetscScalar> offproc_coeffs(offproc_offsets.back());
-std::vector<std::int32_t> offproc_owners(offproc_offsets.back());
-
-std::fill(slave_found.begin(), slave_found.end(), false);
-for (std::size_t i = 0; i < src_ranks_rev.size(); ++i)
-{
-  const std::int32_t proc_start = disp_inc_masters[i];
-  [[maybe_unused]] const std::int32_t num_offsets_on_proc
-      = inc_disp_offsets[i + 1] - inc_disp_offsets[i];
-  assert(num_offsets_on_proc == std::int32_t(slave_indices_remote.size()) + 1);
-  for (std::size_t c = 0; c < slave_indices_remote.size(); c++)
-  {
-    assert(std::int32_t(remote_colliding_offsets.size())
-           > std::int32_t(inc_disp_offsets[i] + c));
-    assert(std::int32_t(remote_colliding_offsets.size())
-           > std::int32_t(inc_disp_offsets[i] + c + 1));
-    assert(std::int32_t(inc_disp_offsets[i] + c) < inc_disp_offsets[i + 1]);
-    const std::int32_t slave_min
-        = remote_colliding_offsets[inc_disp_offsets[i] + c];
-    const std::int32_t slave_max
-        = remote_colliding_offsets[inc_disp_offsets[i] + c + 1];
-
-    assert(c < slave_found.size());
-    if (!(slave_found[c]) && (slave_max - slave_min > 0))
-    {
-      slave_found[c] = true;
-      std::copy(remote_colliding_masters.begin() + proc_start + slave_min,
-                remote_colliding_masters.begin() + proc_start + slave_max,
-                offproc_masters.begin() + offproc_offsets[c]);
-
-      std::copy(remote_colliding_coeffs.begin() + proc_start + slave_min,
-                remote_colliding_coeffs.begin() + proc_start + slave_max,
-                offproc_coeffs.begin() + offproc_offsets[c]);
-
-      std::copy(remote_colliding_owners.begin() + proc_start + slave_min,
-                remote_colliding_owners.begin() + proc_start + slave_max,
-                offproc_owners.begin() + offproc_offsets[c]);
-    }
-  }
-}
-// Merge local data with incoming data
-// First count number of local masters
-std::vector<std::int32_t>& masters_offsets = mpc_local.offsets;
-std::vector<std::int64_t>& masters_out = mpc_local.masters;
-std::vector<PetscScalar>& coefficients_out = mpc_local.coeffs;
-std::vector<std::int32_t>& owners_out = mpc_local.owners;
-
-std::vector<std::int32_t> num_masters_per_slave(local_slaves.size(), 0);
-for (std::size_t i = 0; i < local_slaves.size(); ++i)
-  num_masters_per_slave[i] += masters_offsets[i + 1] - masters_offsets[i];
-// Then add the remote masters
-for (std::size_t i = 0; i < slave_indices_remote.size(); ++i)
-  num_masters_per_slave[slave_indices_remote[i]]
-      += offproc_offsets[i + 1] - offproc_offsets[i];
-
-// Create new offset array
-std::vector<std::int32_t> local_offsets(local_slaves.size() + 1, 0);
-std::partial_sum(num_masters_per_slave.begin(), num_masters_per_slave.end(),
-                 local_offsets.begin() + 1);
-
-// Reuse num_masters_per_slave for input indices
-std::vector<std::int64_t> local_masters(local_offsets.back());
-std::vector<std::int32_t> local_owners(local_offsets.back());
-std::vector<PetscScalar> local_coeffs(local_offsets.back());
-
-// Insert local contributions
-{
-  std::vector<std::int32_t> loc_pos(local_slaves.size(), 0);
-  for (std::size_t i = 0; i < local_slaves.size(); ++i)
-  {
-    const std::int32_t master_min = masters_offsets[i];
-    const std::int32_t master_max = masters_offsets[i + 1];
-    std::copy(masters_out.begin() + master_min,
-              masters_out.begin() + master_max,
-              local_masters.begin() + local_offsets[i] + loc_pos[i]);
-    std::copy(coefficients_out.begin() + master_min,
-              coefficients_out.begin() + master_max,
-              local_coeffs.begin() + local_offsets[i] + loc_pos[i]);
-    std::copy(owners_out.begin() + master_min, owners_out.begin() + master_max,
-              local_owners.begin() + local_offsets[i] + loc_pos[i]);
-    loc_pos[i] += master_max - master_min;
+    // Serial assumptions
+    mpc_local.slaves = local_slaves;
+    return mpc_local;
   }
 
-  // Insert remote contributions
+  // Create slave_dofs->master facets and master->slave dofs neighborhood comms
+  const bool has_slave = !local_slave_blocks.empty();
+  std::array<MPI_Comm, 2> neighborhood_comms
+      = create_neighborhood_comms(meshtags, has_slave, master_marker);
+
+  // Get the  slave->master recv from and send to ranks
+  int indegree(-1);
+  int outdegree(-2);
+  int weighted(-1);
+  MPI_Dist_graph_neighbors_count(neighborhood_comms[0], &indegree, &outdegree,
+                                 &weighted);
+
+  // Convert slaves missing master contributions to global index
+  // and prepare data (coordinates and normals) to send to other procs
+  const std::array<std::size_t, 2> send_shape
+      = {slave_indices_remote.size(), 3};
+  std::vector<double> coordinates_send(send_shape.front() * send_shape.back());
+  std::vector<double> normals_send(send_shape.front() * send_shape.back());
+  std::vector<std::int32_t> send_rems(slave_indices_remote.size());
   for (std::size_t i = 0; i < slave_indices_remote.size(); ++i)
   {
-    const std::int32_t master_min = offproc_offsets[i];
-    const std::int32_t master_max = offproc_offsets[i + 1];
-    const std::int32_t slave_index = slave_indices_remote[i];
-    std::copy(offproc_masters.begin() + master_min,
-              offproc_masters.begin() + master_max,
-              local_masters.begin() + local_offsets[slave_index]
-                  + loc_pos[slave_index]);
-    std::copy(offproc_coeffs.begin() + master_min,
-              offproc_coeffs.begin() + master_max,
-              local_coeffs.begin() + local_offsets[slave_index]
-                  + loc_pos[slave_index]);
-    std::copy(offproc_owners.begin() + master_min,
-              offproc_owners.begin() + master_max,
-              local_owners.begin() + local_offsets[slave_index]
-                  + loc_pos[slave_index]);
-    loc_pos[slave_index] += master_max - master_min;
+    const std::int32_t slave_idx = slave_indices_remote[i];
+    send_rems[i] = local_rems[slave_idx];
+    std::copy_n(std::next(slave_coordinates.begin(), 3 * slave_idx), 3,
+                std::next(coordinates_send.begin(), 3 * i));
+    std::copy_n(std::next(normals.begin(), 3 * slave_idx), 3,
+                std::next(normals_send.begin(), 3 * i));
   }
-}
-// Distribute ghost data
-dolfinx_mpc::mpc_data ghost_data
-    = dolfinx_mpc::distribute_ghost_data<PetscScalar>(
-        local_slaves, local_masters, local_coeffs, local_owners,
-        num_masters_per_slave, imap, block_size);
 
-// Add ghost data to existing arrays
-const std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
-local_slaves.insert(std::end(local_slaves), std::cbegin(ghost_slaves),
-                    std::cend(ghost_slaves));
-const std::vector<std::int64_t>& ghost_masters = ghost_data.masters;
-local_masters.insert(std::end(local_masters), std::cbegin(ghost_masters),
-                     std::cend(ghost_masters));
-const std::vector<std::int32_t>& ghost_num = ghost_data.offsets;
-num_masters_per_slave.insert(std::end(num_masters_per_slave),
-                             std::cbegin(ghost_num), std::cend(ghost_num));
-const std::vector<PetscScalar>& ghost_coeffs = ghost_data.coeffs;
-local_coeffs.insert(std::end(local_coeffs), std::cbegin(ghost_coeffs),
-                    std::cend(ghost_coeffs));
-const std::vector<std::int32_t>& ghost_owner_ranks = ghost_data.owners;
-local_owners.insert(std::end(local_owners), std::cbegin(ghost_owner_ranks),
-                    std::cend(ghost_owner_ranks));
+  // Figure out how much data to receive from each neighbor
+  const std::size_t out_collision_slaves = slave_indices_remote.size();
+  std::vector<std::int32_t> num_slaves_recv(indegree + 1);
+  MPI_Neighbor_allgather(
+      &out_collision_slaves, 1, dolfinx::MPI::mpi_type<std::int32_t>(),
+      num_slaves_recv.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
+      neighborhood_comms[0]);
+  num_slaves_recv.pop_back();
 
-// Compute offsets
-std::vector<std::int32_t> offsets(num_masters_per_slave.size() + 1, 0);
-std::partial_sum(num_masters_per_slave.begin(), num_masters_per_slave.end(),
-                 offsets.begin() + 1);
+  // Compute displacements for data to receive
+  std::vector<int> disp(indegree + 1, 0);
+  std::partial_sum(num_slaves_recv.begin(), num_slaves_recv.end(),
+                   disp.begin() + 1);
 
-dolfinx_mpc::mpc_data output;
-output.offsets = offsets;
-output.masters = local_masters;
-output.coeffs = local_coeffs;
-output.owners = local_owners;
-output.slaves = local_slaves;
-return output;
+  // Send data to neighbors and receive data
+  std::vector<std::int32_t> recv_rems(disp.back());
+  MPI_Neighbor_allgatherv(send_rems.data(), (int)send_rems.size(),
+                          dolfinx::MPI::mpi_type<std::int32_t>(),
+                          recv_rems.data(), num_slaves_recv.data(), disp.data(),
+                          dolfinx::MPI::mpi_type<std::int32_t>(),
+                          neighborhood_comms[0]);
+
+  // Multiply recv size by three to accommodate vector coordinates and
+  // function data
+  std::vector<std::int32_t> num_slaves_recv3;
+  num_slaves_recv3.reserve(indegree);
+  std::transform(num_slaves_recv.begin(), num_slaves_recv.end(),
+                 std::back_inserter(num_slaves_recv3),
+                 [](std::int32_t num_slaves) { return 3 * num_slaves; });
+  std::vector<int> disp3(indegree + 1, 0);
+  std::partial_sum(num_slaves_recv3.begin(), num_slaves_recv3.end(),
+                   disp3.begin() + 1);
+
+  // Send slave normal and coordinate to neighbors
+  std::vector<double> recv_coords(disp.back() * 3);
+  MPI_Neighbor_allgatherv(coordinates_send.data(), (int)coordinates_send.size(),
+                          dolfinx::MPI::mpi_type<double>(), recv_coords.data(),
+                          num_slaves_recv3.data(), disp3.data(),
+                          dolfinx::MPI::mpi_type<double>(),
+                          neighborhood_comms[0]);
+  std::vector<double> slave_normals(disp.back() * 3);
+  MPI_Neighbor_allgatherv(normals_send.data(), (int)normals_send.size(),
+                          dolfinx::MPI::mpi_type<PetscScalar>(),
+                          slave_normals.data(), num_slaves_recv3.data(),
+                          disp3.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
+                          neighborhood_comms[0]);
+
+  // Compute off-process contributions
+  mpc_data remote_data;
+  {
+    std::vector<std::int32_t> remote_cell_collisions
+        = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, recv_coords, eps2);
+    auto [recv_basis_values, shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, recv_coords, remote_cell_collisions);
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis_span(recv_basis_values.data(), shape[0], shape[1]);
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        normal_span(slave_normals.data(), disp.back(), 3);
+    remote_data = compute_master_contributions(
+        recv_rems, remote_cell_collisions, normal_span, V, basis_span);
+  }
+
+  // Get info about reverse communicator
+  auto [src_ranks_rev, dest_ranks_rev]
+      = dolfinx_mpc::compute_neighborhood(neighborhood_comms[1]);
+  const std::size_t indegree_rev = src_ranks_rev.size();
+
+  // Count number of masters found on the process and convert the offsets
+  // to be per process
+  std::vector<std::int32_t> num_collision_masters(indegree + 1, 0);
+  std::vector<int> num_out_offsets;
+  num_out_offsets.reserve(indegree);
+  std::transform(num_slaves_recv.begin(), num_slaves_recv.end(),
+                 std::back_inserter(num_out_offsets),
+                 [](std::int32_t num_slaves) { return num_slaves + 1; });
+  const std::int32_t num_offsets
+      = std::accumulate(num_out_offsets.begin(), num_out_offsets.end(), 0);
+  std::vector<std::int32_t> offsets_remote(num_offsets);
+  std::int32_t counter = 0;
+  for (std::int32_t i = 0; i < indegree; ++i)
+  {
+    const std::int32_t first_pos = disp[i];
+    const std::int32_t first_offset = remote_data.offsets[first_pos];
+    num_collision_masters[i] += remote_data.offsets[disp[i + 1]] - first_offset;
+    offsets_remote[first_pos + counter++] = 0;
+    for (std::int32_t j = first_pos; j < disp[i + 1]; ++j)
+      offsets_remote[j + counter] = remote_data.offsets[j + 1] - first_offset;
+  }
+
+  // Communicate number of incoming masters to each process after collision
+  // detection
+  std::vector<int> inc_num_collision_masters(indegree_rev + 1);
+  MPI_Neighbor_alltoall(num_collision_masters.data(), 1, MPI_INT,
+                        inc_num_collision_masters.data(), 1, MPI_INT,
+                        neighborhood_comms[1]);
+  inc_num_collision_masters.pop_back();
+  num_collision_masters.pop_back();
+
+  // Create displacement vector for masters and coefficients
+  std::vector<int> disp_inc_masters(indegree_rev + 1, 0);
+  std::partial_sum(inc_num_collision_masters.begin(),
+                   inc_num_collision_masters.end(),
+                   disp_inc_masters.begin() + 1);
+
+  // Compute send offsets for masters and coefficients
+  std::vector<int> send_disp_masters(indegree + 1, 0);
+  std::partial_sum(num_collision_masters.begin(), num_collision_masters.end(),
+                   send_disp_masters.begin() + 1);
+
+  // Create displacement vector for incoming offsets
+  std::vector<int> inc_disp_offsets(indegree_rev + 1);
+  std::vector<int> num_inc_offsets(indegree_rev,
+                                   (int)slave_indices_remote.size() + 1);
+  std::partial_sum(num_inc_offsets.begin(), num_inc_offsets.end(),
+                   inc_disp_offsets.begin() + 1);
+
+  // Compute send offsets for master offsets
+  std::vector<int> send_disp_offsets(indegree + 1, 0);
+
+  std::partial_sum(num_out_offsets.begin(), num_out_offsets.end(),
+                   send_disp_offsets.begin() + 1);
+
+  // Get offsets for master dofs from remote process
+  std::vector<MPI_Request> requests(4);
+  std::vector<std::int32_t> remote_colliding_offsets(inc_disp_offsets.back());
+  MPI_Ineighbor_alltoallv(
+      offsets_remote.data(), num_out_offsets.data(), send_disp_offsets.data(),
+      dolfinx::MPI::mpi_type<std::int32_t>(), remote_colliding_offsets.data(),
+      num_inc_offsets.data(), inc_disp_offsets.data(),
+      dolfinx::MPI::mpi_type<std::int32_t>(), neighborhood_comms[1],
+      &requests[0]);
+  // Receive colliding masters and relevant data from other processor
+  std::vector<std::int64_t> remote_colliding_masters(disp_inc_masters.back());
+  MPI_Ineighbor_alltoallv(
+      remote_data.masters.data(), num_collision_masters.data(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      remote_colliding_masters.data(), inc_num_collision_masters.data(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      neighborhood_comms[1], &requests[1]);
+  std::vector<PetscScalar> remote_colliding_coeffs(disp_inc_masters.back());
+  MPI_Ineighbor_alltoallv(
+      remote_data.coeffs.data(), num_collision_masters.data(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
+      remote_colliding_coeffs.data(), inc_num_collision_masters.data(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
+      neighborhood_comms[1], &requests[2]);
+  std::vector<std::int32_t> remote_colliding_owners(disp_inc_masters.back());
+  MPI_Ineighbor_alltoallv(
+      remote_data.owners.data(), num_collision_masters.data(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      remote_colliding_owners.data(), inc_num_collision_masters.data(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      neighborhood_comms[1], &requests[3]);
+
+  // Wait for offsets to be sent
+  std::vector<MPI_Status> status(4);
+  MPI_Wait(&requests[0], &status[0]);
+
+  std::vector<bool> slave_found(slave_indices_remote.size(), false);
+  std::vector<std::int32_t> num_inc_masters(slave_indices_remote.size());
+  // Iterate through the processors and find one set of inputs per slave that
+  // was sent to the other processes
+  for (std::size_t i = 0; i < src_ranks_rev.size(); ++i)
+  {
+    [[maybe_unused]] const std::int32_t num_offsets_on_proc
+        = inc_disp_offsets[i + 1] - inc_disp_offsets[i];
+    assert(num_offsets_on_proc
+           == std::int32_t(slave_indices_remote.size()) + 1);
+    for (std::size_t c = 0; c < slave_indices_remote.size(); c++)
+
+    {
+      const std::int32_t slave_min
+          = remote_colliding_offsets[inc_disp_offsets[i] + c];
+      const std::int32_t slave_max
+          = remote_colliding_offsets[inc_disp_offsets[i] + c + 1];
+      if (const std::int32_t num_inc = slave_max - slave_min;
+          !(slave_found[c]) && (num_inc > 0))
+      {
+        slave_found[c] = true;
+        num_inc_masters[c] = num_inc;
+      }
+    }
+  }
+  if (auto not_found = std::find(slave_found.begin(), slave_found.end(), false);
+      not_found != slave_found.end())
+  {
+    std::runtime_error(
+        "Masters not found on contact surface with local search or remote "
+        "search. Consider running the code in serial to make sure that one can "
+        "detect the contact surface, or increase eps2.");
+  }
+
+  /// Wait for all communication to finish
+  MPI_Waitall(4, requests.data(), status.data());
+
+  // Move the masters, coeffs and owners from the input adjacency list
+  // to one where each node corresponds to an entry in slave_indices_remote
+  std::vector<std::int32_t> offproc_offsets(slave_indices_remote.size() + 1, 0);
+  std::partial_sum(num_inc_masters.begin(), num_inc_masters.end(),
+                   offproc_offsets.begin() + 1);
+  std::vector<std::int64_t> offproc_masters(offproc_offsets.back());
+  std::vector<PetscScalar> offproc_coeffs(offproc_offsets.back());
+  std::vector<std::int32_t> offproc_owners(offproc_offsets.back());
+
+  std::fill(slave_found.begin(), slave_found.end(), false);
+  for (std::size_t i = 0; i < src_ranks_rev.size(); ++i)
+  {
+    const std::int32_t proc_start = disp_inc_masters[i];
+    [[maybe_unused]] const std::int32_t num_offsets_on_proc
+        = inc_disp_offsets[i + 1] - inc_disp_offsets[i];
+    assert(num_offsets_on_proc
+           == std::int32_t(slave_indices_remote.size()) + 1);
+    for (std::size_t c = 0; c < slave_indices_remote.size(); c++)
+    {
+      assert(std::int32_t(remote_colliding_offsets.size())
+             > std::int32_t(inc_disp_offsets[i] + c));
+      assert(std::int32_t(remote_colliding_offsets.size())
+             > std::int32_t(inc_disp_offsets[i] + c + 1));
+      assert(std::int32_t(inc_disp_offsets[i] + c) < inc_disp_offsets[i + 1]);
+      const std::int32_t slave_min
+          = remote_colliding_offsets[inc_disp_offsets[i] + c];
+      const std::int32_t slave_max
+          = remote_colliding_offsets[inc_disp_offsets[i] + c + 1];
+
+      assert(c < slave_found.size());
+      if (!(slave_found[c]) && (slave_max - slave_min > 0))
+      {
+        slave_found[c] = true;
+        std::copy(remote_colliding_masters.begin() + proc_start + slave_min,
+                  remote_colliding_masters.begin() + proc_start + slave_max,
+                  offproc_masters.begin() + offproc_offsets[c]);
+
+        std::copy(remote_colliding_coeffs.begin() + proc_start + slave_min,
+                  remote_colliding_coeffs.begin() + proc_start + slave_max,
+                  offproc_coeffs.begin() + offproc_offsets[c]);
+
+        std::copy(remote_colliding_owners.begin() + proc_start + slave_min,
+                  remote_colliding_owners.begin() + proc_start + slave_max,
+                  offproc_owners.begin() + offproc_offsets[c]);
+      }
+    }
+  }
+  // Merge local data with incoming data
+  // First count number of local masters
+  std::vector<std::int32_t>& masters_offsets = mpc_local.offsets;
+  std::vector<std::int64_t>& masters_out = mpc_local.masters;
+  std::vector<PetscScalar>& coefficients_out = mpc_local.coeffs;
+  std::vector<std::int32_t>& owners_out = mpc_local.owners;
+
+  std::vector<std::int32_t> num_masters_per_slave(local_slaves.size(), 0);
+  for (std::size_t i = 0; i < local_slaves.size(); ++i)
+    num_masters_per_slave[i] += masters_offsets[i + 1] - masters_offsets[i];
+  // Then add the remote masters
+  for (std::size_t i = 0; i < slave_indices_remote.size(); ++i)
+    num_masters_per_slave[slave_indices_remote[i]]
+        += offproc_offsets[i + 1] - offproc_offsets[i];
+
+  // Create new offset array
+  std::vector<std::int32_t> local_offsets(local_slaves.size() + 1, 0);
+  std::partial_sum(num_masters_per_slave.begin(), num_masters_per_slave.end(),
+                   local_offsets.begin() + 1);
+
+  // Reuse num_masters_per_slave for input indices
+  std::vector<std::int64_t> local_masters(local_offsets.back());
+  std::vector<std::int32_t> local_owners(local_offsets.back());
+  std::vector<PetscScalar> local_coeffs(local_offsets.back());
+
+  // Insert local contributions
+  {
+    std::vector<std::int32_t> loc_pos(local_slaves.size(), 0);
+    for (std::size_t i = 0; i < local_slaves.size(); ++i)
+    {
+      const std::int32_t master_min = masters_offsets[i];
+      const std::int32_t master_max = masters_offsets[i + 1];
+      std::copy(masters_out.begin() + master_min,
+                masters_out.begin() + master_max,
+                local_masters.begin() + local_offsets[i] + loc_pos[i]);
+      std::copy(coefficients_out.begin() + master_min,
+                coefficients_out.begin() + master_max,
+                local_coeffs.begin() + local_offsets[i] + loc_pos[i]);
+      std::copy(owners_out.begin() + master_min,
+                owners_out.begin() + master_max,
+                local_owners.begin() + local_offsets[i] + loc_pos[i]);
+      loc_pos[i] += master_max - master_min;
+    }
+
+    // Insert remote contributions
+    for (std::size_t i = 0; i < slave_indices_remote.size(); ++i)
+    {
+      const std::int32_t master_min = offproc_offsets[i];
+      const std::int32_t master_max = offproc_offsets[i + 1];
+      const std::int32_t slave_index = slave_indices_remote[i];
+      std::copy(offproc_masters.begin() + master_min,
+                offproc_masters.begin() + master_max,
+                local_masters.begin() + local_offsets[slave_index]
+                    + loc_pos[slave_index]);
+      std::copy(offproc_coeffs.begin() + master_min,
+                offproc_coeffs.begin() + master_max,
+                local_coeffs.begin() + local_offsets[slave_index]
+                    + loc_pos[slave_index]);
+      std::copy(offproc_owners.begin() + master_min,
+                offproc_owners.begin() + master_max,
+                local_owners.begin() + local_offsets[slave_index]
+                    + loc_pos[slave_index]);
+      loc_pos[slave_index] += master_max - master_min;
+    }
+  }
+  // Distribute ghost data
+  dolfinx_mpc::mpc_data ghost_data
+      = dolfinx_mpc::distribute_ghost_data<PetscScalar>(
+          local_slaves, local_masters, local_coeffs, local_owners,
+          num_masters_per_slave, imap, block_size);
+
+  // Add ghost data to existing arrays
+  const std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
+  local_slaves.insert(std::end(local_slaves), std::cbegin(ghost_slaves),
+                      std::cend(ghost_slaves));
+  const std::vector<std::int64_t>& ghost_masters = ghost_data.masters;
+  local_masters.insert(std::end(local_masters), std::cbegin(ghost_masters),
+                       std::cend(ghost_masters));
+  const std::vector<std::int32_t>& ghost_num = ghost_data.offsets;
+  num_masters_per_slave.insert(std::end(num_masters_per_slave),
+                               std::cbegin(ghost_num), std::cend(ghost_num));
+  const std::vector<PetscScalar>& ghost_coeffs = ghost_data.coeffs;
+  local_coeffs.insert(std::end(local_coeffs), std::cbegin(ghost_coeffs),
+                      std::cend(ghost_coeffs));
+  const std::vector<std::int32_t>& ghost_owner_ranks = ghost_data.owners;
+  local_owners.insert(std::end(local_owners), std::cbegin(ghost_owner_ranks),
+                      std::cend(ghost_owner_ranks));
+
+  // Compute offsets
+  std::vector<std::int32_t> offsets(num_masters_per_slave.size() + 1, 0);
+  std::partial_sum(num_masters_per_slave.begin(), num_masters_per_slave.end(),
+                   offsets.begin() + 1);
+
+  dolfinx_mpc::mpc_data output;
+  output.offsets = offsets;
+  output.masters = local_masters;
+  output.coeffs = local_coeffs;
+  output.owners = local_owners;
+  output.slaves = local_slaves;
+  return output;
 }
 //-----------------------------------------------------------------------------
 mpc_data dolfinx_mpc::create_contact_inelastic_condition(
@@ -945,9 +954,24 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   // Tabulate slave block coordinates and find colliding cells
   std::vector<std::int32_t> slave_cells
       = dolfinx_mpc::create_block_to_cell_map(*V, local_blocks);
-  xt::xtensor<double, 2> slave_coordinates = xt::transpose(
-      dolfinx_mpc::tabulate_dof_coordinates(*V, local_blocks, slave_cells));
+  std::vector<double> slave_coordinates;
+  {
+    auto [tmp, shape]
+        = dolfinx_mpc::tabulate_dof_coordinates(*V, local_blocks, slave_cells);
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        tmp_span(tmp.data(), local_blocks.size(), 3);
 
+    slave_coordinates.resize(3 * local_blocks.size());
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        coordinate_span(slave_coordinates.data(), 3, local_blocks.size());
+    for (std::size_t i = 0; i < tmp_span.extent(0); ++i)
+      for (std::size_t j = 0; j < tmp_span.extent(1); ++j)
+        coordinate_span(j, i) = tmp_span(i, j);
+  }
   // Loop through all masters on current processor and check if they
   // collide with a local master facet
   std::map<std::int32_t, std::vector<std::int32_t>> local_owners;
@@ -959,11 +983,12 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     std::vector<std::int32_t> colliding_cells
         = dolfinx_mpc::find_local_collisions(*V->mesh(), bb_tree,
                                              slave_coordinates, eps2);
-    xt::xtensor<double, 3> tabulated_basis_values
-        = dolfinx_mpc::evaluate_basis_functions(*V, slave_coordinates,
-                                                colliding_cells);
-
-    // Work arrays for loop
+    auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, slave_coordinates, colliding_cells);
+    assert(basis_shape.back() == 1);
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis(basis_values.data(), basis_shape[0], basis_shape[1]);
     std::vector<std::int64_t> master_block_global;
     std::vector<std::int32_t> l_master;
     std::vector<PetscScalar> coeff;
@@ -972,9 +997,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     {
       if (const auto& cell = colliding_cells[i]; cell != -1)
       {
-        auto basis_values
-            = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
-
         auto cell_blocks = V->dofmap()->cell_dofs(cell);
         l_master.reserve(cell_blocks.size());
         coeff.reserve(cell_blocks.size());
@@ -983,7 +1005,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
         // Store block and non-zero basis value
         for (std::size_t j = 0; j < cell_blocks.size(); ++j)
         {
-          if (const PetscScalar c = basis_values(j, 0); std::abs(c) > 1e-6)
+          if (const PetscScalar c = basis(i, j); std::abs(c) > 1e-6)
           {
             coeff.push_back(c);
             l_master.push_back(cell_blocks[j]);
@@ -1030,12 +1052,12 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     }
   }
   // Extract coordinates and normals to distribute
-  xt::xtensor<double, 2> distribute_coordinates(
-      {blocks_wo_local_collision.size(), 3});
+  std::vector<double> distribute_coordinates(blocks_wo_local_collision.size()
+                                             * 3);
   for (std::size_t i = 0; i < collision_to_local.size(); ++i)
   {
-    xt::row(distribute_coordinates, i)
-        = xt::row(slave_coordinates, collision_to_local[i]);
+    std::copy_n(std::next(slave_coordinates.begin(), 3 * collision_to_local[i]),
+                3, std::next(distribute_coordinates.begin(), 3 * i));
   }
   dolfinx_mpc::mpc_data mpc;
 
@@ -1047,7 +1069,8 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     {
       throw std::runtime_error(
           "No masters found on contact surface (when executed in serial). "
-          "Please make sure that the surfaces are in contact, or increase the "
+          "Please make sure that the surfaces are in contact, or increase "
+          "the "
           "tolerance eps2.");
     }
 
@@ -1123,7 +1146,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
                    coordinate_disp.begin() + 1);
 
   // Send slave coordinates to neighbors
-  xt::xtensor<double, 2> recv_coords({std::size_t(disp.back()), 3});
+  std::vector<double> recv_coords(disp.back() * 3);
   MPI_Neighbor_allgatherv(
       distribute_coordinates.data(), (int)distribute_coordinates.size(),
       dolfinx::MPI::mpi_type<double>(), recv_coords.data(),
@@ -1145,10 +1168,12 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     std::vector<std::int32_t> remote_cell_collisions
         = dolfinx_mpc::find_local_collisions(*V->mesh(), bb_tree, recv_coords,
                                              eps2);
-    xt::xtensor<double, 3> remote_tabulated_basis_values
-        = dolfinx_mpc::evaluate_basis_functions(*V, recv_coords,
-                                                remote_cell_collisions);
-
+    auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, recv_coords, remote_cell_collisions);
+    assert(basis_shape.back() == 1);
+    std::experimental::mdspan<const double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis_span(basis.data(), basis_shape[0], basis_shape[1]);
     // TODO: Rework this so it is the same as the code on owning process.
     // Preferably get rid of all the std::map's
     // Work arrays for loop
@@ -1165,8 +1190,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
             = std::vector<std::int32_t>(tdim, 0);
         if (const auto& cell = remote_cell_collisions[j]; cell != -1)
         {
-          auto basis_values = xt::view(remote_tabulated_basis_values, j,
-                                       xt::all(), xt::all());
           auto cell_blocks = V->dofmap()->cell_dofs(cell);
           r_master.reserve(cell_blocks.size());
           r_coeff.reserve(cell_blocks.size());
@@ -1175,7 +1198,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
           // Store block and non-zero basis values
           for (std::size_t k = 0; k < cell_blocks.size(); ++k)
           {
-            if (const PetscScalar c = basis_values(k, 0); std::abs(c) > 1e-6)
+            if (const PetscScalar c = basis_span(j, k); std::abs(c) > 1e-6)
             {
               r_coeff.push_back(c);
               r_master.push_back(cell_blocks[k]);
