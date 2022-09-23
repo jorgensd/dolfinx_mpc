@@ -445,10 +445,10 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
     std::tie(slave_coordinates, coord_shape)
         = dolfinx_mpc::tabulate_dof_coordinates(*V, local_slave_blocks,
                                                 slave_cells);
-
     std::vector<std::int32_t> local_cell_collisions
         = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, slave_coordinates,
                                              eps2);
+
     auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
         *V, slave_coordinates, local_cell_collisions);
     assert(basis_shape.back() == 1);
@@ -478,7 +478,6 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // If serial, we gather the resulting mpc data as one constraint
   if (int mpi_size = dolfinx::MPI::size(comm); mpi_size == 1)
   {
-
     if (!slave_indices_remote.empty())
     {
       throw std::runtime_error(
@@ -956,22 +955,11 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
       = dolfinx_mpc::create_block_to_cell_map(*V, local_blocks);
   std::vector<double> slave_coordinates;
   {
-    auto [tmp, shape]
+    std::array<std::size_t, 2> c_shape;
+    std::tie(slave_coordinates, c_shape)
         = dolfinx_mpc::tabulate_dof_coordinates(*V, local_blocks, slave_cells);
-    std::experimental::mdspan<
-        double, std::experimental::extents<
-                    std::size_t, std::experimental::dynamic_extent, 3>>
-        tmp_span(tmp.data(), local_blocks.size(), 3);
-
-    slave_coordinates.resize(3 * local_blocks.size());
-    std::experimental::mdspan<
-        double, std::experimental::extents<
-                    std::size_t, std::experimental::dynamic_extent, 3>>
-        coordinate_span(slave_coordinates.data(), 3, local_blocks.size());
-    for (std::size_t i = 0; i < tmp_span.extent(0); ++i)
-      for (std::size_t j = 0; j < tmp_span.extent(1); ++j)
-        coordinate_span(j, i) = tmp_span(i, j);
   }
+
   // Loop through all masters on current processor and check if they
   // collide with a local master facet
   std::map<std::int32_t, std::vector<std::int32_t>> local_owners;
@@ -1065,6 +1053,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   // arrays
   if (int mpi_size = dolfinx::MPI::size(comm); mpi_size == 1)
   {
+
     if (!blocks_wo_local_collision.empty())
     {
       throw std::runtime_error(

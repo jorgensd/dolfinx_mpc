@@ -430,16 +430,17 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
     std::vector<double> normals
         = dolfinx::mesh::cell_normals(*V->mesh(), dim, ents);
     std::copy_n(normals.begin(), 3, n_0.begin());
-    std::copy_n(normals.begin(), 3, normal.begin());
-    for (std::size_t i = 1; i < normals.size() / 3; ++i)
+    std::copy_n(n_0.begin(), 3, normal.begin());
+    for (std::size_t j = 1; j < normals.size() / 3; ++j)
     {
-      // Align direction of normal vectors
-      double n_ni = std::transform_reduce(
-          n_0.begin(), n_0.end(), std::next(normals.begin(), 3 * i), 0,
+      // Align direction of normal vectors n_0 and n_j
+      double n_nj = std::transform_reduce(
+          n_0.begin(), n_0.end(), std::next(normals.begin(), 3 * j), 0.,
           std::plus{}, [](auto x, auto y) { return x * y; });
-      auto sign = n_ni / std::abs(n_ni);
-      for (std::size_t j = 0; j < 3; ++j)
-        normal[j] += sign * normals[3 * i + j];
+      auto sign = n_nj / std::abs(n_nj);
+      // NOTE: Could probably use std::transform for this operation
+      for (std::size_t k = 0; k < 3; ++k)
+        normal[k] += sign * normals[3 * j + k];
     }
     std::copy_n(normal.begin(), bs, std::next(_n.begin(), i * bs));
   }
@@ -868,7 +869,8 @@ dolfinx_mpc::evaluate_basis_functions(
 std::pair<std::vector<double>, std::array<std::size_t, 2>>
 dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
                                       std::span<const std::int32_t> dofs,
-                                      std::span<const std::int32_t> cells)
+                                      std::span<const std::int32_t> cells,
+                                      bool transposed)
 {
   if (!V.component().empty())
   {
@@ -919,12 +921,11 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
 
   // Array to hold coordinates to return
   namespace stdex = std::experimental;
-  const std::array<std::size_t, 2> coord_shape = {3, dofs.size()};
+  std::array<std::size_t, 2> coord_shape = {dofs.size(), 3};
+  if (transposed)
+    coord_shape = {3, dofs.size()};
   std::vector<double> coordsb(std::reduce(
       coord_shape.cbegin(), coord_shape.cend(), 1, std::multiplies{}));
-  stdex::mdspan<double, std::experimental::extents<
-                            std::size_t, 3, std::experimental::dynamic_extent>>
-      coords(coordsb.data(), coord_shape);
 
   using cmdspan4_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
@@ -960,6 +961,21 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
   auto phi = stdex::submdspan(phi_full, 0, stdex::full_extent,
                               stdex::full_extent, 0);
 
+  // Create insertion function
+  std::function<void(std::size_t, std::size_t, std::ptrdiff_t)> inserter;
+  if (transposed)
+  {
+    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
+                                                  std::ptrdiff_t loc)
+    { coordsb[j * coord_shape[1] + c] = xb[loc * gdim + j]; };
+  }
+  else
+  {
+    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
+                                                  std::ptrdiff_t loc)
+    { coordsb[c * coord_shape[1] + j] = xb[loc * gdim + j]; };
+  }
+
   for (std::size_t c = 0; c < cells.size(); ++c)
   {
     // Extract cell geometry
@@ -984,7 +1000,7 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
 
     // Copy dof coordinates into vector
     for (std::size_t j = 0; j < gdim; ++j)
-      coords(j, c) = xb[loc * gdim + j];
+      inserter(c, j, loc);
   }
 
   return {coordsb, coord_shape};

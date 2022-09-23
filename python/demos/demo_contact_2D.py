@@ -105,6 +105,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
 
     with Timer("~Contact: Create contact constraint"):
         nh = create_normal_approximation(V, mt, 4)
+        from IPython import embed;embed()
         mpc.create_contact_slip_condition(mt, 4, 9, nh)
 
     with Timer("~Contact: Add non-slip condition at bottom interface"):

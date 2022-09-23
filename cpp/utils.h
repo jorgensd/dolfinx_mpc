@@ -627,12 +627,14 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace& V,
 /// @param[in] dofs Array of dofs (not unrolled with block size)
 /// @param[in] cells An array of cell indices. cells[i] is the index
 /// of a cell that contains dofs[i]
-/// @returns The dof coordinates flattened in xyzxyz format, where the [3*i,
-/// 3*(i+1)] entries are the coordinates of the ith dof
+/// @param[in] transposed If true return coordiantes in xxyyzz format. Else
+/// xyzxzyxzy
+/// @returns The dof coordinates flattened in the appropriate format
 std::pair<std::vector<double>, std::array<std::size_t, 2>>
 tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
                          std::span<const std::int32_t> dofs,
-                         std::span<const std::int32_t> cells);
+                         std::span<const std::int32_t> cells,
+                         bool transposed = false);
 
 /// From a Mesh, find which cells collide with a set of points.
 /// @note Uses the GJK algorithm, see dolfinx::geometry::compute_distance_gjk

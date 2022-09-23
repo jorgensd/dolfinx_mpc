@@ -113,8 +113,8 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
         mapped_T(mapped_T_b.data(), T_shape);
 
     // Tabulate dof coordinates for each dof
-    auto [x, x_shape]
-        = dolfinx_mpc::tabulate_dof_coordinates(V, local_blocks, slave_cells);
+    auto [x, x_shape] = dolfinx_mpc::tabulate_dof_coordinates(
+        V, local_blocks, slave_cells, true);
     // Map all slave coordinates using the relation
     std::vector<double> mapped_x = relation(x);
     std::experimental::mdspan<
