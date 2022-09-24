@@ -476,7 +476,7 @@ void assemble_cells_impl(
         for (std::int32_t k = 0; k < bs0; ++k)
         {
           if (bc0[bs0 * dofs0[i] + k])
-            std::fill_n(std::next(Aeb.begin(), ndim1 * (bs0 * i + k)), ndim0,
+            std::fill_n(std::next(Aeb.begin(), ndim1 * (bs0 * i + k)), ndim1,
                         T(0));
         }
       }
@@ -504,7 +504,6 @@ void assemble_cells_impl(
     }
     mat_add_block_values(dofs0, dofs1, _Ae);
   }
-  std::cout << "POST LOOP\n";
 }
 //-----------------------------------------------------------------------------
 template <typename T>
