@@ -10,13 +10,12 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
-#include <xtensor/xtensor.hpp>
-#include <xtensor/xview.hpp>
 namespace
 {
 
 /// Given an assembled element matrix Ae, remove all entries (i,j) where both i
 /// and j corresponds to a slave degree of freedom
+/// @param[in,out] Ae_stripped The matrix Ae stripped of all other entries
 /// @param[in] Ae The element matrix
 /// @param[in] num_dofs The number of degrees of freedom in each row and column
 /// (blocked)
@@ -27,8 +26,11 @@ namespace
 /// rows rows and columns
 /// @returns The matrix stripped of slave contributions
 template <typename T>
-xt::xtensor<T, 2> create_stripped_matrix(
-    const xt::xtensor<T, 2>& Ae,
+void fill_stripped_matrix(
+    std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
+        Ae_stripped,
+    std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
+        Ae,
     const std::array<const std::uint32_t, 2>& num_dofs,
     const std::array<const int, 2>& bs,
     const std::array<const std::vector<std::int8_t>, 2>& is_slave,
@@ -39,10 +41,8 @@ xt::xtensor<T, 2> create_stripped_matrix(
   const auto& [row_dofs, col_dofs] = dofs;
   const auto& [slave_rows, slave_cols] = is_slave;
 
-  const int ndim0 = row_bs * num_row_dofs;
-  const int ndim1 = col_bs * num_col_dofs;
-  xt::xtensor<T, 2> Ae_stripped = xt::empty<T>({ndim0, ndim1});
-  assert(Ae.shape() == Ae_stripped.shape());
+  assert(Ae_stripped.extent(0) == Ae.extent(0));
+  assert(Ae_stripped.extent(1) == Ae.extent(1));
 
   // Strip Ae of all entries where both i and j are slaves
   bool slave_row;
@@ -67,15 +67,36 @@ xt::xtensor<T, 2> create_stripped_matrix(
       }
     }
   }
-  return Ae_stripped;
 };
 
+/// Modify local element matrix Ae with MPC contributions, and insert non-local
+/// contributions in the correct places
+///
+/// @param[in] mat_set Function that sets a local matrix into specified
+/// positions of the global matrix A
+/// @param[in] num_dofs The number of degrees of freedom in each row and column
+/// (blocked)
+/// @param[in, out] Ae The local element matrix
+/// @param[in] dofs The local indices of the row and column dofs (blocked)
+/// @param[in] bs The row and column block size
+/// @param[in] slaves The row and column slave indices (local to process)
+/// @param[in] masters Row and column map from the slave indices (local to
+/// process) to the master dofs (local to process)
+/// @param[in] coefficients row and column map from the slave indices (local to
+/// process) to the corresponding coefficients
+/// @param[in] is_slave Marker indicating if a dof (local to process) is a slave
+/// dof
+/// @param[in] scratch_memory Memory used in computations of additional element
+/// matrices and rows. Should be at least 2 * num_rows(Ae) * num_cols(Ae) +
+/// num_cols(Ae) + num_rows(Ae)
 template <typename T>
 void modify_mpc_cell(
     const std::function<int(const std::span<const std::int32_t>&,
                             const std::span<const std::int32_t>&,
                             const std::span<const T>)>& mat_set,
-    const std::array<const std::uint32_t, 2>& num_dofs, xt::xtensor<T, 2>& Ae,
+    const std::array<const std::uint32_t, 2>& num_dofs,
+    std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
+        Ae,
     const std::array<const std::span<const int32_t>, 2>& dofs,
     const std::array<const int, 2>& bs,
     const std::array<const std::span<const int32_t>, 2>& slaves,
@@ -84,7 +105,8 @@ void modify_mpc_cell(
         masters,
     const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>,
                      2>& coeffs,
-    const std::array<const std::vector<std::int8_t>, 2>& is_slave)
+    const std::array<const std::vector<std::int8_t>, 2>& is_slave,
+    std::span<T> scratch_memory)
 {
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
   std::array<std::vector<std::int32_t>, 2> local_index;
@@ -108,27 +130,36 @@ void modify_mpc_cell(
     }
   }
 
-  // Create copy to use for distribution to master dofs
-  xt::xtensor<T, 2> Ae_original = Ae;
-  // Build matrix where all slave-slave entries are 0 for usage to row and
-  // column addition
-  xt::xtensor<T, 2> Ae_stripped
-      = create_stripped_matrix<T>(Ae, num_dofs, bs, is_slave, dofs);
-
-  // Zero out slave entries in element matrix
   const int ndim0 = bs[0] * num_dofs[0];
   const int ndim1 = bs[1] * num_dofs[1];
+  assert(scratch_memory.size() >= 2 * ndim0 * ndim1 + ndim0 + ndim1);
+  std::fill(scratch_memory.begin(), scratch_memory.end(), T(0));
+
+  std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
+      Ae_original(scratch_memory.data(), ndim0, ndim1);
+
+  // Copy Ae into new matrix for distirbution of master dofs
+  std::copy_n(Ae.data_handle(), ndim0 * ndim1, Ae_original.data_handle());
+
+  std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
+      Ae_stripped(std::next(scratch_memory.data(), ndim0 * ndim1), ndim0,
+                  ndim1);
+  // Build matrix where all slave-slave entries are 0 for usage to row and
+  // column addition
+  fill_stripped_matrix(Ae_stripped, Ae, num_dofs, bs, is_slave, dofs);
+
+  // Zero out slave entries in element matrix
   // Zero slave row
-  std::for_each(local_index[0].cbegin(), local_index[0].cend(),
-                [&Ae, ndim1](const auto dof) {
-                  std::fill_n(std::next(Ae.begin(), ndim1 * dof), ndim1, 0.0);
-                });
+  std::for_each(
+      local_index[0].cbegin(), local_index[0].cend(),
+      [&Ae, ndim1](const auto dof)
+      { std::fill_n(std::next(Ae.data_handle(), ndim1 * dof), ndim1, 0.0); });
   // Zero slave column
   std::for_each(local_index[1].cbegin(), local_index[1].cend(),
-                [&Ae, ndim0, ndim1](const auto dof)
+                [&Ae, ndim0](const auto dof)
                 {
                   for (int row = 0; row < ndim0; ++row)
-                    Ae[row * ndim1 + dof] = 0.0;
+                    Ae(row, dof) = 0.0;
                 });
 
   // Flatten slaves, masters and coeffs for efficient
@@ -160,21 +191,23 @@ void modify_mpc_cell(
   std::array<std::int32_t, 1> row;
   std::array<std::int32_t, 1> col;
   std::array<T, 1> A0;
-  xt::xarray<T> Arow(ndim0);
-  xt::xarray<T> Acol(ndim1);
-
+  auto Arow = scratch_memory.subspan(2 * ndim0 * ndim1, ndim0);
+  auto Acol = scratch_memory.subspan(2 * ndim0 * ndim1 + ndim0, ndim1);
   // Loop over all masters for the MPC applied to rows.
   // Insert contributions in columns
   std::vector<std::int32_t> unrolled_dofs(ndim1);
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
   {
-    Acol
-        = flattened_coeffs[0][i] * xt::row(Ae_stripped, flattened_slaves[0][i]);
 
-    // Unroll dof blocks
+    // Unroll dof blocks and add column contribution
     for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
       for (int k = 0; k < bs[1]; ++k)
+      {
+        Acol[j * bs[1] + k]
+            = flattened_coeffs[0][i]
+              * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
         unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
+      }
 
     // Insert modified entries
     row[0] = flattened_masters[0][i];
@@ -186,13 +219,16 @@ void modify_mpc_cell(
   unrolled_dofs.resize(ndim0);
   for (std::size_t i = 0; i < num_flattened_masters[1]; ++i)
   {
-    Arow
-        = flattened_coeffs[1][i] * xt::col(Ae_stripped, flattened_slaves[1][i]);
 
-    // Unroll dof blocks
+    // Unroll dof blocks and compute row contribution
     for (std::uint32_t j = 0; j < num_dofs[0]; ++j)
       for (int k = 0; k < bs[0]; ++k)
+      {
+        Arow[j * bs[0] + k]
+            = flattened_coeffs[1][i]
+              * Ae_stripped(j * bs[0] + k, flattened_slaves[1][i]);
         unrolled_dofs[j * bs[0] + k] = dofs[0][j] * bs[0] + k;
+      }
 
     // Insert modified entries
     col[0] = flattened_masters[1][i];
@@ -271,9 +307,13 @@ void assemble_exterior_facets(
   const std::uint32_t ndim1 = bs1 * num_dofs1;
   const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
   const std::array<const int, 2> bs = {bs0, bs1};
-  xt::xtensor<T, 2> Ae({ndim0, ndim1});
-  const std::span<T> _Ae(Ae);
 
+  std::vector<T> Aeb(ndim0 * ndim1);
+  std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>> Ae(
+      Aeb.data(), ndim0, ndim1);
+  const std::span<T> _Ae(Aeb);
+
+  std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
   for (std::size_t l = 0; l < facets.size(); l += 2)
   {
 
@@ -288,8 +328,8 @@ void assemble_exterior_facets(
                   std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
-    std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-    kernel(Ae.data(), coeffs.data() + l / 2 * cstride, constants.data(),
+    std::fill(Aeb.begin(), Aeb.end(), 0);
+    kernel(Aeb.data(), coeffs.data() + l / 2 * cstride, constants.data(),
            coordinate_dofs.data(), &local_facet, nullptr);
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
@@ -307,7 +347,7 @@ void assemble_exterior_facets(
           {
             // Zero row bs0 * i + k
             const int row = bs0 * i + k;
-            std::fill_n(std::next(Ae.begin(), ndim1 * row), ndim1, 0.0);
+            std::fill_n(std::next(Ae.data_handle(), ndim1 * row), ndim1, 0.0);
           }
         }
       }
@@ -323,7 +363,7 @@ void assemble_exterior_facets(
             // Zero column bs1 * j + k
             const int col = bs1 * j + k;
             for (std::uint32_t row = 0; row < ndim0; ++row)
-              Ae[row * ndim1 + col] = 0.0;
+              Aeb[row * ndim1 + col] = 0.0;
           }
         }
       }
@@ -338,9 +378,9 @@ void assemble_exterior_facets(
           = {cell_to_slaves[0]->links(cell), cell_to_slaves[1]->links(cell)};
       const std::array<const std::span<const int32_t>, 2> dofs = {dmap0, dmap1};
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
-                         masters, coefficients, is_slave);
+                         masters, coefficients, is_slave, scratch_memory);
     }
-    mat_add_block_values(dmap0, dmap1, Ae);
+    mat_add_block_values(dmap0, dmap1, Aeb);
   }
 } // namespace
 //-----------------------------------------------------------------------------
@@ -401,8 +441,13 @@ void assemble_cells_impl(
   const std::uint32_t ndim1 = num_dofs1 * bs1;
   const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
   const std::array<const int, 2> bs = {bs0, bs1};
-  xt::xtensor<T, 2> Ae({ndim0, ndim1});
-  const std::span<T> _Ae(Ae);
+
+  std::vector<T> Aeb(ndim0 * ndim1);
+  std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>> Ae(
+      Aeb.data(), ndim0, ndim1);
+  const std::span<T> _Ae(Aeb);
+  std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
+
   for (std::size_t c = 0; c < active_cells.size(); c++)
   {
     const std::int32_t cell = active_cells[c];
@@ -413,9 +458,10 @@ void assemble_cells_impl(
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
                   std::next(coordinate_dofs.begin(), 3 * i));
     }
+
     // Tabulate tensor
-    std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
-    kernel(Ae.data(), coeffs.data() + c * cstride, constants.data(),
+    std::fill(Aeb.begin(), Aeb.end(), 0);
+    kernel(Aeb.data(), coeffs.data() + c * cstride, constants.data(),
            coordinate_dofs.data(), nullptr, nullptr);
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
@@ -430,21 +476,20 @@ void assemble_cells_impl(
         for (std::int32_t k = 0; k < bs0; ++k)
         {
           if (bc0[bs0 * dofs0[i] + k])
-            xt::row(Ae, bs0 * i + k).fill(0);
+            std::fill_n(std::next(Aeb.begin(), ndim1 * (bs0 * i + k)), ndim0,
+                        T(0));
         }
       }
     }
     if (!bc1.empty())
     {
       for (std::uint32_t j = 0; j < num_dofs1; ++j)
-      {
         for (std::int32_t k = 0; k < bs1; ++k)
-        {
           if (bc1[bs1 * dofs1[j] + k])
-            xt::col(Ae, bs1 * j + k) = xt::zeros<T>({num_dofs0 * bs0});
-        }
-      }
+            for (std::size_t l = 0; l < ndim0; ++l)
+              Aeb[l * ndim1 + bs1 * j + k] = 0;
     }
+
     // Modify local element matrix Ae and insert contributions into master
     // locations
     if ((cell_to_slaves[0]->num_links(cell) > 0)
@@ -453,11 +498,13 @@ void assemble_cells_impl(
       const std::array<const std::span<const int32_t>, 2> slaves
           = {cell_to_slaves[0]->links(cell), cell_to_slaves[1]->links(cell)};
       const std::array<const std::span<const int32_t>, 2> dofs = {dofs0, dofs1};
+
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
-                         masters, coefficients, is_slave);
+                         masters, coefficients, is_slave, scratch_memory);
     }
-    mat_add_block_values(dofs0, dofs1, Ae);
+    mat_add_block_values(dofs0, dofs1, _Ae);
   }
+  std::cout << "POST LOOP\n";
 }
 //-----------------------------------------------------------------------------
 template <typename T>

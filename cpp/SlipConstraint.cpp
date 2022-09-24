@@ -93,10 +93,8 @@ mpc_data dolfinx_mpc::create_slip_condition(
       if (!bc_marker[i])
         slave_blocks.push_back(all_slave_blocks[i]);
   }
-  // Create array to hold degrees of freedom from the subspace of v for each
-  // block
+
   const std::span<const PetscScalar>& n_vec = n->x()->array();
-  std::vector<PetscScalar> normal(num_normal_components);
 
   // Arrays holding MPC data
   std::vector<std::int32_t> slaves;
@@ -108,14 +106,17 @@ mpc_data dolfinx_mpc::create_slip_condition(
   std::vector<std::int64_t> pair_m;
   for (auto block : slave_blocks)
   {
-    // Obtain degrees of freedom for normal vector at slave dof
-    for (std::int32_t i = 0; i < num_normal_components; ++i)
-      normal[i] = n_vec[block * num_normal_components + i];
+    std::span<const PetscScalar> normal(
+        std::next(n_vec.begin(), block * num_normal_components),
+        num_normal_components);
+
     // Determine slave dof by component with biggest normal vector (to avoid
     // issues with grids aligned with coordiante system)
-    auto max_el = std::max_element(normal.begin(), normal.end());
+    auto max_el = std::max_element(normal.begin(), normal.end(),
+                                   [](PetscScalar a, PetscScalar b)
+                                   { return std::norm(a) < std::norm(b); });
     auto slave_index = std::distance(normal.begin(), max_el);
-
+    assert(slave_index < num_normal_components);
     std::int32_t parent_slave
         = parent_map(block * num_normal_components + slave_index);
     slaves.push_back(parent_slave);
@@ -157,7 +158,6 @@ mpc_data dolfinx_mpc::create_slip_condition(
     offsets.push_back((std::int32_t)masters.size());
     owners.insert(owners.end(), pair_o.begin(), pair_o.end());
   }
-
   mpc_data data;
   data.slaves = slaves;
 
