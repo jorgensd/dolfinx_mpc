@@ -453,8 +453,8 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
                               std::experimental::dextents<std::size_t, 2>>
         basis_span(basis.data(), basis_shape[0], basis_shape[1]);
     std::experimental::mdspan<
-        double, std::experimental::extents<
-                    std::size_t, std::experimental::dynamic_extent, 3>>
+        PetscScalar, std::experimental::extents<
+                         std::size_t, std::experimental::dynamic_extent, 3>>
         normal_span(normals.data(), local_slave_blocks.size(), 3);
     mpc_master_local = compute_master_contributions(
         local_rems, local_cell_collisions, normal_span, V, basis_span);
