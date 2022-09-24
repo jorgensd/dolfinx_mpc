@@ -400,7 +400,7 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
          gdim](const std::int32_t block, std::span<PetscScalar, 3> normal)
   {
     std::iota(dofs.begin(), dofs.end(), block * block_size);
-    for (std::size_t j = 0; j < gdim; ++j)
+    for (int j = 0; j < gdim; ++j)
       normal[j] = normal_array[dofs[j]];
     double norm = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1]
                             + normal[2] * normal[2]);

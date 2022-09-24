@@ -525,16 +525,18 @@ dolfinx_mpc::evaluate_basis_functions(
   const int num_sub_elements = element->num_sub_elements();
   if (num_sub_elements > 1 and num_sub_elements != bs_element)
   {
-    throw std::runtime_error("Function::eval is not supported for mixed "
-                             "elements. Extract subspaces.");
+    throw std::runtime_error(
+        "Evaluation of basis functions is not supported for mixed "
+        "elements. Extract subspaces.");
   }
 
   // Return early if we have no points
   std::array<std::size_t, 4> basis_shape
       = element->basix_element().tabulate_shape(0, num_points);
 
-  assert(basis_shape[2] == element->space_dimension() / bs_element);
-  assert(basis_shape[3] == element->value_size() / bs_element);
+  assert(basis_shape[2]
+         == std::size_t(element->space_dimension() / bs_element));
+  assert(basis_shape[3] == std::size_t(element->value_size() / bs_element));
   std::array<std::size_t, 3> reference_shape
       = {basis_shape[1], basis_shape[2], basis_shape[3]};
   std::vector<double> output_basis(std::reduce(
@@ -542,15 +544,6 @@ dolfinx_mpc::evaluate_basis_functions(
 
   if (num_points == 0)
     return {output_basis, reference_shape};
-
-  // If the space has sub elements, concatenate the evaluations on the sub
-  // elements
-  if (const int num_sub_elements = element->num_sub_elements();
-      num_sub_elements > 1 && num_sub_elements != bs_element)
-  {
-    throw std::runtime_error("Function::eval is not supported for mixed "
-                             "elements. Extract subspaces.");
-  }
 
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())

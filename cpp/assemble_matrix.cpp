@@ -132,7 +132,8 @@ void modify_mpc_cell(
 
   const int ndim0 = bs[0] * num_dofs[0];
   const int ndim1 = bs[1] * num_dofs[1];
-  assert(scratch_memory.size() >= 2 * ndim0 * ndim1 + ndim0 + ndim1);
+  assert(scratch_memory.size()
+         >= std::size_t(2 * ndim0 * ndim1 + ndim0 + ndim1));
   std::fill(scratch_memory.begin(), scratch_memory.end(), T(0));
 
   std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
