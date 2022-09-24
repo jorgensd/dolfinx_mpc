@@ -182,7 +182,7 @@ mpc_data compute_master_contributions(
 mpc_data compute_block_contributions(
     const std::vector<std::int32_t>& local_slaves,
     const std::vector<std::int32_t>& local_slave_blocks,
-    std::span<const PetscScalar> normals,
+    std::span<const double> normals,
     const std::shared_ptr<const dolfinx::common::IndexMap> imap,
     std::int32_t block_size, int rank)
 {
@@ -396,12 +396,12 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   std::vector<std::int32_t> dofs(block_size);
   std::span<const PetscScalar> normal_array = nh->x()->array();
   const auto largest_normal_component
-      = [&dofs, block_size, &normal_array,
-         gdim](const std::int32_t block, std::span<PetscScalar, 3> normal)
+      = [&dofs, block_size, &normal_array, gdim](const std::int32_t block,
+                                                 std::span<double, 3> normal)
   {
     std::iota(dofs.begin(), dofs.end(), block * block_size);
     for (int j = 0; j < gdim; ++j)
-      normal[j] = normal_array[dofs[j]];
+      normal[j] = std::real(normal_array[dofs[j]]);
     double norm = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1]
                             + normal[2] * normal[2]);
     std::for_each(normal.begin(), normal.end(),
@@ -411,13 +411,13 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   };
 
   // Determine which dof in local slave block is the actual slave
-  std::vector<PetscScalar> normals(3 * local_slave_blocks.size(), 0);
+  std::vector<double> normals(3 * local_slave_blocks.size(), 0);
   assert(block_size == gdim);
   for (std::size_t i = 0; i < local_slave_blocks.size(); ++i)
   {
     const std::int32_t slave = local_slave_blocks[i];
     const auto block = largest_normal_component(
-        slave, std::span<PetscScalar, 3>(std::next(normals.begin(), 3 * i), 3));
+        slave, std::span<double, 3>(std::next(normals.begin(), 3 * i), 3));
     local_slaves[i] = block_size * slave + block;
     local_rems[i] = block;
   }
@@ -453,8 +453,8 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
                               std::experimental::dextents<std::size_t, 2>>
         basis_span(basis.data(), basis_shape[0], basis_shape[1]);
     std::experimental::mdspan<
-        PetscScalar, std::experimental::extents<
-                         std::size_t, std::experimental::dynamic_extent, 3>>
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
         normal_span(normals.data(), local_slave_blocks.size(), 3);
     mpc_master_local = compute_master_contributions(
         local_rems, local_cell_collisions, normal_span, V, basis_span);
