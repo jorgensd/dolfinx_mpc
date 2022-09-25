@@ -6,4 +6,4 @@ parts:
     chapters:
     - file: "api"
     - file: "utils"
-
+    - file: "numba"
