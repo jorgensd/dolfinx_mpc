@@ -25,8 +25,7 @@ jobs:
         run: python3 -m pip -v install python/
                 
       - name: Build docs
-        run: make doc
-
+        run: jupyter book build -W docs
       - name: Copy Dockerfile into gh-pages
         run: cp Dockerfile ${PUBLISH_DIR}/
 
