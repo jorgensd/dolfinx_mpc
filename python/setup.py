@@ -25,6 +25,7 @@ extras = {
 # 'all' includes all of the above
 extras['all'] = list(chain(*extras.values()))
 
+
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
         Extension.__init__(self, name, sources=[])
