@@ -558,9 +558,9 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
                           neighborhood_comms[0]);
   std::vector<double> slave_normals(disp.back() * 3);
   MPI_Neighbor_allgatherv(normals_send.data(), (int)normals_send.size(),
-                          dolfinx::MPI::mpi_type<PetscScalar>(),
+                          dolfinx::MPI::mpi_type<double>(),
                           slave_normals.data(), num_slaves_recv3.data(),
-                          disp3.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
+                          disp3.data(), dolfinx::MPI::mpi_type<double>(),
                           neighborhood_comms[0]);
 
   // Compute off-process contributions
