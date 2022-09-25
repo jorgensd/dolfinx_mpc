@@ -15,3 +15,5 @@ except ModuleNotFoundError:
 
 from .assemble_matrix import assemble_matrix
 from .assemble_vector import assemble_vector
+
+__all__ = ["assemble_matrix", "assemble_vector"]

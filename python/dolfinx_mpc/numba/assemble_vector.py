@@ -28,14 +28,10 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: _PETSc.Ve
     """
     Assemble a compiled DOLFINx form into vector b.
 
-    Parameters
-    ----------
-    form
-        The complied linear form
-    constraint
-        The multi point constraint
-    b
-        PETSc vector to assemble into (optional)
+    Args:
+        form: The complied linear form
+        constraint: The multi point constraint
+        b: PETSc vector to assemble into (optional)
     """
 
     _log.log(_log.LogLevel.INFO, "Assemble MPC vector")
