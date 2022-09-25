@@ -10,9 +10,7 @@
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
-#include <xtensor/xcomplex.hpp>
-#include <xtensor/xsort.hpp>
-#include <xtensor/xview.hpp>
+
 using namespace dolfinx_mpc;
 
 namespace
@@ -95,165 +93,6 @@ create_block_to_facet_map(std::shared_ptr<dolfinx::fem::FunctionSpace> V,
 
 } // namespace
 
-//-----------------------------------------------------------------------------
-xt::xtensor<double, 2> dolfinx_mpc::get_basis_functions(
-    std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    std::span<const double> x, const int index)
-{
-  // Get mesh
-  assert(V);
-  assert(V->mesh());
-  const std::shared_ptr<const dolfinx::mesh::Mesh> mesh = V->mesh();
-  const size_t tdim = mesh->topology().dim();
-
-  // Get geometry data
-  const dolfinx::mesh::Geometry& geometry = mesh->geometry();
-  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = geometry.dofmap();
-  std::span<const double> x_g = geometry.x();
-  const dolfinx::fem::CoordinateElement& cmap = geometry.cmap();
-  const size_t gdim = geometry.dim();
-  const size_t num_dofs_g = cmap.dim();
-  assert(x.size() == gdim);
-
-  namespace stdex = std::experimental;
-  using cmdspan4_t
-      = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
-  using mdspan2_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
-  using cmdspan2_t
-      = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
-
-  // Create buffer for coordinate dofs
-  std::vector<double> coord_dofs_b(num_dofs_g * gdim);
-  mdspan2_t coord_dofs(coord_dofs_b.data(), num_dofs_g, gdim);
-
-  // Get coordinate mapping
-
-  // Get element
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element = V->element();
-  assert(element);
-  const size_t element_bs = element->block_size();
-  const std::array<std::size_t, 4> basis_shape
-      = element->basix_element().tabulate_shape(0, 1);
-
-  // Skip negative cell indices
-  xt::xtensor<double, 2> basis_array = xt::zeros<double>(
-      {basis_shape[2] * element_bs, basis_shape[3] * element_bs});
-  if (index < 0)
-    return basis_array;
-
-  // Pull back input coordinates to reference cell
-  // Evaluate geometry basis at point (0, 0, 0) on the reference cell.
-  // Used in affine case.
-  std::array<std::size_t, 4> phi0_shape = cmap.tabulate_shape(1, 1);
-  std::vector<double> phi0_b(
-      std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
-  cmdspan4_t phi0(phi0_b.data(), phi0_shape);
-  cmap.tabulate(1, std::vector<double>(tdim), {1, tdim}, phi0_b);
-  auto dphi0 = stdex::submdspan(phi0, std::pair(1, tdim + 1), 0,
-                                stdex::full_extent, 0);
-
-  // Data structure for evaluating geometry basis at specific points.
-  // Used in non-affine case.
-  std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
-  std::vector<double> phi_b(
-      std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{}));
-  cmdspan4_t phi(phi_b.data(), phi_shape);
-  auto dphi
-      = stdex::submdspan(phi, std::pair(1, tdim + 1), 0, stdex::full_extent, 0);
-
-  // Geometry data at each point
-  std::vector<double> J_b(gdim * tdim);
-  mdspan2_t J(J_b.data(), gdim, tdim);
-  std::vector<double> K_b(tdim * gdim);
-  mdspan2_t K(K_b.data(), tdim, gdim);
-  std::vector<double> detJ(1);
-  std::vector<double> det_scratch(2 * gdim * tdim);
-
-  auto x_dofs = x_dofmap.links(index);
-  assert(x_dofs.size() == num_dofs_g);
-  for (std::size_t i = 0; i < num_dofs_g; ++i)
-  {
-    const int pos = 3 * x_dofs[i];
-    for (std::size_t j = 0; j < gdim; ++j)
-      coord_dofs(i, j) = x_g[pos + j];
-  }
-
-  std::array<double, 3> Xb;
-  mdspan2_t X(Xb.data(), 1, tdim);
-  cmdspan2_t xp(x.data(), 1, gdim);
-
-  // Compute reference coordinates X, and J, detJ and K
-  if (cmap.is_affine())
-  {
-    dolfinx::fem::CoordinateElement::compute_jacobian(dphi0, coord_dofs, J);
-    dolfinx::fem::CoordinateElement::compute_jacobian_inverse(J, K);
-    std::array<double, 3> x0 = {0, 0, 0};
-    for (std::size_t i = 0; i < coord_dofs.extent(1); ++i)
-      x0[i] += coord_dofs(0, i);
-    dolfinx::fem::CoordinateElement::pull_back_affine(X, K, x0, xp);
-    detJ[0] = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(
-        J, det_scratch);
-  }
-  else
-  {
-
-    // Pull-back physical point xp to reference coordinate Xp
-    cmdspan2_t _x(x.data(), 1, gdim);
-    cmap.pull_back_nonaffine(X, _x, coord_dofs);
-    cmap.tabulate(1, std::span(Xb.data(), tdim), {1, tdim}, phi_b);
-    dolfinx::fem::CoordinateElement::compute_jacobian(dphi, coord_dofs, J);
-    dolfinx::fem::CoordinateElement::compute_jacobian_inverse(J, K);
-    detJ[0] = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(
-        J, det_scratch);
-  }
-
-  // Compute basis on reference element
-  xt::xtensor<double, 4> tabulated_data(basis_shape);
-  element->tabulate(tabulated_data, Xb, {1, tdim}, 0);
-
-  // Apply element transformation
-  mesh->topology_mutable().create_entity_permutations();
-  const std::vector<std::uint32_t> permutation_info
-      = mesh->topology().get_cell_permutation_info();
-
-  element->apply_dof_transformation(
-      std::span<double>(tabulated_data.data(), tabulated_data.size()),
-      permutation_info[index], basis_shape[3]);
-
-  // Push basis forward to physical element
-  namespace stdex = std::experimental;
-  using xu_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
-  using xU_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
-  using xJ_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
-  using xK_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
-  auto push_forward_fn
-      = element->basix_element().map_fn<xu_t, xU_t, xJ_t, xK_t>();
-  std::vector<double> basis_values_b(basis_shape[2] * basis_shape[3]);
-  mdspan2_t basis_values(basis_values_b.data(), basis_shape[2], basis_shape[3]);
-  {
-    xK_t _K(K_b.data(), K.extent(0), K.extent(1));
-    xJ_t _J(J_b.data(), J.extent(0), J.extent(1));
-    xu_t _u(basis_values_b.data(), basis_values.extent(0),
-            basis_values.extent(1));
-    xU_t _U(tabulated_data.data(), tabulated_data.shape(2),
-            tabulated_data.shape(3));
-    push_forward_fn(_u, _U, _J, detJ[0], _K);
-  }
-  // Expand basis values for each dof
-  for (std::size_t block = 0; block < element_bs; ++block)
-  {
-    for (std::size_t i = 0; i < basis_shape[2]; ++i)
-    {
-      for (std::size_t j = 0; j < basis_shape[3]; ++j)
-      {
-        basis_array(i * element_bs + block, j * element_bs + block)
-            = basis_values(i, j);
-      }
-    }
-  }
-  return basis_array;
-}
 //-----------------------------------------------------------------------------
 dolfinx::graph::AdjacencyList<int> dolfinx_mpc::compute_shared_indices(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V)
@@ -402,7 +241,6 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
     std::shared_ptr<dolfinx::fem::FunctionSpace> V, std::int32_t dim,
     const std::span<const std::int32_t>& entities)
 {
-
   dolfinx::graph::AdjacencyList<std::int32_t> block_to_entities
       = create_block_to_facet_map(V, dim, entities);
 
@@ -419,30 +257,30 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
   std::span<PetscScalar> _n(array, n);
 
   const std::int32_t bs = V->dofmap()->index_map_bs();
-  xt::xtensor_fixed<double, xt::xshape<3>> normal;
+  std::array<double, 3> normal;
+  std::array<double, 3> n_0;
   for (std::int32_t i = 0; i < block_to_entities.num_nodes(); i++)
   {
     auto ents = block_to_entities.links(i);
     if (ents.empty())
       continue;
     // Sum all normal for entities
-    std::vector<double> _normals
+    std::vector<double> normals
         = dolfinx::mesh::cell_normals(*V->mesh(), dim, ents);
-    auto normals
-        = xt::adapt(_normals, std::vector<std::size_t>{_normals.size() / 3, 3});
-    auto n_0 = xt::row(normals, 0);
-    normal = n_0;
-    for (std::size_t i = 1; i < normals.shape(0); ++i)
+    std::copy_n(normals.begin(), 3, n_0.begin());
+    std::copy_n(n_0.begin(), 3, normal.begin());
+    for (std::size_t j = 1; j < normals.size() / 3; ++j)
     {
-      // Align direction of normal vectors
-      double n_ni = dot(n_0, xt::row(normals, i));
-      auto sign = n_ni / std::abs(n_ni);
-      normal += sign * xt::row(normals, i);
+      // Align direction of normal vectors n_0 and n_j
+      double n_nj = std::transform_reduce(
+          n_0.begin(), n_0.end(), std::next(normals.begin(), 3 * j), 0.,
+          std::plus{}, [](auto x, auto y) { return x * y; });
+      auto sign = n_nj / std::abs(n_nj);
+      // NOTE: Could probably use std::transform for this operation
+      for (std::size_t k = 0; k < 3; ++k)
+        normal[k] += sign * normals[3 * j + k];
     }
-    for (std::int32_t j = 0; j < bs; j++)
-    {
-      _n[i * bs + j] = normal[j];
-    }
+    std::copy_n(normal.begin(), bs, std::next(_n.begin(), i * bs));
   }
   // Receive normals from other processes with dofs on the facets
   VecGhostUpdateBegin(n_vec.vec(), ADD_VALUES, SCATTER_REVERSE);
@@ -455,11 +293,10 @@ dolfinx::fem::Function<PetscScalar> dolfinx_mpc::create_normal_approximation(
     PetscScalar acc = 0;
     for (std::int32_t j = 0; j < bs; j++)
       acc += _n[i * bs + j] * _n[i * bs + j];
-    if (std::sqrt(xt::norm(acc)) > 1e-10)
+    if (double abs = std::abs(acc); abs > 1e-10)
     {
-      acc = std::sqrt(xt::norm(acc));
       for (std::int32_t j = 0; j < bs; j++)
-        _n[i * bs + j] /= acc;
+        _n[i * bs + j] /= abs;
     }
   }
 
@@ -647,11 +484,14 @@ dolfinx::la::SparsityPattern dolfinx_mpc::create_sparsity_pattern(
   return pattern;
 }
 
-xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
-    const dolfinx::fem::FunctionSpace& V, const xt::xtensor<double, 2>& x,
+std::pair<std::vector<double>, std::array<std::size_t, 3>>
+dolfinx_mpc::evaluate_basis_functions(
+    const dolfinx::fem::FunctionSpace& V, std::span<const double> x,
     const std::span<const std::int32_t>& cells)
 {
-  if (x.shape(0) != cells.size())
+  assert(x.size() % 3 == 0);
+  const std::size_t num_points = x.size() / 3;
+  if (num_points != cells.size())
   {
     throw std::runtime_error(
         "Number of points and number of cells must be equal.");
@@ -679,36 +519,31 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
   const int bs_element = element->block_size();
   const std::size_t reference_value_size
       = element->reference_value_size() / bs_element;
-  const std::size_t value_size = element->value_size() / bs_element;
-  const std::size_t space_dimension = element->space_dimension() / bs_element;
 
   // If the space has sub elements, concatenate the evaluations on the
   // sub elements
   const int num_sub_elements = element->num_sub_elements();
   if (num_sub_elements > 1 and num_sub_elements != bs_element)
   {
-    throw std::runtime_error("Function::eval is not supported for mixed "
-                             "elements. Extract subspaces.");
+    throw std::runtime_error(
+        "Evaluation of basis functions is not supported for mixed "
+        "elements. Extract subspaces.");
   }
 
   // Return early if we have no points
-  [[maybe_unused]] std::array<std::size_t, 4> basis_shape
-      = element->basix_element().tabulate_shape(0, x.shape(0));
-  assert(basis_shape[2] == space_dimension);
-  assert(basis_shape[3] == value_size);
-  xt::xtensor<double, 3> basis_derivatives_reference_values_b
-      = xt::zeros<double>({x.shape(0), space_dimension, value_size});
-  if (x.shape(0) == 0)
-    return basis_derivatives_reference_values_b;
+  std::array<std::size_t, 4> basis_shape
+      = element->basix_element().tabulate_shape(0, num_points);
 
-  // If the space has sub elements, concatenate the evaluations on the sub
-  // elements
-  if (const int num_sub_elements = element->num_sub_elements();
-      num_sub_elements > 1 && num_sub_elements != bs_element)
-  {
-    throw std::runtime_error("Function::eval is not supported for mixed "
-                             "elements. Extract subspaces.");
-  }
+  assert(basis_shape[2]
+         == std::size_t(element->space_dimension() / bs_element));
+  assert(basis_shape[3] == std::size_t(element->value_size() / bs_element));
+  std::array<std::size_t, 3> reference_shape
+      = {basis_shape[1], basis_shape[2], basis_shape[3]};
+  std::vector<double> output_basis(std::reduce(
+      reference_shape.begin(), reference_shape.end(), 1, std::multiplies{}));
+
+  if (num_points == 0)
+    return {output_basis, reference_shape};
 
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
@@ -749,15 +584,15 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
       = stdex::submdspan(phi, std::pair(1, tdim + 1), 0, stdex::full_extent, 0);
 
   // Reference coordinates for each point
-  std::vector<double> Xb(x.shape(0) * tdim);
-  mdspan2_t X(Xb.data(), x.shape(0), tdim);
+  std::vector<double> Xb(num_points * tdim);
+  mdspan2_t X(Xb.data(), num_points, tdim);
 
   // Geometry data at each point
-  std::vector<double> J_b(x.shape(0) * gdim * tdim);
-  mdspan3_t J(J_b.data(), x.shape(0), gdim, tdim);
-  std::vector<double> K_b(x.shape(0) * tdim * gdim);
-  mdspan3_t K(K_b.data(), x.shape(0), tdim, gdim);
-  std::vector<double> detJ(x.shape(0));
+  std::vector<double> J_b(num_points * gdim * tdim);
+  mdspan3_t J(J_b.data(), num_points, gdim, tdim);
+  std::vector<double> K_b(num_points * tdim * gdim);
+  mdspan3_t K(K_b.data(), num_points, tdim, gdim);
+  std::vector<double> detJ(num_points);
   std::vector<double> det_scratch(2 * gdim * tdim);
 
   // Prepare geometry data in each cell
@@ -780,7 +615,7 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
     }
 
     for (std::size_t j = 0; j < gdim; ++j)
-      xp(0, j) = x(p, j);
+      xp(0, j) = x[3 * p + j];
 
     auto _J = stdex::submdspan(J, p, stdex::full_extent, stdex::full_extent);
     auto _K = stdex::submdspan(K, p, stdex::full_extent, stdex::full_extent);
@@ -817,16 +652,15 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
       X(p, j) = Xpb[j];
   }
 
-  // Prepare basis function data structures
-  cmdspan4_t basis_derivatives_reference_values(
-      basis_derivatives_reference_values_b.data(), 1, x.shape(0),
-      space_dimension, reference_value_size);
-  std::vector<double> basis_values_b(space_dimension * value_size);
-  mdspan2_t basis_values(basis_values_b.data(), space_dimension, value_size);
-
   // Compute basis on reference element
-  element->tabulate(basis_derivatives_reference_values_b, Xb,
-                    {X.extent(0), X.extent(1)}, 0);
+  std::vector<double> reference_basisb(std::reduce(
+      basis_shape.begin(), basis_shape.end(), 1, std::multiplies{}));
+  element->tabulate(reference_basisb, Xb, {X.extent(0), X.extent(1)}, 0);
+
+  // Data structure to hold basis for transformation
+  const std::size_t num_basis_values = basis_shape[2] * basis_shape[3];
+  std::vector<double> basis_valuesb(num_basis_values);
+  mdspan2_t basis_values(basis_valuesb.data(), basis_shape[2], basis_shape[3]);
 
   using xu_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
   using xU_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
@@ -837,8 +671,8 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
 
   auto apply_dof_transformation
       = element->get_dof_transformation_function<double>();
-  const std::size_t num_basis_values = space_dimension * reference_value_size;
 
+  mdspan3_t full_basis(output_basis.data(), reference_shape);
   for (std::size_t p = 0; p < cells.size(); ++p)
   {
     const int cell_index = cells[p];
@@ -847,26 +681,26 @@ xt::xtensor<double, 3> dolfinx_mpc::evaluate_basis_functions(
       continue;
 
     // Permute the reference values to account for the cell's orientation
-    apply_dof_transformation(
-        std::span(basis_derivatives_reference_values_b.data()
-                      + p * num_basis_values,
-                  num_basis_values),
-        cell_info, cell_index, (int)reference_value_size);
+    std::copy_n(std::next(reference_basisb.begin(), num_basis_values * p),
+                num_basis_values, basis_valuesb.begin());
+    apply_dof_transformation(basis_valuesb, cell_info, cell_index,
+                             (int)reference_value_size);
 
-    auto _U = stdex::submdspan(basis_derivatives_reference_values, 0, p,
-                               stdex::full_extent, stdex::full_extent);
+    auto _U = stdex::submdspan(full_basis, p, stdex::full_extent,
+                               stdex::full_extent);
     auto _J = stdex::submdspan(J, p, stdex::full_extent, stdex::full_extent);
     auto _K = stdex::submdspan(K, p, stdex::full_extent, stdex::full_extent);
-    push_forward_fn(basis_values, _U, _J, detJ[p], _K);
+    push_forward_fn(_U, basis_values, _J, detJ[p], _K);
   }
-  return basis_derivatives_reference_values_b;
+  return {output_basis, reference_shape};
 }
 
 //-----------------------------------------------------------------------------
-xt::xtensor<double, 2>
+std::pair<std::vector<double>, std::array<std::size_t, 2>>
 dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
                                       std::span<const std::int32_t> dofs,
-                                      std::span<const std::int32_t> cells)
+                                      std::span<const std::int32_t> cells,
+                                      bool transposed)
 {
   if (!V.component().empty())
   {
@@ -916,10 +750,13 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
   const std::size_t num_dofs_g = x_dofmap.num_links(0);
 
   // Array to hold coordinates to return
-  const std::size_t shape_c0 = 3;
-  const std::size_t shape_c1 = dofs.size();
-  xt::xtensor<double, 2> coords = xt::zeros<double>({shape_c0, shape_c1});
   namespace stdex = std::experimental;
+  std::array<std::size_t, 2> coord_shape = {dofs.size(), 3};
+  if (transposed)
+    coord_shape = {3, dofs.size()};
+  std::vector<double> coordsb(std::reduce(
+      coord_shape.cbegin(), coord_shape.cend(), 1, std::multiplies{}));
+
   using cmdspan4_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
   using mdspan2_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
@@ -954,6 +791,21 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
   auto phi = stdex::submdspan(phi_full, 0, stdex::full_extent,
                               stdex::full_extent, 0);
 
+  // Create insertion function
+  std::function<void(std::size_t, std::size_t, std::ptrdiff_t)> inserter;
+  if (transposed)
+  {
+    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
+                                                  std::ptrdiff_t loc)
+    { coordsb[j * coord_shape[1] + c] = xb[loc * gdim + j]; };
+  }
+  else
+  {
+    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
+                                                  std::ptrdiff_t loc)
+    { coordsb[c * coord_shape[1] + j] = xb[loc * gdim + j]; };
+  }
+
   for (std::size_t c = 0; c < cells.size(); ++c)
   {
     // Extract cell geometry
@@ -978,10 +830,10 @@ dolfinx_mpc::tabulate_dof_coordinates(const dolfinx::fem::FunctionSpace& V,
 
     // Copy dof coordinates into vector
     for (std::size_t j = 0; j < gdim; ++j)
-      coords(j, c) = xb[loc * gdim + j];
+      inserter(c, j, loc);
   }
 
-  return coords;
+  return {coordsb, coord_shape};
 }
 
 //-----------------------------------------------------------------------------
@@ -989,7 +841,7 @@ dolfinx::graph::AdjacencyList<std::int32_t>
 dolfinx_mpc::compute_colliding_cells(
     const dolfinx::mesh::Mesh& mesh,
     const dolfinx::graph::AdjacencyList<std::int32_t>& candidate_cells,
-    const xt::xtensor<double, 2>& points, const double eps2)
+    std::span<const double> points, const double eps2)
 {
   std::vector<std::int32_t> offsets = {0};
   offsets.reserve(candidate_cells.num_nodes() + 1);
@@ -1004,12 +856,15 @@ dolfinx_mpc::compute_colliding_cells(
       offsets.push_back((std::int32_t)colliding_cells.size());
       continue;
     }
-    xt::xtensor<double, 2> _point({cells.size(), 3});
+    // Create span of
+    std::vector<double> distances_sq(cells.size());
     for (std::size_t j = 0; j < cells.size(); j++)
-      xt::row(_point, j) = xt::row(points, i);
-
-    const std::vector<double> distances_sq
-        = dolfinx::geometry::squared_distance(mesh, tdim, cells, _point);
+    {
+      distances_sq[j]
+          = dolfinx::geometry::squared_distance(mesh, tdim, cells.subspan(j, 1),
+                                                points.subspan(3 * i, 3))
+                .front();
+    }
     // Only push back closest cell
     if (auto cell_idx
         = std::min_element(distances_sq.cbegin(), distances_sq.cend());
@@ -1028,21 +883,20 @@ dolfinx_mpc::compute_colliding_cells(
 std::vector<std::int32_t> dolfinx_mpc::find_local_collisions(
     const dolfinx::mesh::Mesh& mesh,
     const dolfinx::geometry::BoundingBoxTree& tree,
-    const xt::xtensor<double, 2>& points, const double eps2)
+    std::span<const double> points, const double eps2)
 {
-  assert(points.shape(1) == 3);
+  assert(points.size() % 3 == 0);
 
   // Compute collisions for each point with BoundingBoxTree
   dolfinx::graph::AdjacencyList<std::int32_t> bbox_collisions
-      = dolfinx::geometry::compute_collisions(
-          tree, std::span(points.data(), points.shape(0) * points.shape(1)));
+      = dolfinx::geometry::compute_collisions(tree, points);
 
   // Compute exact collision
   auto cell_collisions = dolfinx_mpc::compute_colliding_cells(
       mesh, bbox_collisions, points, eps2);
 
   // Extract first collision
-  std::vector<std::int32_t> collisions(points.shape(0), -1);
+  std::vector<std::int32_t> collisions(points.size() / 3, -1);
   for (int i = 0; i < cell_collisions.num_nodes(); i++)
   {
     auto local_cells = cell_collisions.links(i);

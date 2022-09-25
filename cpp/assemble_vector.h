@@ -11,7 +11,6 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <functional>
-#include <xtensor/xcomplex.hpp>
 
 namespace dolfinx_mpc
 {

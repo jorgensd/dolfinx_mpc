@@ -14,7 +14,7 @@
 namespace dolfinx_mpc
 {
 
-/// Create a slip contact condition between two sets of facets
+/// Create a slip condition between two sets of facets
 /// @param[in] V The mpc function space
 /// @param[in] meshtags The meshtag
 /// @param[in] slave_marker Tag for the first interface

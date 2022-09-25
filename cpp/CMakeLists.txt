@@ -90,7 +90,7 @@ set_package_properties(UFC PROPERTIES TYPE REQUIRED
   URL "https://github.com/fenics/ffcx")
 
 # Check for required package DOLFINX
-find_package(DOLFINX 0.5.1 REQUIRED)
+find_package(DOLFINX 0.5.2 REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     DESCRIPTION "New generation Dynamic Object-oriented Library for - FINite element computation"
     URL "https://github.com/FEniCS/dolfinx"

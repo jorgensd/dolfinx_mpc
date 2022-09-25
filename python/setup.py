@@ -15,7 +15,7 @@ if sys.version_info <= (3, 8):
 
 VERSION = "0.5.1.dev0"
 
-REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>=0.5.0"]
+REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>0.5.1"]
 
 
 class CMakeExtension(Extension):

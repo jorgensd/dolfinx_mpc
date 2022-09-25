@@ -11,9 +11,6 @@
 #include <chrono>
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
-#include <xtensor/xcomplex.hpp>
-#include <xtensor/xsort.hpp>
-#include <xtensor/xview.hpp>
 using namespace dolfinx_mpc;
 
 namespace
@@ -68,11 +65,16 @@ create_boundingbox_tree(const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
 /// cells at the given coordinates
 /// @returns The mpc data (exluding slave indices)
 mpc_data compute_master_contributions(
-    const std::span<const std::int32_t>& local_rems,
-    const std::span<const std::int32_t>& local_colliding_cell,
-    const xt::xtensor<PetscScalar, 2>& normals,
+    std::span<const std::int32_t> local_rems,
+    std::span<const std::int32_t> local_colliding_cell,
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        normals,
     std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
-    xt::xtensor<double, 3> tabulated_basis_values)
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        tabulated_basis_values)
 {
   const double tol = 1e-6;
   auto mesh = V->mesh();
@@ -95,17 +97,14 @@ mpc_data compute_master_contributions(
   {
     if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      auto basis_values
-          = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
-
       auto cell_blocks = V->dofmap()->cell_dofs(cell);
       for (std::size_t j = 0; j < cell_blocks.size(); ++j)
       {
         for (int b = 0; b < bs; b++)
         {
           // NOTE: Assuming 0 value size
-          if (const PetscScalar val
-              = normals(i, b) / normals(i, local_rems[i]) * basis_values(j, 0);
+          if (const PetscScalar val = normals(i, b) / normals(i, local_rems[i])
+                                      * tabulated_basis_values(i, j);
               std::abs(val) > tol)
           {
             num_masters_local[i]++;
@@ -133,9 +132,6 @@ mpc_data compute_master_contributions(
   {
     if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      auto basis_values
-          = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
-
       auto cell_blocks = V->dofmap()->cell_dofs(cell);
       global_blocks.resize(cell_blocks.size());
       imap->local_to_global(cell_blocks, global_blocks);
@@ -146,8 +142,8 @@ mpc_data compute_master_contributions(
         for (int b = 0; b < bs; b++)
         {
           // NOTE: Assuming 0 value size
-          if (const PetscScalar val
-              = normals(i, b) / normals(i, local_rems[i]) * basis_values(j, 0);
+          if (const PetscScalar val = normals(i, b) / normals(i, local_rems[i])
+                                      * tabulated_basis_values(i, j);
               std::abs(val) > tol)
           {
             const std::int32_t m_pos
@@ -177,7 +173,8 @@ mpc_data compute_master_contributions(
 /// n)|_slave_facet
 /// @param[in] local_slaves The slave dofs (local index)
 /// @param[in] local_slave_blocks The corresponding blocks for each slave
-/// @param[in] normals The normal vectors, shape (local_slaves.size(), 3)
+/// @param[in] normals The normal vectors, shape (local_slaves.size(), 3).
+/// Storage flattened row major.
 /// @param[in] imap The index map
 /// @param[in] block_size The block size of the index map
 /// @param[in] rank The rank of current process
@@ -185,10 +182,12 @@ mpc_data compute_master_contributions(
 mpc_data compute_block_contributions(
     const std::vector<std::int32_t>& local_slaves,
     const std::vector<std::int32_t>& local_slave_blocks,
-    const xt::xtensor<PetscScalar, 2>& normals,
+    std::span<const double> normals,
     const std::shared_ptr<const dolfinx::common::IndexMap> imap,
     std::int32_t block_size, int rank)
 {
+  assert(normals.size() % 3 == 0);
+  assert(normals.size() / 3 == local_slave_blocks.size());
   std::vector<std::int32_t> dofs(block_size);
   // Count number of masters for each local slave (only contributions from)
   // the same block as the actual slave dof
@@ -198,7 +197,7 @@ mpc_data compute_block_contributions(
     std::iota(dofs.begin(), dofs.end(), local_slave_blocks[i] * block_size);
     const std::int32_t local_slave = local_slaves[i];
     for (std::int32_t j = 0; j < block_size; ++j)
-      if ((dofs[j] != local_slave) && std::abs(normals(i, j)) > 1e-6)
+      if ((dofs[j] != local_slave) && std::abs(normals[3 * i + j]) > 1e-6)
         num_masters_in_cell[i]++;
   }
   std::vector<std::int32_t> masters_offsets(local_slaves.size() + 1);
@@ -223,9 +222,9 @@ mpc_data compute_block_contributions(
     const auto max_index = std::distance(dofs.begin(), local_max);
     for (std::int32_t j = 0; j < block_size; j++)
     {
-      if ((dofs[j] != local_slave) && std::abs(normals(i, j)) > 1e-6)
+      if ((dofs[j] != local_slave) && std::abs(normals[3 * i + j]) > 1e-6)
       {
-        PetscScalar coeff_j = -normals(i, j) / normals(i, max_index);
+        PetscScalar coeff_j = -normals[3 * i + j] / normals[3 * i + max_index];
         coefficients_in_cell[masters_offsets[i] + num_masters_in_cell[i]]
             = coeff_j;
         masters_in_cell[masters_offsets[i] + num_masters_in_cell[i]]
@@ -397,30 +396,30 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   std::vector<std::int32_t> dofs(block_size);
   std::span<const PetscScalar> normal_array = nh->x()->array();
   const auto largest_normal_component
-      = [&dofs, block_size, &normal_array,
-         gdim](const std::int32_t block,
-               xt::xtensor_fixed<PetscScalar, xt::xshape<3>>& normal)
+      = [&dofs, block_size, &normal_array, gdim](const std::int32_t block,
+                                                 std::span<double, 3> normal)
   {
     std::iota(dofs.begin(), dofs.end(), block * block_size);
-    for (std::int32_t j = 0; j < gdim; ++j)
-      normal(j) = normal_array[dofs[j]];
-    normal /= xt::sqrt(xt::sum(xt::norm(normal)));
-    return xt::argmax(xt::abs(normal))[0];
+    for (int j = 0; j < gdim; ++j)
+      normal[j] = std::real(normal_array[dofs[j]]);
+    double norm = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1]
+                            + normal[2] * normal[2]);
+    std::for_each(normal.begin(), normal.end(),
+                  [norm](auto& n) { return std::abs(n / norm); });
+    return std::distance(normal.begin(),
+                         std::max_element(normal.begin(), normal.end()));
   };
 
   // Determine which dof in local slave block is the actual slave
-
-  xt::xtensor<PetscScalar, 2> normals({local_slave_blocks.size(), 3});
-  xt::xtensor_fixed<PetscScalar, xt::xshape<3>> normal;
-  std::fill(normal.begin() + gdim, normal.end(), 0);
+  std::vector<double> normals(3 * local_slave_blocks.size(), 0);
   assert(block_size == gdim);
   for (std::size_t i = 0; i < local_slave_blocks.size(); ++i)
   {
     const std::int32_t slave = local_slave_blocks[i];
-    const auto block = largest_normal_component(slave, normal);
+    const auto block = largest_normal_component(
+        slave, std::span<double, 3>(std::next(normals.begin(), 3 * i), 3));
     local_slaves[i] = block_size * slave + block;
     local_rems[i] = block;
-    xt::row(normals, i) = normal;
   }
 
   // Compute local contributions to constraint using helper function
@@ -437,19 +436,28 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // Create map from slave dof blocks to a cell containing them
   std::vector<std::int32_t> slave_cells
       = dolfinx_mpc::create_block_to_cell_map(*V, local_slave_blocks);
-  xt::xtensor<double, 2> slave_coordinates
-      = xt::transpose(dolfinx_mpc::tabulate_dof_coordinates(
-          *V, local_slave_blocks, slave_cells));
+  std::vector<double> slave_coordinates;
+  std::array<std::size_t, 2> coord_shape;
   {
+    std::tie(slave_coordinates, coord_shape)
+        = dolfinx_mpc::tabulate_dof_coordinates(*V, local_slave_blocks,
+                                                slave_cells);
     std::vector<std::int32_t> local_cell_collisions
         = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, slave_coordinates,
                                              eps2);
-    xt::xtensor<double, 3> tabulated_basis_values
-        = dolfinx_mpc::evaluate_basis_functions(*V, slave_coordinates,
-                                                local_cell_collisions);
 
+    auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, slave_coordinates, local_cell_collisions);
+    assert(basis_shape.back() == 1);
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis_span(basis.data(), basis_shape[0], basis_shape[1]);
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        normal_span(normals.data(), local_slave_blocks.size(), 3);
     mpc_master_local = compute_master_contributions(
-        local_rems, local_cell_collisions, normals, V, tabulated_basis_values);
+        local_rems, local_cell_collisions, normal_span, V, basis_span);
   }
   // Find slave indices were contributions are not found on the process
   std::vector<std::int32_t>& l_offsets = mpc_master_local.offsets;
@@ -467,7 +475,6 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   // If serial, we gather the resulting mpc data as one constraint
   if (int mpi_size = dolfinx::MPI::size(comm); mpi_size == 1)
   {
-
     if (!slave_indices_remote.empty())
     {
       throw std::runtime_error(
@@ -494,15 +501,19 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
 
   // Convert slaves missing master contributions to global index
   // and prepare data (coordinates and normals) to send to other procs
-  xt::xtensor<double, 2> coordinates_send({slave_indices_remote.size(), 3});
-  xt::xtensor<PetscScalar, 2> normals_send({slave_indices_remote.size(), 3});
+  const std::array<std::size_t, 2> send_shape
+      = {slave_indices_remote.size(), 3};
+  std::vector<double> coordinates_send(send_shape.front() * send_shape.back());
+  std::vector<double> normals_send(send_shape.front() * send_shape.back());
   std::vector<std::int32_t> send_rems(slave_indices_remote.size());
   for (std::size_t i = 0; i < slave_indices_remote.size(); ++i)
   {
     const std::int32_t slave_idx = slave_indices_remote[i];
     send_rems[i] = local_rems[slave_idx];
-    xt::row(coordinates_send, i) = xt::row(slave_coordinates, slave_idx);
-    xt::row(normals_send, i) = xt::row(normals, slave_idx);
+    std::copy_n(std::next(slave_coordinates.begin(), 3 * slave_idx), 3,
+                std::next(coordinates_send.begin(), 3 * i));
+    std::copy_n(std::next(normals.begin(), 3 * slave_idx), 3,
+                std::next(normals_send.begin(), 3 * i));
   }
 
   // Figure out how much data to receive from each neighbor
@@ -539,17 +550,17 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
                    disp3.begin() + 1);
 
   // Send slave normal and coordinate to neighbors
-  xt::xtensor<double, 2> recv_coords({std::size_t(disp.back()), 3});
+  std::vector<double> recv_coords(disp.back() * 3);
   MPI_Neighbor_allgatherv(coordinates_send.data(), (int)coordinates_send.size(),
                           dolfinx::MPI::mpi_type<double>(), recv_coords.data(),
                           num_slaves_recv3.data(), disp3.data(),
                           dolfinx::MPI::mpi_type<double>(),
                           neighborhood_comms[0]);
-  xt::xtensor<PetscScalar, 2> slave_normals({std::size_t(disp.back()), 3});
+  std::vector<double> slave_normals(disp.back() * 3);
   MPI_Neighbor_allgatherv(normals_send.data(), (int)normals_send.size(),
-                          dolfinx::MPI::mpi_type<PetscScalar>(),
+                          dolfinx::MPI::mpi_type<double>(),
                           slave_normals.data(), num_slaves_recv3.data(),
-                          disp3.data(), dolfinx::MPI::mpi_type<PetscScalar>(),
+                          disp3.data(), dolfinx::MPI::mpi_type<double>(),
                           neighborhood_comms[0]);
 
   // Compute off-process contributions
@@ -557,13 +568,17 @@ mpc_data dolfinx_mpc::create_contact_slip_condition(
   {
     std::vector<std::int32_t> remote_cell_collisions
         = dolfinx_mpc::find_local_collisions(*mesh, bb_tree, recv_coords, eps2);
-    xt::xtensor<double, 3> recv_tabulated_basis_values
-        = dolfinx_mpc::evaluate_basis_functions(*V, recv_coords,
-                                                remote_cell_collisions);
-
+    auto [recv_basis_values, shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, recv_coords, remote_cell_collisions);
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis_span(recv_basis_values.data(), shape[0], shape[1]);
+    std::experimental::mdspan<
+        double, std::experimental::extents<
+                    std::size_t, std::experimental::dynamic_extent, 3>>
+        normal_span(slave_normals.data(), disp.back(), 3);
     remote_data = compute_master_contributions(
-        recv_rems, remote_cell_collisions, slave_normals, V,
-        recv_tabulated_basis_values);
+        recv_rems, remote_cell_collisions, normal_span, V, basis_span);
   }
 
   // Get info about reverse communicator
@@ -935,8 +950,12 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   // Tabulate slave block coordinates and find colliding cells
   std::vector<std::int32_t> slave_cells
       = dolfinx_mpc::create_block_to_cell_map(*V, local_blocks);
-  xt::xtensor<double, 2> slave_coordinates = xt::transpose(
-      dolfinx_mpc::tabulate_dof_coordinates(*V, local_blocks, slave_cells));
+  std::vector<double> slave_coordinates;
+  {
+    std::array<std::size_t, 2> c_shape;
+    std::tie(slave_coordinates, c_shape)
+        = dolfinx_mpc::tabulate_dof_coordinates(*V, local_blocks, slave_cells);
+  }
 
   // Loop through all masters on current processor and check if they
   // collide with a local master facet
@@ -949,11 +968,12 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     std::vector<std::int32_t> colliding_cells
         = dolfinx_mpc::find_local_collisions(*V->mesh(), bb_tree,
                                              slave_coordinates, eps2);
-    xt::xtensor<double, 3> tabulated_basis_values
-        = dolfinx_mpc::evaluate_basis_functions(*V, slave_coordinates,
-                                                colliding_cells);
-
-    // Work arrays for loop
+    auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, slave_coordinates, colliding_cells);
+    assert(basis_shape.back() == 1);
+    std::experimental::mdspan<double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis(basis_values.data(), basis_shape[0], basis_shape[1]);
     std::vector<std::int64_t> master_block_global;
     std::vector<std::int32_t> l_master;
     std::vector<PetscScalar> coeff;
@@ -962,9 +982,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     {
       if (const auto& cell = colliding_cells[i]; cell != -1)
       {
-        auto basis_values
-            = xt::view(tabulated_basis_values, i, xt::all(), xt::all());
-
         auto cell_blocks = V->dofmap()->cell_dofs(cell);
         l_master.reserve(cell_blocks.size());
         coeff.reserve(cell_blocks.size());
@@ -973,7 +990,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
         // Store block and non-zero basis value
         for (std::size_t j = 0; j < cell_blocks.size(); ++j)
         {
-          if (const PetscScalar c = basis_values(j, 0); std::abs(c) > 1e-6)
+          if (const PetscScalar c = basis(i, j); std::abs(c) > 1e-6)
           {
             coeff.push_back(c);
             l_master.push_back(cell_blocks[j]);
@@ -1020,12 +1037,12 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     }
   }
   // Extract coordinates and normals to distribute
-  xt::xtensor<double, 2> distribute_coordinates(
-      {blocks_wo_local_collision.size(), 3});
+  std::vector<double> distribute_coordinates(blocks_wo_local_collision.size()
+                                             * 3);
   for (std::size_t i = 0; i < collision_to_local.size(); ++i)
   {
-    xt::row(distribute_coordinates, i)
-        = xt::row(slave_coordinates, collision_to_local[i]);
+    std::copy_n(std::next(slave_coordinates.begin(), 3 * collision_to_local[i]),
+                3, std::next(distribute_coordinates.begin(), 3 * i));
   }
   dolfinx_mpc::mpc_data mpc;
 
@@ -1033,11 +1050,13 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
   // arrays
   if (int mpi_size = dolfinx::MPI::size(comm); mpi_size == 1)
   {
+
     if (!blocks_wo_local_collision.empty())
     {
       throw std::runtime_error(
           "No masters found on contact surface (when executed in serial). "
-          "Please make sure that the surfaces are in contact, or increase the "
+          "Please make sure that the surfaces are in contact, or increase "
+          "the "
           "tolerance eps2.");
     }
 
@@ -1113,7 +1132,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
                    coordinate_disp.begin() + 1);
 
   // Send slave coordinates to neighbors
-  xt::xtensor<double, 2> recv_coords({std::size_t(disp.back()), 3});
+  std::vector<double> recv_coords(disp.back() * 3);
   MPI_Neighbor_allgatherv(
       distribute_coordinates.data(), (int)distribute_coordinates.size(),
       dolfinx::MPI::mpi_type<double>(), recv_coords.data(),
@@ -1135,10 +1154,12 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
     std::vector<std::int32_t> remote_cell_collisions
         = dolfinx_mpc::find_local_collisions(*V->mesh(), bb_tree, recv_coords,
                                              eps2);
-    xt::xtensor<double, 3> remote_tabulated_basis_values
-        = dolfinx_mpc::evaluate_basis_functions(*V, recv_coords,
-                                                remote_cell_collisions);
-
+    auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
+        *V, recv_coords, remote_cell_collisions);
+    assert(basis_shape.back() == 1);
+    std::experimental::mdspan<const double,
+                              std::experimental::dextents<std::size_t, 2>>
+        basis_span(basis.data(), basis_shape[0], basis_shape[1]);
     // TODO: Rework this so it is the same as the code on owning process.
     // Preferably get rid of all the std::map's
     // Work arrays for loop
@@ -1155,8 +1176,6 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
             = std::vector<std::int32_t>(tdim, 0);
         if (const auto& cell = remote_cell_collisions[j]; cell != -1)
         {
-          auto basis_values = xt::view(remote_tabulated_basis_values, j,
-                                       xt::all(), xt::all());
           auto cell_blocks = V->dofmap()->cell_dofs(cell);
           r_master.reserve(cell_blocks.size());
           r_coeff.reserve(cell_blocks.size());
@@ -1165,7 +1184,7 @@ mpc_data dolfinx_mpc::create_contact_inelastic_condition(
           // Store block and non-zero basis values
           for (std::size_t k = 0; k < cell_blocks.size(); ++k)
           {
-            if (const PetscScalar c = basis_values(k, 0); std::abs(c) > 1e-6)
+            if (const PetscScalar c = basis_span(j, k); std::abs(c) > 1e-6)
             {
               r_coeff.push_back(c);
               r_master.push_back(cell_blocks[k]);

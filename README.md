@@ -35,7 +35,7 @@ A Docker image can be found in the [Packages](https://github.com/jorgensd/dolfin
 
 ## Source
 
-To install the latest version (master branch), you need to install the latest release of [dolfinx](https://github.com/FEniCS/dolfinx).
+To install the latest version (main branch), you need to install the latest release of [dolfinx](https://github.com/FEniCS/dolfinx).
 Easiest way to install dolfinx is to use docker. The dolfinx docker images goes under the name [dolfinx/dolfinx](https://hub.docker.com/r/dolfinx/dolfinx)
 
 To install the `dolfinx_mpc`-library run the following code from this directory:

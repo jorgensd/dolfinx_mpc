@@ -2,7 +2,7 @@ run-demos:
   stage: test
   only:
     - schedules
-    - master
+    - main
     - merge_requests
   tags:
     - docker
