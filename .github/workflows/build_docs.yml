@@ -25,7 +25,7 @@ jobs:
         run: python3 -m pip -v install python/
 
       - name: Install dependencies
-        run: python -m pip install ".[test,docs]"
+        run: python3 -m pip install "."
                 
       - name: Build docs
         run: make doc
