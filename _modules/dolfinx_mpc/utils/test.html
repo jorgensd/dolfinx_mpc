@@ -1,0 +1,551 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dolfinx_mpc.utils.test &#8212; DOLFINx-MPC: An extension to DOLFINx for multi point constraints</title>
+    
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="../../../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" href="../../../_static/styles/sphinx-book-theme.css?digest=5115cc725059bd94278eecd172e13a965bf8f5a9" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/design-style.b7bb847fb20b106c3d81b95245e65545.min.css" />
+    
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf">
+
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/clipboard.min.js"></script>
+    <script src="../../../_static/copybutton.js"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?digest=9c920249402e914e316237a7dbc6769907cce411"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown, .tag_hide_input div.cell_input, .tag_hide-input div.cell_input, .tag_hide_output div.cell_output, .tag_hide-output div.cell_output, .tag_hide_cell.cell, .tag_hide-cell.cell';</script>
+    <script src="../../../_static/design-tabs.js"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"
+const thebe_selector = ".thebe,.cell"
+const thebe_selector_input = "pre"
+const thebe_selector_output = ".output, .cell_output"
+</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="60">
+<!-- Checkboxes to toggle the left sidebar -->
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle navigation sidebar">
+<label class="overlay overlay-navbar" for="__navigation">
+    <div class="visually-hidden">Toggle navigation sidebar</div>
+</label>
+<!-- Checkboxes to toggle the in-page toc -->
+<input type="checkbox" class="sidebar-toggle" name="__page-toc" id="__page-toc" aria-label="Toggle in-page Table of Contents">
+<label class="overlay overlay-pagetoc" for="__page-toc">
+    <div class="visually-hidden">Toggle in-page Table of Contents</div>
+</label>
+<!-- Headers at the top -->
+<div class="announcement header-item noprint"></div>
+<div class="header header-item noprint"></div>
+
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+<!-- Sidebar -->
+<div class="bd-sidebar noprint" id="site-navigation">
+    <div class="bd-sidebar__content">
+        <div class="bd-sidebar__top"><div class="navbar-brand-box">
+    <a class="navbar-brand text-wrap" href="../../../index.html">
+      
+      
+      
+      <h1 class="site-logo" id="site-title">DOLFINx-MPC: An extension to DOLFINx for multi point constraints</h1>
+      
+    </a>
+</div><form class="bd-search d-flex align-items-center" action="../../../search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search this book..." aria-label="Search this book..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    DOLFINx-MPC
+                </a>
+            </li>
+        </ul>
+        <p aria-level="2" class="caption" role="heading">
+ <span class="caption-text">
+  Python API
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../api.html">
+   dolfinx_mpc
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../utils.html">
+   dolfinx_mpc.utils
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../numba.html">
+   dolfinx_mpc.numba
+  </a>
+ </li>
+</ul>
+
+    </div>
+</nav></div>
+        <div class="bd-sidebar__bottom">
+             <!-- To handle the deprecated key -->
+            
+            <div class="navbar_extra_footer">
+            Powered by <a href="https://jupyterbook.org">Jupyter Book</a>
+            </div>
+            
+        </div>
+    </div>
+    <div id="rtd-footer-container"></div>
+</div>
+
+
+          
+
+
+          
+<!-- A tiny helper pixel to detect if we've scrolled -->
+<div class="sbt-scroll-pixel-helper"></div>
+<!-- Main content -->
+<div class="col py-0 content-container">
+    
+    <div class="header-article row sticky-top noprint">
+        
+
+
+
+<div class="col py-1 d-flex header-article-main">
+    <div class="header-article__left">
+        
+        <label for="__navigation"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="right"
+title="Toggle navigation"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-bars"></i>
+  </span>
+
+</label>
+
+        
+    </div>
+    <div class="header-article__right">
+<button onclick="toggleFullScreen()"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="bottom"
+title="Fullscreen mode"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+<div class="menu-dropdown menu-dropdown-repository-buttons">
+  <button class="headerbtn menu-dropdown__trigger"
+      aria-label="Source repositories">
+      <i class="fab fa-github"></i>
+  </button>
+  <div class="menu-dropdown__content">
+    <ul>
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc"
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Source repository"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="headerbtn__text-container">repository</span>
+</a>
+
+      </li>
+      
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc/issues/new?title=Issue%20on%20page%20%2F_modules/dolfinx_mpc/utils/test.html&body=Your%20issue%20content%20here."
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Open an issue"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="headerbtn__text-container">open issue</span>
+</a>
+
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+    </div>
+</div>
+
+<!-- Table of contents -->
+<div class="col-md-3 bd-toc show noprint">
+</div>
+    </div>
+    <div class="article row">
+        <div class="col pl-md-3 pl-lg-5 content-container">
+            <!-- Table of contents that is only displayed when printing the page -->
+            <div id="jb-print-docs-body" class="onlyprint">
+                <h1></h1>
+                <!-- Table of contents -->
+                <div id="print-main-content">
+                    <div id="jb-print-toc">
+                        
+                    </div>
+                </div>
+            </div>
+            <main id="main-content" role="main">
+                
+              <div>
+                
+  <h1>Source code for dolfinx_mpc.utils.test</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (C) 2021 Jørgen Schartum Dokken</span>
+<span class="c1">#</span>
+<span class="c1"># This file is part of DOLFINX_MPC</span>
+<span class="c1">#</span>
+<span class="c1"># SPDX-License-Identifier:    MIT</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;gather_PETScVector&quot;</span><span class="p">,</span> <span class="s2">&quot;gather_PETScMatrix&quot;</span><span class="p">,</span> <span class="s2">&quot;compare_mpc_lhs&quot;</span><span class="p">,</span> <span class="s2">&quot;compare_mpc_rhs&quot;</span><span class="p">,</span>
+           <span class="s2">&quot;gather_transformation_matrix&quot;</span><span class="p">,</span> <span class="s2">&quot;compare_CSR&quot;</span><span class="p">]</span>
+
+<span class="kn">import</span> <span class="nn">pytest</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">mpi4py</span> <span class="kn">import</span> <span class="n">MPI</span>
+<span class="kn">from</span> <span class="nn">petsc4py</span> <span class="kn">import</span> <span class="n">PETSc</span>
+<span class="kn">import</span> <span class="nn">scipy.sparse</span>
+<span class="kn">import</span> <span class="nn">dolfinx_mpc</span>
+<span class="kn">import</span> <span class="nn">dolfinx.common</span>
+
+
+<div class="viewcode-block" id="get_assemblers"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.get_assemblers">[docs]</a><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span> <span class="nf">get_assemblers</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Get eiher numba assembler or C++ assembler depending on the request</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">param</span> <span class="o">==</span> <span class="s2">&quot;numba&quot;</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span> <span class="nn">numba</span>  <span class="c1"># noqa: F401</span>
+        <span class="k">except</span> <span class="ne">ModuleNotFoundError</span><span class="p">:</span>
+            <span class="n">pytest</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="s1">&#39;Numba not installed&#39;</span><span class="p">)</span>
+        <span class="kn">from</span> <span class="nn">dolfinx_mpc.numba</span> <span class="kn">import</span> <span class="n">assemble_matrix</span><span class="p">,</span> <span class="n">assemble_vector</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">assemble_matrix</span><span class="p">,</span> <span class="n">assemble_vector</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">param</span> <span class="o">==</span> <span class="s2">&quot;C++&quot;</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">dolfinx_mpc</span> <span class="kn">import</span> <span class="n">assemble_matrix</span><span class="p">,</span> <span class="n">assemble_vector</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">assemble_matrix</span><span class="p">,</span> <span class="n">assemble_vector</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Undefined assembler type: </span><span class="si">{</span><span class="n">request</span><span class="o">.</span><span class="n">param</span><span class="si">}</span><span class="s2">.</span><span class="se">\n</span><span class="s2">&quot;</span>
+                           <span class="o">+</span> <span class="s2">&quot;Options are &#39;numba&#39; or &#39;C++&#39;&quot;</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_gather_slaves_global</span><span class="p">(</span><span class="n">constraint</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a multi point constraint, return slaves for all processors with global dof numbering</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">imap</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">function_space</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span>
+    <span class="n">num_local_slaves</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">num_local_slaves</span>
+    <span class="n">block_size</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">function_space</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span>
+    <span class="n">_slaves</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">slaves</span>
+    <span class="k">if</span> <span class="n">num_local_slaves</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">slave_blocks</span> <span class="o">=</span> <span class="n">_slaves</span><span class="p">[:</span><span class="n">num_local_slaves</span><span class="p">]</span> <span class="o">//</span> <span class="n">block_size</span>
+        <span class="n">slave_rems</span> <span class="o">=</span> <span class="n">_slaves</span><span class="p">[:</span><span class="n">num_local_slaves</span><span class="p">]</span> <span class="o">%</span> <span class="n">block_size</span>
+        <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">local_to_global</span><span class="p">(</span><span class="n">slave_blocks</span><span class="p">)</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">slave_rems</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+
+    <span class="n">slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span><span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">glob_slaves</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">slaves</span>
+
+
+<div class="viewcode-block" id="gather_constants"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_constants">[docs]</a><span class="k">def</span> <span class="nf">gather_constants</span><span class="p">(</span><span class="n">constraint</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a multi-point constraint, gather all constants</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">imap</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">index_map</span><span class="p">()</span>
+    <span class="n">constants</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">_cpp_object</span><span class="o">.</span><span class="n">constants</span>
+    <span class="n">l_range</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">local_range</span>
+    <span class="n">ranges</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">l_range</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="n">g_consts</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">constants</span><span class="p">[:</span><span class="n">l_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">l_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]],</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
+        <span class="n">block_size</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">function_space</span><span class="p">()</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span>
+        <span class="n">global_consts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">imap</span><span class="o">.</span><span class="n">size_global</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">vals</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ranges</span><span class="p">,</span> <span class="n">g_consts</span><span class="p">):</span>
+            <span class="n">global_consts</span><span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span><span class="n">r</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">vals</span>
+        <span class="k">return</span> <span class="n">global_consts</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span></div>
+
+
+<div class="viewcode-block" id="gather_transformation_matrix"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_transformation_matrix">[docs]</a><span class="k">def</span> <span class="nf">gather_transformation_matrix</span><span class="p">(</span><span class="n">constraint</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Creates the transformation matrix K (dim x dim-len(slaves)) for a given MPC</span>
+<span class="sd">    and gathers it as a scipy CSR matrix on process &#39;root&#39;.</span>
+
+<span class="sd">    Example:</span>
+
+<span class="sd">    For dim=3, where:</span>
+<span class="sd">      u_1 = alpha u_0 + beta u_2</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      slaves = [1]</span>
+<span class="sd">      masters = [0, 2]</span>
+<span class="sd">      coeffs = [alpha, beta]</span>
+<span class="sd">      offsets = [0, 1]</span>
+
+<span class="sd">    Output:</span>
+<span class="sd">      K = [[1,0], [alpha beta], [0,1]]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Gather slaves from all procs</span>
+    <span class="n">V</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">V</span>
+    <span class="n">imap</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">function_space</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span>
+    <span class="n">block_size</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span>
+    <span class="n">num_local_slaves</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">num_local_slaves</span>
+    <span class="c1"># Gather all global_slaves</span>
+    <span class="n">slaves</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">slaves</span><span class="p">[:</span><span class="n">num_local_slaves</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">num_local_slaves</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">local_blocks</span> <span class="o">=</span> <span class="n">slaves</span> <span class="o">//</span> <span class="n">block_size</span>
+        <span class="n">local_rems</span> <span class="o">=</span> <span class="n">slaves</span> <span class="o">%</span> <span class="n">block_size</span>
+        <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">local_to_global</span><span class="p">(</span><span class="n">local_blocks</span><span class="p">)</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">local_rems</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+    <span class="n">all_slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span><span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">glob_slaves</span><span class="p">))</span>
+    <span class="n">masters</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">masters</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">master_blocks</span> <span class="o">=</span> <span class="n">masters</span> <span class="o">//</span> <span class="n">block_size</span>
+    <span class="n">master_rems</span> <span class="o">=</span> <span class="n">masters</span> <span class="o">%</span> <span class="n">block_size</span>
+    <span class="n">coeffs</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">coefficients</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">offsets</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">masters</span><span class="o">.</span><span class="n">offsets</span>
+    <span class="c1"># Create sparse K matrix</span>
+    <span class="n">K_val</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">cols</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+
+    <span class="c1"># Add local contributions to K from local slaves</span>
+    <span class="k">for</span> <span class="n">slave</span><span class="p">,</span> <span class="n">global_slave</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">slaves</span><span class="p">,</span> <span class="n">glob_slaves</span><span class="p">):</span>
+        <span class="n">masters_index</span> <span class="o">=</span> <span class="p">(</span><span class="n">imap</span><span class="o">.</span><span class="n">local_to_global</span><span class="p">(</span><span class="n">master_blocks</span><span class="p">[</span><span class="n">offsets</span><span class="p">[</span><span class="n">slave</span><span class="p">]:</span> <span class="n">offsets</span><span class="p">[</span><span class="n">slave</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]])</span>
+                         <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">master_rems</span><span class="p">[</span><span class="n">offsets</span><span class="p">[</span><span class="n">slave</span><span class="p">]:</span> <span class="n">offsets</span><span class="p">[</span><span class="n">slave</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]])</span>
+        <span class="n">coeffs_index</span> <span class="o">=</span> <span class="n">coeffs</span><span class="p">[</span><span class="n">offsets</span><span class="p">[</span><span class="n">slave</span><span class="p">]:</span> <span class="n">offsets</span><span class="p">[</span><span class="n">slave</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]]</span>
+        <span class="c1"># If we have a simply equality constraint (dirichletbc)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">masters_index</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">master</span><span class="p">,</span> <span class="n">coeff</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">masters_index</span><span class="p">,</span> <span class="n">coeffs_index</span><span class="p">):</span>
+                <span class="n">count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">master</span> <span class="o">&gt;</span> <span class="n">all_slaves</span><span class="p">)</span>
+                <span class="n">K_val</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">coeff</span><span class="p">)</span>
+                <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">global_slave</span><span class="p">)</span>
+                <span class="n">cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">master</span> <span class="o">-</span> <span class="n">count</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">K_val</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">global_slave</span> <span class="o">&gt;</span> <span class="n">all_slaves</span><span class="p">)</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">global_slave</span><span class="p">)</span>
+            <span class="n">cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">global_slave</span> <span class="o">-</span> <span class="n">count</span><span class="p">)</span>
+
+    <span class="c1"># Add identity for all dofs on diagonal</span>
+    <span class="n">l_range</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">local_range</span>
+    <span class="n">global_dofs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">l_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">l_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">)</span>
+    <span class="n">is_slave</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">global_dofs</span><span class="p">,</span> <span class="n">glob_slaves</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">dof</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">global_dofs</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_slave</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span>
+            <span class="n">K_val</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dof</span><span class="p">)</span>
+            <span class="n">cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dof</span> <span class="o">-</span> <span class="nb">sum</span><span class="p">(</span><span class="n">dof</span> <span class="o">&gt;</span> <span class="n">all_slaves</span><span class="p">))</span>
+
+    <span class="c1"># Gather K to root</span>
+    <span class="n">K_vals</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">K_val</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">),</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="n">rows_g</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="n">cols_g</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">cols</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">),</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
+        <span class="n">K_sparse</span> <span class="o">=</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">coo_matrix</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span><span class="n">K_vals</span><span class="p">),</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span><span class="n">rows_g</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span><span class="n">cols_g</span><span class="p">))))</span><span class="o">.</span><span class="n">tocsr</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">K_sparse</span></div>
+
+
+<span class="k">def</span> <span class="nf">petsc_to_local_CSR</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span> <span class="n">mpc</span><span class="p">:</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">MultiPointConstraint</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert a PETSc matrix to a local CSR matrix (scipy) including ghost entries</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">global_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mpc</span><span class="o">.</span><span class="n">function_space</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">global_indices</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">IntType</span><span class="p">)</span>
+    <span class="n">sort_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">global_indices</span><span class="p">)</span>
+    <span class="n">is_A</span> <span class="o">=</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">IS</span><span class="p">()</span><span class="o">.</span><span class="n">createGeneral</span><span class="p">(</span><span class="n">global_indices</span><span class="p">[</span><span class="n">sort_index</span><span class="p">])</span>
+    <span class="n">A_loc</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">createSubMatrices</span><span class="p">(</span><span class="n">is_A</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">ai</span><span class="p">,</span> <span class="n">aj</span><span class="p">,</span> <span class="n">av</span> <span class="o">=</span> <span class="n">A_loc</span><span class="o">.</span><span class="n">getValuesCSR</span><span class="p">()</span>
+    <span class="n">A_csr</span> <span class="o">=</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">((</span><span class="n">av</span><span class="p">,</span> <span class="n">aj</span><span class="p">,</span> <span class="n">ai</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">A_csr</span><span class="p">[</span><span class="n">global_indices</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">global_indices</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="gather_PETScMatrix"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_PETScMatrix">[docs]</a><span class="k">def</span> <span class="nf">gather_PETScMatrix</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a distributed PETSc matrix, gather in on process &#39;root&#39; in</span>
+<span class="sd">    a scipy CSR matrix</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ai</span><span class="p">,</span> <span class="n">aj</span><span class="p">,</span> <span class="n">av</span> <span class="o">=</span> <span class="n">A</span><span class="o">.</span><span class="n">getValuesCSR</span><span class="p">()</span>
+    <span class="n">aj_all</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">aj</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+    <span class="n">av_all</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">av</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+    <span class="n">ai_all</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="n">ai</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+    <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
+        <span class="n">ai_cum</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">ai</span> <span class="ow">in</span> <span class="n">ai_all</span><span class="p">:</span>  <span class="c1"># type: ignore</span>
+            <span class="n">offsets</span> <span class="o">=</span> <span class="n">ai</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="n">ai_cum</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">ai_cum</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">offsets</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span><span class="n">av_all</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">(</span><span class="n">aj_all</span><span class="p">),</span> <span class="n">ai_cum</span><span class="p">),</span> <span class="n">shape</span><span class="o">=</span><span class="n">A</span><span class="o">.</span><span class="n">getSize</span><span class="p">())</span>  <span class="c1"># type: ignore</span></div>
+
+
+<div class="viewcode-block" id="gather_PETScVector"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_PETScVector">[docs]</a><span class="k">def</span> <span class="nf">gather_PETScVector</span><span class="p">(</span><span class="n">vector</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Gather a PETScVector from different processors on</span>
+<span class="sd">    process &#39;root&#39; as an numpy array</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">numpy_vec</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">vector</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">vector</span><span class="o">.</span><span class="n">array</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+    <span class="n">l_min</span> <span class="o">=</span> <span class="n">vector</span><span class="o">.</span><span class="n">owner_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">l_max</span> <span class="o">=</span> <span class="n">vector</span><span class="o">.</span><span class="n">owner_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">numpy_vec</span><span class="p">[</span><span class="n">l_min</span><span class="p">:</span> <span class="n">l_max</span><span class="p">]</span> <span class="o">+=</span> <span class="n">vector</span><span class="o">.</span><span class="n">array</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">numpy_vec</span><span class="p">)))</span></div>
+
+
+<div class="viewcode-block" id="compare_CSR"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.compare_CSR">[docs]</a><span class="k">def</span> <span class="nf">compare_CSR</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">,</span> <span class="n">B</span><span class="p">:</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-10</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot; Compare CSR matrices A and B &quot;&quot;&quot;</span>
+    <span class="n">diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">A</span> <span class="o">-</span> <span class="n">B</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">diff</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">atol</span></div>
+
+
+<div class="viewcode-block" id="compare_mpc_lhs"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.compare_mpc_lhs">[docs]</a><span class="k">def</span> <span class="nf">compare_mpc_lhs</span><span class="p">(</span><span class="n">A_org</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span> <span class="n">A_mpc</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span>
+                    <span class="n">mpc</span><span class="p">:</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">MultiPointConstraint</span><span class="p">,</span> <span class="n">root</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compare an unmodified matrix for the problem with the one assembled with a</span>
+<span class="sd">    multi point constraint.</span>
+
+<span class="sd">    The unmodified matrix is multiplied with K^T A K, where K is the global transformation matrix.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">timer</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">common</span><span class="o">.</span><span class="n">Timer</span><span class="p">(</span><span class="s2">&quot;~MPC: Compare matrices&quot;</span><span class="p">)</span>
+    <span class="n">comm</span> <span class="o">=</span> <span class="n">mpc</span><span class="o">.</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">comm</span>
+    <span class="n">V</span> <span class="o">=</span> <span class="n">mpc</span><span class="o">.</span><span class="n">V</span>
+    <span class="k">assert</span> <span class="n">root</span> <span class="o">&lt;</span> <span class="n">comm</span><span class="o">.</span><span class="n">size</span>
+
+    <span class="n">K</span> <span class="o">=</span> <span class="n">gather_transformation_matrix</span><span class="p">(</span><span class="n">mpc</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="n">A_csr</span> <span class="o">=</span> <span class="n">gather_PETScMatrix</span><span class="p">(</span><span class="n">A_org</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+
+    <span class="c1"># Get global slaves</span>
+    <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">_gather_slaves_global</span><span class="p">(</span><span class="n">mpc</span><span class="p">)</span>
+    <span class="n">A_mpc_csr</span> <span class="o">=</span> <span class="n">gather_PETScMatrix</span><span class="p">(</span><span class="n">A_mpc</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
+        <span class="n">KTAK</span> <span class="o">=</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span> <span class="o">*</span> <span class="n">A_csr</span> <span class="o">*</span> <span class="n">K</span>
+
+        <span class="c1"># Remove identity rows of MPC matrix</span>
+        <span class="n">all_cols</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">size_global</span> <span class="o">*</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span><span class="p">)</span>
+
+        <span class="n">cols_except_slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">all_cols</span><span class="p">,</span> <span class="n">glob_slaves</span><span class="p">,</span> <span class="n">invert</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">))</span>
+        <span class="n">mpc_without_slaves</span> <span class="o">=</span> <span class="n">A_mpc_csr</span><span class="p">[</span><span class="n">cols_except_slaves</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">cols_except_slaves</span><span class="p">]</span>
+
+        <span class="c1"># Compute difference</span>
+        <span class="n">compare_CSR</span><span class="p">(</span><span class="n">KTAK</span><span class="p">,</span> <span class="n">mpc_without_slaves</span><span class="p">)</span>
+
+    <span class="n">timer</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="compare_mpc_rhs"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.compare_mpc_rhs">[docs]</a><span class="k">def</span> <span class="nf">compare_mpc_rhs</span><span class="p">(</span><span class="n">b_org</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span> <span class="n">constraint</span><span class="p">:</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">MultiPointConstraint</span><span class="p">,</span> <span class="n">root</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compare an unconstrained RHS with an MPC rhs.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">_gather_slaves_global</span><span class="p">(</span><span class="n">constraint</span><span class="p">)</span>
+    <span class="n">b_org_np</span> <span class="o">=</span> <span class="n">gather_PETScVector</span><span class="p">(</span><span class="n">b_org</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="n">b_np</span> <span class="o">=</span> <span class="n">gather_PETScVector</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="n">K</span> <span class="o">=</span> <span class="n">gather_transformation_matrix</span><span class="p">(</span><span class="n">constraint</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
+    <span class="c1"># constants = gather_constants(constraint)</span>
+    <span class="n">comm</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">comm</span>
+    <span class="k">if</span> <span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
+        <span class="n">reduced_b</span> <span class="o">=</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">b_org_np</span>  <span class="c1"># - constants for RHS mpc</span>
+        <span class="n">all_cols</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">constraint</span><span class="o">.</span><span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">size_global</span> <span class="o">*</span> <span class="n">constraint</span><span class="o">.</span><span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span><span class="p">)</span>
+        <span class="n">cols_except_slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">all_cols</span><span class="p">,</span> <span class="n">glob_slaves</span><span class="p">,</span> <span class="n">invert</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">))</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">b_np</span><span class="p">[</span><span class="n">glob_slaves</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">b_np</span><span class="p">[</span><span class="n">cols_except_slaves</span><span class="p">],</span> <span class="n">reduced_b</span><span class="p">)</span></div>
+</pre></div>
+
+              </div>
+              
+            </main>
+            <footer class="footer-article noprint">
+                
+    <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+</div>
+            </footer>
+        </div>
+    </div>
+    <div class="footer-content row">
+        <footer class="col footer"><p>
+  
+    By Jørgen S. Dokken<br/>
+  
+      &copy; Copyright 2022.<br/>
+</p>
+        </footer>
+    </div>
+    
+</div>
+
+
+      </div>
+    </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf"></script>
+
+
+  </body>
+</html>

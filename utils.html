@@ -1,0 +1,516 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+    <title>dolfinx_mpc.utils &#8212; DOLFINx-MPC: An extension to DOLFINx for multi point constraints</title>
+    
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+<link href="_static/styles/pydata-sphinx-theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" href="_static/styles/sphinx-book-theme.css?digest=5115cc725059bd94278eecd172e13a965bf8f5a9" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="_static/togglebutton.css" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css" />
+    <link rel="stylesheet" type="text/css" href="_static/mystnb.css" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-thebe.css" />
+    <link rel="stylesheet" type="text/css" href="_static/design-style.b7bb847fb20b106c3d81b95245e65545.min.css" />
+    
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf">
+
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/clipboard.min.js"></script>
+    <script src="_static/copybutton.js"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?digest=9c920249402e914e316237a7dbc6769907cce411"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="_static/togglebutton.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown, .tag_hide_input div.cell_input, .tag_hide-input div.cell_input, .tag_hide_output div.cell_output, .tag_hide-output div.cell_output, .tag_hide_cell.cell, .tag_hide-cell.cell';</script>
+    <script src="_static/design-tabs.js"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"
+const thebe_selector = ".thebe,.cell"
+const thebe_selector_input = "pre"
+const thebe_selector_output = ".output, .cell_output"
+</script>
+    <script async="async" src="_static/sphinx-thebe.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="dolfinx_mpc.numba" href="numba.html" />
+    <link rel="prev" title="dolfinx_mpc" href="api.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="60">
+<!-- Checkboxes to toggle the left sidebar -->
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle navigation sidebar">
+<label class="overlay overlay-navbar" for="__navigation">
+    <div class="visually-hidden">Toggle navigation sidebar</div>
+</label>
+<!-- Checkboxes to toggle the in-page toc -->
+<input type="checkbox" class="sidebar-toggle" name="__page-toc" id="__page-toc" aria-label="Toggle in-page Table of Contents">
+<label class="overlay overlay-pagetoc" for="__page-toc">
+    <div class="visually-hidden">Toggle in-page Table of Contents</div>
+</label>
+<!-- Headers at the top -->
+<div class="announcement header-item noprint"></div>
+<div class="header header-item noprint"></div>
+
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+<!-- Sidebar -->
+<div class="bd-sidebar noprint" id="site-navigation">
+    <div class="bd-sidebar__content">
+        <div class="bd-sidebar__top"><div class="navbar-brand-box">
+    <a class="navbar-brand text-wrap" href="index.html">
+      
+      
+      
+      <h1 class="site-logo" id="site-title">DOLFINx-MPC: An extension to DOLFINx for multi point constraints</h1>
+      
+    </a>
+</div><form class="bd-search d-flex align-items-center" action="search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search this book..." aria-label="Search this book..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="index.html">
+                    DOLFINx-MPC
+                </a>
+            </li>
+        </ul>
+        <p aria-level="2" class="caption" role="heading">
+ <span class="caption-text">
+  Python API
+ </span>
+</p>
+<ul class="current nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="api.html">
+   dolfinx_mpc
+  </a>
+ </li>
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   dolfinx_mpc.utils
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="numba.html">
+   dolfinx_mpc.numba
+  </a>
+ </li>
+</ul>
+
+    </div>
+</nav></div>
+        <div class="bd-sidebar__bottom">
+             <!-- To handle the deprecated key -->
+            
+            <div class="navbar_extra_footer">
+            Powered by <a href="https://jupyterbook.org">Jupyter Book</a>
+            </div>
+            
+        </div>
+    </div>
+    <div id="rtd-footer-container"></div>
+</div>
+
+
+          
+
+
+          
+<!-- A tiny helper pixel to detect if we've scrolled -->
+<div class="sbt-scroll-pixel-helper"></div>
+<!-- Main content -->
+<div class="col py-0 content-container">
+    
+    <div class="header-article row sticky-top noprint">
+        
+
+
+
+<div class="col py-1 d-flex header-article-main">
+    <div class="header-article__left">
+        
+        <label for="__navigation"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="right"
+title="Toggle navigation"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-bars"></i>
+  </span>
+
+</label>
+
+        
+    </div>
+    <div class="header-article__right">
+<button onclick="toggleFullScreen()"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="bottom"
+title="Fullscreen mode"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+<div class="menu-dropdown menu-dropdown-repository-buttons">
+  <button class="headerbtn menu-dropdown__trigger"
+      aria-label="Source repositories">
+      <i class="fab fa-github"></i>
+  </button>
+  <div class="menu-dropdown__content">
+    <ul>
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc"
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Source repository"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="headerbtn__text-container">repository</span>
+</a>
+
+      </li>
+      
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc/issues/new?title=Issue%20on%20page%20%2Futils.html&body=Your%20issue%20content%20here."
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Open an issue"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="headerbtn__text-container">open issue</span>
+</a>
+
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+<div class="menu-dropdown menu-dropdown-download-buttons">
+  <button class="headerbtn menu-dropdown__trigger"
+      aria-label="Download this page">
+      <i class="fas fa-download"></i>
+  </button>
+  <div class="menu-dropdown__content">
+    <ul>
+      <li>
+        <a href="_sources/utils.rst"
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Download source file"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="headerbtn__text-container">.rst</span>
+</a>
+
+      </li>
+      
+      <li>
+        
+<button onclick="printPdf(this)"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="left"
+title="Print to PDF"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="headerbtn__text-container">.pdf</span>
+</button>
+
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+    </div>
+</div>
+
+<!-- Table of contents -->
+<div class="col-md-3 bd-toc show noprint">
+</div>
+    </div>
+    <div class="article row">
+        <div class="col pl-md-3 pl-lg-5 content-container">
+            <!-- Table of contents that is only displayed when printing the page -->
+            <div id="jb-print-docs-body" class="onlyprint">
+                <h1>dolfinx_mpc.utils</h1>
+                <!-- Table of contents -->
+                <div id="print-main-content">
+                    <div id="jb-print-toc">
+                        
+                    </div>
+                </div>
+            </div>
+            <main id="main-content" role="main">
+                
+              <div>
+                
+  <section id="module-dolfinx_mpc.utils">
+<span id="dolfinx-mpc-utils"></span><h1>dolfinx_mpc.utils<a class="headerlink" href="#module-dolfinx_mpc.utils" title="Permalink to this headline">#</a></h1>
+<p>Helper functions for tests in Dolfinx mpc</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.compare_CSR">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">compare_CSR</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">A</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">scipy.sparse._csr.csr_matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">B</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">scipy.sparse._csr.csr_matrix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">atol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#compare_CSR"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.compare_CSR" title="Permalink to this definition">#</a></dt>
+<dd><p>Compare CSR matrices A and B</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.compare_mpc_lhs">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">compare_mpc_lhs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">A_org</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Mat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">A_mpc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Mat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mpc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api.html#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">root</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#compare_mpc_lhs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.compare_mpc_lhs" title="Permalink to this definition">#</a></dt>
+<dd><p>Compare an unmodified matrix for the problem with the one assembled with a
+multi point constraint.</p>
+<p>The unmodified matrix is multiplied with K^T A K, where K is the global transformation matrix.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.compare_mpc_rhs">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">compare_mpc_rhs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">b_org</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Vec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">b</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Vec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraint</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="api.html#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">root</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#compare_mpc_rhs"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.compare_mpc_rhs" title="Permalink to this definition">#</a></dt>
+<dd><p>Compare an unconstrained RHS with an MPC rhs.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.create_normal_approximation">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">create_normal_approximation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.cpp.mesh.MeshTags_int32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/mpc_utils.html#create_normal_approximation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.create_normal_approximation" title="Permalink to this definition">#</a></dt>
+<dd><p>Creates a normal approximation for the dofs in the closure of the attached entities.
+Where a dof is attached to entities facets, an average is computed</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> – The function space</p></li>
+<li><p><strong>mt</strong> – The meshtag containing the indices</p></li>
+<li><p><strong>value</strong> – Value for the entities in the mesh tag to compute normal on</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The normal vector</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>nh</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.determine_closest_block">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">determine_closest_block</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">point</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/mpc_utils.html#determine_closest_block"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.determine_closest_block" title="Permalink to this definition">#</a></dt>
+<dd><p>Determine the closest dofs (in a single block) to a point and the distance</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.facet_normal_approximation">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">facet_normal_approximation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.cpp.mesh.MeshTags_int32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mt_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tangent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">jit_options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">{}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">form_compiler_options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">{}</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/mpc_utils.html#facet_normal_approximation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.facet_normal_approximation" title="Permalink to this definition">#</a></dt>
+<dd><p>Approximate the facet normal by projecting it into the function space for a set of facets</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> – The function space to project into</p></li>
+<li><p><strong>mt</strong> – The <cite>dolfinx.mesh.MeshTagsMetaClass</cite> containing facet markers</p></li>
+<li><p><strong>mt_id</strong> – The id for the facets in <cite>mt</cite> we want to represent the normal at</p></li>
+<li><p><strong>tangent</strong> – To approximate the tangent to the facet set this flag to <cite>True</cite></p></li>
+<li><p><strong>jit_options</strong> – Parameters used in CFFI JIT compilation of C code generated by FFCx.
+See <a class="reference external" href="https://github.com/FEniCS/dolfinx/blob/main/python/dolfinx/jit.py#L22-L37">https://github.com/FEniCS/dolfinx/blob/main/python/dolfinx/jit.py#L22-L37</a>
+for all available parameters. Takes priority over all other parameter values.</p></li>
+<li><p><strong>form_compiler_options</strong> – Parameters used in FFCx compilation of this form. Run <cite>ffcx - -help</cite> at
+the commandline to see all available options. Takes priority over all
+other parameter values, except for <cite>scalar_type</cite> which is determined by
+DOLFINx.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.gather_PETScMatrix">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">gather_PETScMatrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">A</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Mat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">scipy.sparse._csr.csr_matrix</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#gather_PETScMatrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.gather_PETScMatrix" title="Permalink to this definition">#</a></dt>
+<dd><p>Given a distributed PETSc matrix, gather in on process ‘root’ in
+a scipy CSR matrix</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.gather_PETScVector">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">gather_PETScVector</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vector</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Vec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#gather_PETScVector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.gather_PETScVector" title="Permalink to this definition">#</a></dt>
+<dd><p>Gather a PETScVector from different processors on
+process ‘root’ as an numpy array</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.gather_constants">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">gather_constants</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">constraint</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#gather_constants"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.gather_constants" title="Permalink to this definition">#</a></dt>
+<dd><p>Given a multi-point constraint, gather all constants</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.gather_transformation_matrix">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">gather_transformation_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">constraint</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">root</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#gather_transformation_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.gather_transformation_matrix" title="Permalink to this definition">#</a></dt>
+<dd><p>Creates the transformation matrix K (dim x dim-len(slaves)) for a given MPC
+and gathers it as a scipy CSR matrix on process ‘root’.</p>
+<p>Example:</p>
+<dl class="simple">
+<dt>For dim=3, where:</dt><dd><p>u_1 = alpha u_0 + beta u_2</p>
+</dd>
+<dt>Input:</dt><dd><p>slaves = [1]
+masters = [0, 2]
+coeffs = [alpha, beta]
+offsets = [0, 1]</p>
+</dd>
+<dt>Output:</dt><dd><p>K = [[1,0], [alpha beta], [0,1]]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.get_assemblers">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">get_assemblers</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">request</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/test.html#get_assemblers"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.get_assemblers" title="Permalink to this definition">#</a></dt>
+<dd><p>Get eiher numba assembler or C++ assembler depending on the request</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.log_info">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">log_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">message</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/mpc_utils.html#log_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.log_info" title="Permalink to this definition">#</a></dt>
+<dd><p>Wrapper for logging a simple string on the zeroth communicator
+Reverting the log level</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.utils.rigid_motions_nullspace">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.utils.</span></span><span class="sig-name descname"><span class="pre">rigid_motions_nullspace</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/utils/mpc_utils.html#rigid_motions_nullspace"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.utils.rigid_motions_nullspace" title="Permalink to this definition">#</a></dt>
+<dd><p>Function to build nullspace for 2D/3D elasticity.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>V</strong> – The function space</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            kernelName: "python3",
+            path: "./."
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+              </div>
+              
+            </main>
+            <footer class="footer-article noprint">
+                
+    <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+    <a class='left-prev' id="prev-link" href="api.html" title="previous page">
+        <i class="fas fa-angle-left"></i>
+        <div class="prev-next-info">
+            <p class="prev-next-subtitle">previous</p>
+            <p class="prev-next-title">dolfinx_mpc</p>
+        </div>
+    </a>
+    <a class='right-next' id="next-link" href="numba.html" title="next page">
+    <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">dolfinx_mpc.numba</p>
+    </div>
+    <i class="fas fa-angle-right"></i>
+    </a>
+</div>
+            </footer>
+        </div>
+    </div>
+    <div class="footer-content row">
+        <footer class="col footer"><p>
+  
+    By Jørgen S. Dokken<br/>
+  
+      &copy; Copyright 2022.<br/>
+</p>
+        </footer>
+    </div>
+    
+</div>
+
+
+      </div>
+    </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf"></script>
+
+
+  </body>
+</html>

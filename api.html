@@ -1,0 +1,864 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+    <title>dolfinx_mpc &#8212; DOLFINx-MPC: An extension to DOLFINx for multi point constraints</title>
+    
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+<link href="_static/styles/pydata-sphinx-theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
+    <link rel="stylesheet" href="_static/styles/sphinx-book-theme.css?digest=5115cc725059bd94278eecd172e13a965bf8f5a9" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="_static/togglebutton.css" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css" />
+    <link rel="stylesheet" type="text/css" href="_static/mystnb.css" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-thebe.css" />
+    <link rel="stylesheet" type="text/css" href="_static/design-style.b7bb847fb20b106c3d81b95245e65545.min.css" />
+    
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf">
+
+    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/clipboard.min.js"></script>
+    <script src="_static/copybutton.js"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?digest=9c920249402e914e316237a7dbc6769907cce411"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="_static/togglebutton.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown, .tag_hide_input div.cell_input, .tag_hide-input div.cell_input, .tag_hide_output div.cell_output, .tag_hide-output div.cell_output, .tag_hide_cell.cell, .tag_hide-cell.cell';</script>
+    <script src="_static/design-tabs.js"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"
+const thebe_selector = ".thebe,.cell"
+const thebe_selector_input = "pre"
+const thebe_selector_output = ".output, .cell_output"
+</script>
+    <script async="async" src="_static/sphinx-thebe.js"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="dolfinx_mpc.utils" href="utils.html" />
+    <link rel="prev" title="DOLFINx-MPC" href="index.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="60">
+<!-- Checkboxes to toggle the left sidebar -->
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle navigation sidebar">
+<label class="overlay overlay-navbar" for="__navigation">
+    <div class="visually-hidden">Toggle navigation sidebar</div>
+</label>
+<!-- Checkboxes to toggle the in-page toc -->
+<input type="checkbox" class="sidebar-toggle" name="__page-toc" id="__page-toc" aria-label="Toggle in-page Table of Contents">
+<label class="overlay overlay-pagetoc" for="__page-toc">
+    <div class="visually-hidden">Toggle in-page Table of Contents</div>
+</label>
+<!-- Headers at the top -->
+<div class="announcement header-item noprint"></div>
+<div class="header header-item noprint"></div>
+
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+<!-- Sidebar -->
+<div class="bd-sidebar noprint" id="site-navigation">
+    <div class="bd-sidebar__content">
+        <div class="bd-sidebar__top"><div class="navbar-brand-box">
+    <a class="navbar-brand text-wrap" href="index.html">
+      
+      
+      
+      <h1 class="site-logo" id="site-title">DOLFINx-MPC: An extension to DOLFINx for multi point constraints</h1>
+      
+    </a>
+</div><form class="bd-search d-flex align-items-center" action="search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search this book..." aria-label="Search this book..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="index.html">
+                    DOLFINx-MPC
+                </a>
+            </li>
+        </ul>
+        <p aria-level="2" class="caption" role="heading">
+ <span class="caption-text">
+  Python API
+ </span>
+</p>
+<ul class="current nav bd-sidenav">
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   dolfinx_mpc
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="utils.html">
+   dolfinx_mpc.utils
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="numba.html">
+   dolfinx_mpc.numba
+  </a>
+ </li>
+</ul>
+
+    </div>
+</nav></div>
+        <div class="bd-sidebar__bottom">
+             <!-- To handle the deprecated key -->
+            
+            <div class="navbar_extra_footer">
+            Powered by <a href="https://jupyterbook.org">Jupyter Book</a>
+            </div>
+            
+        </div>
+    </div>
+    <div id="rtd-footer-container"></div>
+</div>
+
+
+          
+
+
+          
+<!-- A tiny helper pixel to detect if we've scrolled -->
+<div class="sbt-scroll-pixel-helper"></div>
+<!-- Main content -->
+<div class="col py-0 content-container">
+    
+    <div class="header-article row sticky-top noprint">
+        
+
+
+
+<div class="col py-1 d-flex header-article-main">
+    <div class="header-article__left">
+        
+        <label for="__navigation"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="right"
+title="Toggle navigation"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-bars"></i>
+  </span>
+
+</label>
+
+        
+    </div>
+    <div class="header-article__right">
+<button onclick="toggleFullScreen()"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="bottom"
+title="Fullscreen mode"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+<div class="menu-dropdown menu-dropdown-repository-buttons">
+  <button class="headerbtn menu-dropdown__trigger"
+      aria-label="Source repositories">
+      <i class="fab fa-github"></i>
+  </button>
+  <div class="menu-dropdown__content">
+    <ul>
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc"
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Source repository"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="headerbtn__text-container">repository</span>
+</a>
+
+      </li>
+      
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc/issues/new?title=Issue%20on%20page%20%2Fapi.html&body=Your%20issue%20content%20here."
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Open an issue"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="headerbtn__text-container">open issue</span>
+</a>
+
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+<div class="menu-dropdown menu-dropdown-download-buttons">
+  <button class="headerbtn menu-dropdown__trigger"
+      aria-label="Download this page">
+      <i class="fas fa-download"></i>
+  </button>
+  <div class="menu-dropdown__content">
+    <ul>
+      <li>
+        <a href="_sources/api.rst"
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Download source file"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="headerbtn__text-container">.rst</span>
+</a>
+
+      </li>
+      
+      <li>
+        
+<button onclick="printPdf(this)"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="left"
+title="Print to PDF"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="headerbtn__text-container">.pdf</span>
+</button>
+
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+    </div>
+</div>
+
+<!-- Table of contents -->
+<div class="col-md-3 bd-toc show noprint">
+</div>
+    </div>
+    <div class="article row">
+        <div class="col pl-md-3 pl-lg-5 content-container">
+            <!-- Table of contents that is only displayed when printing the page -->
+            <div id="jb-print-docs-body" class="onlyprint">
+                <h1>dolfinx_mpc</h1>
+                <!-- Table of contents -->
+                <div id="print-main-content">
+                    <div id="jb-print-toc">
+                        
+                    </div>
+                </div>
+            </div>
+            <main id="main-content" role="main">
+                
+              <div>
+                
+  <section id="module-dolfinx_mpc">
+<span id="dolfinx-mpc"></span><h1>dolfinx_mpc<a class="headerlink" href="#module-dolfinx_mpc" title="Permalink to this headline">#</a></h1>
+<p>Main module for DOLFINX_MPC</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="dolfinx_mpc.LinearProblem">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">LinearProblem</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">a</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ufl.form.Form</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">L</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ufl.form.Form</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mpc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">bcs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.bcs.DirichletBCMetaClass</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">u</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.function.Function</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">petsc_options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">form_compiler_options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">jit_options</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/problem.html#LinearProblem"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.LinearProblem" title="Permalink to this definition">#</a></dt>
+<dd><p>Class for solving a linear variational problem with multi point constraints of the form
+a(u, v) = L(v) for all v using PETSc as a linear algebra backend.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>a</strong> – A bilinear UFL form, the left hand side of the variational problem.</p></li>
+<li><p><strong>L</strong> – A linear UFL form, the right hand side of the variational problem.</p></li>
+<li><p><strong>mpc</strong> – The multi point constraint.</p></li>
+<li><p><strong>bcs</strong> – A list of Dirichlet boundary conditions.</p></li>
+<li><p><strong>u</strong> – <p>The solution function. It will be created if not provided. The function has
+to be based on the functionspace in the mpc, i.e.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">u</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">Function</span><span class="p">(</span><span class="n">mpc</span><span class="o">.</span><span class="n">function_space</span><span class="p">)</span>
+</pre></div>
+</div>
+</p></li>
+<li><p><strong>petsc_options</strong> – Parameters that is passed to the linear algebra backend PETSc.
+For available choices for the ‘petsc_options’ kwarg, see the PETSc-documentation
+<a class="reference external" href="https://www.mcs.anl.gov/petsc/documentation/index.html">https://www.mcs.anl.gov/petsc/documentation/index.html</a>.</p></li>
+<li><p><strong>form_compiler_options</strong> – Parameters used in FFCx compilation of this form. Run <cite>ffcx –help</cite> at
+the commandline to see all available options. Takes priority over all
+other parameter values, except for <cite>scalar_type</cite> which is determined by DOLFINx.</p></li>
+<li><p><strong>jit_options</strong> – Parameters used in CFFI JIT compilation of C code generated by FFCx.
+See <a class="reference external" href="https://github.com/FEniCS/dolfinx/blob/main/python/dolfinx/jit.py#L22-L37">https://github.com/FEniCS/dolfinx/blob/main/python/dolfinx/jit.py#L22-L37</a>
+for all available parameters. Takes priority over all other parameter values.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<p>Example usage:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">problem</span> <span class="o">=</span> <span class="n">LinearProblem</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">mpc</span><span class="p">,</span> <span class="p">[</span><span class="n">bc0</span><span class="p">,</span> <span class="n">bc1</span><span class="p">],</span>
+                        <span class="n">petsc_options</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;ksp_type&quot;</span><span class="p">:</span> <span class="s2">&quot;preonly&quot;</span><span class="p">,</span> <span class="s2">&quot;pc_type&quot;</span><span class="p">:</span> <span class="s2">&quot;lu&quot;</span><span class="p">})</span>
+</pre></div>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.LinearProblem.solve">
+<span class="sig-name descname"><span class="pre">solve</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">dolfinx.fem.function.Function</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/problem.html#LinearProblem.solve"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.LinearProblem.solve" title="Permalink to this definition">#</a></dt>
+<dd><p>Solve the problem.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Function containing the solution</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">MultiPointConstraint</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint" title="Permalink to this definition">#</a></dt>
+<dd><p>Hold data for multi point constraint relation ships,
+including new index maps for local assembly of matrices and vectors.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>V</strong> – The function space</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.add_constraint">
+<span class="sig-name descname"><span class="pre">add_constraint</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">slaves</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.int32</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">masters</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.int64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">coeffs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">owners</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.int32</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offsets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">Any</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.dtype</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.int32</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.add_constraint"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.add_constraint" title="Permalink to this definition">#</a></dt>
+<dd><p>Add new constraint given by numpy arrays.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> – The function space for the constraint</p></li>
+<li><p><strong>slaves</strong> – List of all slave dofs (using local dof numbering) on this process</p></li>
+<li><p><strong>masters</strong> – List of all master dofs (using global dof numbering) on this process</p></li>
+<li><p><strong>coeffs</strong> – The coefficients corresponding to each master.</p></li>
+<li><p><strong>owners</strong> – The process each master is owned by.</p></li>
+<li><p><strong>offsets</strong> – <p>Array indicating the location in the masters array for the i-th slave
+in the slaves arrays, i.e.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">masters_of_owned_slave</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">masters</span><span class="p">[</span><span class="n">offsets</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span><span class="n">offsets</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]]</span>
+</pre></div>
+</div>
+</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.add_constraint_from_mpc_data">
+<span class="sig-name descname"><span class="pre">add_constraint_from_mpc_data</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mpc_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx_mpc.cpp.mpc.mpc_data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.add_constraint_from_mpc_data"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.add_constraint_from_mpc_data" title="Permalink to this definition">#</a></dt>
+<dd><p>Add new constraint given by an <cite>dolfinc_mpc.cpp.mpc.mpc_data</cite>-object</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.backsubstitution">
+<span class="sig-name descname"><span class="pre">backsubstitution</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vector</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Vec</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.backsubstitution"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.backsubstitution" title="Permalink to this definition">#</a></dt>
+<dd><p>For a vector, impose the multi-point constraint by backsubstiution.
+This function is used after solving the reduced problem to obtain the values
+at the slave degrees of freedom</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>vector</strong> – The input vector</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.cell_to_slaves">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">cell_to_slaves</span></span><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.cell_to_slaves" title="Permalink to this definition">#</a></dt>
+<dd><p>Returns an <cite>dolfinx.cpp.graph.AdjacencyList_int32</cite> whose ith node corresponds to
+the ith cell (local to process), and links the corresponding slave degrees of
+freedom in the cell (local to process).</p>
+<p class="rubric">Examples</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">cell_to_slaves</span> <span class="o">=</span> <span class="n">mpc</span><span class="o">.</span><span class="n">cell_to_slaves</span><span class="p">()</span>
+<span class="n">slaves_in_cell_i</span> <span class="o">=</span> <span class="n">cell_to_slaves</span><span class="o">.</span><span class="n">links</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.coefficients">
+<span class="sig-name descname"><span class="pre">coefficients</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.coefficients"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.coefficients" title="Permalink to this definition">#</a></dt>
+<dd><p>Returns a vector containing the coefficients for the constraint, and the corresponding offsets
+for the ith degree of freedom.</p>
+<p class="rubric">Examples</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">coeffs</span><span class="p">,</span> <span class="n">offsets</span> <span class="o">=</span> <span class="n">mpc</span><span class="o">.</span><span class="n">coefficients</span><span class="p">()</span>
+<span class="n">coeffs_of_slave_i</span> <span class="o">=</span> <span class="n">coeffs</span><span class="p">[</span><span class="n">offsets</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span><span class="n">offsets</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]]</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.create_contact_inelastic_condition">
+<span class="sig-name descname"><span class="pre">create_contact_inelastic_condition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">meshtags</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.cpp.mesh.MeshTags_int32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">slave_marker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">master_marker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps2</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1e-20</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.create_contact_inelastic_condition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.create_contact_inelastic_condition" title="Permalink to this definition">#</a></dt>
+<dd><p>Create a contact inelastic condition between two sets of facets marker with individual markers.
+The interfaces should be within machine precision of eachother, but the vertices does not need to align.
+The condition created is <span class="math notranslate nohighlight">\(u_s = u_m\)</span> where <cite>s</cite> is the restriction to the
+slave facets, <cite>m</cite> to the master facets.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>meshtags</strong> – The meshtags of the set of facets to tie together</p></li>
+<li><p><strong>slave_marker</strong> – The marker of the slave facets</p></li>
+<li><p><strong>master_marker</strong> – The marker of the master facets</p></li>
+<li><p><strong>eps2</strong> – The tolerance for the squared distance between cells to be considered as a collision</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.create_contact_slip_condition">
+<span class="sig-name descname"><span class="pre">create_contact_slip_condition</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">meshtags</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.cpp.mesh.MeshTags_int32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">slave_marker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">master_marker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">normal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.Function</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps2</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1e-20</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.create_contact_slip_condition"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.create_contact_slip_condition" title="Permalink to this definition">#</a></dt>
+<dd><p>Create a slip condition between two sets of facets marker with individual markers.
+The interfaces should be within machine precision of eachother, but the vertices does not need to align.
+The condition created is <span class="math notranslate nohighlight">\(u_s \cdot normal_s = u_m \cdot normal_m\)</span> where <cite>s</cite> is the
+restriction to the slave facets, <cite>m</cite> to the master facets.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>meshtags</strong> – The meshtags of the set of facets to tie together</p></li>
+<li><p><strong>slave_marker</strong> – The marker of the slave facets</p></li>
+<li><p><strong>master_marker</strong> – The marker of the master facets</p></li>
+<li><p><strong>normal</strong> – The function used in the dot-product of the constraint</p></li>
+<li><p><strong>eps2</strong> – The tolerance for the squared distance between cells to be considered as a collision</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.create_general_constraint">
+<span class="sig-name descname"><span class="pre">create_general_constraint</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">slave_master_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">bytes</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">bytes</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subspace_slave</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subspace_master</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.create_general_constraint"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.create_general_constraint" title="Permalink to this definition">#</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> – The function space</p></li>
+<li><p><strong>slave_master_dict</strong> – Nested dictionary, where the first key is the bit representing the slave dof’s
+coordinate in the mesh. The item of this key is a dictionary, where each key of this dictionary
+is the bit representation of the master dof’s coordinate, and the item the coefficient for
+the MPC equation.</p></li>
+<li><p><strong>subspace_slave</strong> – If using mixed or vector space, and only want to use dofs from a sub space
+as slave add index here</p></li>
+<li><p><strong>subspace_master</strong> – Subspace index for mixed or vector spaces</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Example</p>
+<p>If the dof <cite>D</cite> located at <cite>[d0, d1]</cite> should be constrained to the dofs
+<cite>E</cite> and <cite>F</cite> at <cite>[e0, e1]</cite> and <cite>[f0, f1]</cite> as <span class="math notranslate nohighlight">\(D = \alpha E + \beta F\)</span>
+the dictionary should be:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">d0</span><span class="p">,</span> <span class="n">d1</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span><span class="o">.</span><span class="n">tobytes</span><span class="p">():</span>
+    <span class="p">{</span><span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">e0</span><span class="p">,</span> <span class="n">e1</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span><span class="o">.</span><span class="n">tobytes</span><span class="p">():</span> <span class="n">alpha</span><span class="p">,</span>
+    <span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">f0</span><span class="p">,</span> <span class="n">f1</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span><span class="o">.</span><span class="n">tobytes</span><span class="p">():</span> <span class="n">beta</span><span class="p">}}</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.create_periodic_constraint_geometrical">
+<span class="sig-name descname"><span class="pre">create_periodic_constraint_geometrical</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indicator</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">relation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bcs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.bcs.DirichletBCMetaClass</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.float64</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.create_periodic_constraint_geometrical"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.create_periodic_constraint_geometrical" title="Permalink to this definition">#</a></dt>
+<dd><p>Create a periodic condition for all degrees of freedom whose physical location satisfies
+<span class="math notranslate nohighlight">\(indicator(x_i)==True\)</span>, i.e.
+<span class="math notranslate nohighlight">\(u(x_i) = scale * u(relation(x_i))\)</span> for all <span class="math notranslate nohighlight">\(x_i\)</span></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> – The function space to assign the condition to. Should either be the space of the MPC or a sub space.</p></li>
+<li><p><strong>indicator</strong> – Lambda-function to locate degrees of freedom that should be slaves</p></li>
+<li><p><strong>relation</strong> – Lambda-function describing the geometrical relation to master dofs</p></li>
+<li><p><strong>bcs</strong> – Dirichlet boundary conditions for the problem
+(Periodic constraints will be ignored for these dofs)</p></li>
+<li><p><strong>scale</strong> – Float for scaling bc</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.create_periodic_constraint_topological">
+<span class="sig-name descname"><span class="pre">create_periodic_constraint_topological</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">V</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">meshtag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.cpp.mesh.MeshTags_int32</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">relation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bcs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.bcs.DirichletBCMetaClass</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.float64</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.create_periodic_constraint_topological"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.create_periodic_constraint_topological" title="Permalink to this definition">#</a></dt>
+<dd><p>Create periodic condition for all closure dofs of on all entities in <cite>meshtag</cite> with value <cite>tag</cite>.
+<span class="math notranslate nohighlight">\(u(x_i) = scale * u(relation(x_i))\)</span> for all of <span class="math notranslate nohighlight">\(x_i\)</span> on marked entities.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>V</strong> – The function space to assign the condition to. Should either be the space of the MPC or a sub space.
+meshtag: MeshTag for entity to apply the periodic condition on</p></li>
+<li><p><strong>tag</strong> – Tag indicating which entities should be slaves</p></li>
+<li><p><strong>relation</strong> – Lambda-function describing the geometrical relation</p></li>
+<li><p><strong>bcs</strong> – Dirichlet boundary conditions for the problem (Periodic constraints will be ignored for these dofs)</p></li>
+<li><p><strong>scale</strong> – Float for scaling bc</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.create_slip_constraint">
+<span class="sig-name descname"><span class="pre">create_slip_constraint</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">space</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.FunctionSpace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">facet_marker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.cpp.mesh.MeshTags_int32</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">v</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.function.Function</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bcs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.bcs.DirichletBCMetaClass</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.create_slip_constraint"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.create_slip_constraint" title="Permalink to this definition">#</a></dt>
+<dd><p>Create a slip constraint <span class="math notranslate nohighlight">\(u \cdot v=0\)</span> over the entities defined in <cite>facet_marker</cite> with the given index.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>space</strong> – Function space (possible sub space) for the current constraint</p></li>
+<li><p><strong>facet_marker</strong> – Tuple containomg the mesh tag and marker used to locate degrees of freedom</p></li>
+<li><p><strong>v</strong> – Function containing the directional vector to dot your slip condition (most commonly a normal vector)</p></li>
+<li><p><strong>bcs</strong> – List of Dirichlet BCs (slip conditions will be ignored on these dofs)</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<p>Create constaint <span class="math notranslate nohighlight">\(u\cdot n=0\)</span> of all indices in <cite>mt</cite> marked with <cite>i</cite></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">V</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">VectorFunctionSpace</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="p">(</span><span class="s2">&quot;CG&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">mpc</span> <span class="o">=</span> <span class="n">MultiPointConstraint</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>
+<span class="n">n</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">Function</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>
+<span class="n">mpc</span><span class="o">.</span><span class="n">create_slip_constaint</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="p">(</span><span class="n">mt</span><span class="p">,</span> <span class="n">i</span><span class="p">),</span> <span class="n">n</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Create slip constaint for a mixed function space:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">me</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">MixedElement</span><span class="p">(</span><span class="n">ufl</span><span class="o">.</span><span class="n">VectorElement</span><span class="p">(</span><span class="s2">&quot;CG&quot;</span><span class="p">,</span> <span class="n">triangle</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                      <span class="n">ufl</span><span class="o">.</span><span class="n">FiniteElement</span><span class="p">(</span><span class="s2">&quot;CG&quot;</span><span class="p">,</span> <span class="n">triangle</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">FunctionSpace</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="n">me</span><span class="p">)</span>
+<span class="n">mpc</span> <span class="o">=</span> <span class="n">MultiPointConstraint</span><span class="p">()</span>
+<span class="n">n_space</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">W</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">collapse</span><span class="p">()</span>
+<span class="n">normal</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">Function</span><span class="p">(</span><span class="n">n_space</span><span class="p">)</span>
+<span class="n">mpc</span><span class="o">.</span><span class="n">create_slip_constraint</span><span class="p">(</span><span class="n">W</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">mt</span><span class="p">,</span> <span class="n">i</span><span class="p">),</span> <span class="n">normal</span><span class="p">,</span> <span class="n">bcs</span><span class="o">=</span><span class="p">[])</span>
+</pre></div>
+</div>
+<p>A slip condition cannot be applied on the same degrees of freedom as a Dirichlet BC, and therefore
+any Dirichlet bc for the space of the multi point constraint should be supplied.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">me</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">MixedElement</span><span class="p">(</span><span class="n">ufl</span><span class="o">.</span><span class="n">VectorElement</span><span class="p">(</span><span class="s2">&quot;CG&quot;</span><span class="p">,</span> <span class="n">triangle</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                      <span class="n">ufl</span><span class="o">.</span><span class="n">FiniteElement</span><span class="p">(</span><span class="s2">&quot;CG&quot;</span><span class="p">,</span> <span class="n">triangle</span> <span class="mi">1</span><span class="p">))</span>
+<span class="n">W</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">FunctionSpace</span><span class="p">(</span><span class="n">mesh</span><span class="p">,</span> <span class="n">me</span><span class="p">)</span>
+<span class="n">mpc</span> <span class="o">=</span> <span class="n">MultiPointConstraint</span><span class="p">()</span>
+<span class="n">n_space</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">W</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">collapse</span><span class="p">()</span>
+<span class="n">normal</span> <span class="o">=</span> <span class="n">Function</span><span class="p">(</span><span class="n">n_space</span><span class="p">)</span>
+<span class="n">bc</span> <span class="o">=</span> <span class="n">dolfinx</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">dirichletbc</span><span class="p">(</span><span class="n">inlet_velocity</span><span class="p">,</span> <span class="n">dofs</span><span class="p">,</span> <span class="n">W</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+<span class="n">mpc</span><span class="o">.</span><span class="n">create_slip_constraint</span><span class="p">(</span><span class="n">W</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span> <span class="p">(</span><span class="n">mt</span><span class="p">,</span> <span class="n">i</span><span class="p">),</span> <span class="n">normal</span><span class="p">,</span> <span class="n">bcs</span><span class="o">=</span><span class="p">[</span><span class="n">bc</span><span class="p">])</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.finalize">
+<span class="sig-name descname"><span class="pre">finalize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.finalize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.finalize" title="Permalink to this definition">#</a></dt>
+<dd><p>Finializes the multi point constraint. After this function is called, no new constraints can be added
+to the constraint. This function creates a map from the cells (local to index) to the slave degrees of
+freedom and builds a new index map and function space where unghosted master dofs are added as ghosts.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.function_space">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">function_space</span></span><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.function_space" title="Permalink to this definition">#</a></dt>
+<dd><p>Return the function space for the multi-point constraint with the updated index map</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.homogenize">
+<span class="sig-name descname"><span class="pre">homogenize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vector</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Vec</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/multipointconstraint.html#MultiPointConstraint.homogenize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.homogenize" title="Permalink to this definition">#</a></dt>
+<dd><p>For a vector, homogenize (set to zero) the vector components at the multi-point
+constraint slave DoF indices. This is particularly useful for nonlinear problems.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>vector</strong> – The input vector</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.is_slave">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_slave</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">numpy.ndarray</span></em><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.is_slave" title="Permalink to this definition">#</a></dt>
+<dd><p>Returns a vector of integers where the ith entry indicates if a degree of freedom (local to process) is a slave.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.masters">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">masters</span></span><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.masters" title="Permalink to this definition">#</a></dt>
+<dd><p>Returns a <cite>dolfinx.cpp.graph.AdjacencyList_int32</cite> whose ith node corresponds to
+a degree of freedom (local to process), and links the corresponding master dofs (local to process).</p>
+<p class="rubric">Examples</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">masters</span> <span class="o">=</span> <span class="n">mpc</span><span class="o">.</span><span class="n">masters</span>
+<span class="n">masters_of_dof_i</span> <span class="o">=</span> <span class="n">masters</span><span class="o">.</span><span class="n">links</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.num_local_slaves">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">num_local_slaves</span></span><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.num_local_slaves" title="Permalink to this definition">#</a></dt>
+<dd><p>Return the number of slaves owned by the current process.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dolfinx_mpc.MultiPointConstraint.slaves">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">slaves</span></span><a class="headerlink" href="#dolfinx_mpc.MultiPointConstraint.slaves" title="Permalink to this definition">#</a></dt>
+<dd><p>Returns the degrees of freedom for all slaves local to process</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.apply_lifting">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">apply_lifting</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">b</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Vec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">form</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.forms.FormMetaClass</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bcs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.bcs.DirichletBCMetaClass</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraint</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">x0</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">petsc4py.PETSc.Vec</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_vector.html#apply_lifting"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.apply_lifting" title="Permalink to this definition">#</a></dt>
+<dd><p>Apply lifting to vector b, i.e.
+<span class="math notranslate nohighlight">\(b = b - scale \cdot K^T (A_j (g_j - x0_j))\)</span></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>b</strong> – PETSc vector to assemble into</p></li>
+<li><p><strong>form</strong> – The linear form</p></li>
+<li><p><strong>bcs</strong> – List of Dirichlet boundary conditions</p></li>
+<li><p><strong>constraint</strong> – The multi point constraint</p></li>
+<li><p><strong>x0</strong> – List of vectors</p></li>
+<li><p><strong>scale</strong> – Scaling for lifting</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.assemble_matrix">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">assemble_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">form</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.forms.FormMetaClass</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraint</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bcs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.bcs.DirichletBCMetaClass</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">diagval</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.float64</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">A</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">petsc4py.PETSc.Mat</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">petsc4py.PETSc.Mat</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_matrix.html#assemble_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.assemble_matrix" title="Permalink to this definition">#</a></dt>
+<dd><p>Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
+and Dirichlet boundary conditions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>form</strong> – The compiled bilinear variational form</p></li>
+<li><p><strong>constraint</strong> – The multi point constraint</p></li>
+<li><p><strong>bcs</strong> – Sequence of Dirichlet boundary conditions</p></li>
+<li><p><strong>diagval</strong> – Value to set on the diagonal of the matrix</p></li>
+<li><p><strong>A</strong> – PETSc matrix to assemble into</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The matrix with the assembled bi-linear form</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>_PETSc.Mat</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.assemble_matrix_nest">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">assemble_matrix_nest</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">A</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Mat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">a</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.forms.FormMetaClass</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bcs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.bcs.DirichletBCMetaClass</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">diagval</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.float64</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_matrix.html#assemble_matrix_nest"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.assemble_matrix_nest" title="Permalink to this definition">#</a></dt>
+<dd><p>Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
+“nest” with corresponding multi point constraints and Dirichlet boundary
+conditions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>a</strong> – The compiled bilinear variational form provided in a rank 2 list</p></li>
+<li><p><strong>constraints</strong> – An ordered list of multi point constraints</p></li>
+<li><p><strong>bcs</strong> – Sequence of Dirichlet boundary conditions</p></li>
+<li><p><strong>diagval</strong> – Value to set on the diagonal of the matrix (Default 1)</p></li>
+<li><p><strong>A</strong> – PETSc matrix to assemble into</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.assemble_vector">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">assemble_vector</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">form</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">ufl.form.Form</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraint</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">b</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">petsc4py.PETSc.Vec</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">petsc4py.PETSc.Vec</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_vector.html#assemble_vector"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.assemble_vector" title="Permalink to this definition">#</a></dt>
+<dd><p>Assemble a linear form into vector <cite>b</cite> with corresponding multi point constraint</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>form</strong> – The linear form</p></li>
+<li><p><strong>constraint</strong> – The multi point constraint</p></li>
+<li><p><strong>b</strong> – PETSc vector to assemble</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The vector with the assembled linear form (<cite>b</cite> if supplied)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.assemble_vector_nest">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">assemble_vector_nest</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">b</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">petsc4py.PETSc.Vec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">L</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.forms.FormMetaClass</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_vector.html#assemble_vector_nest"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.assemble_vector_nest" title="Permalink to this definition">#</a></dt>
+<dd><p>Assemble a linear form into a PETSc vector of type “nest”</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>b</strong> – A PETSc vector of type “nest”</p></li>
+<li><p><strong>L</strong> – A sequence of linear forms</p></li>
+<li><p><strong>constraints</strong> – An ordered list of multi point constraints</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.create_matrix_nest">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">create_matrix_nest</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">a</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.forms.FormMetaClass</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_matrix.html#create_matrix_nest"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.create_matrix_nest" title="Permalink to this definition">#</a></dt>
+<dd><p>Create a PETSc matrix of type “nest” with appropriate sparsity pattern
+given the provided multi points constraints</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>a</strong> – The compiled bilinear variational form provided in a rank 2 list
+constraints: An ordered list of multi point constraints</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.create_sparsity_pattern">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">create_sparsity_pattern</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">form</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dolfinx.fem.forms.FormMetaClass</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mpc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_matrix.html#create_sparsity_pattern"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.create_sparsity_pattern" title="Permalink to this definition">#</a></dt>
+<dd><p>Create sparsity-pattern for MPC given a compiled DOLFINx form</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>form</strong> – The form</p></li>
+<li><p><strong>mpc</strong> – For square forms, the MPC. For rectangular forms a list of 2 MPCs on
+axis 0 &amp; 1, respectively</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dolfinx_mpc.create_vector_nest">
+<span class="sig-prename descclassname"><span class="pre">dolfinx_mpc.</span></span><span class="sig-name descname"><span class="pre">create_vector_nest</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">L</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">dolfinx.fem.forms.FormMetaClass</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constraints</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dolfinx_mpc.MultiPointConstraint" title="dolfinx_mpc.multipointconstraint.MultiPointConstraint"><span class="pre">dolfinx_mpc.multipointconstraint.MultiPointConstraint</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">petsc4py.PETSc.Vec</span></span></span><a class="reference internal" href="_modules/dolfinx_mpc/assemble_vector.html#create_vector_nest"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#dolfinx_mpc.create_vector_nest" title="Permalink to this definition">#</a></dt>
+<dd><p>Create a PETSc vector of type “nest” appropriate for the provided multi
+point constraints</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>L</strong> – A sequence of linear forms</p></li>
+<li><p><strong>constraints</strong> – An ordered list of multi point constraints</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A PETSc vector of type “nest”</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>PETSc.Vec</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            kernelName: "python3",
+            path: "./."
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+
+              </div>
+              
+            </main>
+            <footer class="footer-article noprint">
+                
+    <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+    <a class='left-prev' id="prev-link" href="index.html" title="previous page">
+        <i class="fas fa-angle-left"></i>
+        <div class="prev-next-info">
+            <p class="prev-next-subtitle">previous</p>
+            <p class="prev-next-title">DOLFINx-MPC</p>
+        </div>
+    </a>
+    <a class='right-next' id="next-link" href="utils.html" title="next page">
+    <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">dolfinx_mpc.utils</p>
+    </div>
+    <i class="fas fa-angle-right"></i>
+    </a>
+</div>
+            </footer>
+        </div>
+    </div>
+    <div class="footer-content row">
+        <footer class="col footer"><p>
+  
+    By Jørgen S. Dokken<br/>
+  
+      &copy; Copyright 2022.<br/>
+</p>
+        </footer>
+    </div>
+    
+</div>
+
+
+      </div>
+    </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf"></script>
+
+
+  </body>
+</html>

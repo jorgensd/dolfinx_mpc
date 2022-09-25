@@ -1,0 +1,712 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dolfinx_mpc.utils.mpc_utils &#8212; DOLFINx-MPC: An extension to DOLFINx for multi point constraints</title>
+    
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="../../../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" href="../../../_static/styles/sphinx-book-theme.css?digest=5115cc725059bd94278eecd172e13a965bf8f5a9" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/design-style.b7bb847fb20b106c3d81b95245e65545.min.css" />
+    
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf">
+
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/clipboard.min.js"></script>
+    <script src="../../../_static/copybutton.js"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?digest=9c920249402e914e316237a7dbc6769907cce411"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown, .tag_hide_input div.cell_input, .tag_hide-input div.cell_input, .tag_hide_output div.cell_output, .tag_hide-output div.cell_output, .tag_hide_cell.cell, .tag_hide-cell.cell';</script>
+    <script src="../../../_static/design-tabs.js"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"
+const thebe_selector = ".thebe,.cell"
+const thebe_selector_input = "pre"
+const thebe_selector_output = ".output, .cell_output"
+</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="60">
+<!-- Checkboxes to toggle the left sidebar -->
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle navigation sidebar">
+<label class="overlay overlay-navbar" for="__navigation">
+    <div class="visually-hidden">Toggle navigation sidebar</div>
+</label>
+<!-- Checkboxes to toggle the in-page toc -->
+<input type="checkbox" class="sidebar-toggle" name="__page-toc" id="__page-toc" aria-label="Toggle in-page Table of Contents">
+<label class="overlay overlay-pagetoc" for="__page-toc">
+    <div class="visually-hidden">Toggle in-page Table of Contents</div>
+</label>
+<!-- Headers at the top -->
+<div class="announcement header-item noprint"></div>
+<div class="header header-item noprint"></div>
+
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+<!-- Sidebar -->
+<div class="bd-sidebar noprint" id="site-navigation">
+    <div class="bd-sidebar__content">
+        <div class="bd-sidebar__top"><div class="navbar-brand-box">
+    <a class="navbar-brand text-wrap" href="../../../index.html">
+      
+      
+      
+      <h1 class="site-logo" id="site-title">DOLFINx-MPC: An extension to DOLFINx for multi point constraints</h1>
+      
+    </a>
+</div><form class="bd-search d-flex align-items-center" action="../../../search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search this book..." aria-label="Search this book..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    DOLFINx-MPC
+                </a>
+            </li>
+        </ul>
+        <p aria-level="2" class="caption" role="heading">
+ <span class="caption-text">
+  Python API
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../api.html">
+   dolfinx_mpc
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../utils.html">
+   dolfinx_mpc.utils
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../numba.html">
+   dolfinx_mpc.numba
+  </a>
+ </li>
+</ul>
+
+    </div>
+</nav></div>
+        <div class="bd-sidebar__bottom">
+             <!-- To handle the deprecated key -->
+            
+            <div class="navbar_extra_footer">
+            Powered by <a href="https://jupyterbook.org">Jupyter Book</a>
+            </div>
+            
+        </div>
+    </div>
+    <div id="rtd-footer-container"></div>
+</div>
+
+
+          
+
+
+          
+<!-- A tiny helper pixel to detect if we've scrolled -->
+<div class="sbt-scroll-pixel-helper"></div>
+<!-- Main content -->
+<div class="col py-0 content-container">
+    
+    <div class="header-article row sticky-top noprint">
+        
+
+
+
+<div class="col py-1 d-flex header-article-main">
+    <div class="header-article__left">
+        
+        <label for="__navigation"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="right"
+title="Toggle navigation"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-bars"></i>
+  </span>
+
+</label>
+
+        
+    </div>
+    <div class="header-article__right">
+<button onclick="toggleFullScreen()"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="bottom"
+title="Fullscreen mode"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+<div class="menu-dropdown menu-dropdown-repository-buttons">
+  <button class="headerbtn menu-dropdown__trigger"
+      aria-label="Source repositories">
+      <i class="fab fa-github"></i>
+  </button>
+  <div class="menu-dropdown__content">
+    <ul>
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc"
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Source repository"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="headerbtn__text-container">repository</span>
+</a>
+
+      </li>
+      
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc/issues/new?title=Issue%20on%20page%20%2F_modules/dolfinx_mpc/utils/mpc_utils.html&body=Your%20issue%20content%20here."
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Open an issue"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="headerbtn__text-container">open issue</span>
+</a>
+
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+    </div>
+</div>
+
+<!-- Table of contents -->
+<div class="col-md-3 bd-toc show noprint">
+</div>
+    </div>
+    <div class="article row">
+        <div class="col pl-md-3 pl-lg-5 content-container">
+            <!-- Table of contents that is only displayed when printing the page -->
+            <div id="jb-print-docs-body" class="onlyprint">
+                <h1></h1>
+                <!-- Table of contents -->
+                <div id="print-main-content">
+                    <div id="jb-print-toc">
+                        
+                    </div>
+                </div>
+            </div>
+            <main id="main-content" role="main">
+                
+              <div>
+                
+  <h1>Source code for dolfinx_mpc.utils.mpc_utils</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (C) 2020-2021 Jørgen S. Dokken</span>
+<span class="c1">#</span>
+<span class="c1"># This file is part of DOLFINX_MPC</span>
+<span class="c1">#</span>
+<span class="c1"># SPDX-License-Identifier:    MIT</span>
+
+<span class="kn">from</span> <span class="nn">contextlib</span> <span class="kn">import</span> <span class="n">ExitStack</span>
+
+<span class="kn">import</span> <span class="nn">dolfinx.common</span> <span class="k">as</span> <span class="nn">_common</span>
+<span class="kn">import</span> <span class="nn">dolfinx.cpp</span> <span class="k">as</span> <span class="nn">_cpp</span>
+<span class="kn">import</span> <span class="nn">dolfinx.fem</span> <span class="k">as</span> <span class="nn">_fem</span>
+<span class="kn">import</span> <span class="nn">dolfinx.geometry</span> <span class="k">as</span> <span class="nn">_geometry</span>
+<span class="kn">import</span> <span class="nn">dolfinx.la</span> <span class="k">as</span> <span class="nn">_la</span>
+<span class="kn">import</span> <span class="nn">dolfinx.log</span> <span class="k">as</span> <span class="nn">_log</span>
+<span class="kn">import</span> <span class="nn">dolfinx.mesh</span> <span class="k">as</span> <span class="nn">_mesh</span>
+<span class="kn">import</span> <span class="nn">dolfinx_mpc.cpp</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">ufl</span>
+<span class="kn">from</span> <span class="nn">mpi4py</span> <span class="kn">import</span> <span class="n">MPI</span>
+<span class="kn">from</span> <span class="nn">petsc4py</span> <span class="kn">import</span> <span class="n">PETSc</span>
+
+<span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;rotation_matrix&quot;</span><span class="p">,</span> <span class="s2">&quot;facet_normal_approximation&quot;</span><span class="p">,</span> <span class="s2">&quot;log_info&quot;</span><span class="p">,</span> <span class="s2">&quot;rigid_motions_nullspace&quot;</span><span class="p">,</span>
+           <span class="s2">&quot;determine_closest_block&quot;</span><span class="p">,</span> <span class="s2">&quot;create_normal_approximation&quot;</span><span class="p">,</span> <span class="s2">&quot;create_point_to_point_constraint&quot;</span><span class="p">]</span>
+
+
+<span class="k">def</span> <span class="nf">rotation_matrix</span><span class="p">(</span><span class="n">axis</span><span class="p">,</span> <span class="n">angle</span><span class="p">):</span>
+    <span class="c1"># See https://en.wikipedia.org/wiki/Rotation_matrix,</span>
+    <span class="c1"># Subsection: Rotation_matrix_from_axis_and_angle.</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">axis</span><span class="p">,</span> <span class="n">axis</span><span class="p">),</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">n_axis</span> <span class="o">=</span> <span class="n">axis</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Normalize axis</span>
+        <span class="n">n_axis</span> <span class="o">=</span> <span class="n">axis</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">axis</span><span class="p">,</span> <span class="n">axis</span><span class="p">))</span>
+
+    <span class="c1"># Define cross product matrix of axis</span>
+    <span class="n">axis_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">n_axis</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">n_axis</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span>
+                       <span class="p">[</span><span class="n">n_axis</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="n">n_axis</span><span class="p">[</span><span class="mi">0</span><span class="p">]],</span>
+                       <span class="p">[</span><span class="o">-</span><span class="n">n_axis</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">n_axis</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">0</span><span class="p">]])</span>
+    <span class="n">identity</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angle</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">outer</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">angle</span><span class="p">))</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">n_axis</span><span class="p">,</span> <span class="n">n_axis</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">angle</span><span class="p">)</span> <span class="o">*</span> <span class="n">axis_x</span> <span class="o">+</span> <span class="n">identity</span> <span class="o">+</span> <span class="n">outer</span>
+
+
+<div class="viewcode-block" id="facet_normal_approximation"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.facet_normal_approximation">[docs]</a><span class="k">def</span> <span class="nf">facet_normal_approximation</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">mt</span><span class="p">:</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">MeshTags_int32</span><span class="p">,</span> <span class="n">mt_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">tangent</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">jit_options</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{},</span>
+                               <span class="n">form_compiler_options</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Approximate the facet normal by projecting it into the function space for a set of facets</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        V: The function space to project into</span>
+<span class="sd">        mt: The `dolfinx.mesh.MeshTagsMetaClass` containing facet markers</span>
+<span class="sd">        mt_id: The id for the facets in `mt` we want to represent the normal at</span>
+<span class="sd">        tangent: To approximate the tangent to the facet set this flag to `True`</span>
+<span class="sd">        jit_options: Parameters used in CFFI JIT compilation of C code generated by FFCx.</span>
+<span class="sd">            See https://github.com/FEniCS/dolfinx/blob/main/python/dolfinx/jit.py#L22-L37</span>
+<span class="sd">            for all available parameters. Takes priority over all other parameter values.</span>
+<span class="sd">        form_compiler_options: Parameters used in FFCx compilation of this form. Run `ffcx - -help` at</span>
+<span class="sd">            the commandline to see all available options. Takes priority over all</span>
+<span class="sd">            other parameter values, except for `scalar_type` which is determined by</span>
+<span class="sd">            DOLFINx.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+    <span class="n">timer</span> <span class="o">=</span> <span class="n">_common</span><span class="o">.</span><span class="n">Timer</span><span class="p">(</span><span class="s2">&quot;~MPC: Facet normal projection&quot;</span><span class="p">)</span>
+    <span class="n">comm</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">comm</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">FacetNormal</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="p">)</span>
+    <span class="n">nh</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">Function</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>
+    <span class="n">u</span><span class="p">,</span> <span class="n">v</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">TrialFunction</span><span class="p">(</span><span class="n">V</span><span class="p">),</span> <span class="n">ufl</span><span class="o">.</span><span class="n">TestFunction</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>
+    <span class="n">ds</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">ds</span><span class="p">(</span><span class="n">domain</span><span class="o">=</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="p">,</span> <span class="n">subdomain_data</span><span class="o">=</span><span class="n">mt</span><span class="p">,</span> <span class="n">subdomain_id</span><span class="o">=</span><span class="n">mt_id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">tangent</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">dim</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Tangent not defined for 1D problem&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">dim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="o">*</span> <span class="n">ds</span>
+            <span class="n">L</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">ufl</span><span class="o">.</span><span class="n">as_vector</span><span class="p">([</span><span class="o">-</span><span class="n">n</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">n</span><span class="p">[</span><span class="mi">0</span><span class="p">]]),</span> <span class="n">v</span><span class="p">)</span> <span class="o">*</span> <span class="n">ds</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">def</span> <span class="nf">tangential_proj</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+                <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">                See for instance:</span>
+<span class="sd">                https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf</span>
+<span class="sd">                &quot;&quot;&quot;</span>
+                <span class="k">return</span> <span class="p">(</span><span class="n">ufl</span><span class="o">.</span><span class="n">Identity</span><span class="p">(</span><span class="n">u</span><span class="o">.</span><span class="n">ufl_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">-</span> <span class="n">ufl</span><span class="o">.</span><span class="n">outer</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span> <span class="o">*</span> <span class="n">u</span>
+            <span class="n">c</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">Constant</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+            <span class="n">a</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="o">*</span> <span class="n">ds</span>
+            <span class="n">L</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">tangential_proj</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">n</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="o">*</span> <span class="n">ds</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="p">(</span><span class="n">ufl</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="o">*</span> <span class="n">ds</span><span class="p">)</span>
+        <span class="n">L</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="o">*</span> <span class="n">ds</span>
+
+    <span class="c1"># Find all dofs that are not boundary dofs</span>
+    <span class="n">imap</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span>
+    <span class="n">all_blocks</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">imap</span><span class="o">.</span><span class="n">size_local</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">top_blocks</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">locate_dofs_topological</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">mt</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">mt_id</span><span class="p">))</span>
+    <span class="n">deac_blocks</span> <span class="o">=</span> <span class="n">all_blocks</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">all_blocks</span><span class="p">,</span> <span class="n">top_blocks</span><span class="p">,</span> <span class="n">invert</span><span class="o">=</span><span class="kc">True</span><span class="p">)]</span>
+
+    <span class="c1"># Note there should be a better way to do this</span>
+    <span class="c1"># Create sparsity pattern only for constraint + bc</span>
+    <span class="n">bilinear_form</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">form</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">jit_options</span><span class="o">=</span><span class="n">jit_options</span><span class="p">,</span>
+                              <span class="n">form_compiler_options</span><span class="o">=</span><span class="n">form_compiler_options</span><span class="p">)</span>
+    <span class="n">pattern</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">create_sparsity_pattern</span><span class="p">(</span><span class="n">bilinear_form</span><span class="p">)</span>
+    <span class="n">pattern</span><span class="o">.</span><span class="n">insert_diagonal</span><span class="p">(</span><span class="n">deac_blocks</span><span class="p">)</span>
+    <span class="n">pattern</span><span class="o">.</span><span class="n">assemble</span><span class="p">()</span>
+    <span class="n">u_0</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">Function</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>
+    <span class="n">u_0</span><span class="o">.</span><span class="n">vector</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">bc_deac</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">dirichletbc</span><span class="p">(</span><span class="n">u_0</span><span class="p">,</span> <span class="n">deac_blocks</span><span class="p">)</span>
+    <span class="n">A</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">la</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">create_matrix</span><span class="p">(</span><span class="n">comm</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
+    <span class="n">A</span><span class="o">.</span><span class="n">zeroEntries</span><span class="p">()</span>
+
+    <span class="c1"># Assemble the matrix with all entries</span>
+    <span class="n">form_coeffs</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">pack_coefficients</span><span class="p">(</span><span class="n">bilinear_form</span><span class="p">)</span>
+    <span class="n">form_consts</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">pack_constants</span><span class="p">(</span><span class="n">bilinear_form</span><span class="p">)</span>
+    <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">assemble_matrix</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">bilinear_form</span><span class="p">,</span> <span class="n">form_consts</span><span class="p">,</span> <span class="n">form_coeffs</span><span class="p">,</span> <span class="p">[</span><span class="n">bc_deac</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">bilinear_form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="n">bilinear_form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="n">A</span><span class="o">.</span><span class="n">assemblyBegin</span><span class="p">(</span><span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">AssemblyType</span><span class="o">.</span><span class="n">FLUSH</span><span class="p">)</span>
+        <span class="n">A</span><span class="o">.</span><span class="n">assemblyEnd</span><span class="p">(</span><span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">AssemblyType</span><span class="o">.</span><span class="n">FLUSH</span><span class="p">)</span>
+        <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">insert_diagonal</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">bilinear_form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="n">bc_deac</span><span class="p">],</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">A</span><span class="o">.</span><span class="n">assemble</span><span class="p">()</span>
+    <span class="n">linear_form</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">form</span><span class="p">(</span><span class="n">L</span><span class="p">,</span> <span class="n">jit_options</span><span class="o">=</span><span class="n">jit_options</span><span class="p">,</span>
+                            <span class="n">form_compiler_options</span><span class="o">=</span><span class="n">form_compiler_options</span><span class="p">)</span>
+    <span class="n">b</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">assemble_vector</span><span class="p">(</span><span class="n">linear_form</span><span class="p">)</span>
+
+    <span class="n">_fem</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">apply_lifting</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="p">[</span><span class="n">bilinear_form</span><span class="p">],</span> <span class="p">[[</span><span class="n">bc_deac</span><span class="p">]])</span>
+    <span class="n">b</span><span class="o">.</span><span class="n">ghostUpdate</span><span class="p">(</span><span class="n">addv</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">InsertMode</span><span class="o">.</span><span class="n">ADD_VALUES</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">ScatterMode</span><span class="o">.</span><span class="n">REVERSE</span><span class="p">)</span>
+    <span class="n">_fem</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">set_bc</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="p">[</span><span class="n">bc_deac</span><span class="p">])</span>
+
+    <span class="c1"># Solve Linear problem</span>
+    <span class="n">solver</span> <span class="o">=</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">KSP</span><span class="p">()</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="p">)</span>
+    <span class="n">solver</span><span class="o">.</span><span class="n">setType</span><span class="p">(</span><span class="s2">&quot;cg&quot;</span><span class="p">)</span>
+    <span class="n">solver</span><span class="o">.</span><span class="n">rtol</span> <span class="o">=</span> <span class="mf">1e-8</span>
+    <span class="n">solver</span><span class="o">.</span><span class="n">setOperators</span><span class="p">(</span><span class="n">A</span><span class="p">)</span>
+    <span class="n">solver</span><span class="o">.</span><span class="n">solve</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">nh</span><span class="o">.</span><span class="n">vector</span><span class="p">)</span>
+    <span class="n">nh</span><span class="o">.</span><span class="n">vector</span><span class="o">.</span><span class="n">ghostUpdate</span><span class="p">(</span><span class="n">addv</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">InsertMode</span><span class="o">.</span><span class="n">INSERT</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">ScatterMode</span><span class="o">.</span><span class="n">FORWARD</span><span class="p">)</span>
+    <span class="n">timer</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">nh</span></div>
+
+
+<div class="viewcode-block" id="log_info"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.log_info">[docs]</a><span class="k">def</span> <span class="nf">log_info</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Wrapper for logging a simple string on the zeroth communicator</span>
+<span class="sd">    Reverting the log level</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">old_level</span> <span class="o">=</span> <span class="n">_log</span><span class="o">.</span><span class="n">get_log_level</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">_log</span><span class="o">.</span><span class="n">set_log_level</span><span class="p">(</span><span class="n">_log</span><span class="o">.</span><span class="n">LogLevel</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+        <span class="n">_log</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">_log</span><span class="o">.</span><span class="n">LogLevel</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span>
+                 <span class="n">message</span><span class="p">)</span>
+        <span class="n">_log</span><span class="o">.</span><span class="n">set_log_level</span><span class="p">(</span><span class="n">old_level</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="rigid_motions_nullspace"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.rigid_motions_nullspace">[docs]</a><span class="k">def</span> <span class="nf">rigid_motions_nullspace</span><span class="p">(</span><span class="n">V</span><span class="p">:</span> <span class="n">_fem</span><span class="o">.</span><span class="n">FunctionSpace</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Function to build nullspace for 2D/3D elasticity.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        V: The function space</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">_x</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">Function</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>
+    <span class="c1"># Get geometric dim</span>
+    <span class="n">gdim</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">dim</span>
+    <span class="k">assert</span> <span class="n">gdim</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">or</span> <span class="n">gdim</span> <span class="o">==</span> <span class="mi">3</span>
+
+    <span class="c1"># Set dimension of nullspace</span>
+    <span class="n">dim</span> <span class="o">=</span> <span class="mi">3</span> <span class="k">if</span> <span class="n">gdim</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="mi">6</span>
+
+    <span class="c1"># Create list of vectors for null space</span>
+    <span class="n">nullspace_basis</span> <span class="o">=</span> <span class="p">[</span><span class="n">_x</span><span class="o">.</span><span class="n">vector</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">dim</span><span class="p">)]</span>
+
+    <span class="k">with</span> <span class="n">ExitStack</span><span class="p">()</span> <span class="k">as</span> <span class="n">stack</span><span class="p">:</span>
+        <span class="n">vec_local</span> <span class="o">=</span> <span class="p">[</span><span class="n">stack</span><span class="o">.</span><span class="n">enter_context</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">localForm</span><span class="p">())</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">nullspace_basis</span><span class="p">]</span>
+        <span class="n">basis</span> <span class="o">=</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">vec_local</span><span class="p">]</span>
+
+        <span class="n">dofs</span> <span class="o">=</span> <span class="p">[</span><span class="n">V</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">array</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">gdim</span><span class="p">)]</span>
+
+        <span class="c1"># Build translational null space basis</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">gdim</span><span class="p">):</span>
+            <span class="n">basis</span><span class="p">[</span><span class="n">i</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+        <span class="c1"># Build rotational null space basis</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">tabulate_dof_coordinates</span><span class="p">()</span>
+        <span class="n">dofs_block</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">array</span>
+        <span class="n">x0</span><span class="p">,</span> <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">dofs_block</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">x</span><span class="p">[</span><span class="n">dofs_block</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">x</span><span class="p">[</span><span class="n">dofs_block</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">gdim</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">basis</span><span class="p">[</span><span class="mi">2</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="o">-</span><span class="n">x1</span>
+            <span class="n">basis</span><span class="p">[</span><span class="mi">2</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">x0</span>
+        <span class="k">elif</span> <span class="n">gdim</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">basis</span><span class="p">[</span><span class="mi">3</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="o">-</span><span class="n">x1</span>
+            <span class="n">basis</span><span class="p">[</span><span class="mi">3</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">x0</span>
+
+            <span class="n">basis</span><span class="p">[</span><span class="mi">4</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="n">x2</span>
+            <span class="n">basis</span><span class="p">[</span><span class="mi">4</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">2</span><span class="p">]]</span> <span class="o">=</span> <span class="o">-</span><span class="n">x0</span>
+            <span class="n">basis</span><span class="p">[</span><span class="mi">5</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">2</span><span class="p">]]</span> <span class="o">=</span> <span class="n">x1</span>
+            <span class="n">basis</span><span class="p">[</span><span class="mi">5</span><span class="p">][</span><span class="n">dofs</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="o">-</span><span class="n">x2</span>
+
+    <span class="n">_la</span><span class="o">.</span><span class="n">orthonormalize</span><span class="p">(</span><span class="n">nullspace_basis</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">_la</span><span class="o">.</span><span class="n">is_orthonormal</span><span class="p">(</span><span class="n">nullspace_basis</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">NullSpace</span><span class="p">()</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="n">vectors</span><span class="o">=</span><span class="n">nullspace_basis</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="determine_closest_block"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.determine_closest_block">[docs]</a><span class="k">def</span> <span class="nf">determine_closest_block</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">point</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Determine the closest dofs (in a single block) to a point and the distance</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Create boundingboxtree of cells connected to boundary facets</span>
+    <span class="n">tdim</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dim</span>
+    <span class="n">boundary_facets</span> <span class="o">=</span> <span class="n">_mesh</span><span class="o">.</span><span class="n">exterior_facet_indices</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="p">)</span>
+    <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">create_connectivity</span><span class="p">(</span><span class="n">tdim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">tdim</span><span class="p">)</span>
+    <span class="n">f_to_c</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">connectivity</span><span class="p">(</span><span class="n">tdim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">tdim</span><span class="p">)</span>
+    <span class="n">boundary_cells</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">facet</span> <span class="ow">in</span> <span class="n">boundary_facets</span><span class="p">:</span>
+        <span class="n">boundary_cells</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">f_to_c</span><span class="o">.</span><span class="n">links</span><span class="p">(</span><span class="n">facet</span><span class="p">))</span>
+    <span class="n">cell_imap</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">index_map</span><span class="p">(</span><span class="n">tdim</span><span class="p">)</span>
+    <span class="n">boundary_cells</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">boundary_cells</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">boundary_cells</span> <span class="o">=</span> <span class="n">boundary_cells</span><span class="p">[</span><span class="n">boundary_cells</span> <span class="o">&lt;</span> <span class="n">cell_imap</span><span class="o">.</span><span class="n">size_local</span><span class="p">]</span>
+    <span class="n">bb_tree</span> <span class="o">=</span> <span class="n">_geometry</span><span class="o">.</span><span class="n">BoundingBoxTree</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="p">,</span> <span class="n">tdim</span><span class="p">,</span> <span class="n">boundary_cells</span><span class="p">)</span>
+    <span class="n">midpoint_tree</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">create_midpoint_tree</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="p">,</span> <span class="n">tdim</span><span class="p">,</span> <span class="n">boundary_cells</span><span class="p">)</span>
+
+    <span class="c1"># Find facet closest</span>
+
+    <span class="n">closest_cell</span> <span class="o">=</span> <span class="n">_geometry</span><span class="o">.</span><span class="n">compute_closest_entity</span><span class="p">(</span>
+        <span class="n">bb_tree</span><span class="p">,</span> <span class="n">midpoint_tree</span><span class="p">,</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">)))[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c1"># Set distance high if cell is not owned</span>
+    <span class="k">if</span> <span class="n">cell_imap</span><span class="o">.</span><span class="n">size_local</span> <span class="o">&lt;</span> <span class="n">closest_cell</span> <span class="ow">or</span> <span class="n">closest_cell</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+        <span class="n">R</span> <span class="o">=</span> <span class="mf">1e5</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Get cell geometry</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">x</span>
+        <span class="n">entities</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">entities_to_geometry</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="p">,</span> <span class="n">tdim</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">closest_cell</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="n">R</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">_cpp</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">compute_distance_gjk</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="n">entities</span><span class="p">[</span><span class="mi">0</span><span class="p">]]))</span>
+
+    <span class="c1"># Find processor with cell closest to point</span>
+    <span class="n">global_distances</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">allgather</span><span class="p">(</span><span class="n">R</span><span class="p">)</span>
+    <span class="n">owning_processor</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">global_distances</span><span class="p">)</span>
+
+    <span class="n">dofmap</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span>
+    <span class="n">imap</span> <span class="o">=</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span>
+    <span class="n">ghost_owner</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">owners</span>
+    <span class="n">local_max</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">size_local</span>
+    <span class="c1"># Determine which block of dofs is closest</span>
+    <span class="n">min_distance</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">R</span><span class="p">,</span> <span class="mf">1e5</span><span class="p">)</span>
+    <span class="n">minimal_distance_block</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">min_dof_owner</span> <span class="o">=</span> <span class="n">owning_processor</span>
+    <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">owning_processor</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">tabulate_dof_coordinates</span><span class="p">()</span>
+        <span class="n">cell_blocks</span> <span class="o">=</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">cell_dofs</span><span class="p">(</span><span class="n">closest_cell</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">cell_blocks</span><span class="p">:</span>
+            <span class="n">distance</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">_cpp</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">compute_distance_gjk</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="n">x</span><span class="p">[</span><span class="n">block</span><span class="p">]))</span>
+            <span class="k">if</span> <span class="n">distance</span> <span class="o">&lt;</span> <span class="n">min_distance</span><span class="p">:</span>
+                <span class="c1"># If cell owned by processor, but not the closest dof</span>
+                <span class="k">if</span> <span class="n">block</span> <span class="o">&lt;</span> <span class="n">local_max</span><span class="p">:</span>
+                    <span class="n">min_dof_owner</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">min_dof_owner</span> <span class="o">=</span> <span class="n">ghost_owner</span><span class="p">[</span><span class="n">block</span> <span class="o">-</span> <span class="n">local_max</span><span class="p">]</span>
+                <span class="n">minimal_distance_block</span> <span class="o">=</span> <span class="n">block</span>
+                <span class="n">min_distance</span> <span class="o">=</span> <span class="n">distance</span>
+    <span class="n">min_dof_owner</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">bcast</span><span class="p">(</span><span class="n">min_dof_owner</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">owning_processor</span><span class="p">)</span>
+    <span class="c1"># If dofs not owned by cell</span>
+    <span class="k">if</span> <span class="n">owning_processor</span> <span class="o">!=</span> <span class="n">min_dof_owner</span><span class="p">:</span>
+        <span class="n">owning_processor</span> <span class="o">=</span> <span class="n">min_dof_owner</span>
+
+    <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">min_dof_owner</span><span class="p">:</span>
+        <span class="c1"># Re-search using the closest cell</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">tabulate_dof_coordinates</span><span class="p">()</span>
+        <span class="n">cell_blocks</span> <span class="o">=</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">cell_dofs</span><span class="p">(</span><span class="n">closest_cell</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">cell_blocks</span><span class="p">:</span>
+            <span class="n">distance</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">_cpp</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">compute_distance_gjk</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="n">x</span><span class="p">[</span><span class="n">block</span><span class="p">]))</span>
+            <span class="k">if</span> <span class="n">distance</span> <span class="o">&lt;</span> <span class="n">min_distance</span><span class="p">:</span>
+                <span class="c1"># If cell owned by processor, but not the closest dof</span>
+                <span class="k">if</span> <span class="n">block</span> <span class="o">&lt;</span> <span class="n">local_max</span><span class="p">:</span>
+                    <span class="n">min_dof_owner</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">min_dof_owner</span> <span class="o">=</span> <span class="n">ghost_owner</span><span class="p">[</span><span class="n">block</span> <span class="o">-</span> <span class="n">local_max</span><span class="p">]</span>
+                <span class="n">minimal_distance_block</span> <span class="o">=</span> <span class="n">block</span>
+                <span class="n">min_distance</span> <span class="o">=</span> <span class="n">distance</span>
+        <span class="k">assert</span> <span class="n">min_dof_owner</span> <span class="o">==</span> <span class="n">owning_processor</span>
+        <span class="k">return</span> <span class="n">owning_processor</span><span class="p">,</span> <span class="p">[</span><span class="n">minimal_distance_block</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">owning_processor</span><span class="p">,</span> <span class="p">[]</span></div>
+
+
+<span class="k">def</span> <span class="nf">create_point_to_point_constraint</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">slave_point</span><span class="p">,</span> <span class="n">master_point</span><span class="p">,</span> <span class="n">vector</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="c1"># Determine which processor owns the dof closest to the slave and master point</span>
+    <span class="n">slave_proc</span><span class="p">,</span> <span class="n">slave_block</span> <span class="o">=</span> <span class="n">determine_closest_block</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">slave_point</span><span class="p">)</span>
+    <span class="n">master_proc</span><span class="p">,</span> <span class="n">master_block</span> <span class="o">=</span> <span class="n">determine_closest_block</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">master_point</span><span class="p">)</span>
+    <span class="n">is_master_proc</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">master_proc</span>
+    <span class="n">is_slave_proc</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">slave_proc</span>
+
+    <span class="n">block_size</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span>
+    <span class="n">imap</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span>
+    <span class="c1"># Output structures</span>
+    <span class="n">slaves</span><span class="p">,</span> <span class="n">masters</span><span class="p">,</span> <span class="n">coeffs</span><span class="p">,</span> <span class="n">owners</span><span class="p">,</span> <span class="n">offsets</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="c1"># Information required to handle vector as input</span>
+    <span class="n">zero_indices</span><span class="p">,</span> <span class="n">slave_index</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">vector</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">zero_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argwhere</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isclose</span><span class="p">(</span><span class="n">vector</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span><span class="o">.</span><span class="n">T</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">slave_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">vector</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">is_slave_proc</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">slave_block</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+        <span class="n">slave_block_g</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">local_to_global</span><span class="p">(</span><span class="n">slave_block</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">vector</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">slave_block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">slave_block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                               <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">vector</span><span class="p">)</span> <span class="o">==</span> <span class="n">block_size</span>
+            <span class="c1"># Check for input vector (Should be of same length as number of slaves)</span>
+            <span class="c1"># All entries should not be zero</span>
+            <span class="k">assert</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">slave_index</span><span class="p">,</span> <span class="n">zero_indices</span><span class="p">)</span>
+            <span class="c1"># Check vector for zero contributions</span>
+            <span class="n">slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">slave_block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">slave_index</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">slave_index</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">zero_indices</span><span class="p">):</span>
+                    <span class="n">masters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">slave_block_g</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">i</span><span class="p">)</span>
+                    <span class="n">owners</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">slave_proc</span><span class="p">)</span>
+                    <span class="n">coeffs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">-</span><span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="n">vector</span><span class="p">[</span><span class="n">slave_index</span><span class="p">])</span>
+
+    <span class="n">global_masters</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">is_master_proc</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">master_block</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+        <span class="n">master_block_g</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">local_to_global</span><span class="p">(</span><span class="n">master_block</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">masters_as_glob</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">master_block_g</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span>
+                                    <span class="n">master_block_g</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">masters_as_glob</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+
+    <span class="n">ghost_processors</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">shared_indices</span> <span class="o">=</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">cpp</span><span class="o">.</span><span class="n">mpc</span><span class="o">.</span><span class="n">compute_shared_indices</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">_cpp_object</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">is_master_proc</span> <span class="ow">and</span> <span class="n">is_slave_proc</span><span class="p">:</span>
+        <span class="c1"># If slaves and masters are on the same processor finalize local work</span>
+        <span class="k">if</span> <span class="n">vector</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">masters</span> <span class="o">=</span> <span class="n">masters_as_glob</span>
+            <span class="n">owners</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">masters</span><span class="p">),</span> <span class="n">master_proc</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+            <span class="n">coeffs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">masters</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+            <span class="n">offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">masters</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">masters_as_glob</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">zero_indices</span><span class="p">):</span>
+                    <span class="n">masters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">masters_as_glob</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+                    <span class="n">owners</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">master_proc</span><span class="p">)</span>
+                    <span class="n">coeffs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="n">vector</span><span class="p">[</span><span class="n">slave_index</span><span class="p">])</span>
+            <span class="n">offsets</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">masters</span><span class="p">)]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Send/Recv masters from other processor</span>
+        <span class="k">if</span> <span class="n">is_master_proc</span><span class="p">:</span>
+            <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">masters_as_glob</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">slave_proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">is_slave_proc</span><span class="p">:</span>
+            <span class="n">global_masters</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">master_proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">master</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">global_masters</span><span class="p">):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">zero_indices</span><span class="p">):</span>
+                    <span class="n">masters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">master</span><span class="p">)</span>
+                    <span class="n">owners</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">master_proc</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">vector</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">coeffs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">coeffs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="n">vector</span><span class="p">[</span><span class="n">slave_index</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">vector</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">slaves</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">masters</span><span class="p">)],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+            <span class="n">ghost_processors</span> <span class="o">=</span> <span class="n">shared_indices</span><span class="o">.</span><span class="n">links</span><span class="p">(</span><span class="n">slave_block</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="c1"># Broadcast processors containg slave</span>
+    <span class="n">ghost_processors</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">bcast</span><span class="p">(</span><span class="n">ghost_processors</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">slave_proc</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_slave_proc</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">proc</span> <span class="ow">in</span> <span class="n">ghost_processors</span><span class="p">:</span>
+            <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">slave_block_g</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">slaves</span> <span class="o">%</span>
+                                <span class="n">block_size</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">20</span> <span class="o">+</span> <span class="n">proc</span><span class="p">)</span>
+            <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">coeffs</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">30</span> <span class="o">+</span> <span class="n">proc</span><span class="p">)</span>
+            <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">owners</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">40</span> <span class="o">+</span> <span class="n">proc</span><span class="p">)</span>
+            <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">masters</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">50</span> <span class="o">+</span> <span class="n">proc</span><span class="p">)</span>
+            <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">dest</span><span class="o">=</span><span class="n">proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">60</span> <span class="o">+</span> <span class="n">proc</span><span class="p">)</span>
+
+    <span class="c1"># Receive data for ghost slaves</span>
+    <span class="n">ghost_slaves</span><span class="p">,</span> <span class="n">ghost_masters</span><span class="p">,</span> <span class="n">ghost_coeffs</span><span class="p">,</span> <span class="n">ghost_owners</span><span class="p">,</span> <span class="n">ghost_offsets</span> <span class="o">=</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[],</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span><span class="p">,</span> <span class="n">ghost_processors</span><span class="p">):</span>
+        <span class="c1"># Convert recieved slaves to the corresponding ghost index</span>
+        <span class="n">recv_slaves</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">slave_proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">20</span> <span class="o">+</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
+        <span class="n">ghost_coeffs</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">slave_proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">30</span> <span class="o">+</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
+        <span class="n">ghost_owners</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">slave_proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">40</span> <span class="o">+</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
+        <span class="n">ghost_masters</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">slave_proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">50</span> <span class="o">+</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
+        <span class="n">ghost_offsets</span> <span class="o">=</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="n">source</span><span class="o">=</span><span class="n">slave_proc</span><span class="p">,</span> <span class="n">tag</span><span class="o">=</span><span class="mi">60</span> <span class="o">+</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span><span class="p">)</span>
+
+        <span class="c1"># Unroll ghost blocks</span>
+        <span class="n">ghosts</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">ghosts</span>
+        <span class="n">ghost_dofs</span> <span class="o">=</span> <span class="p">[</span><span class="n">g</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">i</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">ghosts</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">)]</span>
+
+        <span class="n">ghost_slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">recv_slaves</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+        <span class="n">local_size</span> <span class="o">=</span> <span class="n">imap</span><span class="o">.</span><span class="n">size_local</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">slave</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">recv_slaves</span><span class="p">):</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argwhere</span><span class="p">(</span><span class="n">ghost_dofs</span> <span class="o">==</span> <span class="n">slave</span><span class="p">)[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="n">ghost_slaves</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_size</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">idx</span>
+    <span class="n">slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">slaves</span><span class="p">,</span> <span class="n">ghost_slaves</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">masters</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">masters</span><span class="p">,</span> <span class="n">ghost_masters</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+    <span class="n">coeffs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">coeffs</span><span class="p">,</span> <span class="n">ghost_coeffs</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">owners</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">owners</span><span class="p">,</span> <span class="n">ghost_owners</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">offsets</span><span class="p">,</span> <span class="n">ghost_offsets</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">slaves</span><span class="p">,</span> <span class="n">masters</span><span class="p">,</span> <span class="n">coeffs</span><span class="p">,</span> <span class="n">owners</span><span class="p">,</span> <span class="n">offsets</span>
+
+
+<div class="viewcode-block" id="create_normal_approximation"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.create_normal_approximation">[docs]</a><span class="k">def</span> <span class="nf">create_normal_approximation</span><span class="p">(</span><span class="n">V</span><span class="p">:</span> <span class="n">_fem</span><span class="o">.</span><span class="n">FunctionSpace</span><span class="p">,</span> <span class="n">mt</span><span class="p">:</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">MeshTags_int32</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Creates a normal approximation for the dofs in the closure of the attached entities.</span>
+<span class="sd">    Where a dof is attached to entities facets, an average is computed</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        V: The function space</span>
+<span class="sd">        mt: The meshtag containing the indices</span>
+<span class="sd">        value: Value for the entities in the mesh tag to compute normal on</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        nh: The normal vector</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nh</span> <span class="o">=</span> <span class="n">_fem</span><span class="o">.</span><span class="n">Function</span><span class="p">(</span><span class="n">V</span><span class="p">)</span>
+    <span class="n">n_cpp</span> <span class="o">=</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">cpp</span><span class="o">.</span><span class="n">mpc</span><span class="o">.</span><span class="n">create_normal_approximation</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">_cpp_object</span><span class="p">,</span> <span class="n">mt</span><span class="o">.</span><span class="n">dim</span><span class="p">,</span> <span class="n">mt</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">value</span><span class="p">))</span>
+    <span class="n">nh</span><span class="o">.</span><span class="n">_cpp_object</span> <span class="o">=</span> <span class="n">n_cpp</span>
+    <span class="k">return</span> <span class="n">nh</span></div>
+</pre></div>
+
+              </div>
+              
+            </main>
+            <footer class="footer-article noprint">
+                
+    <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+</div>
+            </footer>
+        </div>
+    </div>
+    <div class="footer-content row">
+        <footer class="col footer"><p>
+  
+    By Jørgen S. Dokken<br/>
+  
+      &copy; Copyright 2022.<br/>
+</p>
+        </footer>
+    </div>
+    
+</div>
+
+
+      </div>
+    </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf"></script>
+
+
+  </body>
+</html>

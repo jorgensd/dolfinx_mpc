@@ -1,0 +1,746 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dolfinx_mpc.numba.assemble_matrix &#8212; DOLFINx-MPC: An extension to DOLFINx for multi point constraints</title>
+    
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../../_static/styles/theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=1999514e3f237ded88cf" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="../../../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../../../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css" />
+    <link rel="stylesheet" href="../../../_static/styles/sphinx-book-theme.css?digest=5115cc725059bd94278eecd172e13a965bf8f5a9" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/togglebutton.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/mystnb.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-thebe.css" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/design-style.b7bb847fb20b106c3d81b95245e65545.min.css" />
+    
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf">
+
+    <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+    <script src="../../../_static/jquery.js"></script>
+    <script src="../../../_static/underscore.js"></script>
+    <script src="../../../_static/doctools.js"></script>
+    <script src="../../../_static/clipboard.min.js"></script>
+    <script src="../../../_static/copybutton.js"></script>
+    <script src="../../../_static/scripts/sphinx-book-theme.js?digest=9c920249402e914e316237a7dbc6769907cce411"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../../_static/togglebutton.js"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown, .tag_hide_input div.cell_input, .tag_hide-input div.cell_input, .tag_hide_output div.cell_output, .tag_hide-output div.cell_output, .tag_hide_cell.cell, .tag_hide-cell.cell';</script>
+    <script src="../../../_static/design-tabs.js"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"
+const thebe_selector = ".thebe,.cell"
+const thebe_selector_input = "pre"
+const thebe_selector_output = ".output, .cell_output"
+</script>
+    <script async="async" src="../../../_static/sphinx-thebe.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="60">
+<!-- Checkboxes to toggle the left sidebar -->
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle navigation sidebar">
+<label class="overlay overlay-navbar" for="__navigation">
+    <div class="visually-hidden">Toggle navigation sidebar</div>
+</label>
+<!-- Checkboxes to toggle the in-page toc -->
+<input type="checkbox" class="sidebar-toggle" name="__page-toc" id="__page-toc" aria-label="Toggle in-page Table of Contents">
+<label class="overlay overlay-pagetoc" for="__page-toc">
+    <div class="visually-hidden">Toggle in-page Table of Contents</div>
+</label>
+<!-- Headers at the top -->
+<div class="announcement header-item noprint"></div>
+<div class="header header-item noprint"></div>
+
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+<!-- Sidebar -->
+<div class="bd-sidebar noprint" id="site-navigation">
+    <div class="bd-sidebar__content">
+        <div class="bd-sidebar__top"><div class="navbar-brand-box">
+    <a class="navbar-brand text-wrap" href="../../../index.html">
+      
+      
+      
+      <h1 class="site-logo" id="site-title">DOLFINx-MPC: An extension to DOLFINx for multi point constraints</h1>
+      
+    </a>
+</div><form class="bd-search d-flex align-items-center" action="../../../search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search this book..." aria-label="Search this book..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item active">
+        
+        <ul class="nav bd-sidenav bd-sidenav__home-link">
+            <li class="toctree-l1">
+                <a class="reference internal" href="../../../index.html">
+                    DOLFINx-MPC
+                </a>
+            </li>
+        </ul>
+        <p aria-level="2" class="caption" role="heading">
+ <span class="caption-text">
+  Python API
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../api.html">
+   dolfinx_mpc
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../utils.html">
+   dolfinx_mpc.utils
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../../../numba.html">
+   dolfinx_mpc.numba
+  </a>
+ </li>
+</ul>
+
+    </div>
+</nav></div>
+        <div class="bd-sidebar__bottom">
+             <!-- To handle the deprecated key -->
+            
+            <div class="navbar_extra_footer">
+            Powered by <a href="https://jupyterbook.org">Jupyter Book</a>
+            </div>
+            
+        </div>
+    </div>
+    <div id="rtd-footer-container"></div>
+</div>
+
+
+          
+
+
+          
+<!-- A tiny helper pixel to detect if we've scrolled -->
+<div class="sbt-scroll-pixel-helper"></div>
+<!-- Main content -->
+<div class="col py-0 content-container">
+    
+    <div class="header-article row sticky-top noprint">
+        
+
+
+
+<div class="col py-1 d-flex header-article-main">
+    <div class="header-article__left">
+        
+        <label for="__navigation"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="right"
+title="Toggle navigation"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-bars"></i>
+  </span>
+
+</label>
+
+        
+    </div>
+    <div class="header-article__right">
+<button onclick="toggleFullScreen()"
+  class="headerbtn"
+  data-toggle="tooltip"
+data-placement="bottom"
+title="Fullscreen mode"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+<div class="menu-dropdown menu-dropdown-repository-buttons">
+  <button class="headerbtn menu-dropdown__trigger"
+      aria-label="Source repositories">
+      <i class="fab fa-github"></i>
+  </button>
+  <div class="menu-dropdown__content">
+    <ul>
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc"
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Source repository"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="headerbtn__text-container">repository</span>
+</a>
+
+      </li>
+      
+      <li>
+        <a href="https://github.com/jorgensd/dolfinx_mpc/issues/new?title=Issue%20on%20page%20%2F_modules/dolfinx_mpc/numba/assemble_matrix.html&body=Your%20issue%20content%20here."
+   class="headerbtn"
+   data-toggle="tooltip"
+data-placement="left"
+title="Open an issue"
+>
+  
+
+<span class="headerbtn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="headerbtn__text-container">open issue</span>
+</a>
+
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+    </div>
+</div>
+
+<!-- Table of contents -->
+<div class="col-md-3 bd-toc show noprint">
+</div>
+    </div>
+    <div class="article row">
+        <div class="col pl-md-3 pl-lg-5 content-container">
+            <!-- Table of contents that is only displayed when printing the page -->
+            <div id="jb-print-docs-body" class="onlyprint">
+                <h1></h1>
+                <!-- Table of contents -->
+                <div id="print-main-content">
+                    <div id="jb-print-toc">
+                        
+                    </div>
+                </div>
+            </div>
+            <main id="main-content" role="main">
+                
+              <div>
+                
+  <h1>Source code for dolfinx_mpc.numba.assemble_matrix</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright (C) 2020-2021 Jørgen S. Dokken</span>
+<span class="c1">#</span>
+<span class="c1"># This file is part of DOLFINX_MPC</span>
+<span class="c1">#</span>
+<span class="c1"># SPDX-License-Identifier:    MIT</span>
+
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span> <span class="nn">cffi</span>
+<span class="kn">import</span> <span class="nn">dolfinx.cpp</span> <span class="k">as</span> <span class="nn">_cpp</span>
+<span class="kn">import</span> <span class="nn">dolfinx.fem</span> <span class="k">as</span> <span class="nn">_fem</span>
+<span class="kn">import</span> <span class="nn">numpy</span>
+<span class="kn">import</span> <span class="nn">numpy.typing</span> <span class="k">as</span> <span class="nn">npt</span>
+<span class="kn">from</span> <span class="nn">dolfinx.common</span> <span class="kn">import</span> <span class="n">Timer</span>
+<span class="kn">from</span> <span class="nn">dolfinx_mpc.assemble_matrix</span> <span class="kn">import</span> <span class="n">create_sparsity_pattern</span>
+<span class="kn">from</span> <span class="nn">dolfinx_mpc.multipointconstraint</span> <span class="kn">import</span> <span class="n">MultiPointConstraint</span>
+<span class="kn">from</span> <span class="nn">petsc4py</span> <span class="kn">import</span> <span class="n">PETSc</span> <span class="k">as</span> <span class="n">_PETSc</span>
+
+<span class="kn">import</span> <span class="nn">numba</span>
+
+<span class="kn">from</span> <span class="nn">.helpers</span> <span class="kn">import</span> <span class="n">extract_slave_cells</span><span class="p">,</span> <span class="n">pack_slave_facet_info</span><span class="p">,</span> <span class="n">_forms</span><span class="p">,</span> <span class="n">_bcs</span>
+<span class="kn">from</span> <span class="nn">.numba_setup</span> <span class="kn">import</span> <span class="n">initialize_petsc</span><span class="p">,</span> <span class="n">sink</span>
+
+<span class="n">mode</span> <span class="o">=</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">InsertMode</span><span class="o">.</span><span class="n">ADD_VALUES</span>
+<span class="n">insert</span> <span class="o">=</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">InsertMode</span><span class="o">.</span><span class="n">INSERT_VALUES</span>
+<span class="n">ffi</span><span class="p">,</span> <span class="n">set_values_local</span> <span class="o">=</span> <span class="n">initialize_petsc</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="assemble_matrix"><a class="viewcode-back" href="../../../numba.html#dolfinx_mpc.numba.assemble_matrix">[docs]</a><span class="k">def</span> <span class="nf">assemble_matrix</span><span class="p">(</span><span class="n">form</span><span class="p">:</span> <span class="n">_forms</span><span class="p">,</span> <span class="n">constraint</span><span class="p">:</span> <span class="n">MultiPointConstraint</span><span class="p">,</span>
+                    <span class="n">bcs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">_bcs</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mf">1.</span><span class="p">,</span>
+                    <span class="n">A</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Assembles a compiled DOLFINx form with given a multi point constraint and possible</span>
+<span class="sd">    Dirichlet boundary conditions.</span>
+<span class="sd">    NOTE: Strong Dirichlet conditions cannot be on master dofs.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        form: The compiled bilinear form</span>
+<span class="sd">        constraint: The multi point constraint</span>
+<span class="sd">        bcs: List of Dirichlet boundary conditions</span>
+<span class="sd">        diagval: Value to set on the diagonal of the matrix</span>
+<span class="sd">        A: PETSc matrix to assemble into (optional)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">timer_matrix</span> <span class="o">=</span> <span class="n">Timer</span><span class="p">(</span><span class="s2">&quot;~MPC: Assemble matrix (numba)&quot;</span><span class="p">)</span>
+
+    <span class="n">V</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">function_space</span>
+    <span class="n">dofmap</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span>
+    <span class="n">dofs</span> <span class="o">=</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">array</span>
+
+    <span class="c1"># Pack MPC data for numba kernels</span>
+    <span class="n">coefficients</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">coefficients</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">masters_adj</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">masters</span>
+    <span class="n">c_to_s_adj</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">cell_to_slaves</span>
+    <span class="n">cell_to_slave</span> <span class="o">=</span> <span class="n">c_to_s_adj</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">c_to_s_off</span> <span class="o">=</span> <span class="n">c_to_s_adj</span><span class="o">.</span><span class="n">offsets</span>
+    <span class="n">is_slave</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">is_slave</span>
+    <span class="n">mpc_data</span> <span class="o">=</span> <span class="p">(</span><span class="n">masters_adj</span><span class="o">.</span><span class="n">array</span><span class="p">,</span> <span class="n">coefficients</span><span class="p">,</span> <span class="n">masters_adj</span><span class="o">.</span><span class="n">offsets</span><span class="p">,</span> <span class="n">cell_to_slave</span><span class="p">,</span> <span class="n">c_to_s_off</span><span class="p">,</span> <span class="n">is_slave</span><span class="p">)</span>
+    <span class="n">slave_cells</span> <span class="o">=</span> <span class="n">extract_slave_cells</span><span class="p">(</span><span class="n">c_to_s_off</span><span class="p">)</span>
+
+    <span class="c1"># Create 1D bc indicator for matrix assembly</span>
+    <span class="n">num_dofs_local</span> <span class="o">=</span> <span class="p">(</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">size_local</span> <span class="o">+</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">num_ghosts</span><span class="p">)</span> <span class="o">*</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span>
+    <span class="n">is_bc</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_dofs_local</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">bool</span><span class="p">)</span>
+    <span class="n">bcs</span> <span class="o">=</span> <span class="p">[]</span> <span class="k">if</span> <span class="n">bcs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">bcs</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bcs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">bc</span> <span class="ow">in</span> <span class="n">bcs</span><span class="p">:</span>
+            <span class="n">is_bc</span><span class="p">[</span><span class="n">bc</span><span class="o">.</span><span class="n">dof_indices</span><span class="p">()[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="c1"># Get data from mesh</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">offsets</span>
+    <span class="n">x_dofs</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">array</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">x</span>
+
+    <span class="c1"># Pack constants and coefficients</span>
+    <span class="n">form_coeffs</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">pack_coefficients</span><span class="p">(</span><span class="n">form</span><span class="p">)</span>
+    <span class="n">form_consts</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">pack_constants</span><span class="p">(</span><span class="n">form</span><span class="p">)</span>
+
+    <span class="c1"># Create sparsity pattern and matrix if not supplied</span>
+    <span class="k">if</span> <span class="n">A</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="n">create_sparsity_pattern</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">constraint</span><span class="p">)</span>
+        <span class="n">pattern</span><span class="o">.</span><span class="n">assemble</span><span class="p">()</span>
+        <span class="n">A</span> <span class="o">=</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">la</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">create_matrix</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">comm</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
+    <span class="n">A</span><span class="o">.</span><span class="n">zeroEntries</span><span class="p">()</span>
+
+    <span class="c1"># Assemble the matrix with all entries</span>
+    <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">assemble_matrix</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">form</span><span class="p">,</span> <span class="n">form_consts</span><span class="p">,</span> <span class="n">form_coeffs</span><span class="p">,</span> <span class="n">bcs</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+
+    <span class="c1"># General assembly data</span>
+    <span class="n">block_size</span> <span class="o">=</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">dof_layout</span><span class="o">.</span><span class="n">block_size</span>
+    <span class="n">num_dofs_per_element</span> <span class="o">=</span> <span class="n">dofmap</span><span class="o">.</span><span class="n">dof_layout</span><span class="o">.</span><span class="n">num_dofs</span>
+
+    <span class="n">tdim</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dim</span>
+
+    <span class="c1"># Assemble over cells</span>
+    <span class="n">subdomain_ids</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">integral_ids</span><span class="p">(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">cell</span><span class="p">)</span>
+    <span class="n">num_cell_integrals</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">subdomain_ids</span><span class="p">)</span>
+
+    <span class="n">e0</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">element</span>
+    <span class="n">e1</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">element</span>
+
+    <span class="c1"># Get dof transformations</span>
+    <span class="n">needs_transformation_data</span> <span class="o">=</span> <span class="n">e0</span><span class="o">.</span><span class="n">needs_dof_transformations</span> <span class="ow">or</span> <span class="n">e1</span><span class="o">.</span><span class="n">needs_dof_transformations</span> <span class="ow">or</span> \
+        <span class="n">form</span><span class="o">.</span><span class="n">needs_facet_permutations</span>
+    <span class="n">cell_perms</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">uint32</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">needs_transformation_data</span><span class="p">:</span>
+        <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">create_entity_permutations</span><span class="p">()</span>
+        <span class="n">cell_perms</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">get_cell_permutation_info</span><span class="p">()</span>
+    <span class="c1"># NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions</span>
+    <span class="c1"># to support more exotic elements</span>
+    <span class="k">if</span> <span class="n">e0</span><span class="o">.</span><span class="n">needs_dof_transformations</span> <span class="ow">or</span> <span class="n">e1</span><span class="o">.</span><span class="n">needs_dof_transformations</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Dof transformations not implemented&quot;</span><span class="p">)</span>
+
+    <span class="n">is_complex</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">issubdtype</span><span class="p">(</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">,</span> <span class="n">numpy</span><span class="o">.</span><span class="n">complexfloating</span><span class="p">)</span>
+    <span class="n">nptype</span> <span class="o">=</span> <span class="s2">&quot;complex128&quot;</span> <span class="k">if</span> <span class="n">is_complex</span> <span class="k">else</span> <span class="s2">&quot;float64&quot;</span>
+    <span class="n">ufcx_form</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">ufcx_form</span>
+    <span class="k">if</span> <span class="n">num_cell_integrals</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">create_entity_permutations</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="nb">id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">subdomain_ids</span><span class="p">):</span>
+            <span class="n">coeffs_i</span> <span class="o">=</span> <span class="n">form_coeffs</span><span class="p">[(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="nb">id</span><span class="p">)]</span>
+            <span class="n">cell_kernel</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ufcx_form</span><span class="o">.</span><span class="n">integrals</span><span class="p">(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">cell</span><span class="p">)[</span><span class="n">i</span><span class="p">],</span> <span class="sa">f</span><span class="s2">&quot;tabulate_tensor_</span><span class="si">{</span><span class="n">nptype</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">active_cells</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">domains</span><span class="p">(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">cell</span><span class="p">,</span> <span class="nb">id</span><span class="p">)</span>
+            <span class="n">assemble_slave_cells</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">handle</span><span class="p">,</span> <span class="n">cell_kernel</span><span class="p">,</span> <span class="n">active_cells</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">active_cells</span><span class="p">,</span> <span class="n">slave_cells</span><span class="p">)],</span>
+                                 <span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">x_dofs</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">coeffs_i</span><span class="p">,</span> <span class="n">form_consts</span><span class="p">,</span> <span class="n">cell_perms</span><span class="p">,</span> <span class="n">dofs</span><span class="p">,</span>
+                                 <span class="n">block_size</span><span class="p">,</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">mpc_data</span><span class="p">,</span> <span class="n">is_bc</span><span class="p">)</span>
+
+    <span class="c1"># Assemble over exterior facets</span>
+    <span class="n">subdomain_ids</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">integral_ids</span><span class="p">(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">exterior_facet</span><span class="p">)</span>
+    <span class="n">num_exterior_integrals</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">subdomain_ids</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">num_exterior_integrals</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">create_entities</span><span class="p">(</span><span class="n">tdim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">create_connectivity</span><span class="p">(</span><span class="n">tdim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">tdim</span><span class="p">)</span>
+
+        <span class="c1"># Get facet permutations if required</span>
+        <span class="n">facet_perms</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">needs_facet_permutations</span><span class="p">:</span>
+            <span class="n">facet_perms</span> <span class="o">=</span> <span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">get_facet_permutations</span><span class="p">()</span>
+        <span class="n">perm</span> <span class="o">=</span> <span class="p">(</span><span class="n">cell_perms</span><span class="p">,</span> <span class="n">form</span><span class="o">.</span><span class="n">needs_facet_permutations</span><span class="p">,</span> <span class="n">facet_perms</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="nb">id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">subdomain_ids</span><span class="p">):</span>
+            <span class="n">facet_kernel</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">ufcx_form</span><span class="o">.</span><span class="n">integrals</span><span class="p">(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">exterior_facet</span><span class="p">)</span>
+                                   <span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="sa">f</span><span class="s2">&quot;tabulate_tensor_</span><span class="si">{</span><span class="n">nptype</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="n">facets</span> <span class="o">=</span> <span class="n">form</span><span class="o">.</span><span class="n">domains</span><span class="p">(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">exterior_facet</span><span class="p">,</span> <span class="nb">id</span><span class="p">)</span>
+            <span class="n">coeffs_i</span> <span class="o">=</span> <span class="n">form_coeffs</span><span class="p">[(</span><span class="n">_fem</span><span class="o">.</span><span class="n">IntegralType</span><span class="o">.</span><span class="n">exterior_facet</span><span class="p">,</span> <span class="nb">id</span><span class="p">)]</span>
+            <span class="n">facet_info</span> <span class="o">=</span> <span class="n">pack_slave_facet_info</span><span class="p">(</span><span class="n">facets</span><span class="p">,</span> <span class="n">slave_cells</span><span class="p">)</span>
+            <span class="n">num_facets_per_cell</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">connectivity</span><span class="p">(</span><span class="n">tdim</span><span class="p">,</span> <span class="n">tdim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">links</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+            <span class="n">assemble_exterior_slave_facets</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">handle</span><span class="p">,</span> <span class="n">facet_kernel</span><span class="p">,</span> <span class="p">(</span><span class="n">pos</span><span class="p">,</span> <span class="n">x_dofs</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">coeffs_i</span><span class="p">,</span> <span class="n">form_consts</span><span class="p">,</span>
+                                           <span class="n">perm</span><span class="p">,</span> <span class="n">dofs</span><span class="p">,</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">facet_info</span><span class="p">,</span> <span class="n">mpc_data</span><span class="p">,</span> <span class="n">is_bc</span><span class="p">,</span>
+                                           <span class="n">num_facets_per_cell</span><span class="p">)</span>
+
+    <span class="c1"># Add mpc entries on diagonal</span>
+    <span class="n">slaves</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">slaves</span>
+    <span class="n">num_local_slaves</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">num_local_slaves</span>
+    <span class="n">add_diagonal</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">handle</span><span class="p">,</span> <span class="n">slaves</span><span class="p">[:</span><span class="n">num_local_slaves</span><span class="p">],</span> <span class="n">diagval</span><span class="p">)</span>
+
+    <span class="c1"># Add one on diagonal for diriclet bc and slave dofs</span>
+    <span class="c1"># NOTE: In the future one could use a constant in the dirichletbc</span>
+    <span class="k">if</span> <span class="n">form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="n">form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="n">A</span><span class="o">.</span><span class="n">assemblyBegin</span><span class="p">(</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">AssemblyType</span><span class="o">.</span><span class="n">FLUSH</span><span class="p">)</span>
+        <span class="n">A</span><span class="o">.</span><span class="n">assemblyEnd</span><span class="p">(</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="o">.</span><span class="n">AssemblyType</span><span class="o">.</span><span class="n">FLUSH</span><span class="p">)</span>
+        <span class="n">_cpp</span><span class="o">.</span><span class="n">fem</span><span class="o">.</span><span class="n">petsc</span><span class="o">.</span><span class="n">insert_diagonal</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">form</span><span class="o">.</span><span class="n">function_spaces</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">bcs</span><span class="p">,</span> <span class="n">diagval</span><span class="p">)</span>
+
+    <span class="n">A</span><span class="o">.</span><span class="n">assemble</span><span class="p">()</span>
+    <span class="n">timer_matrix</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">A</span></div>
+
+
+<span class="nd">@numba</span><span class="o">.</span><span class="n">jit</span>
+<span class="k">def</span> <span class="nf">add_diagonal</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dofs</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mi">1</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Insert value on diagonal of matrix for given dofs.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ffi_fb</span> <span class="o">=</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span>
+    <span class="n">dof_list</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">dof_value</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">diagval</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">dof</span> <span class="ow">in</span> <span class="n">dofs</span><span class="p">:</span>
+        <span class="n">dof_list</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">dof</span>
+        <span class="n">ierr_loc</span> <span class="o">=</span> <span class="n">set_values_local</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">dof_list</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">dof_list</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">dof_value</span><span class="p">),</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">ierr_loc</span> <span class="o">==</span> <span class="mi">0</span>
+    <span class="n">sink</span><span class="p">(</span><span class="n">dof_list</span><span class="p">,</span> <span class="n">dof_value</span><span class="p">)</span>
+
+
+<span class="nd">@numba</span><span class="o">.</span><span class="n">njit</span>
+<span class="k">def</span> <span class="nf">assemble_slave_cells</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                         <span class="n">kernel</span><span class="p">:</span> <span class="n">cffi</span><span class="o">.</span><span class="n">FFI</span><span class="p">,</span>
+                         <span class="n">active_cells</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                         <span class="n">mesh</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                     <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">float64</span><span class="p">]],</span>
+                         <span class="n">coeffs</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span>
+                         <span class="n">constants</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span>
+                         <span class="n">permutation_info</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">uint32</span><span class="p">],</span>
+                         <span class="n">dofmap</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                         <span class="n">block_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                         <span class="n">num_dofs_per_element</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                         <span class="n">mpc</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span>
+                                    <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                    <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">]],</span>
+                         <span class="n">is_bc</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">bool_</span><span class="p">]):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Assemble MPC contributions for cell integrals</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ffi_fb</span> <span class="o">=</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span>
+
+    <span class="c1"># Get mesh and geometry data</span>
+    <span class="n">pos</span><span class="p">,</span> <span class="n">x_dofmap</span><span class="p">,</span> <span class="n">x</span> <span class="o">=</span> <span class="n">mesh</span>
+
+    <span class="c1"># Empty arrays mimicking Nullpointers</span>
+    <span class="n">facet_index</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">intc</span><span class="p">)</span>
+    <span class="n">facet_perm</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+
+    <span class="c1"># NOTE: All cells are assumed to be of the same type</span>
+    <span class="n">geometry</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">pos</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">pos</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">3</span><span class="p">))</span>
+
+    <span class="n">A_local</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">block_size</span>
+                           <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="n">masters</span><span class="p">,</span> <span class="n">coefficients</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">c_to_s</span><span class="p">,</span> <span class="n">c_to_s_off</span><span class="p">,</span> <span class="n">is_slave</span> <span class="o">=</span> <span class="n">mpc</span>
+
+    <span class="c1"># Loop over all cells</span>
+    <span class="n">local_dofs</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">cell</span> <span class="ow">in</span> <span class="n">active_cells</span><span class="p">:</span>
+        <span class="n">num_vertices</span> <span class="o">=</span> <span class="n">pos</span><span class="p">[</span><span class="n">cell</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">pos</span><span class="p">[</span><span class="n">cell</span><span class="p">]</span>
+        <span class="n">geom_dofs</span> <span class="o">=</span> <span class="n">pos</span><span class="p">[</span><span class="n">cell</span><span class="p">]</span>
+
+        <span class="c1"># Compute vertices of cell from mesh data</span>
+        <span class="n">geometry</span><span class="p">[:,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">x_dofmap</span><span class="p">[</span><span class="n">geom_dofs</span><span class="p">:</span><span class="n">geom_dofs</span> <span class="o">+</span> <span class="n">num_vertices</span><span class="p">]]</span>
+
+        <span class="c1"># Assemble local contributions</span>
+        <span class="n">A_local</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">kernel</span><span class="p">(</span><span class="n">ffi_fb</span><span class="p">(</span><span class="n">A_local</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">coeffs</span><span class="p">[</span><span class="n">cell</span><span class="p">,</span> <span class="p">:]),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">constants</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">geometry</span><span class="p">),</span>
+               <span class="n">ffi_fb</span><span class="p">(</span><span class="n">facet_index</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">facet_perm</span><span class="p">))</span>
+
+        <span class="c1"># NOTE: Here we need to apply dof transformations</span>
+
+        <span class="c1"># Local dof position</span>
+        <span class="n">local_blocks</span> <span class="o">=</span> <span class="n">dofmap</span><span class="p">[</span><span class="n">num_dofs_per_element</span>
+                              <span class="o">*</span> <span class="n">cell</span><span class="p">:</span> <span class="n">num_dofs_per_element</span> <span class="o">*</span> <span class="n">cell</span> <span class="o">+</span> <span class="n">num_dofs_per_element</span><span class="p">]</span>
+
+        <span class="c1"># Remove all contributions for dofs that are in the Dirichlet bcs</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs_per_element</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">is_bc</span><span class="p">[</span><span class="n">local_blocks</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span><span class="p">]:</span>
+                    <span class="n">A_local</span><span class="p">[</span><span class="n">j</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="n">A_local</span><span class="p">[:,</span> <span class="n">j</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">A_local_copy</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">]</span> <span class="o">=</span> <span class="n">A_local</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Find local position of slaves</span>
+        <span class="n">slaves</span> <span class="o">=</span> <span class="n">c_to_s</span><span class="p">[</span><span class="n">c_to_s_off</span><span class="p">[</span><span class="n">cell</span><span class="p">]:</span> <span class="n">c_to_s_off</span><span class="p">[</span><span class="n">cell</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]]</span>
+        <span class="n">mpc_cell</span> <span class="o">=</span> <span class="p">(</span><span class="n">slaves</span><span class="p">,</span> <span class="n">masters</span><span class="p">,</span> <span class="n">coefficients</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">is_slave</span><span class="p">)</span>
+        <span class="n">modify_mpc_cell</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">A_local</span><span class="p">,</span> <span class="n">local_blocks</span><span class="p">,</span> <span class="n">mpc_cell</span><span class="p">)</span>
+
+        <span class="c1"># Remove already assembled contribution to matrix</span>
+        <span class="n">A_contribution</span> <span class="o">=</span> <span class="n">A_local</span> <span class="o">-</span> <span class="n">A_local_copy</span>
+
+        <span class="c1"># Expand local blocks to dofs</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs_per_element</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+                <span class="n">local_dofs</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_blocks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">j</span>
+
+        <span class="c1"># Insert local contribution</span>
+        <span class="n">ierr_loc</span> <span class="o">=</span> <span class="n">set_values_local</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">local_dofs</span><span class="p">),</span>
+                                    <span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">local_dofs</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">A_contribution</span><span class="p">),</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">ierr_loc</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="n">sink</span><span class="p">(</span><span class="n">A_contribution</span><span class="p">,</span> <span class="n">local_dofs</span><span class="p">)</span>
+
+
+<span class="nd">@numba</span><span class="o">.</span><span class="n">njit</span>
+<span class="k">def</span> <span class="nf">modify_mpc_cell</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">num_dofs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">block_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                    <span class="n">Ae</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span>
+                    <span class="n">local_blocks</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                    <span class="n">mpc_cell</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                    <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                    <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int8</span><span class="p">]]):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given an element matrix Ae, modify the contributions to respect the MPCs, and add contributions to appropriate</span>
+<span class="sd">    places in the global matrix A.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">slaves</span><span class="p">,</span> <span class="n">masters</span><span class="p">,</span> <span class="n">coefficients</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">is_slave</span> <span class="o">=</span> <span class="n">mpc_cell</span>
+
+    <span class="c1"># Locate which local dofs are slave dofs and compute the local index of the slave</span>
+    <span class="c1"># Additionally count the number of masters we will needed in the flattened structures</span>
+    <span class="n">local_index0</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">slaves</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">num_flattened_masters</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+            <span class="n">slave</span> <span class="o">=</span> <span class="n">local_blocks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">j</span>
+            <span class="k">if</span> <span class="n">is_slave</span><span class="p">[</span><span class="n">slave</span><span class="p">]:</span>
+                <span class="n">location</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">slaves</span> <span class="o">==</span> <span class="n">slave</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">local_index0</span><span class="p">[</span><span class="n">location</span><span class="p">]</span> <span class="o">=</span> <span class="n">i</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">j</span>
+                <span class="n">num_flattened_masters</span> <span class="o">+=</span> <span class="n">offsets</span><span class="p">[</span><span class="n">slave</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">offsets</span><span class="p">[</span><span class="n">slave</span><span class="p">]</span>
+    <span class="c1"># Strip a copy of Ae of all columns and rows belonging to a slave</span>
+    <span class="n">Ae_original</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">Ae</span><span class="p">)</span>
+    <span class="n">Ae_stripped</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs</span><span class="p">,</span> <span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+            <span class="n">is_slave0</span> <span class="o">=</span> <span class="n">is_slave</span><span class="p">[</span><span class="n">local_blocks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">b</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+                    <span class="n">is_slave1</span> <span class="o">=</span> <span class="n">is_slave</span><span class="p">[</span><span class="n">local_blocks</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">c</span><span class="p">]</span>
+                    <span class="n">Ae_stripped</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">b</span><span class="p">,</span> <span class="n">j</span> <span class="o">*</span> <span class="n">block_size</span>
+                                <span class="o">+</span> <span class="n">c</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="ow">not</span> <span class="p">(</span><span class="n">is_slave0</span> <span class="ow">and</span> <span class="n">is_slave1</span><span class="p">))</span> <span class="o">*</span> <span class="n">Ae_original</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">b</span><span class="p">,</span>
+                                                                                     <span class="n">j</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">c</span><span class="p">]</span>
+    <span class="n">flattened_masters</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_flattened_masters</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">flattened_slaves</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_flattened_masters</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">flattened_coeffs</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">num_flattened_masters</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="n">c</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">slave</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">slaves</span><span class="p">):</span>
+        <span class="n">local_masters</span> <span class="o">=</span> <span class="n">masters</span><span class="p">[</span><span class="n">offsets</span><span class="p">[</span><span class="n">slave</span><span class="p">]:</span> <span class="n">offsets</span><span class="p">[</span><span class="n">slave</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]]</span>
+        <span class="n">local_coeffs</span> <span class="o">=</span> <span class="n">coefficients</span><span class="p">[</span><span class="n">offsets</span><span class="p">[</span><span class="n">slave</span><span class="p">]:</span> <span class="n">offsets</span><span class="p">[</span><span class="n">slave</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]]</span>
+        <span class="n">num_masters</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">local_masters</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_masters</span><span class="p">):</span>
+            <span class="n">flattened_slaves</span><span class="p">[</span><span class="n">c</span> <span class="o">+</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_index0</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">flattened_masters</span><span class="p">[</span><span class="n">c</span> <span class="o">+</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_masters</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+            <span class="n">flattened_coeffs</span><span class="p">[</span><span class="n">c</span> <span class="o">+</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_coeffs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+        <span class="n">c</span> <span class="o">+=</span> <span class="n">num_masters</span>
+    <span class="n">m0</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">m1</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">Am0m1</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="n">Arow</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="n">Acol</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="n">mpc_dofs</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">ffi_fb</span> <span class="o">=</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_flattened_masters</span><span class="p">):</span>
+        <span class="n">local_index</span> <span class="o">=</span> <span class="n">flattened_slaves</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">master</span> <span class="o">=</span> <span class="n">flattened_masters</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">coeff</span> <span class="o">=</span> <span class="n">flattened_coeffs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">Ae</span><span class="p">[:,</span> <span class="n">local_index</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">Ae</span><span class="p">[</span><span class="n">local_index</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">m0</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">master</span>
+        <span class="n">Arow</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">coeff</span> <span class="o">*</span> <span class="n">Ae_stripped</span><span class="p">[:,</span> <span class="n">local_index</span><span class="p">]</span>
+        <span class="n">Acol</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">coeff</span> <span class="o">*</span> <span class="n">Ae_stripped</span><span class="p">[</span><span class="n">local_index</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">Am0m1</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">coeff</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">Ae_original</span><span class="p">[</span><span class="n">local_index</span><span class="p">,</span> <span class="n">local_index</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+                <span class="n">mpc_dofs</span><span class="p">[</span><span class="n">j</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_blocks</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span>
+        <span class="n">mpc_dofs</span><span class="p">[</span><span class="n">local_index</span><span class="p">]</span> <span class="o">=</span> <span class="n">master</span>
+        <span class="n">ierr_row</span> <span class="o">=</span> <span class="n">set_values_local</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">mpc_dofs</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">m0</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">Arow</span><span class="p">),</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">ierr_row</span> <span class="o">==</span> <span class="mi">0</span>
+
+        <span class="c1"># Add slave row to master row</span>
+        <span class="n">ierr_col</span> <span class="o">=</span> <span class="n">set_values_local</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">m0</span><span class="p">),</span> <span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">mpc_dofs</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">Acol</span><span class="p">),</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">ierr_col</span> <span class="o">==</span> <span class="mi">0</span>
+
+        <span class="n">ierr_master</span> <span class="o">=</span> <span class="n">set_values_local</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">m0</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">m0</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">Am0m1</span><span class="p">),</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">ierr_master</span> <span class="o">==</span> <span class="mi">0</span>
+
+        <span class="c1"># Add contributions for other masters relating to slaves on the given cell</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_flattened_masters</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="n">j</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">other_local_index</span> <span class="o">=</span> <span class="n">flattened_slaves</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+            <span class="n">other_master</span> <span class="o">=</span> <span class="n">flattened_masters</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+            <span class="n">other_coeff</span> <span class="o">=</span> <span class="n">flattened_coeffs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+            <span class="n">m1</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">other_master</span>
+            <span class="n">Am0m1</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">coeff</span> <span class="o">*</span> <span class="n">other_coeff</span> <span class="o">*</span> <span class="n">Ae_original</span><span class="p">[</span><span class="n">local_index</span><span class="p">,</span> <span class="n">other_local_index</span><span class="p">]</span>
+            <span class="n">ierr_other_masters</span> <span class="o">=</span> <span class="n">set_values_local</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">m0</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">m1</span><span class="p">),</span> <span class="n">ffi_fb</span><span class="p">(</span><span class="n">Am0m1</span><span class="p">),</span> <span class="n">mode</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">ierr_other_masters</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="n">sink</span><span class="p">(</span><span class="n">Arow</span><span class="p">,</span> <span class="n">Acol</span><span class="p">,</span> <span class="n">Am0m1</span><span class="p">,</span> <span class="n">m0</span><span class="p">,</span> <span class="n">m1</span><span class="p">,</span> <span class="n">mpc_dofs</span><span class="p">)</span>
+
+
+<span class="nd">@numba</span><span class="o">.</span><span class="n">njit</span>
+<span class="k">def</span> <span class="nf">assemble_exterior_slave_facets</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">kernel</span><span class="p">:</span> <span class="n">cffi</span><span class="o">.</span><span class="n">FFI</span><span class="p">,</span>
+                                   <span class="n">mesh</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                               <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">float64</span><span class="p">]],</span>
+                                   <span class="n">coeffs</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span>
+                                   <span class="n">consts</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span>
+                                   <span class="n">perm</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">uint32</span><span class="p">],</span>
+                                   <span class="n">dofmap</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                   <span class="n">block_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                                   <span class="n">num_dofs_per_element</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+                                   <span class="n">facet_info</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                   <span class="n">mpc</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span>
+                                              <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
+                                              <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">]],</span>
+                                   <span class="n">is_bc</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">bool_</span><span class="p">],</span>
+                                   <span class="n">num_facets_per_cell</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Assemble MPC contributions over exterior facet integrals&quot;&quot;&quot;</span>
+    <span class="c1"># Unpack mpc data</span>
+    <span class="n">masters</span><span class="p">,</span> <span class="n">coefficients</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">c_to_s</span><span class="p">,</span> <span class="n">c_to_s_off</span><span class="p">,</span> <span class="n">is_slave</span> <span class="o">=</span> <span class="n">mpc</span>
+
+    <span class="c1"># Mesh data</span>
+    <span class="n">pos</span><span class="p">,</span> <span class="n">x_dofmap</span><span class="p">,</span> <span class="n">x</span> <span class="o">=</span> <span class="n">mesh</span>
+
+    <span class="c1"># Empty arrays for facet information</span>
+    <span class="n">facet_index</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+    <span class="n">facet_perm</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+
+    <span class="c1"># NOTE: All cells are assumed to be of the same type</span>
+    <span class="n">geometry</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">pos</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">pos</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="mi">3</span><span class="p">))</span>
+
+    <span class="c1"># Numpy data used in facet loop</span>
+    <span class="n">A_local</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">num_dofs_per_element</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">,</span>
+                           <span class="n">num_dofs_per_element</span> <span class="o">*</span> <span class="n">block_size</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">)</span>
+    <span class="n">local_dofs</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
+
+    <span class="c1"># Permutation info</span>
+    <span class="n">cell_perms</span><span class="p">,</span> <span class="n">needs_facet_perm</span><span class="p">,</span> <span class="n">facet_perms</span> <span class="o">=</span> <span class="n">perm</span>
+
+    <span class="c1"># Loop over all external facets that are active</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">facet_info</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+        <span class="c1">#  Get cell index (local to process) and facet index (local to cell)</span>
+        <span class="n">cell_index</span><span class="p">,</span> <span class="n">local_facet</span> <span class="o">=</span> <span class="n">facet_info</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="c1"># Get mesh geometry</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">pos</span><span class="p">[</span><span class="n">cell_index</span><span class="p">]</span>
+        <span class="n">facet_index</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_facet</span>
+        <span class="n">num_vertices</span> <span class="o">=</span> <span class="n">pos</span><span class="p">[</span><span class="n">cell_index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">pos</span><span class="p">[</span><span class="n">cell_index</span><span class="p">]</span>
+        <span class="n">geometry</span><span class="p">[:,</span> <span class="p">:]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="n">x_dofmap</span><span class="p">[</span><span class="n">cell</span><span class="p">:</span><span class="n">cell</span> <span class="o">+</span> <span class="n">num_vertices</span><span class="p">]]</span>
+
+        <span class="c1"># Assemble local matrix</span>
+        <span class="n">A_local</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">needs_facet_perm</span><span class="p">:</span>
+            <span class="n">facet_perm</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">facet_perms</span><span class="p">[</span><span class="n">cell_index</span> <span class="o">*</span> <span class="n">num_facets_per_cell</span> <span class="o">+</span> <span class="n">local_facet</span><span class="p">]</span>
+        <span class="n">kernel</span><span class="p">(</span><span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">A_local</span><span class="p">),</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">coeffs</span><span class="p">[</span><span class="n">cell_index</span><span class="p">,</span> <span class="p">:]),</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">consts</span><span class="p">),</span>
+               <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">geometry</span><span class="p">),</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">facet_index</span><span class="p">),</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">facet_perm</span><span class="p">))</span>
+        <span class="c1"># NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions</span>
+
+        <span class="c1"># Extract local blocks of dofs</span>
+        <span class="n">block_pos</span> <span class="o">=</span> <span class="n">num_dofs_per_element</span> <span class="o">*</span> <span class="n">cell_index</span>
+        <span class="n">local_blocks</span> <span class="o">=</span> <span class="n">dofmap</span><span class="p">[</span><span class="n">block_pos</span><span class="p">:</span> <span class="n">block_pos</span> <span class="o">+</span> <span class="n">num_dofs_per_element</span><span class="p">]</span>
+
+        <span class="c1"># Remove all contributions for dofs that are in the Dirichlet bcs</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs_per_element</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">is_bc</span><span class="p">[</span><span class="n">local_blocks</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span><span class="p">]:</span>
+                    <span class="n">A_local</span><span class="p">[</span><span class="n">j</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="mi">0</span>
+                    <span class="n">A_local</span><span class="p">[:,</span> <span class="n">j</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">A_local_copy</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">typing</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">]</span> <span class="o">=</span> <span class="n">A_local</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">slaves</span> <span class="o">=</span> <span class="n">c_to_s</span><span class="p">[</span><span class="n">c_to_s_off</span><span class="p">[</span><span class="n">cell_index</span><span class="p">]:</span> <span class="n">c_to_s_off</span><span class="p">[</span><span class="n">cell_index</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]]</span>
+        <span class="n">mpc_cell</span> <span class="o">=</span> <span class="p">(</span><span class="n">slaves</span><span class="p">,</span> <span class="n">masters</span><span class="p">,</span> <span class="n">coefficients</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">is_slave</span><span class="p">)</span>
+        <span class="n">modify_mpc_cell</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">block_size</span><span class="p">,</span> <span class="n">A_local</span><span class="p">,</span> <span class="n">local_blocks</span><span class="p">,</span> <span class="n">mpc_cell</span><span class="p">)</span>
+
+        <span class="c1"># Remove already assembled contribution to matrix</span>
+        <span class="n">A_contribution</span> <span class="o">=</span> <span class="n">A_local</span> <span class="o">-</span> <span class="n">A_local_copy</span>
+
+        <span class="c1"># Expand local blocks to dofs</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_dofs_per_element</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">block_size</span><span class="p">):</span>
+                <span class="n">local_dofs</span><span class="p">[</span><span class="n">i</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">local_blocks</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">block_size</span> <span class="o">+</span> <span class="n">j</span>
+
+        <span class="c1"># Insert local contribution</span>
+        <span class="n">ierr_loc</span> <span class="o">=</span> <span class="n">set_values_local</span><span class="p">(</span><span class="n">A</span><span class="p">,</span> <span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">local_dofs</span><span class="p">),</span>
+                                    <span class="n">block_size</span> <span class="o">*</span> <span class="n">num_dofs_per_element</span><span class="p">,</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">local_dofs</span><span class="p">),</span>
+                                    <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span><span class="p">(</span><span class="n">A_contribution</span><span class="p">),</span> <span class="n">mode</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">ierr_loc</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="n">sink</span><span class="p">(</span><span class="n">A_contribution</span><span class="p">,</span> <span class="n">local_dofs</span><span class="p">)</span>
+</pre></div>
+
+              </div>
+              
+            </main>
+            <footer class="footer-article noprint">
+                
+    <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+</div>
+            </footer>
+        </div>
+    </div>
+    <div class="footer-content row">
+        <footer class="col footer"><p>
+  
+    By Jørgen S. Dokken<br/>
+  
+      &copy; Copyright 2022.<br/>
+</p>
+        </footer>
+    </div>
+    
+</div>
+
+
+      </div>
+    </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../../_static/scripts/pydata-sphinx-theme.js?digest=1999514e3f237ded88cf"></script>
+
+
+  </body>
+</html>
