@@ -19,15 +19,14 @@ from .dictcondition import create_dictionary_constraint
 
 class MultiPointConstraint():
     """
-    Multi-point constraint class.
-    This class will hold data for multi point constraint relation ships,
+    Hold data for multi point constraint relation ships,
     including new index maps for local assembly of matrices and vectors.
+
+    Args:
+        V: The function space
     """
 
     def __init__(self, V: _fem.FunctionSpace):
-        """
-        Initialize the multi point constraint for a given function space.
-        """
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=_PETSc.ScalarType)
@@ -41,22 +40,20 @@ class MultiPointConstraint():
                        owners: npt.NDArray[numpy.int32], offsets: npt.NDArray[numpy.int32]):
         """
         Add new constraint given by numpy arrays.
-        Parameters
-        ----------
-            V
-                The function space for the constraint
-            slaves
-                List of all slave dofs (using local dof numbering) on this process
-            masters
-                List of all master dofs (using global dof numbering) on this process
-            coeffs
-                The coefficients corresponding to each master.
-            owners
-                The process each master is owned by.
-            offsets
-                Array indicating the location in the masters array for the i-th slave
-                in the slaves arrays. I.e.
-                masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
+
+        Args:
+            V: The function space for the constraint
+            slaves: List of all slave dofs (using local dof numbering) on this process
+            masters: List of all master dofs (using global dof numbering) on this process
+            coeffs: The coefficients corresponding to each master.
+            owners: The process each master is owned by.
+            offsets: Array indicating the location in the masters array for the i-th slave
+                in the slaves arrays, i.e.
+
+                .. highlight:: python
+                .. code-block:: python
+
+                    masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
 
         """
         assert V == self.V
@@ -98,25 +95,16 @@ class MultiPointConstraint():
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: list[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
-        Create periodic condition for all dofs in MeshTag with given marker:
-        u(x_i) = scale * u(relation(x_i))
-        for all x_i on marked entities.
+        Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
+        :math:`u(x_i) = scale * u(relation(x_i))` for all of :math:`x_i` on marked entities.
 
-        Parameters
-        ----------
-        V
-            The function space to assign the condition to. Should either be the space of the MPC or a sub space.
-        meshtag
-            MeshTag for entity to apply the periodic condition on
-        tag
-            Tag indicating which entities should be slaves
-        relation
-            Lambda-function describing the geometrical relation
-        bcs
-            Dirichlet boundary conditions for the problem
-            (Periodic constraints will be ignored for these dofs)
-        scale
-            Float for scaling bc
+        Args:
+            V: The function space to assign the condition to. Should either be the space of the MPC or a sub space.
+               meshtag: MeshTag for entity to apply the periodic condition on
+            tag: Tag indicating which entities should be slaves
+            relation: Lambda-function describing the geometrical relation
+            bcs: Dirichlet boundary conditions for the problem (Periodic constraints will be ignored for these dofs)
+            scale: Float for scaling bc
         """
         if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
@@ -133,22 +121,17 @@ class MultiPointConstraint():
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
-        Create a periodic condition for all degrees of freedom whose physical location satisfies indicator(x)
-        u(x_i) = scale * u(relation(x_i)) for all x_i where indicator(x_i) == True
+        Create a periodic condition for all degrees of freedom whose physical location satisfies
+        :math:`indicator(x_i)==True`, i.e.
+        :math:`u(x_i) = scale * u(relation(x_i))` for all :math:`x_i`
 
-        Parameters
-        ----------
-        V
-            The function space to assign the condition to. Should either be the space of the MPC or a sub space.
-        indicator
-            Lambda-function to locate degrees of freedom that should be slaves
-        relation
-            Lambda-function describing the geometrical relation to master dofs
-        bcs
-            Dirichlet boundary conditions for the problem
-            (Periodic constraints will be ignored for these dofs)
-        scale
-            Float for scaling bc
+        Args:
+            V: The function space to assign the condition to. Should either be the space of the MPC or a sub space.
+            indicator: Lambda-function to locate degrees of freedom that should be slaves
+            relation: Lambda-function describing the geometrical relation to master dofs
+            bcs: Dirichlet boundary conditions for the problem
+                 (Periodic constraints will be ignored for these dofs)
+            scale: Float for scaling bc
         """
 
         if (V is self.V):
@@ -164,45 +147,52 @@ class MultiPointConstraint():
     def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple[_cpp.mesh.MeshTags_int32, int],
                                v: _fem.Function, bcs: list[_fem.DirichletBCMetaClass] = []):
         """
-        Create a slip constraint dot(u, v)=0 over the entities defined in a `dolfinx.cpp.mesh.MeshTags_int32`
-        marked with index i. normal is the normal vector defined as a vector function.
+        Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
 
-        Parameters
-        ----------
-        space
-            Function space (possible sub space) to apply the MPC to
-        facet_marker
-            Tuple containg the mesh tag and marker used to locate degrees of freedom that should be constrained
-        v
-            Dolfin function containing the directional vector to dot your slip condition (most commonly a normal vector)
-        bcs
-           List of Dirichlet BCs (slip conditions will be ignored on these dofs)
+        Args:
+            space: Function space (possible sub space) for the current constraint
+            facet_marker: Tuple containomg the mesh tag and marker used to locate degrees of freedom
+            v: Function containing the directional vector to dot your slip condition (most commonly a normal vector)
+            bcs: List of Dirichlet BCs (slip conditions will be ignored on these dofs)
 
-        Example
-        -------
-        Create constaint dot(u, n)=0 of all indices in mt marked with i
-            V = VectorFunctionSpace(mesh, ("CG", 1))
-            mpc = MultiPointConstraint(V)
-            n = Function(V)
-            mpc.create_slip_constaint(V, (mt,i), n)
+        Examples:
+            Create constaint :math:`u\\cdot n=0` of all indices in `mt` marked with `i`
 
-        Create slip constaint for a mixed function space:
-             me = MixedElement(VectorElement("CG", triangle, 2), FiniteElement("CG", triangle 1))
-             W = FunctionSpace(mesh, me)
-             mpc = MultiPointConstraint()
-             n_space = FunctionSpace(mesh, VectorElement("CG", triangle, 2))
-             normal = Function(n_space)
-             mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[])
+            .. highlight:: python
+            .. code-block:: python
 
-        A slip condition cannot be applied on the same degrees of freedom as a Dirichlet BC, and therefore
-        any Dirichlet bc for the space of the multi point constraint should be supplied.
-             me = MixedElement(VectorElement("CG", triangle, 2), FiniteElement("CG", triangle 1))
-             W = FunctionSpace(mesh, me)
-             mpc = MultiPointConstraint()
-             n_space = FunctionSpace(mesh, VectorElement("CG", triangle, 2))
-             normal = Function(n_space)
-             bc = dirichletbc(inlet_velocity, dofs, W.sub(0))
-             mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[bc])
+                V = dolfinx.fem.VectorFunctionSpace(mesh, ("CG", 1))
+                mpc = MultiPointConstraint(V)
+                n = dolfinx.fem.Function(V)
+                mpc.create_slip_constaint(V, (mt, i), n)
+
+            Create slip constaint for a mixed function space:
+
+            .. highlight:: python
+            .. code-block:: python
+
+                me = ufl.MixedElement(ufl.VectorElement("CG", triangle, 2),
+                                      ufl.FiniteElement("CG", triangle, 1))
+                W = dolfinx.fem.FunctionSpace(mesh, me)
+                mpc = MultiPointConstraint()
+                n_space, _ = W.sub(0).collapse()
+                normal = dolfinx.fem.Function(n_space)
+                mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[])
+
+            A slip condition cannot be applied on the same degrees of freedom as a Dirichlet BC, and therefore
+            any Dirichlet bc for the space of the multi point constraint should be supplied.
+
+            .. highlight:: python
+            .. code-block:: python
+
+                me = ufl.MixedElement(ufl.VectorElement("CG", triangle, 2),
+                                      ufl.FiniteElement("CG", triangle 1))
+                W = dolfinx.fem.FunctionSpace(mesh, me)
+                mpc = MultiPointConstraint()
+                n_space, _ = W.sub(0).collapse()
+                normal = Function(n_space)
+                bc = dolfinx.fem.dirichletbc(inlet_velocity, dofs, W.sub(0))
+                mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[bc])
         """
         if (space is self.V):
             sub_space = False
@@ -217,28 +207,27 @@ class MultiPointConstraint():
     def create_general_constraint(self, slave_master_dict: Dict[bytes, Dict[bytes, float]],
                                   subspace_slave: int = None, subspace_master: int = None):
         """
-        Parameters
-        ----------
-        V
-            The function space
-        slave_master_dict
-            Nested dictionary, where the first key is the bit representing the slave dof's coordinate in the mesh.
-            The item of this key is a dictionary, where each key of this dictionary is the bit representation
-            of the master dof's coordinate, and the item the coefficient for the MPC equation.
-        subspace_slave
-            If using mixed or vector space, and only want to use dofs from a sub space as slave add index here
-        subspace_master
-            Subspace index for mixed or vector spaces
+        Args:
+            V: The function space
+            slave_master_dict: Nested dictionary, where the first key is the bit representing the slave dof's
+                coordinate in the mesh. The item of this key is a dictionary, where each key of this dictionary
+                is the bit representation of the master dof's coordinate, and the item the coefficient for
+                the MPC equation.
+            subspace_slave: If using mixed or vector space, and only want to use dofs from a sub space
+                as slave add index here
+            subspace_master: Subspace index for mixed or vector spaces
 
-        Example
-        -------
-        If the dof D located at [d0,d1] should be constrained to the dofs
-        E and F at [e0,e1] and [f0,f1] as
-        D = alpha E + beta F
-        the dictionary should be:
-            {numpy.array([d0, d1], dtype=numpy.float64).tobytes():
-                {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
-                numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
+        Example:
+            If the dof `D` located at `[d0, d1]` should be constrained to the dofs
+            `E` and `F` at `[e0, e1]` and `[f0, f1]` as :math:`D = \\alpha E + \\beta F`
+            the dictionary should be:
+
+            .. highlight:: python
+            .. code-block:: python
+
+                    {numpy.array([d0, d1], dtype=numpy.float64).tobytes():
+                        {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
+                        numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
         """
         slaves, masters, coeffs, owners, offsets = create_dictionary_constraint(
             self.V, slave_master_dict, subspace_slave, subspace_master)
@@ -249,21 +238,15 @@ class MultiPointConstraint():
         """
         Create a slip condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
-        The condition created is dot(u_s, normal_s) = dot(u_m, normal_m) where s stands for the restriction to the
-        slave facets, m to the master facets.
+        The condition created is :math:`u_s \\cdot normal_s = u_m \\cdot normal_m` where `s` is the
+        restriction to the slave facets, `m` to the master facets.
 
-        Parameters
-        ----------
-        meshtags
-            The meshtags of the set of facets to tie together
-        slave_marker
-            The marker of the slave facets
-        master_marker
-            The marker of the master facets
-        normal
-            The function used in the dot-product of the constraint
-        eps2
-            The tolerance for the squared distance between cells to be considered as a collision
+        Args:
+            meshtags: The meshtags of the set of facets to tie together
+            slave_marker: The marker of the slave facets
+            master_marker: The marker of the master facets
+            normal: The function used in the dot-product of the constraint
+            eps2: The tolerance for the squared distance between cells to be considered as a collision
         """
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
             self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object, eps2)
@@ -274,19 +257,14 @@ class MultiPointConstraint():
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
-        The condition created is u_s = u_m where s stands for the restriction to the
-        slave facets, m to the master facets.
+        The condition created is :math:`u_s = u_m` where `s` is the restriction to the
+        slave facets, `m` to the master facets.
 
-        Parameters
-        ----------
-        meshtags
-            The meshtags of the set of facets to tie together
-        slave_marker
-            The marker of the slave facets
-        master_marker
-            The marker of the master facets
-        eps2
-            The tolerance for the squared distance between cells to be considered as a collision
+        Args:
+            meshtags: The meshtags of the set of facets to tie together
+            slave_marker: The marker of the slave facets
+            master_marker: The marker of the master facets
+            eps2: The tolerance for the squared distance between cells to be considered as a collision
         """
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
             self.V._cpp_object, meshtags, slave_marker, master_marker, eps2)
@@ -311,13 +289,16 @@ class MultiPointConstraint():
     @property
     def masters(self):
         """
-        Returns an `dolfinx.cpp.graph.AdjacencyList_int32` whose ith node corresponds to
+        Returns a `dolfinx.cpp.graph.AdjacencyList_int32` whose ith node corresponds to
         a degree of freedom (local to process), and links the corresponding master dofs (local to process).
 
-        Example
-        -------
-        masters = mpc.masters
-        masters_of_dof_i = masters.links(i)
+        Examples:
+
+            .. highlight:: python
+            .. code-block:: python
+
+                masters = mpc.masters
+                masters_of_dof_i = masters.links(i)
         """
         self._not_finalized()
         return self._cpp_object.masters
@@ -327,10 +308,13 @@ class MultiPointConstraint():
         Returns a vector containing the coefficients for the constraint, and the corresponding offsets
         for the ith degree of freedom.
 
-        Example
-        -------
-        coeffs, offsets = mpc.coefficients()
-        coeffs_of_slave_i = coeffs[offsets[i]:offsets[i+1]]
+        Examples:
+
+            .. highlight:: python
+            .. code-block:: python
+
+                coeffs, offsets = mpc.coefficients()
+                coeffs_of_slave_i = coeffs[offsets[i]:offsets[i+1]]
         """
         self._not_finalized()
         return self._cpp_object.coefficients()
@@ -350,10 +334,13 @@ class MultiPointConstraint():
         the ith cell (local to process), and links the corresponding slave degrees of
         freedom in the cell (local to process).
 
-        Example
-        -------
-        cell_to_slaves = mpc.cell_to_slaves()
-        slaves_in_cell_i = cell_to_slaves.links(i)
+        Examples:
+
+            .. highlight:: python
+            .. code-block:: python
+
+                cell_to_slaves = mpc.cell_to_slaves()
+                slaves_in_cell_i = cell_to_slaves.links(i)
         """
         self._not_finalized()
         return self._cpp_object.cell_to_slaves
@@ -372,10 +359,8 @@ class MultiPointConstraint():
         This function is used after solving the reduced problem to obtain the values
         at the slave degrees of freedom
 
-        Parameters
-        ----------
-        vector
-            The input vector
+        Args:
+            vector: The input vector
         """
         # Unravel data from constraint
         with vector.localForm() as vector_local:
@@ -384,14 +369,11 @@ class MultiPointConstraint():
 
     def homogenize(self, vector: _PETSc.Vec) -> None:
         """
-        For a vector, homogenize (set to zero) the vector components at
-        the multi-point constraint slave DoF indices. This is particularly useful
-        for nonlinear problems.
+        For a vector, homogenize (set to zero) the vector components at the multi-point
+        constraint slave DoF indices. This is particularly useful for nonlinear problems.
 
-        Parameters
-        ----------
-        vector
-            The input vector
+        Args:
+            vector: The input vector
         """
         with vector.localForm() as vector_local:
             self._cpp_object.homogenize(vector_local.array_w)

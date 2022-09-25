@@ -17,3 +17,6 @@ CMakeFiles
 *.o
 .mypy_cache
 *.bp
+
+**/html/**
+**/_build/**

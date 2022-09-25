@@ -22,29 +22,15 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.FormMetaClass], bcs: List[List[
                   constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: float = 1.0):
     """
     Apply lifting to vector b, i.e.
+    :math:`b = b - scale \\cdot K^T (A_j (g_j - x0_j))`
 
-    .. math::
-        b <- b - scale * K^T (A_j (g_j - x0_j))
-
-    Parameters
-    ----------
-    b
-        PETSc vector to assemble into
-    form
-        The linear form
-    bcs
-        List of Dirichlet boundary conditions
-    constraint
-        The multi point constraint
-    x0
-        List of vectors
-    scale
-        Scaling for lifting
-
-    Returns
-    -------
-    PETSc.Vec
-        The assembled linear form
+    Args:
+        b: PETSc vector to assemble into
+        form: The linear form
+        bcs: List of Dirichlet boundary conditions
+        constraint: The multi point constraint
+        x0: List of vectors
+        scale: Scaling for lifting
     """
     t = Timer("~MPC: Apply lifting (C++)")
     with contextlib.ExitStack() as stack:
@@ -59,21 +45,15 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.FormMetaClass], bcs: List[List[
 def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
                     b: _PETSc.Vec = None) -> _PETSc.Vec:
     """
-    Assemble a linear form into vector b with corresponding multi point constraint
+    Assemble a linear form into vector `b` with corresponding multi point constraint
 
-    Parameters
-    ----------
-    form
-        The linear form
-    constraint
-        The multi point constraint
-    b
-        PETSc vector to assemble into (optional)
+    Args:
+        form: The linear form
+        constraint: The multi point constraint
+        b: PETSc vector to assemble
 
-    Returns
-    -------
-    PETSc.Vec
-        The assembled linear form
+    Returns:
+        The vector with the assembled linear form (`b` if supplied)
     """
 
     if b is None:
@@ -94,17 +74,12 @@ def create_vector_nest(
     Create a PETSc vector of type "nest" appropriate for the provided multi
     point constraints
 
-    Parameters
-    ----------
-    L
-        A sequence of linear forms
-    constraints
-        An ordered list of multi point constraints
+    Args:
+        L: A sequence of linear forms
+        constraints: An ordered list of multi point constraints
 
-    Returns
-    -------
-    PETSc.Vec
-        A PETSc vector of type "nest"
+    Returns:
+        PETSc.Vec: A PETSc vector of type "nest"
     """
     assert len(constraints) == len(L)
 
@@ -121,14 +96,10 @@ def assemble_vector_nest(
     """
     Assemble a linear form into a PETSc vector of type "nest"
 
-    Parameters
-    ----------
-    b
-        A PETSc vector of type "nest"
-    L
-        A sequence of linear forms
-    constraints
-        An ordered list of multi point constraints
+    Args:
+        b: A PETSc vector of type "nest"
+        L: A sequence of linear forms
+        constraints: An ordered list of multi point constraints
     """
     assert len(constraints) == len(L)
     assert b.getType() == "nest"

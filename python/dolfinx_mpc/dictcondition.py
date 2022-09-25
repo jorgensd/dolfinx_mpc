@@ -9,13 +9,16 @@ import typing
 import numpy as np
 import dolfinx.fem as fem
 from petsc4py import PETSc
+import numpy.typing
 
 
-def close_to(point):
+def close_to(point: np.typing.NDArray[np.float64]):
     """
     Convenience function for locating a point [x,y,z]
     within an array x [[x0,...,xN],[y0,...,yN], [z0,...,zN]].
-    If the point is not 3D it is padded with zeros
+
+    Args:
+        point: The point should be padded to 3D
     """
     return lambda x: np.isclose(x, point).all(axis=0)
 
@@ -27,27 +30,24 @@ def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
     """
     Returns a multi point constraint for a given function space
     and dictionary constraint.
-    Parameters
-    ----------
-        V
-            The function space
-        slave_master_dict
-            The dictionary.
-        subspace_slave
-            If using mixed or vector space, and only want to use dofs from
+    Args:
+        V: The function space
+        slave_master_dict: The dictionary
+        subspace_slave: If using mixed or vector space, and only want to use dofs from
             a sub space as slave add index here.
-        subspace_master
-            Subspace index for mixed or vector spaces
+        subspace_master: Subspace index for mixed or vector spaces
 
-    Example
-    -------
-        If the dof D located at [d0,d1] should be constrained to the dofs E and
-        F at [e0,e1] and [f0,f1] as
-        D = alpha E + beta F
+    Examples:
+        If the dof `D` located at `[d0,d1]` should be constrained to the dofs `E` and
+        F at `[e0,e1]` and `[f0,f1]` as :math:`D = \\alpha E + \\beta F`
         the dictionary should be:
-        {np.array([d0, d1], dtype=numpy.float64).tobytes():
-            {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
-             numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
+
+        .. highlight:: python
+        .. code-block:: python
+
+            {np.array([d0, d1], dtype=numpy.float64).tobytes():
+                {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
+                numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
     """
     dfloat = np.float64
     comm = V.mesh.comm

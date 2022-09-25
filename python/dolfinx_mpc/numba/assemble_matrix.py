@@ -34,18 +34,12 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     Dirichlet boundary conditions.
     NOTE: Strong Dirichlet conditions cannot be on master dofs.
 
-    Parameters
-    ----------
-    form
-        The compiled bilinear form
-    constraint
-        The multi point constraint
-    bcs
-        List of Dirichlet boundary conditions
-    diagval
-        Value to set on the diagonal of the matrix(Default 1)
-    A
-        PETSc matrix to assemble into (optional)
+    Args:
+        form: The compiled bilinear form
+        constraint: The multi point constraint
+        bcs: List of Dirichlet boundary conditions
+        diagval: Value to set on the diagonal of the matrix
+        A: PETSc matrix to assemble into (optional)
     """
     timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 

@@ -24,23 +24,15 @@ def assemble_matrix(form: _fem.FormMetaClass,
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
     and Dirichlet boundary conditions.
 
-    Parameters
-    ----------
-    form
-        The compiled bilinear variational form
-    constraint
-        The multi point constraint
-    bcs
-        Sequence of Dirichlet boundary conditions
-    diagval
-        Value to set on the diagonal of the matrix (Default 1)
-    A
-        PETSc matrix to assemble into (optional)
+    Args:
+        form: The compiled bilinear variational form
+        constraint: The multi point constraint
+        bcs: Sequence of Dirichlet boundary conditions
+        diagval: Value to set on the diagonal of the matrix
+        A: PETSc matrix to assemble into
 
-    Returns
-    -------
-    _PETSc.Mat
-        The assembled bi-linear form
+    Returns:
+        _PETSc.Mat: The matrix with the assembled bi-linear form
     """
     if not isinstance(constraint, Sequence):
         assert form.function_spaces[0] == form.function_spaces[1]
@@ -72,13 +64,10 @@ def create_sparsity_pattern(form: _fem.FormMetaClass,
     """
     Create sparsity-pattern for MPC given a compiled DOLFINx form
 
-    Parameters
-    ----------
-    form
-        The form
-    mpc
-        For square forms, the MPC. For rectangular forms a list of 2 MPCs on
-        axis 0 & 1, respectively
+    Args:
+        form: The form
+        mpc: For square forms, the MPC. For rectangular forms a list of 2 MPCs on
+            axis 0 & 1, respectively
     """
     if isinstance(mpc, MultiPointConstraint):
         mpc._not_finalized()
@@ -101,12 +90,9 @@ def create_matrix_nest(
     Create a PETSc matrix of type "nest" with appropriate sparsity pattern
     given the provided multi points constraints
 
-    Parameters
-    ----------
-    a
-        The compiled bilinear variational form provided in a rank 2 list
-    constraints
-        An ordered list of multi point constraints
+    Args:
+       a: The compiled bilinear variational form provided in a rank 2 list
+        constraints: An ordered list of multi point constraints
     """
     assert len(constraints) == len(a)
 
@@ -135,18 +121,12 @@ def assemble_matrix_nest(
     "nest" with corresponding multi point constraints and Dirichlet boundary
     conditions.
 
-    Parameters
-    ----------
-    a
-        The compiled bilinear variational form provided in a rank 2 list
-    constraints
-        An ordered list of multi point constraints
-    bcs
-        Sequence of Dirichlet boundary conditions
-    diagval
-        Value to set on the diagonal of the matrix (Default 1)
-    A
-        PETSc matrix to assemble into
+    Args:
+        a: The compiled bilinear variational form provided in a rank 2 list
+        constraints: An ordered list of multi point constraints
+        bcs: Sequence of Dirichlet boundary conditions
+        diagval: Value to set on the diagonal of the matrix (Default 1)
+        A: PETSc matrix to assemble into
     """
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):

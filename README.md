@@ -28,6 +28,8 @@ The library performs custom matrix and vector assembly adding the extra constrai
 
 These assemblers are written in C++, but have equivalent Python assemblers in the optional `dolfinx_mpc.numba` module.
 
+# Documentation
+Experimental documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.github.io/dolfinx_mpc)
 
 # Installation
 

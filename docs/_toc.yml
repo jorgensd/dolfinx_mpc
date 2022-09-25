@@ -1,0 +1,9 @@
+format: jb-book
+root: index
+
+parts:
+  - caption: "Python API"
+    chapters:
+    - file: "api"
+    - file: "utils"
+    - file: "numba"
