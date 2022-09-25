@@ -49,10 +49,10 @@ class MultiPointConstraint():
             owners: The process each master is owned by.
             offsets: Array indicating the location in the masters array for the i-th slave
                 in the slaves arrays, i.e.
-                
+
                 .. highlight:: python
                 .. code-block:: python
-                
+
                     masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
 
         """
@@ -73,7 +73,7 @@ class MultiPointConstraint():
         self._already_finalized()
         self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs, mpc_data.owners, mpc_data.offsets)
 
-    def finalize(self) -> None:numpy
+    def finalize(self) -> None:
         """
         Finializes the multi point constraint. After this function is called, no new constraints can be added
         to the constraint. This function creates a map from the cells (local to index) to the slave degrees of

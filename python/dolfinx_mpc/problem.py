@@ -19,7 +19,6 @@ from .multipointconstraint import MultiPointConstraint
 
 class LinearProblem(_fem.petsc.LinearProblem):
     """
-    
     Class for solving a linear variational problem with multi point constraints of the form
     a(u, v) = L(v) for all v using PETSc as a linear algebra backend.
 
@@ -30,7 +29,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
         bcs: A list of Dirichlet boundary conditions.
         u: The solution function. It will be created if not provided. The function has
             to be based on the functionspace in the mpc, i.e.
-          
+
             .. highlight:: python
             .. code-block:: python
 
@@ -46,11 +45,11 @@ class LinearProblem(_fem.petsc.LinearProblem):
             for all available parameters. Takes priority over all other parameter values.
     Examples:
         Example usage:
-        
+
         .. highlight:: python
         .. code-block:: python
 
-           problem = LinearProblem(a, L, mpc, [bc0, bc1], 
+           problem = LinearProblem(a, L, mpc, [bc0, bc1],
                                    petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
 
     """
@@ -105,7 +104,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
 
     def solve(self) -> _fem.Function:
         """Solve the problem.
-         
+
         Returns:
             Function containing the solution"""
 
