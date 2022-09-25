@@ -4,6 +4,7 @@ import platform
 import re
 import subprocess
 import sys
+from itertools import chain
 from distutils.version import LooseVersion
 
 from setuptools import Extension, setup
@@ -17,6 +18,12 @@ VERSION = "0.5.1.dev0"
 
 REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>0.5.1"]
 
+extras = {
+    'docs': ['jupyter-book'],
+}
+
+# 'all' includes all of the above
+extras['all'] = list(chain(*extras.values()))
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
@@ -81,4 +88,5 @@ setup(name='dolfinx-mpc',
                     'dolfinx_mpc.numba': ['py.typed'], 'dolfinx_mpc.utils': ['py.typed']},
       cmdclass=dict(build_ext=CMakeBuild),
       install_requires=REQUIREMENTS,
-      zip_safe=False)
+      zip_safe=False,
+      extras_require=extras)
