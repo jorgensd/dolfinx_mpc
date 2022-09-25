@@ -19,15 +19,14 @@ from .dictcondition import create_dictionary_constraint
 
 class MultiPointConstraint():
     """
-    Multi-point constraint class.
-    This class will hold data for multi point constraint relation ships,
+    Hold data for multi point constraint relation ships,
     including new index maps for local assembly of matrices and vectors.
+
+    Args:
+        V: The function space
     """
 
     def __init__(self, V: _fem.FunctionSpace):
-        """
-        Initialize the multi point constraint for a given function space.
-        """
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=_PETSc.ScalarType)
@@ -41,22 +40,20 @@ class MultiPointConstraint():
                        owners: npt.NDArray[numpy.int32], offsets: npt.NDArray[numpy.int32]):
         """
         Add new constraint given by numpy arrays.
-        Parameters
-        ----------
-            V
-                The function space for the constraint
-            slaves
-                List of all slave dofs (using local dof numbering) on this process
-            masters
-                List of all master dofs (using global dof numbering) on this process
-            coeffs
-                The coefficients corresponding to each master.
-            owners
-                The process each master is owned by.
-            offsets
-                Array indicating the location in the masters array for the i-th slave
-                in the slaves arrays. I.e.
-                masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
+
+        Args:
+            V: The function space for the constraint
+            slaves: List of all slave dofs (using local dof numbering) on this process
+            masters: List of all master dofs (using global dof numbering) on this process
+            coeffs: The coefficients corresponding to each master.
+            owners: The process each master is owned by.
+            offsets: Array indicating the location in the masters array for the i-th slave
+                in the slaves arrays, i.e.
+                
+                .. highlight:: python
+                .. code-block:: python
+                
+                    masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
 
         """
         assert V == self.V
@@ -76,7 +73,7 @@ class MultiPointConstraint():
         self._already_finalized()
         self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs, mpc_data.owners, mpc_data.offsets)
 
-    def finalize(self) -> None:
+    def finalize(self) -> None:numpy
         """
         Finializes the multi point constraint. After this function is called, no new constraints can be added
         to the constraint. This function creates a map from the cells (local to index) to the slave degrees of

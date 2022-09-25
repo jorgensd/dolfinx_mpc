@@ -157,10 +157,8 @@ def rigid_motions_nullspace(V: _fem.FunctionSpace):
     """
     Function to build nullspace for 2D/3D elasticity.
 
-    Parameters:
-    ===========
-    V
-        The function space
+    Args:
+        V: The function space
     """
     _x = _fem.Function(V)
     # Get geometric dim
