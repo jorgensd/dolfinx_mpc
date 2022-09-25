@@ -23,9 +23,6 @@ jobs:
 
       - name: Install DOLFINx-MPC (Python)
         run: python3 -m pip -v install python/
-
-      - name: Install dependencies
-        run: python3 -m pip install "."
                 
       - name: Build docs
         run: make doc
