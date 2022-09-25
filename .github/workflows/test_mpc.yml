@@ -98,12 +98,18 @@ jobs:
       - name: Install DOLFINx-MPC (Python)
         run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/
 
-      - name: Run tests
-        run: |
-          python3 -m pytest python/tests -vs
-          mpirun -n 2 python3 -m pytest python/tests
-          mpirun -n 3 python3 -m pytest python/tests
-          mpirun -n 4 python3 -m pytest python/tests
+      - name: Run tests (serial)
+        run: python3 -m pytest python/tests -vs
+          
+      - name: Run tests (2 processes)
+        run: mpirun -n 2 python3 -m pytest python/tests -vs
+
+      - name: Run tests (3 processes)
+        run: mpirun -n 3 python3 -m pytest python/tests
+
+      - name: Run tests (4 processss)
+        run: mpirun -n 4 python3 -m pytest python/tests
+
       - name: Run benchmarks
         run: |
           cd python/benchmarks
