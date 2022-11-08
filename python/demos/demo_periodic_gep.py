@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2022 fmonteghetti and Jorgen S. Dokken
+# Copyright (C) 2021-2022 fmonteghetti, Connor D. Pierce, and Jorgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
