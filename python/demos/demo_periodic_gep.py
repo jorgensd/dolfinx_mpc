@@ -233,14 +233,17 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     pbc_is_master = []
     pbc_meshtags = []
     pbc_slave_to_master_maps = []
+
     def generate_pbc_slave_to_master_map(i):
         def pbc_slave_to_master_map(x):
             out_x = x.copy()
             out_x[i] = x[i] - 1
             return out_x
         return pbc_slave_to_master_map
+
     def generate_pbc_is_slave(i):
         return lambda x: np.isclose(x[i], 1)
+
     def generate_pbc_is_master(i):
         return lambda x: np.isclose(x[i], 0)
 
@@ -264,7 +267,10 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
 
             facets = locate_entities_boundary(mesh, fdim, pbc_is_slave[-1])
             arg_sort = np.argsort(facets)
-            pbc_meshtags.append(meshtags(mesh, fdim, facets[arg_sort], np.full(len(facets), pbc_slave_tags[-1], dtype=np.int32)))
+            pbc_meshtags.append(meshtags(mesh,
+                                         fdim,
+                                         facets[arg_sort],
+                                         np.full(len(facets), pbc_slave_tags[-1], dtype=np.int32)))
 
     # Create MultiPointConstraint object
     mpc = MultiPointConstraint(V)
