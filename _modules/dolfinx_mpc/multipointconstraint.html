@@ -266,7 +266,7 @@ title="Open an issue"
 <span class="c1">#</span>
 <span class="c1"># SPDX-License-Identifier:    MIT</span>
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
 
 <span class="kn">import</span> <span class="nn">dolfinx.cpp</span> <span class="k">as</span> <span class="nn">_cpp</span>
 <span class="kn">import</span> <span class="nn">dolfinx.fem</span> <span class="k">as</span> <span class="nn">_fem</span>
@@ -287,6 +287,15 @@ title="Open an issue"
 <span class="sd">    Args:</span>
 <span class="sd">        V: The function space</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">_slaves</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">]</span>
+    <span class="n">_masters</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int64</span><span class="p">]</span>
+    <span class="n">_coeffs</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">]</span>
+    <span class="n">_owners</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">]</span>
+    <span class="n">_offsets</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">]</span>
+    <span class="n">V</span><span class="p">:</span> <span class="n">_fem</span><span class="o">.</span><span class="n">FunctionSpace</span>
+    <span class="n">finalized</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">_cpp_object</span><span class="p">:</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">cpp</span><span class="o">.</span><span class="n">mpc</span><span class="o">.</span><span class="n">MultiPointConstraint</span>
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="vm">__annotations__</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">V</span><span class="p">:</span> <span class="n">_fem</span><span class="o">.</span><span class="n">FunctionSpace</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_slaves</span> <span class="o">=</span> <span class="n">numpy</span><span class="o">.</span><span class="n">array</span><span class="p">([],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
@@ -467,7 +476,7 @@ title="Open an issue"
         <span class="bp">self</span><span class="o">.</span><span class="n">add_constraint_from_mpc_data</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">V</span><span class="p">,</span> <span class="n">mpc_data</span><span class="o">=</span><span class="n">mpc_data</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="MultiPointConstraint.create_general_constraint"><a class="viewcode-back" href="../../api.html#dolfinx_mpc.MultiPointConstraint.create_general_constraint">[docs]</a>    <span class="k">def</span> <span class="nf">create_general_constraint</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">slave_master_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span>
-                                  <span class="n">subspace_slave</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">subspace_master</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+                                  <span class="n">subspace_slave</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">subspace_master</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
         <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Args:</span>
 <span class="sd">            V: The function space</span>

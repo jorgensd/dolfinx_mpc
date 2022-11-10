@@ -266,11 +266,12 @@ title="Open an issue"
 <span class="c1">#</span>
 <span class="c1"># SPDX-License-Identifier:    MIT</span>
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
 
 <span class="kn">import</span> <span class="nn">cffi</span>
 <span class="kn">import</span> <span class="nn">dolfinx.cpp</span> <span class="k">as</span> <span class="nn">_cpp</span>
 <span class="kn">import</span> <span class="nn">dolfinx.fem</span> <span class="k">as</span> <span class="nn">_fem</span>
+<span class="kn">import</span> <span class="nn">numba</span>
 <span class="kn">import</span> <span class="nn">numpy</span>
 <span class="kn">import</span> <span class="nn">numpy.typing</span> <span class="k">as</span> <span class="nn">npt</span>
 <span class="kn">from</span> <span class="nn">dolfinx.common</span> <span class="kn">import</span> <span class="n">Timer</span>
@@ -278,9 +279,7 @@ title="Open an issue"
 <span class="kn">from</span> <span class="nn">dolfinx_mpc.multipointconstraint</span> <span class="kn">import</span> <span class="n">MultiPointConstraint</span>
 <span class="kn">from</span> <span class="nn">petsc4py</span> <span class="kn">import</span> <span class="n">PETSc</span> <span class="k">as</span> <span class="n">_PETSc</span>
 
-<span class="kn">import</span> <span class="nn">numba</span>
-
-<span class="kn">from</span> <span class="nn">.helpers</span> <span class="kn">import</span> <span class="n">extract_slave_cells</span><span class="p">,</span> <span class="n">pack_slave_facet_info</span><span class="p">,</span> <span class="n">_forms</span><span class="p">,</span> <span class="n">_bcs</span>
+<span class="kn">from</span> <span class="nn">.helpers</span> <span class="kn">import</span> <span class="n">_bcs</span><span class="p">,</span> <span class="n">_forms</span><span class="p">,</span> <span class="n">extract_slave_cells</span><span class="p">,</span> <span class="n">pack_slave_facet_info</span>
 <span class="kn">from</span> <span class="nn">.numba_setup</span> <span class="kn">import</span> <span class="n">initialize_petsc</span><span class="p">,</span> <span class="n">sink</span>
 
 <span class="n">mode</span> <span class="o">=</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">InsertMode</span><span class="o">.</span><span class="n">ADD_VALUES</span>
@@ -289,8 +288,8 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="assemble_matrix"><a class="viewcode-back" href="../../../numba.html#dolfinx_mpc.numba.assemble_matrix">[docs]</a><span class="k">def</span> <span class="nf">assemble_matrix</span><span class="p">(</span><span class="n">form</span><span class="p">:</span> <span class="n">_forms</span><span class="p">,</span> <span class="n">constraint</span><span class="p">:</span> <span class="n">MultiPointConstraint</span><span class="p">,</span>
-                    <span class="n">bcs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">_bcs</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mf">1.</span><span class="p">,</span>
-                    <span class="n">A</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+                    <span class="n">bcs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">_bcs</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mf">1.</span><span class="p">,</span>
+                    <span class="n">A</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assembles a compiled DOLFINx form with given a multi point constraint and possible</span>
 <span class="sd">    Dirichlet boundary conditions.</span>

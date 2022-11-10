@@ -266,13 +266,14 @@ title="Open an issue"
 <span class="c1">#</span>
 <span class="c1"># SPDX-License-Identifier:    MIT</span>
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">import</span> <span class="nn">dolfinx.fem</span> <span class="k">as</span> <span class="nn">_fem</span>
 <span class="kn">import</span> <span class="nn">dolfinx.cpp</span> <span class="k">as</span> <span class="nn">_cpp</span>
+<span class="kn">import</span> <span class="nn">dolfinx.fem</span> <span class="k">as</span> <span class="nn">_fem</span>
+<span class="kn">from</span> <span class="nn">petsc4py</span> <span class="kn">import</span> <span class="n">PETSc</span> <span class="k">as</span> <span class="n">_PETSc</span>
 
 <span class="kn">from</span> <span class="nn">dolfinx_mpc</span> <span class="kn">import</span> <span class="n">cpp</span>
-<span class="kn">from</span> <span class="nn">petsc4py</span> <span class="kn">import</span> <span class="n">PETSc</span> <span class="k">as</span> <span class="n">_PETSc</span>
+
 <span class="kn">from</span> <span class="nn">.multipointconstraint</span> <span class="kn">import</span> <span class="n">MultiPointConstraint</span>
 
 
@@ -281,7 +282,7 @@ title="Open an issue"
                                       <span class="n">Sequence</span><span class="p">[</span><span class="n">MultiPointConstraint</span><span class="p">]],</span>
                     <span class="n">bcs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">DirichletBCMetaClass</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span>
                     <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
-                    <span class="n">A</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">:</span>
+                    <span class="n">A</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">:</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints</span>
 <span class="sd">    and Dirichlet boundary conditions.</span>
