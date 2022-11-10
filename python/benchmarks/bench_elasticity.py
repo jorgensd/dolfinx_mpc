@@ -6,6 +6,7 @@
 
 import resource
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -15,16 +16,17 @@ from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
 from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, TestFunction, TrialFunction, ds, dx, grad, inner,
                  sym, tr)
 
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
 
-def bench_elasticity_one(r_lvl: int = 0, out_hdf5: h5py.File = None,
+
+def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
                          xdmf: bool = False, boomeramg: bool = False, kspview: bool = False):
     N = 3
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)

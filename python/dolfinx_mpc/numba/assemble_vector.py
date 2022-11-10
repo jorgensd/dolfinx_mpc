@@ -4,19 +4,18 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cffi
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import dolfinx.log as _log
+import numba
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 from petsc4py import PETSc as _PETSc
-
-import numba
 
 from .helpers import _forms, extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc
@@ -24,7 +23,7 @@ from .numba_setup import initialize_petsc
 ffi, _ = initialize_petsc()
 
 
-def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: _PETSc.Vec = None) -> _PETSc.Vec:
+def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[_PETSc.Vec] = None) -> _PETSc.Vec:
     """
     Assemble a compiled DOLFINx form into vector b.
 

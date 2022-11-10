@@ -19,6 +19,7 @@
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from time import perf_counter
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -36,7 +37,7 @@ from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 
 
-def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: h5py.File = None,
+def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
                        xdmf: bool = False, boomeramg: bool = False, kspview: bool = False,
                        degree: int = 1):
     # Create mesh and finite element

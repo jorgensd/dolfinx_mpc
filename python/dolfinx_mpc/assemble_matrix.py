@@ -4,13 +4,14 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Sequence, Union
+from typing import Optional, Sequence, Union
 
-import dolfinx.fem as _fem
 import dolfinx.cpp as _cpp
+import dolfinx.fem as _fem
+from petsc4py import PETSc as _PETSc
 
 from dolfinx_mpc import cpp
-from petsc4py import PETSc as _PETSc
+
 from .multipointconstraint import MultiPointConstraint
 
 
@@ -19,7 +20,7 @@ def assemble_matrix(form: _fem.FormMetaClass,
                                       Sequence[MultiPointConstraint]],
                     bcs: Sequence[_fem.DirichletBCMetaClass] = [],
                     diagval: _PETSc.ScalarType = 1,
-                    A: _PETSc.Mat = None) -> _PETSc.Mat:
+                    A: Optional[_PETSc.Mat] = None) -> _PETSc.Mat:
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
     and Dirichlet boundary conditions.
