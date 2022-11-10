@@ -4,11 +4,12 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import cffi
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import numba
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
@@ -16,9 +17,7 @@ from dolfinx_mpc.assemble_matrix import create_sparsity_pattern
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 from petsc4py import PETSc as _PETSc
 
-import numba
-
-from .helpers import extract_slave_cells, pack_slave_facet_info, _forms, _bcs
+from .helpers import _bcs, _forms, extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc, sink
 
 mode = _PETSc.InsertMode.ADD_VALUES
@@ -27,8 +26,8 @@ ffi, set_values_local = initialize_petsc()
 
 
 def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
-                    bcs: List[_bcs] = None, diagval: _PETSc.ScalarType = 1.,
-                    A: _PETSc.Mat = None):
+                    bcs: Optional[List[_bcs]] = None, diagval: _PETSc.ScalarType = 1.,
+                    A: Optional[_PETSc.Mat] = None):
     """
     Assembles a compiled DOLFINx form with given a multi point constraint and possible
     Dirichlet boundary conditions.

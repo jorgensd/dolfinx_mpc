@@ -53,11 +53,21 @@ class LinearProblem(_fem.petsc.LinearProblem):
                                    petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
 
     """
+    u: _fem.Function
+    _a: _fem.FormMetaClass
+    _L: _fem.FormMetaClass
+    _mpc: MultiPointConstraint
+    _A: PETSc.Mat
+    _b: PETSc.Vec
+    _solver: PETSc.KSP
+    bcs: typing.List[_fem.DirichletBCMetaClass]
+    __slots__ = tuple(__annotations__)
 
     def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint,
-                 bcs: typing.List[_fem.DirichletBCMetaClass] = None, u: _fem.Function = None,
-                 petsc_options: dict = None,
-                 form_compiler_options: dict = None, jit_options: dict = None):
+                 bcs: typing.Optional[typing.List[_fem.DirichletBCMetaClass]] = None,
+                 u: typing.Optional[_fem.Function] = None,
+                 petsc_options: typing.Optional[dict] = None,
+                 form_compiler_options: typing.Optional[dict] = None, jit_options: typing.Optional[dict] = None):
 
         # Compile forms
         form_compiler_options = {} if form_compiler_options is None else form_compiler_options
@@ -68,6 +78,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
         if not mpc.finalized:
             raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
         self._mpc = mpc
+
         # Create function containing solution vector
         if u is None:
             self.u = _fem.Function(self._mpc.function_space)

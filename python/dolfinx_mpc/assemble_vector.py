@@ -5,7 +5,7 @@
 # SPDX-License-Identifier:    MIT
 
 import contextlib
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
@@ -43,7 +43,7 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.FormMetaClass], bcs: List[List[
 
 
 def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
-                    b: _PETSc.Vec = None) -> _PETSc.Vec:
+                    b: Optional[_PETSc.Vec] = None) -> _PETSc.Vec:
     """
     Assemble a linear form into vector `b` with corresponding multi point constraint
 

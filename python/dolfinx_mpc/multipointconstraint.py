@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
@@ -25,6 +25,15 @@ class MultiPointConstraint():
     Args:
         V: The function space
     """
+    _slaves: npt.NDArray[numpy.int32]
+    _masters: npt.NDArray[numpy.int64]
+    _coeffs: npt.NDArray[_PETSc.ScalarType]
+    _owners: npt.NDArray[numpy.int32]
+    _offsets: npt.NDArray[numpy.int32]
+    V: _fem.FunctionSpace
+    finalized: bool
+    _cpp_object: dolfinx_mpc.cpp.mpc.MultiPointConstraint
+    __slots__ = tuple(__annotations__)
 
     def __init__(self, V: _fem.FunctionSpace):
         self._slaves = numpy.array([], dtype=numpy.int32)
@@ -205,7 +214,7 @@ class MultiPointConstraint():
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_general_constraint(self, slave_master_dict: Dict[bytes, Dict[bytes, float]],
-                                  subspace_slave: int = None, subspace_master: int = None):
+                                  subspace_slave: Optional[int] = None, subspace_master: Optional[int] = None):
         """
         Args:
             V: The function space

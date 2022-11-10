@@ -8,6 +8,7 @@
 import resource
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from time import perf_counter
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -27,7 +28,7 @@ from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
                  as_vector, ds, dx, grad, inner, sym, tr)
 
 
-def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: h5py.File = None,
+def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
                    xdmf: bool = False, boomeramg: bool = False, kspview: bool = False, degree: int = 1):
     if tetra:
         N = 3 if degree == 1 else 2
