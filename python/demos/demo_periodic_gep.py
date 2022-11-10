@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2022 fmonteghetti and Jorgen S. Dokken
+# Copyright (C) 2021-2022 fmonteghetti, Connor D. Pierce, and Jorgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -227,76 +227,82 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     fdim = mesh.topology.dim - 1
 
     bcs = []
-    # Dirichlet boundary condition on {y=0} and {y=1}
-    if boundary_condition[1] == "dirichlet":
-        u_bc = fem.Function(V)
-        u_bc.x.array[:] = 0
+    pbc_directions = []
+    pbc_slave_tags = []
+    pbc_is_slave = []
+    pbc_is_master = []
+    pbc_meshtags = []
+    pbc_slave_to_master_maps = []
 
-        def dirichletboundary(x):
-            return np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1))
-        facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
-        topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
-        bc = fem.dirichletbc(u_bc, topological_dofs)
-        bcs = [bc]
-
-    # Periodic boundary condition: {x=0} -> {x=1}
-    if boundary_condition[0] == "periodic":
-        pbc_hor_slave_tag = 2
-
-        def pbc_hor_is_slave(x):
-            return np.isclose(x[0], 1)  # identifier for slave boundary
-
-        def pbc_hor_is_master(x):
-            return np.isclose(x[0], 0)  # identifier for master boundary
-
-        def pbc_hor_slave_to_master_map(x):
-            out_x = np.zeros(x.shape)
-            out_x[0] = x[0] - 1
-            out_x[1] = x[1]
-            out_x[2] = x[2]
+    def generate_pbc_slave_to_master_map(i):
+        def pbc_slave_to_master_map(x):
+            out_x = x.copy()
+            out_x[i] = x[i] - 1
             return out_x
-        facets = locate_entities_boundary(mesh, fdim, pbc_hor_is_slave)
-        arg_sort = np.argsort(facets)
-        pbc_hor_mt = meshtags(mesh, fdim, facets[arg_sort], np.full(len(facets), pbc_hor_slave_tag, dtype=np.int32))
+        return pbc_slave_to_master_map
 
-    # Periodic boundary condition: {y=0} -> {y=1}
-    if boundary_condition[1] == "periodic":
-        pbc_vert_slave_tag = 3
+    def generate_pbc_is_slave(i):
+        return lambda x: np.isclose(x[i], 1)
 
-        def pbc_vert_is_slave(x):
-            return np.isclose(x[1], 1)
+    def generate_pbc_is_master(i):
+        return lambda x: np.isclose(x[i], 0)
 
-        def pbc_vert_slave_to_master_map(x):
-            out_x = np.zeros(x.shape)
-            out_x[0] = x[0]
-            out_x[1] = x[1] - 1
-            out_x[2] = x[2]
-            return out_x
-        facets = locate_entities_boundary(mesh, fdim, pbc_vert_is_slave)
-        arg_sort = np.argsort(facets)
-        pbc_vert_mt = meshtags(mesh, fdim, facets[arg_sort], np.full(len(facets), pbc_vert_slave_tag, dtype=np.int32))
+    # Parse boundary conditions
+    for i, bc_type in enumerate(boundary_condition):
+        if bc_type == "dirichlet":
+            u_bc = fem.Function(V)
+            u_bc.x.array[:] = 0
+
+            def dirichletboundary(x):
+                return np.logical_or(np.isclose(x[i], 0), np.isclose(x[i], 1))
+            facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
+            topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
+            bcs.append(fem.dirichletbc(u_bc, topological_dofs))
+        elif bc_type == "periodic":
+            pbc_directions.append(i)
+            pbc_slave_tags.append(i + 2)
+            pbc_is_slave.append(generate_pbc_is_slave(i))
+            pbc_is_master.append(generate_pbc_is_master(i))
+            pbc_slave_to_master_maps.append(generate_pbc_slave_to_master_map(i))
+
+            facets = locate_entities_boundary(mesh, fdim, pbc_is_slave[-1])
+            arg_sort = np.argsort(facets)
+            pbc_meshtags.append(meshtags(mesh,
+                                         fdim,
+                                         facets[arg_sort],
+                                         np.full(len(facets), pbc_slave_tags[-1], dtype=np.int32)))
 
     # Create MultiPointConstraint object
     mpc = MultiPointConstraint(V)
-    if boundary_condition[0] == "periodic":
-        mpc.create_periodic_constraint_topological(V, pbc_hor_mt,
-                                                   pbc_hor_slave_tag,
-                                                   pbc_hor_slave_to_master_map,
-                                                   bcs)
-    if boundary_condition[1] == "periodic":
-        if boundary_condition[0] == "periodic":
-            # Redefine slave_to_master map to exclude dofs that are slave or
-            # master of the previous periodic boundary condition
-            tmp = pbc_vert_slave_to_master_map
-
-            def pbc_vert_slave_to_master_map(x):
-                out_x = tmp(x)
-                idx = pbc_hor_is_slave(x) + pbc_hor_is_master(x)
-                out_x[0][idx] = np.nan
+    N_pbc = len(pbc_directions)
+    for i in range(N_pbc):
+        if N_pbc > 1:
+            def pbc_slave_to_master_map(x):
+                out_x = pbc_slave_to_master_maps[i](x)
+                idx = pbc_is_slave[(i + 1) % N_pbc](x)
+                out_x[pbc_directions[i]][idx] = np.nan
                 return out_x
-        mpc.create_periodic_constraint_topological(V, pbc_vert_mt,
-                                                   pbc_vert_slave_tag,
-                                                   pbc_vert_slave_to_master_map,
+        else:
+            pbc_slave_to_master_map = pbc_slave_to_master_maps[i]
+
+        mpc.create_periodic_constraint_topological(V, pbc_meshtags[i],
+                                                   pbc_slave_tags[i],
+                                                   pbc_slave_to_master_map,
+                                                   bcs)
+    if len(pbc_directions) > 1:
+        # Map intersection(slaves_x, slaves_y) to intersection(masters_x, masters_y),
+        # i.e. map the slave dof at (1, 1) to the master dof at (0, 0)
+        def pbc_slave_to_master_map(x):
+            out_x = x.copy()
+            out_x[0] = x[0] - 1
+            out_x[1] = x[1] - 1
+            idx = np.logical_and(pbc_is_slave[0](x), pbc_is_slave[1](x))
+            out_x[0][~idx] = np.nan
+            out_x[1][~idx] = np.nan
+            return out_x
+        mpc.create_periodic_constraint_topological(V, pbc_meshtags[1],
+                                                   pbc_slave_tags[1],
+                                                   pbc_slave_to_master_map,
                                                    bcs)
     mpc.finalize()
     # Define variational problem
@@ -328,15 +334,19 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
         mpc.backsubstitution(eigvec_i[i].vector)
     print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
 
-    # Save first eigenvector
-    with XDMFFile(mesh.comm, "results/eigenvector_0.xdmf", "w") as xdmf:
+    # Save all eigenvectors
+    suffix = "".join([bc_type[0] for bc_type in boundary_condition])
+    with XDMFFile(mesh.comm, f"results/eigenvector_{suffix}.xdmf", "w") as xdmf:
         xdmf.write_mesh(mesh)
-        xdmf.write_function(eigvec_r[0])
+        for i, e_vec in enumerate(eigvec_r):
+            xdmf.write_function(e_vec, i)
 
 
 def print_exact_eigenvalues(boundary_condition: List[str], N: int):
     L = [1, 1]
-    if boundary_condition[0] == "periodic":
+    if boundary_condition[0] == "dirichlet":
+        ev_x = [(n * np.pi / L[0])**2 for n in range(1, N + 1)]
+    elif boundary_condition[0] == "periodic":
         ev_x = [(n * 2 * np.pi / L[0])**2 for n in range(-N, N)]
     if boundary_condition[1] == "dirichlet":
         ev_y = [(n * np.pi / L[1])**2 for n in range(1, N + 1)]
@@ -346,6 +356,16 @@ def print_exact_eigenvalues(boundary_condition: List[str], N: int):
     ev_ex = ev_ex[0:N]
     print0(f"Exact eigenvalues (repeated with multiplicity):\n {np.around(ev_ex,decimals=2)}")
 
+
+# Dirichlet boundary condition on {x=0} and {x=1}
+# Dirichlet boundary condition on {y=0} and {y=1}
+assemble_and_solve(["dirichlet", "dirichlet"], 10)
+print_exact_eigenvalues(["dirichlet", "dirichlet"], 10)
+
+# Dirichlet boundary condition on {x=0} and {x=1}
+# Periodic boundary condition: {y=0} -> {y=1}
+assemble_and_solve(["dirichlet", "periodic"], 10)
+print_exact_eigenvalues(["dirichlet", "periodic"], 10)
 
 # Periodic boundary condition: {x=0} -> {x=1}
 # Dirichlet boundary condition on {y=0} and {y=1}
