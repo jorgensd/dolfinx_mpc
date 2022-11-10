@@ -69,8 +69,6 @@ class LinearProblem(_fem.petsc.LinearProblem):
                  petsc_options: typing.Optional[dict] = None,
                  form_compiler_options: typing.Optional[dict] = None, jit_options: typing.Optional[dict] = None):
 
-        from IPython import embed
-        embed()
         # Compile forms
         form_compiler_options = {} if form_compiler_options is None else form_compiler_options
         jit_options = {} if jit_options is None else jit_options
