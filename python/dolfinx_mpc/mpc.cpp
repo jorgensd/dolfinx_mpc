@@ -267,7 +267,7 @@ void mpc(py::module& m)
                relation,
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
-           double scale, bool collapse)
+           PetscScalar scale, bool collapse)
         {
           auto _indicator
               = [&indicator](
@@ -308,7 +308,7 @@ void mpc(py::module& m)
                relation,
            const std::vector<std::shared_ptr<
                const dolfinx::fem::DirichletBC<PetscScalar>>>& bcs,
-           double scale, bool collapse)
+           PetscScalar scale, bool collapse)
         {
           auto _relation
               = [&relation](std::span<const double> x) -> std::vector<double>

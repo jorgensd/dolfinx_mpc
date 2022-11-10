@@ -27,7 +27,7 @@ template <typename T>
 dolfinx_mpc::mpc_data _create_periodic_condition(
     const dolfinx::fem::FunctionSpace& V, std::span<std::int32_t> slave_blocks,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
-    double scale,
+    T scale,
     const std::function<const std::int32_t(const std::int32_t&)>& parent_map,
     const dolfinx::fem::FunctionSpace& parent_space)
 {
@@ -191,7 +191,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
         {
           const std::int32_t cell_block = cell_blocks[j];
           // NOTE: Assuming 0 value size
-          if (const double val = scale * tabulated_basis_values(i, j, 0);
+          if (const T val = scale * tabulated_basis_values(i, j, 0);
               std::abs(val) > tol)
           {
             num_masters++;
@@ -402,7 +402,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
           for (std::size_t k = 0; k < cell_blocks.size(); k++)
           {
             // NOTE: Assuming value_size 0
-            if (const double val = scale * remote_basis_values(j, k, 0);
+            if (const T val = scale * remote_basis_values(j, k, 0);
                 std::abs(val) > tol)
             {
               num_masters++;
@@ -505,7 +505,7 @@ dolfinx_mpc::mpc_data geometrical_condition(
         indicator,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    double scale, bool collapse)
+    T scale, bool collapse)
 {
   std::vector<std::int32_t> reduced_blocks;
   if (collapse)
@@ -567,7 +567,7 @@ dolfinx_mpc::mpc_data topological_condition(
     const std::int32_t tag,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    double scale, bool collapse)
+    T scale, bool collapse)
 {
   std::vector<std::int32_t> entities = meshtag->find(tag);
 
@@ -646,7 +646,7 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    double scale, bool collapse)
+    std::complex<double> scale, bool collapse)
 {
   return geometrical_condition<std::complex<double>>(V, indicator, relation,
                                                      bcs, scale, collapse);
@@ -673,7 +673,7 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    double scale, bool collapse)
+    std::complex<double> scale, bool collapse)
 {
   return topological_condition<std::complex<double>>(V, meshtag, tag, relation,
                                                      bcs, scale, collapse);

@@ -35,7 +35,7 @@ mpc_data create_periodic_condition_geometrical(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    double scale, bool collapse);
+    std::complex<double> scale, bool collapse);
 
 mpc_data create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
@@ -54,5 +54,5 @@ mpc_data create_periodic_condition_topological(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    double scale, bool collapse);
+    std::complex<double> scale, bool collapse);
 } // namespace dolfinx_mpc
