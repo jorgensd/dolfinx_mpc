@@ -22,7 +22,6 @@ jobs:
         petsc_arch: [real, complex]
         CXX: [c++, clang++]
         CC: [cc, clang]
-        petsc_int_type: [32, 64]
         exclude:
           - CC: cc
             CXX: clang++
@@ -31,7 +30,7 @@ jobs:
     env:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
-      PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-${{ matrix.petsc_int_type }}"
+      PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-32"
       OMPI_ALLOW_RUN_AS_ROOT: 1
       OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
       OMPI_MCA_rmaps_base_oversubscribe: 1
