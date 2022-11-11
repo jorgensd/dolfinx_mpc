@@ -31,7 +31,7 @@ jobs:
     env:
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
-      PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-{{ matrix.petsc_int_type }}"
+      PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-${{ matrix.petsc_int_type }}"
       OMPI_ALLOW_RUN_AS_ROOT: 1
       OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
       OMPI_MCA_rmaps_base_oversubscribe: 1
@@ -86,8 +86,7 @@ jobs:
           ref: main
 
       - name: Configure C++ (dolfinx)
-        run: |
-          echo ${PETSC_ARCH} ${PETSC_DIR}
+        run:
           cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
 
       - name: Build and install C++ library (dolfinx)
