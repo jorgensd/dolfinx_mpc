@@ -87,6 +87,7 @@ jobs:
 
       - name: Configure C++ (dolfinx)
         run: |
+          echo ${PETSC_ARCH} ${PETSC_DIR}
           cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
 
       - name: Build and install C++ library (dolfinx)
