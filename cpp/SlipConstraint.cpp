@@ -10,7 +10,7 @@
 
 using namespace dolfinx_mpc;
 
-mpc_data dolfinx_mpc::create_slip_condition(
+mpc_data<PetscScalar> dolfinx_mpc::create_slip_condition(
     std::shared_ptr<dolfinx::fem::FunctionSpace>& space,
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t marker,
     const dolfinx::fem::Function<PetscScalar>& v,
@@ -158,7 +158,7 @@ mpc_data dolfinx_mpc::create_slip_condition(
     offsets.push_back((std::int32_t)masters.size());
     owners.insert(owners.end(), pair_o.begin(), pair_o.end());
   }
-  mpc_data data;
+  mpc_data<PetscScalar> data;
   data.slaves = slaves;
 
   data.masters = masters;

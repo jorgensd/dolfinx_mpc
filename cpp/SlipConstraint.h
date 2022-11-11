@@ -12,7 +12,7 @@ namespace dolfinx_mpc
 {
 
 //
-mpc_data create_slip_condition(
+mpc_data<PetscScalar> create_slip_condition(
     std::shared_ptr<dolfinx::fem::FunctionSpace>& space,
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t marker,
     const dolfinx::fem::Function<PetscScalar>& v,

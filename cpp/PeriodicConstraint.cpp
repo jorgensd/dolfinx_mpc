@@ -24,7 +24,7 @@ namespace
 /// collapsed)
 /// @returns The multi point constraint
 template <typename T>
-dolfinx_mpc::mpc_data _create_periodic_condition(
+dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     const dolfinx::fem::FunctionSpace& V, std::span<std::int32_t> slave_blocks,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     T scale,
@@ -154,7 +154,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
   owners.reserve(slave_blocks.size() * bs);
   // FIXME: This should really be templated
   // Requires changes all over the place for mpc_data
-  std::vector<PetscScalar> coeffs;
+  std::vector<T> coeffs;
   coeffs.reserve(slave_blocks.size() * bs);
   std::vector<std::int32_t> num_masters_per_slave;
   num_masters_per_slave.reserve(slave_blocks.size() * bs);
@@ -351,7 +351,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
   masters_remote.reserve(coords_recvb.size());
   std::vector<std::int32_t> owners_remote;
   owners_remote.reserve(coords_recvb.size());
-  std::vector<PetscScalar> coeffs_remote;
+  std::vector<T> coeffs_remote;
   coeffs_remote.reserve(coords_recvb.size());
   std::vector<std::int32_t> num_masters_per_slave_remote;
   num_masters_per_slave_remote.reserve(bs * coords_recvb.size() / 3);
@@ -433,24 +433,21 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
       m_to_s_weights.data(), MPI_INFO_NULL, false, &master_to_slave);
 
   // Send data back to owning process
-  dolfinx_mpc::recv_data recv_data
-      = dolfinx_mpc::send_master_data_to_owner<PetscScalar>(
-          master_to_slave, num_remote_masters, num_remote_slaves,
-          num_out_slaves, num_masters_per_slave_remote, masters_remote,
-          coeffs_remote, owners_remote);
+  dolfinx_mpc::recv_data recv_data = dolfinx_mpc::send_master_data_to_owner<T>(
+      master_to_slave, num_remote_masters, num_remote_slaves, num_out_slaves,
+      num_masters_per_slave_remote, masters_remote, coeffs_remote,
+      owners_remote);
 
   // Append found slaves/master pairs
-  dolfinx_mpc::append_master_data<PetscScalar>(
+  dolfinx_mpc::append_master_data<T>(
       recv_data, searching_dofs, slaves, masters, coeffs, owners,
       num_masters_per_slave, parent_space.dofmap()->index_map->size_local(),
       parent_space.dofmap()->index_map_bs());
 
   // Distribute ghost data
-  dolfinx_mpc::mpc_data ghost_data
-      = dolfinx_mpc::distribute_ghost_data<PetscScalar>(
-          slaves, masters, coeffs, owners, num_masters_per_slave,
-          parent_space.dofmap()->index_map,
-          parent_space.dofmap()->index_map_bs());
+  dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
+      slaves, masters, coeffs, owners, num_masters_per_slave,
+      parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
 
   // Add ghost data to existing arrays
   std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
@@ -462,7 +459,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
   std::vector<std::int32_t>& ghost_num = ghost_data.offsets;
   num_masters_per_slave.insert(std::end(num_masters_per_slave),
                                std::begin(ghost_num), std::end(ghost_num));
-  std::vector<PetscScalar>& ghost_coeffs = ghost_data.coeffs;
+  std::vector<T>& ghost_coeffs = ghost_data.coeffs;
   coeffs.insert(std::end(coeffs), std::begin(ghost_coeffs),
                 std::end(ghost_coeffs));
   std::vector<std::int32_t>& ghost_owner_ranks = ghost_data.owners;
@@ -474,7 +471,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
   std::partial_sum(num_masters_per_slave.begin(), num_masters_per_slave.end(),
                    offsets.begin() + 1);
 
-  dolfinx_mpc::mpc_data output;
+  dolfinx_mpc::mpc_data<T> output;
   output.offsets = offsets;
   output.masters = masters;
   output.coeffs = coeffs;
@@ -495,7 +492,7 @@ dolfinx_mpc::mpc_data _create_periodic_condition(
 /// input space
 /// @returns The multi point constraint
 template <typename T>
-dolfinx_mpc::mpc_data geometrical_condition(
+dolfinx_mpc::mpc_data<T> geometrical_condition(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::function<std::vector<std::int8_t>(
         std::experimental::mdspan<
@@ -561,7 +558,7 @@ dolfinx_mpc::mpc_data geometrical_condition(
 /// input space
 /// @returns The multi point constraint
 template <typename T>
-dolfinx_mpc::mpc_data topological_condition(
+dolfinx_mpc::mpc_data<T> topological_condition(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
@@ -592,7 +589,7 @@ dolfinx_mpc::mpc_data topological_condition(
     const auto sub_map
         = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
     // Create mpc on sub space
-    dolfinx_mpc::mpc_data sub_data = _create_periodic_condition<T>(
+    dolfinx_mpc::mpc_data<T> sub_data = _create_periodic_condition<T>(
         V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V);
     return sub_data;
   }
@@ -617,7 +614,8 @@ dolfinx_mpc::mpc_data topological_condition(
 
 } // namespace
 
-dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
+dolfinx_mpc::mpc_data<double>
+dolfinx_mpc::create_periodic_condition_geometrical(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::function<std::vector<std::int8_t>(
         std::experimental::mdspan<
@@ -634,7 +632,8 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
                                        collapse);
 }
 
-dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
+dolfinx_mpc::mpc_data<std::complex<double>>
+dolfinx_mpc::create_periodic_condition_geometrical(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::function<std::vector<std::int8_t>(
         std::experimental::mdspan<
@@ -652,7 +651,8 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_geometrical(
                                                      bcs, scale, collapse);
 }
 
-dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
+dolfinx_mpc::mpc_data<double>
+dolfinx_mpc::create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
@@ -665,7 +665,8 @@ dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
                                        collapse);
 };
 
-dolfinx_mpc::mpc_data dolfinx_mpc::create_periodic_condition_topological(
+dolfinx_mpc::mpc_data<std::complex<double>>
+dolfinx_mpc::create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,

@@ -120,12 +120,13 @@ void mpc(py::module& m)
           },
           py::arg("u"), "Homogenize (set to zero) values at slave DoF indices");
 
-  py::class_<dolfinx_mpc::mpc_data, std::shared_ptr<dolfinx_mpc::mpc_data>>
+  py::class_<dolfinx_mpc::mpc_data<PetscScalar>,
+             std::shared_ptr<dolfinx_mpc::mpc_data<PetscScalar>>>
       mpc_data(m, "mpc_data", "Object with data arrays for mpc");
   mpc_data
       .def_property_readonly(
           "slaves",
-          [](dolfinx_mpc::mpc_data& self)
+          [](dolfinx_mpc::mpc_data<PetscScalar>& self)
           {
             const std::vector<std::int32_t>& slaves = self.slaves;
             return py::array_t<std::int32_t>(slaves.size(), slaves.data(),
@@ -133,7 +134,7 @@ void mpc(py::module& m)
           })
       .def_property_readonly(
           "masters",
-          [](dolfinx_mpc::mpc_data& self)
+          [](dolfinx_mpc::mpc_data<PetscScalar>& self)
           {
             const std::vector<std::int64_t>& masters = self.masters;
             return py::array_t<std::int64_t>(masters.size(), masters.data(),
@@ -141,7 +142,7 @@ void mpc(py::module& m)
           })
       .def_property_readonly(
           "coeffs",
-          [](dolfinx_mpc::mpc_data& self)
+          [](dolfinx_mpc::mpc_data<PetscScalar>& self)
           {
             const std::vector<PetscScalar>& coeffs = self.coeffs;
             return py::array_t<PetscScalar>(coeffs.size(), coeffs.data(),
@@ -149,7 +150,7 @@ void mpc(py::module& m)
           })
       .def_property_readonly(
           "owners",
-          [](dolfinx_mpc::mpc_data& self)
+          [](dolfinx_mpc::mpc_data<PetscScalar>& self)
           {
             const std::vector<std::int32_t>& owners = self.owners;
             return py::array_t<std::int32_t>(owners.size(), owners.data(),
@@ -157,7 +158,7 @@ void mpc(py::module& m)
           })
       .def_property_readonly(
           "offsets",
-          [](dolfinx_mpc::mpc_data& self)
+          [](dolfinx_mpc::mpc_data<PetscScalar>& self)
           {
             const std::vector<std::int32_t>& offsets = self.offsets;
             return py::array_t<std::int32_t>(offsets.size(), offsets.data(),

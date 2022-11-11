@@ -10,7 +10,7 @@
 namespace dolfinx_mpc
 
 {
-mpc_data create_periodic_condition_geometrical(
+mpc_data<double> create_periodic_condition_geometrical(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::function<std::vector<std::int8_t>(
         std::experimental::mdspan<
@@ -23,7 +23,7 @@ mpc_data create_periodic_condition_geometrical(
         bcs,
     double scale, bool collapse);
 
-mpc_data create_periodic_condition_geometrical(
+mpc_data<std::complex<double>> create_periodic_condition_geometrical(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::function<std::vector<std::int8_t>(
         std::experimental::mdspan<
@@ -37,7 +37,7 @@ mpc_data create_periodic_condition_geometrical(
         bcs,
     std::complex<double> scale, bool collapse);
 
-mpc_data create_periodic_condition_topological(
+mpc_data<double> create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
@@ -46,7 +46,7 @@ mpc_data create_periodic_condition_topological(
         bcs,
     double scale, bool collapse);
 
-mpc_data create_periodic_condition_topological(
+mpc_data<std::complex<double>> create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
