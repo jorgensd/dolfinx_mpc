@@ -33,11 +33,12 @@ struct recv_data
   std::vector<T> coeffs;
 };
 
+template <typename T>
 struct mpc_data
 {
   std::vector<std::int32_t> slaves;
   std::vector<std::int64_t> masters;
-  std::vector<PetscScalar> coeffs;
+  std::vector<T> coeffs;
   std::vector<std::int32_t> offsets;
   std::vector<std::int32_t> owners;
 };
@@ -349,7 +350,7 @@ void append_master_data(recv_data<T> in_data,
 /// @param[in] bs The index map block size
 /// @returns Data structure holding the received slave->master data
 template <typename T>
-dolfinx_mpc::mpc_data distribute_ghost_data(
+dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     const std::vector<std::int32_t>& slaves,
     const std::vector<std::int64_t>& masters, const std::vector<T>& coeffs,
     const std::vector<std::int32_t>& owners,
@@ -450,7 +451,7 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
 
   // Prepare arrays for sending ghost information
   std::vector<std::int64_t> masters_out(disp_out_masters.back());
-  std::vector<PetscScalar> coeffs_out(disp_out_masters.back());
+  std::vector<T> coeffs_out(disp_out_masters.back());
   std::vector<std::int32_t> owners_out(disp_out_masters.back());
   std::vector<std::int32_t> slaves_out_loc(disp_out_slaves.back());
   std::vector<std::int64_t> slaves_out(disp_out_slaves.back());
@@ -572,15 +573,14 @@ dolfinx_mpc::mpc_data distribute_ghost_data(
       in_num_masters.data(), disp_in_masters.data(),
       dolfinx::MPI::mpi_type<std::int32_t>(), local_to_ghost,
       &ghost_requests[3]);
-  std::vector<PetscScalar> recv_coeffs(disp_in_masters.back());
-  MPI_Ineighbor_alltoallv(
-      coeffs_out.data(), out_num_masters.data(), disp_out_masters.data(),
-      dolfinx::MPI::mpi_type<PetscScalar>(), recv_coeffs.data(),
-      in_num_masters.data(), disp_in_masters.data(),
-      dolfinx::MPI::mpi_type<PetscScalar>(), local_to_ghost,
-      &ghost_requests[4]);
+  std::vector<T> recv_coeffs(disp_in_masters.back());
+  MPI_Ineighbor_alltoallv(coeffs_out.data(), out_num_masters.data(),
+                          disp_out_masters.data(), dolfinx::MPI::mpi_type<T>(),
+                          recv_coeffs.data(), in_num_masters.data(),
+                          disp_in_masters.data(), dolfinx::MPI::mpi_type<T>(),
+                          local_to_ghost, &ghost_requests[4]);
 
-  mpc_data ghost_data;
+  mpc_data<T> ghost_data;
   ghost_data.slaves = recv_local;
   ghost_data.offsets = recv_num;
 
