@@ -86,7 +86,6 @@ void modify_mpc_cell_rows(
     std::vector<std::int32_t> unrolled_dofs,
     std::experimental::mdspan<double, std::experimental::dextents<std::size_t, 2>> Ae_stripped)
 {
-  std::vector<std::int32_t> unrolled_dofs(ndim1);
   std::array<std::int32_t, 1> row;
   auto Acol = scratch_memory.subspan(2 * ndim0 * ndim1 + ndim0, ndim1);
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
