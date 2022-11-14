@@ -69,6 +69,146 @@ void fill_stripped_matrix(
   }
 };
 
+/// Loop over all masters for the MPC applied to rows. Insert contributions in columns
+void modify_mpc_cell_rows(
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const double>)>& mat_set,
+    const int ndim0, const int ndim1,
+    const std::array<const std::uint32_t, 2>& num_dofs,
+    const std::array<const std::span<const int32_t>, 2>& dofs,
+    std::array<std::size_t, 2> num_flattened_masters,
+    const std::array<const int, 2>& bs,
+    std::span<double> scratch_memory,
+    std::array<std::vector<std::int32_t>, 2> flattened_masters,
+    std::array<std::vector<std::int32_t>, 2> flattened_slaves,
+    std::array<std::vector<double>, 2> flattened_coeffs,
+    std::experimental::mdspan<double, std::experimental::dextents<std::size_t, 2>> Ae_stripped)
+{
+  std::vector<std::int32_t> unrolled_dofs(ndim1);
+  std::array<std::int32_t, 1> row;
+  auto Acol = scratch_memory.subspan(2 * ndim0 * ndim1 + ndim0, ndim1);
+  for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
+  {
+
+    // Unroll dof blocks and add column contribution
+    for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
+      for (int k = 0; k < bs[1]; ++k)
+      {
+        Acol[j * bs[1] + k]
+            = flattened_coeffs[0][i]
+              * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
+        unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
+      }
+
+    // Insert modified entries
+    row[0] = flattened_masters[0][i];
+    mat_set(row, unrolled_dofs, Acol);
+  }
+}
+
+/// Loop over all masters for the MPC applied to rows. Insert contributions in columns
+void modify_mpc_cell_rows(
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const std::complex<double>>)>& mat_set,
+    const int ndim0, const int ndim1,
+    const std::array<const std::uint32_t, 2>& num_dofs,
+    const std::array<const std::span<const int32_t>, 2>& dofs,
+    std::array<std::size_t, 2> num_flattened_masters,
+    const std::array<const int, 2>& bs,
+    std::span<std::complex<double>> scratch_memory,
+    std::array<std::vector<std::int32_t>, 2> flattened_masters,
+    std::array<std::vector<std::int32_t>, 2> flattened_slaves,
+    std::array<std::vector<std::complex<double>>, 2> flattened_coeffs,
+    std::experimental::mdspan<std::complex<double>, 
+                              std::experimental::dextents<std::size_t, 2>> Ae_stripped)
+{
+  std::vector<std::int32_t> unrolled_dofs(ndim1);
+  std::array<std::int32_t, 1> row;
+  auto Acol = scratch_memory.subspan(2 * ndim0 * ndim1 + ndim0, ndim1);
+  for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
+  {
+
+    // Unroll dof blocks and add column contribution
+    for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
+      for (int k = 0; k < bs[1]; ++k)
+      {
+        Acol[j * bs[1] + k]
+            = std::conj(flattened_coeffs[0][i])
+              * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
+        unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
+      }
+
+    // Insert modified entries
+    row[0] = flattened_masters[0][i];
+    mat_set(row, unrolled_dofs, Acol);
+  }
+}
+
+// Loop through masters on a cell and add the quadratic contribution of the
+// multi-point constraint (real version)
+void modify_mpc_cell_masters(
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const double>)>& mat_set,
+    const std::array<const std::span<const int32_t>, 2>& dofs,
+    std::array<std::size_t, 2> num_flattened_masters,
+    std::array<std::vector<std::int32_t>, 2> flattened_masters,
+    std::array<std::vector<std::int32_t>, 2> flattened_slaves,
+    std::array<std::vector<double>, 2> flattened_coeffs,
+    std::experimental::mdspan<double, std::experimental::dextents<std::size_t, 2>> Ae_original)
+{
+  std::array<std::int32_t, 1> row;
+  std::array<std::int32_t, 1> col;
+  std::array<double, 1> A0,
+  for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
+  {
+    // Loop through other masters on the same cell and add in contribution
+    for (std::size_t j = 0; j < num_flattened_masters[1]; ++j)
+    {
+
+      row[0] = flattened_masters[0][i];
+      col[0] = flattened_masters[1][j];
+      A0[0] = flattened_coeffs[0][i] * flattened_coeffs[1][j]
+              * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
+      mat_set(row, col, A0);
+    }
+  }
+}
+
+// Loop through masters on a cell and add the quadratic contribution of the
+// multi-point constraint (complex version)
+void modify_mpc_cell_masters(
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const std::complex<double>>)>& mat_set,
+    const std::array<const std::span<const int32_t>, 2>& dofs,
+    std::array<std::size_t, 2> num_flattened_masters,
+    std::array<std::vector<std::int32_t>, 2> flattened_masters,
+    std::array<std::vector<std::int32_t>, 2> flattened_slaves,
+    std::array<std::vector<std::complex<double>>, 2> flattened_coeffs,
+    std::experimental::mdspan<std::complex<double>, 
+                              std::experimental::dextents<std::size_t, 2>> Ae_original)
+{
+  std::array<std::int32_t, 1> row;
+  std::array<std::int32_t, 1> col;
+  std::array<std::complex<double>, 1> A0,
+  for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
+  {
+    // Loop through other masters on the same cell and add in contribution
+    for (std::size_t j = 0; j < num_flattened_masters[1]; ++j)
+    {
+
+      row[0] = flattened_masters[0][i];
+      col[0] = flattened_masters[1][j];
+      A0[0] = std::conj(flattened_coeffs[0][i]) * flattened_coeffs[1][j]
+              * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
+      mat_set(row, col, A0);
+    }
+  }
+}
+
 /// Modify local element matrix Ae with MPC contributions, and insert non-local
 /// contributions in the correct places
 ///
@@ -188,32 +328,15 @@ void modify_mpc_cell(
   for (std::int8_t axis = 0; axis < 2; ++axis)
     assert(num_flattened_masters[axis] == flattened_masters[axis].size());
 
-  // Data structures used for insertion of master contributions
-  std::array<std::int32_t, 1> row;
-  std::array<std::int32_t, 1> col;
-  std::array<T, 1> A0;
-  auto Arow = scratch_memory.subspan(2 * ndim0 * ndim1, ndim0);
-  auto Acol = scratch_memory.subspan(2 * ndim0 * ndim1 + ndim0, ndim1);
   // Loop over all masters for the MPC applied to rows.
   // Insert contributions in columns
-  std::vector<std::int32_t> unrolled_dofs(ndim1);
-  for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
-  {
+  modify_mpc_cell_rows(mat_set, ndim0, ndim1, num_dofs, dofs, num_flattened_masters, bs,
+                       scratch_memory, flattened_masters, flattened_slaves, flattened_coeffs,
+                       Ae_stripped);
 
-    // Unroll dof blocks and add column contribution
-    for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
-      for (int k = 0; k < bs[1]; ++k)
-      {
-        Acol[j * bs[1] + k]
-            = flattened_coeffs[0][i]
-              * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
-        unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
-      }
-
-    // Insert modified entries
-    row[0] = flattened_masters[0][i];
-    mat_set(row, unrolled_dofs, Acol);
-  }
+  // Data structures used for insertion of master contributions
+  auto Arow = scratch_memory.subspan(2 * ndim0 * ndim1, ndim0);
+  std::array<std::int32_t, 1> col;
 
   // Loop over all masters for the MPC applied to columns.
   // Insert contributions in rows
@@ -236,19 +359,9 @@ void modify_mpc_cell(
     mat_set(unrolled_dofs, col, Arow);
   }
 
-  for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
-  {
-    // Loop through other masters on the same cell and add in contribution
-    for (std::size_t j = 0; j < num_flattened_masters[1]; ++j)
-    {
-
-      row[0] = flattened_masters[0][i];
-      col[0] = flattened_masters[1][j];
-      A0[0] = flattened_coeffs[0][i] * flattened_coeffs[1][j]
-              * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
-      mat_set(row, col, A0);
-    }
-  }
+  // Loop through other masters on the same cell and add in contribution
+  modify_mpc_cell_masters(mat_set, dofs, num_flattened_masters, flattened_masters,
+                          flattened_slaves, flattened_coeffs, Ae_original);
 } // namespace
 
 //-----------------------------------------------------------------------------
