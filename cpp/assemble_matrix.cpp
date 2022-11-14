@@ -83,6 +83,7 @@ void modify_mpc_cell_rows(
     std::array<std::vector<std::int32_t>, 2> flattened_masters,
     std::array<std::vector<std::int32_t>, 2> flattened_slaves,
     std::array<std::vector<double>, 2> flattened_coeffs,
+    std::vector<std::int32_t> unrolled_dofs,
     std::experimental::mdspan<double, std::experimental::dextents<std::size_t, 2>> Ae_stripped)
 {
   std::vector<std::int32_t> unrolled_dofs(ndim1);
@@ -121,10 +122,10 @@ void modify_mpc_cell_rows(
     std::array<std::vector<std::int32_t>, 2> flattened_masters,
     std::array<std::vector<std::int32_t>, 2> flattened_slaves,
     std::array<std::vector<std::complex<double>>, 2> flattened_coeffs,
+    std::vector<std::int32_t> unrolled_dofs,
     std::experimental::mdspan<std::complex<double>, 
                               std::experimental::dextents<std::size_t, 2>> Ae_stripped)
 {
-  std::vector<std::int32_t> unrolled_dofs(ndim1);
   std::array<std::int32_t, 1> row;
   auto Acol = scratch_memory.subspan(2 * ndim0 * ndim1 + ndim0, ndim1);
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
@@ -161,7 +162,7 @@ void modify_mpc_cell_masters(
 {
   std::array<std::int32_t, 1> row;
   std::array<std::int32_t, 1> col;
-  std::array<double, 1> A0,
+  std::array<double, 1> A0;
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
   {
     // Loop through other masters on the same cell and add in contribution
@@ -193,7 +194,7 @@ void modify_mpc_cell_masters(
 {
   std::array<std::int32_t, 1> row;
   std::array<std::int32_t, 1> col;
-  std::array<std::complex<double>, 1> A0,
+  std::array<std::complex<double>, 1> A0;
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
   {
     // Loop through other masters on the same cell and add in contribution
@@ -328,19 +329,13 @@ void modify_mpc_cell(
   for (std::int8_t axis = 0; axis < 2; ++axis)
     assert(num_flattened_masters[axis] == flattened_masters[axis].size());
 
-  // Loop over all masters for the MPC applied to rows.
-  // Insert contributions in columns
-  modify_mpc_cell_rows(mat_set, ndim0, ndim1, num_dofs, dofs, num_flattened_masters, bs,
-                       scratch_memory, flattened_masters, flattened_slaves, flattened_coeffs,
-                       Ae_stripped);
-
   // Data structures used for insertion of master contributions
+  std::vector<std::int32_t> unrolled_dofs(ndim0);
   auto Arow = scratch_memory.subspan(2 * ndim0 * ndim1, ndim0);
   std::array<std::int32_t, 1> col;
 
   // Loop over all masters for the MPC applied to columns.
   // Insert contributions in rows
-  unrolled_dofs.resize(ndim0);
   for (std::size_t i = 0; i < num_flattened_masters[1]; ++i)
   {
 
@@ -358,6 +353,13 @@ void modify_mpc_cell(
     col[0] = flattened_masters[1][i];
     mat_set(unrolled_dofs, col, Arow);
   }
+
+  // Loop over all masters for the MPC applied to rows.
+  // Insert contributions in columns
+  unrolled_dofs.resize(ndim1);
+  modify_mpc_cell_rows(mat_set, ndim0, ndim1, num_dofs, dofs, num_flattened_masters, bs,
+                       scratch_memory, flattened_masters, flattened_slaves, flattened_coeffs,
+                       unrolled_dofs, Ae_stripped);
 
   // Loop through other masters on the same cell and add in contribution
   modify_mpc_cell_masters(mat_set, dofs, num_flattened_masters, flattened_masters,
