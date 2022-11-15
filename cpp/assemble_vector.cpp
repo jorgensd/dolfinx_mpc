@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Jorgen S. Dokken & Nathan Sime
+// Copyright (C) 2021-2022 Jorgen S. Dokken, Nathan Sime, and Connor D. Pierce
 //
 // This file is part of DOLFINX_MPC
 //
@@ -13,6 +13,90 @@
 
 namespace
 {
+/// Given a local element vector, move all slave contributions to the global
+/// (local to process) vector.
+/// @param [in, out] b The global (local to process) vector
+/// @param [in, out] b_local The local element vector
+/// @param [in] b_local_copy Copy of the local element vector
+/// @param [in] cell_blocks Dofmap for the blocks in the cell
+/// @param [in] num_dofs The number of degrees of freedom in the local vector
+/// @param [in] bs The element block size
+/// @param [in] is_slave Vector indicating if a dof is a slave
+/// @param [in] slaves The slave dofs (local to process)
+/// @param [in] masters Adjacency list with master dofs
+/// @param [in] coeffs Adjacency list with the master coefficients
+void modify_mpc_vec(
+    const std::span<double>& b, const std::span<double>& b_local,
+    const std::span<double>& b_local_copy,
+    const std::span<const std::int32_t>& cell_blocks, const int num_dofs,
+    const int bs, const std::vector<std::int8_t>& is_slave,
+    const std::span<const std::int32_t>& slaves,
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
+        masters,
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<double>>& coeffs)
+{
+
+  // NOTE: Should this be moved into the MPC constructor?
+  // Get local index of slaves in cell
+  std::vector<std::int32_t> local_index
+      = compute_local_slave_index(slaves, num_dofs, bs, cell_blocks, is_slave);
+
+  // Move contribution from each slave to corresponding master dof
+  for (std::size_t i = 0; i < local_index.size(); i++)
+  {
+    auto masters_i = masters->links(slaves[i]);
+    auto coeffs_i = coeffs->links(slaves[i]);
+    assert(masters_i.size() == coeffs_i.size());
+    for (std::size_t j = 0; j < masters_i.size(); j++)
+    {
+      b[masters_i[j]] += coeffs_i[j] * b_local_copy[local_index[i]];
+      b_local[local_index[i]] = 0;
+    }
+  }
+}
+
+/// Given a local element vector, move all slave contributions to the global
+/// (local to process) vector.
+/// @param [in, out] b The global (local to process) vector
+/// @param [in, out] b_local The local element vector
+/// @param [in] b_local_copy Copy of the local element vector
+/// @param [in] cell_blocks Dofmap for the blocks in the cell
+/// @param [in] num_dofs The number of degrees of freedom in the local vector
+/// @param [in] bs The element block size
+/// @param [in] is_slave Vector indicating if a dof is a slave
+/// @param [in] slaves The slave dofs (local to process)
+/// @param [in] masters Adjacency list with master dofs
+/// @param [in] coeffs Adjacency list with the master coefficients
+void modify_mpc_vec(
+    const std::span<std::complex<double>>& b,
+    const std::span<std::complex<double>>& b_local,
+    const std::span<std::complex<double>>& b_local_copy,
+    const std::span<const std::int32_t>& cell_blocks, const int num_dofs,
+    const int bs, const std::vector<std::int8_t>& is_slave,
+    const std::span<const std::int32_t>& slaves,
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
+        masters,
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::complex<double>>>& coeffs)
+{
+
+  // NOTE: Should this be moved into the MPC constructor?
+  // Get local index of slaves in cell
+  std::vector<std::int32_t> local_index
+      = compute_local_slave_index(slaves, num_dofs, bs, cell_blocks, is_slave);
+
+  // Move contribution from each slave to corresponding master dof
+  for (std::size_t i = 0; i < local_index.size(); i++)
+  {
+    auto masters_i = masters->links(slaves[i]);
+    auto coeffs_i = coeffs->links(slaves[i]);
+    assert(masters_i.size() == coeffs_i.size());
+    for (std::size_t j = 0; j < masters_i.size(); j++)
+    {
+      b[masters_i[j]] += std::conj(coeffs_i[j]) * b_local_copy[local_index[i]];
+      b_local[local_index[i]] = 0;
+    }
+  }
+}
 
 /// Assemble an integration kernel over a set of active entities, described
 /// through into vector of type T, and apply the multipoint constraint
