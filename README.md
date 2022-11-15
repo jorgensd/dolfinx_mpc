@@ -19,6 +19,7 @@ $Au=b$, with the additional constraints written on the form $K\hat u=u$, where $
 
 We then solve the system 
 $K^T A K \hat u = K^T b$, where $K^T A K$ is symmetric if $A$ was symmetric.
+(For complex numbers, we use the Hermitian transpose and solve the system $\overline{K^T} A K \hat u = \overline{K^T} b$, where $\overline{K^T}$ is the complex conjugate of $K^T$, and $\overline{K^T} A K$ is Hermitian if $A$ was Hermitian.)
 
 If we include boundary conditions on the form $u=g$, we 
 assemble the system
