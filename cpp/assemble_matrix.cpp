@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2022 Jorgen S. Dokken and Nathan Sime
+// Copyright (C) 2020-2022 Jorgen S. Dokken, Nathan Sime, and Connor D. Pierce
 //
 // This file is part of DOLFINX_MPC
 //
@@ -204,9 +204,16 @@ void modify_mpc_cell(
     for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
       for (int k = 0; k < bs[1]; ++k)
       {
-        Acol[j * bs[1] + k]
-            = flattened_coeffs[0][i]
-              * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
+        if constexpr(std::is_vector_v<T>)
+          // Use the standard transpose for type double
+          Acol[j * bs[1] + k]
+              = flattened_coeffs[0][i]
+                * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
+        else
+          // Use Hermitian transpose for type std::complex<double>
+          Acol[j * bs[1] + k]
+              = std::conj(flattened_coeffs[0][i])
+                * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
         unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
       }
 
@@ -244,8 +251,14 @@ void modify_mpc_cell(
 
       row[0] = flattened_masters[0][i];
       col[0] = flattened_masters[1][j];
-      A0[0] = flattened_coeffs[0][i] * flattened_coeffs[1][j]
-              * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
+      if constexpr (std::is_vector_v<T>)
+        // Standard transpose for type double
+        A0[0] = flattened_coeffs[0][i] * flattened_coeffs[1][j]
+                * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
+      else
+        // Hermitian transpose for type std::complex<double>
+        A0[0] = std::conj(flattened_coeffs[0][i]) * flattened_coeffs[1][j]
+                * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
       mat_set(row, col, A0);
     }
   }
