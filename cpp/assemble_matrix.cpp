@@ -204,7 +204,7 @@ void modify_mpc_cell(
     for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
       for (int k = 0; k < bs[1]; ++k)
       {
-        if constexpr(std::is_vector_v<T>)
+        if constexpr(std::is_scalar_v<T>)
           // Use the standard transpose for type double
           Acol[j * bs[1] + k]
               = flattened_coeffs[0][i]
@@ -251,7 +251,7 @@ void modify_mpc_cell(
 
       row[0] = flattened_masters[0][i];
       col[0] = flattened_masters[1][j];
-      if constexpr (std::is_vector_v<T>)
+      if constexpr (std::is_scalar_v<T>)
         // Standard transpose for type double
         A0[0] = flattened_coeffs[0][i] * flattened_coeffs[1][j]
                 * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
