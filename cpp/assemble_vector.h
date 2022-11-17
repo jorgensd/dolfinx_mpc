@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Jorgen S. Dokken and Nathan Sime
+// Copyright (C) 2021 Jorgen S. Dokken, Nathan Sime, and Connor D. Pierce
 //
 // This file is part of DOLFINX_MPC
 //

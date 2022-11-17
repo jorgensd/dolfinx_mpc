@@ -1,4 +1,4 @@
-# Copyright (C) 2021 Jørgen Schartum Dokken
+# Copyright (C) 2021-2022 Jørgen Schartum Dokken and Connor D. Pierce
 #
 # This file is part of DOLFINX_MPC
 #
