@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Jorgen S. Dokken and Nathan Sime
+// Copyright (C) 2021 Jorgen S. Dokken, Nathan Sime, and Connor D. Pierce
 //
 // This file is part of DOLFINX_MPC
 //
@@ -54,7 +54,12 @@ void modify_mpc_vec(
     assert(masters_i.size() == coeffs_i.size());
     for (std::size_t j = 0; j < masters_i.size(); j++)
     {
-      b[masters_i[j]] += coeffs_i[j] * b_local_copy[local_index[i]];
+      if constexpr (std::is_scalar_v<T>)
+        // Use standard transpose for type double
+        b[masters_i[j]] += coeffs_i[j] * b_local_copy[local_index[i]];
+      else
+        // Use Hermitian transpose for type std::complex<double>
+        b[masters_i[j]] += std::conj(coeffs_i[j]) * b_local_copy[local_index[i]];
       b_local[local_index[i]] = 0;
     }
   }

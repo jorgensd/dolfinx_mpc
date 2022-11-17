@@ -1,4 +1,4 @@
-# Copyright (C) 2021 Jørgen Schartum Dokken
+# Copyright (C) 2021-2022 Jørgen Schartum Dokken and Connor D. Pierce
 #
 # This file is part of DOLFINX_MPC
 #
@@ -222,7 +222,7 @@ def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
     glob_slaves = _gather_slaves_global(mpc)
     A_mpc_csr = gather_PETScMatrix(A_mpc, root=root)
     if MPI.COMM_WORLD.rank == root:
-        KTAK = K.T * A_csr * K
+        KTAK = np.conj(K.T) * A_csr * K
 
         # Remove identity rows of MPC matrix
         all_cols = np.arange(V.dofmap.index_map.size_global * V.dofmap.index_map_bs)
@@ -247,7 +247,7 @@ def compare_mpc_rhs(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.Mult
     # constants = gather_constants(constraint)
     comm = constraint.V.mesh.comm
     if comm.rank == root:
-        reduced_b = K.T @ b_org_np  # - constants for RHS mpc
+        reduced_b = np.conj(K.T) @ b_org_np  # - constants for RHS mpc
         all_cols = np.arange(constraint.V.dofmap.index_map.size_global * constraint.V.dofmap.index_map_bs)
         cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
         assert np.allclose(b_np[glob_slaves], 0)

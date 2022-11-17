@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2022 Jorgen S. Dokken and Nathan Sime
+// Copyright (C) 2020-2022 Jorgen S. Dokken, Nathan Sime, and Connor D. Pierce
 //
 // This file is part of DOLFINX_MPC
 //
@@ -199,20 +199,36 @@ void modify_mpc_cell(
   std::vector<std::int32_t> unrolled_dofs(ndim1);
   for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
   {
+    // Use the standard transpose for type double, Hermitian transpose
+    // for type std::complex<double>. Do this outside the j-loop so
+    // std::conj() is only computed once per entry in flattened_masters.
+    T coeff_i;
+    if constexpr (std::is_scalar_v<T>)
+      coeff_i = flattened_coeffs[0][i];
+    else
+      coeff_i = std::conj(flattened_coeffs[0][i]);
 
     // Unroll dof blocks and add column contribution
     for (std::uint32_t j = 0; j < num_dofs[1]; ++j)
       for (int k = 0; k < bs[1]; ++k)
       {
         Acol[j * bs[1] + k]
-            = flattened_coeffs[0][i]
-              * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
+            = coeff_i * Ae_stripped(flattened_slaves[0][i], j * bs[1] + k);
         unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
       }
 
     // Insert modified entries
     row[0] = flattened_masters[0][i];
     mat_set(row, unrolled_dofs, Acol);
+
+    // Loop through other masters on the same cell and add in contribution
+    for (std::size_t j = 0; j < num_flattened_masters[1]; ++j)
+    {
+      col[0] = flattened_masters[1][j];
+      A0[0] = coeff_i * flattened_coeffs[1][j]
+                * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
+      mat_set(row, col, A0);
+    }
   }
 
   // Loop over all masters for the MPC applied to columns.
@@ -234,20 +250,6 @@ void modify_mpc_cell(
     // Insert modified entries
     col[0] = flattened_masters[1][i];
     mat_set(unrolled_dofs, col, Arow);
-  }
-
-  for (std::size_t i = 0; i < num_flattened_masters[0]; ++i)
-  {
-    // Loop through other masters on the same cell and add in contribution
-    for (std::size_t j = 0; j < num_flattened_masters[1]; ++j)
-    {
-
-      row[0] = flattened_masters[0][i];
-      col[0] = flattened_masters[1][j];
-      A0[0] = flattened_coeffs[0][i] * flattened_coeffs[1][j]
-              * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
-      mat_set(row, col, A0);
-    }
   }
 } // namespace
 
