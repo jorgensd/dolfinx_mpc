@@ -260,7 +260,7 @@ title="Open an issue"
               <div>
                 
   <h1>Source code for dolfinx_mpc.utils.test</h1><div class="highlight"><pre>
-<span></span><span class="c1"># Copyright (C) 2021 Jørgen Schartum Dokken</span>
+<span></span><span class="c1"># Copyright (C) 2021-2022 Jørgen Schartum Dokken and Connor D. Pierce</span>
 <span class="c1">#</span>
 <span class="c1"># This file is part of DOLFINX_MPC</span>
 <span class="c1">#</span>
@@ -484,7 +484,7 @@ title="Open an issue"
     <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">_gather_slaves_global</span><span class="p">(</span><span class="n">mpc</span><span class="p">)</span>
     <span class="n">A_mpc_csr</span> <span class="o">=</span> <span class="n">gather_PETScMatrix</span><span class="p">(</span><span class="n">A_mpc</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">MPI</span><span class="o">.</span><span class="n">COMM_WORLD</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
-        <span class="n">KTAK</span> <span class="o">=</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span> <span class="o">*</span> <span class="n">A_csr</span> <span class="o">*</span> <span class="n">K</span>
+        <span class="n">KTAK</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">conj</span><span class="p">(</span><span class="n">K</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">*</span> <span class="n">A_csr</span> <span class="o">*</span> <span class="n">K</span>
 
         <span class="c1"># Remove identity rows of MPC matrix</span>
         <span class="n">all_cols</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">size_global</span> <span class="o">*</span> <span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span><span class="p">)</span>
@@ -509,7 +509,7 @@ title="Open an issue"
     <span class="c1"># constants = gather_constants(constraint)</span>
     <span class="n">comm</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">V</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">comm</span>
     <span class="k">if</span> <span class="n">comm</span><span class="o">.</span><span class="n">rank</span> <span class="o">==</span> <span class="n">root</span><span class="p">:</span>
-        <span class="n">reduced_b</span> <span class="o">=</span> <span class="n">K</span><span class="o">.</span><span class="n">T</span> <span class="o">@</span> <span class="n">b_org_np</span>  <span class="c1"># - constants for RHS mpc</span>
+        <span class="n">reduced_b</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">conj</span><span class="p">(</span><span class="n">K</span><span class="o">.</span><span class="n">T</span><span class="p">)</span> <span class="o">@</span> <span class="n">b_org_np</span>  <span class="c1"># - constants for RHS mpc</span>
         <span class="n">all_cols</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">constraint</span><span class="o">.</span><span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">size_global</span> <span class="o">*</span> <span class="n">constraint</span><span class="o">.</span><span class="n">V</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map_bs</span><span class="p">)</span>
         <span class="n">cols_except_slaves</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">all_cols</span><span class="p">,</span> <span class="n">glob_slaves</span><span class="p">,</span> <span class="n">invert</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">))</span>
         <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">b_np</span><span class="p">[</span><span class="n">glob_slaves</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
