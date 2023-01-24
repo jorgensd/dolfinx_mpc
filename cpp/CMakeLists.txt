@@ -16,7 +16,10 @@ endif()
 if (POLICY CMP0075)
   cmake_policy(SET CMP0075 NEW)
 endif()
-
+if (POLICY CMP0094)
+  # FindPython path priority
+  cmake_policy(SET CMP0094 NEW)
+endif()
 #------------------------------------------------------------------------------
 # Use C++17
 set(CMAKE_CXX_STANDARD 20)
@@ -44,50 +47,62 @@ option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and install
 add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
 
 
+set(UFCX_FIND_VERSION "0.6.0")
+# first, check for header-only UFCX via cmake
+find_package(UFCX ${UFCX_FIND_VERSION})
 
-# Check for required package UFC (part of ffcx)
-MESSAGE(STATUS "Asking Python module FFCX for location of UFC...")
+if (UFCX_FOUND)
+  # found UFCX directly, get include via cmake
+  get_target_property(UFCX_INCLUDE_DIRS ufcx::ufcx INTERFACE_INCLUDE_DIRECTORIES)
+  MESSAGE(STATUS "Found UFCX ${UFCX_VERSION} ${UFCX_INCLUDE_DIRS}")
+else()
+  # fallback on asking ffcx for ufcx via Python
+  MESSAGE(STATUS "UFCX not found, asking Python module ffcx for location of UFCX...")
   find_package(PythonInterp 3 REQUIRED)
   execute_process(
-	  COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx.codegeneration, sys; sys.stdout.write(ffcx.codegeneration.get_include_path())"
-    OUTPUT_VARIABLE UFC_INCLUDE_DIR
-    )
+    COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx.codegeneration, sys; sys.stdout.write(ffcx.codegeneration.get_include_path())"
+    OUTPUT_VARIABLE UFCX_INCLUDE_DIR
+  )
 
-  if (UFC_INCLUDE_DIR)
-    set(UFC_INCLUDE_DIRS ${UFC_INCLUDE_DIR} CACHE STRING "Where to find ufc.h and ufc_geometry.h")
+  if (UFCX_INCLUDE_DIR)
+    set(UFCX_INCLUDE_DIRS ${UFCX_INCLUDE_DIR} CACHE STRING "Where to find ufcx.h")
 
     execute_process(
       COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx, sys; sys.stdout.write(ffcx.__version__)"
-      OUTPUT_VARIABLE UFC_VERSION
-      )
+      OUTPUT_VARIABLE UFCX_VERSION
+    )
 
-    if (UFC_FIND_VERSION)
+    if (UFCX_FIND_VERSION)
       # Check if version found is >= required version
-      if (NOT "${UFC_VERSION}" VERSION_LESS "${UFC_FIND_VERSION}")
-        set(UFC_VERSION_OK TRUE)
+      if (NOT "${UFCX_VERSION}" VERSION_LESS "${UFCX_FIND_VERSION}")
+        set(UFCX_VERSION_OK TRUE)
       endif()
     else()
       # No specific version requested
-      set(UFC_VERSION_OK TRUE)
+      set(UFCX_VERSION_OK TRUE)
     endif()
   endif()
 
   execute_process(
     COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx.codegeneration, sys; sys.stdout.write(ffcx.codegeneration.get_signature())"
-    OUTPUT_VARIABLE UFC_SIGNATURE
+    OUTPUT_VARIABLE UFCX_SIGNATURE
   )
 
-mark_as_advanced(UFC_VERSION UFC_INCLUDE_DIRS UFC_SIGNATURE UFC_VERSION_OK)
-# Standard package handling
-find_package_handle_standard_args(UFC
-                                  "UFC could not be found."
-                                  UFC_INCLUDE_DIRS
-                                  UFC_VERSION
-                                  UFC_VERSION_OK
-                                  UFC_SIGNATURE)
-set_package_properties(UFC PROPERTIES TYPE REQUIRED
-  DESCRIPTION "Unified language for form-compilers (part of FFC-X)"
-  URL "https://github.com/fenics/ffcx")
+
+  mark_as_advanced(UFCX_VERSION UFCX_INCLUDE_DIRS UFCX_SIGNATURE UFCX_VERSION_OK)
+  # Standard package handling
+  find_package_handle_standard_args(
+    UFCX
+    "UFCX could not be found."
+    UFCX_INCLUDE_DIRS
+    UFCX_VERSION
+    UFCX_VERSION_OK
+    UFCX_SIGNATURE
+  )
+  set_package_properties(UFCX PROPERTIES TYPE REQUIRED
+    DESCRIPTION "Unified language for form-compilers (part of FFC-X)"
+    URL "https://github.com/fenics/ffcx")
+endif()
 
 # Check for required package DOLFINX
 find_package(DOLFINX 0.6.0 REQUIRED)
@@ -144,8 +159,8 @@ target_link_libraries(dolfinx_mpc PUBLIC Basix::basix)
 
 
 
-if (UFC_FOUND)
-    target_include_directories(dolfinx_mpc PRIVATE ${UFC_INCLUDE_DIRS})
+if (UFCX_FOUND)
+    target_include_directories(dolfinx_mpc PRIVATE ${UFCX_INCLUDE_DIRS})
 endif()
 target_link_libraries(dolfinx_mpc PUBLIC dolfinx)
 
