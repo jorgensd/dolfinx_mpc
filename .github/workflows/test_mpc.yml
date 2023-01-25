@@ -48,6 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: upgrade pip
+        run: pip3 install --upgrade setuptools pip
+
       - name: Flake8 code
         run: flake8 python/
 
@@ -107,7 +110,7 @@ jobs:
 
       - name: Run tests (serial)
         run: python3 -m pytest python/tests -vs
-          
+
       - name: Run tests (2 processes)
         run: mpirun -n 2 python3 -m pytest python/tests -vs
 
