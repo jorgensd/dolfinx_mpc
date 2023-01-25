@@ -139,7 +139,7 @@ void modify_mpc_cell(
   std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
       Ae_original(scratch_memory.data(), ndim0, ndim1);
 
-  // Copy Ae into new matrix for distirbution of master dofs
+  // Copy Ae into new matrix for distribution of master dofs
   std::copy_n(Ae.data_handle(), ndim0 * ndim1, Ae_original.data_handle());
 
   std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>

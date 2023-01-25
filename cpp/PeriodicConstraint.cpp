@@ -548,7 +548,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
 /// master surface by a relation function.
 /// @param[in] V The input function space (possibly a sub space)
 /// @param[in] meshtag Meshtag with set of entities
-/// @param[in] tag The value of the mesh tag entities that should bec
+/// @param[in] tag The value of the mesh tag entities that should be
 /// considered as entities
 /// @param[in] relation Function relating coordinates of the slave surface to
 /// the master surface
