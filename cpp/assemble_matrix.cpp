@@ -385,6 +385,211 @@ void assemble_exterior_facets(
     mat_add_block_values(dmap0, dmap1, Aeb);
   }
 }
+
+template <typename T>
+void assemble_interior_facets(
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const T>)>& mat_add_block_values,
+    const std::function<int(const std::span<const std::int32_t>&,
+                            const std::span<const std::int32_t>&,
+                            const std::span<const T>)>& mat_add_values,
+    const dolfinx::mesh::Mesh& mesh, int num_cell_facets,
+    const std::span<const std::int32_t>& facets,
+    const std::function<void(const std::span<T>&,
+                             const std::span<const std::uint32_t>&,
+                             std::int32_t, int)>& apply_dof_transformation,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
+    const std::function<
+        void(const std::span<T>&, const std::span<const std::uint32_t>&,
+             std::int32_t, int)>& apply_dof_transformation_to_transpose,
+    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
+    const std::vector<std::int8_t>& bc0, const std::vector<std::int8_t>& bc1,
+    const std::function<void(T*, const T*, const T*, const double*, const int*,
+                             const std::uint8_t*)>& kernel,
+    const std::span<const T> coeffs, int cstride,
+    const std::vector<int> c_offsets, const std::vector<T>& constants,
+    const std::span<const std::uint32_t>& cell_info,
+    std::function<std::uint8_t(std::size_t)> get_perm,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
+{
+  // Get MPC data
+  const std::array<
+      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      masters = {mpc0->masters(), mpc1->masters()};
+  const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
+      coefficients = {mpc0->coefficients(), mpc1->coefficients()};
+  const std::array<const std::vector<std::int8_t>, 2> is_slave
+      = {mpc0->is_slave(), mpc1->is_slave()};
+
+  const std::array<
+      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
+
+  // Prepare cell geometry
+  const graph::AdjacencyList<std::int32_t>& x_dofmap = mesh.geometry().dofmap();
+  const std::size_t num_dofs_g = mesh.geometry().cmap().dim();
+  std::span<const double> x = mesh.geometry().x();
+
+  // Data structures used in assembly
+  using X = dolfinx::fem::impl::scalar_value_type_t<T>;
+  std::vector<X> coordinate_dofs(2 * num_dofs_g * 3);
+  const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
+  const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
+  const std::array<const int, 2> bs = {bs0, bs1};
+  std::span<X> cdofs0(coordinate_dofs.data(), num_dofs_g * 3);
+  std::span<X> cdofs1(coordinate_dofs.data() + num_dofs_g * 3, num_dofs_g * 3);
+
+  std::vector<T> coeff_array(2 * c_offsets.back());
+  assert(c_offsets.back() == cstride);
+
+  // Temporaries for joint dofmaps
+  std::vector<std::int32_t> dmapjoint0, dmapjoint1;
+  assert(facets.size() % 4 == 0);
+  for (std::size_t index = 0; index < facets.size(); index += 4)
+  {
+    std::array<std::int32_t, 2> cells = {facets[index], facets[index + 2]};
+    std::array<std::int32_t, 2> local_facet
+        = {facets[index + 1], facets[index + 3]};
+
+    // Get cell geometry
+    auto x_dofs0 = x_dofmap.links(cells[0]);
+    for (std::size_t i = 0; i < x_dofs0.size(); ++i)
+    {
+      std::copy_n(std::next(x.begin(), 3 * x_dofs0[i]), 3,
+                  std::next(cdofs0.begin(), 3 * i));
+    }
+    auto x_dofs1 = x_dofmap.links(cells[1]);
+    for (std::size_t i = 0; i < x_dofs1.size(); ++i)
+    {
+      std::copy_n(std::next(x.begin(), 3 * x_dofs1[i]), 3,
+                  std::next(cdofs1.begin(), 3 * i));
+    }
+
+    // Get dof maps for cells and pack
+    std::span<const std::int32_t> dmap0_cell0 = dofmap0.links(cells[0]);
+    std::span<const std::int32_t> dmap0_cell1 = dofmap0.links(cells[1]);
+    dmapjoint0.resize(dmap0_cell0.size() + dmap0_cell1.size());
+    std::copy(dmap0_cell0.begin(), dmap0_cell0.end(), dmapjoint0.begin());
+    std::copy(dmap0_cell1.begin(), dmap0_cell1.end(),
+              std::next(dmapjoint0.begin(), dmap0_cell0.size()));
+
+    std::span<const std::int32_t> dmap1_cell0 = dofmap1.links(cells[0]);
+    std::span<const std::int32_t> dmap1_cell1 = dofmap1.links(cells[1]);
+    dmapjoint1.resize(dmap1_cell0.size() + dmap1_cell1.size());
+    std::copy(dmap1_cell0.begin(), dmap1_cell0.end(), dmapjoint1.begin());
+    std::copy(dmap1_cell1.begin(), dmap1_cell1.end(),
+              std::next(dmapjoint1.begin(), dmap1_cell0.size()));
+
+    const int num_rows = bs0 * dmapjoint0.size();
+    const int num_cols = bs1 * dmapjoint1.size();
+
+    const std::array<const std::uint32_t, 2> num_dofs
+        = {static_cast<std::uint32_t>(dmapjoint0.size()),
+           static_cast<std::uint32_t>(dmapjoint1.size())};
+
+    std::vector<T> scratch_memory(2 * num_rows * num_cols + num_rows
+                                  + num_cols);
+
+    // Tabulate tensor
+    std::vector<T> Aeb(num_rows * num_cols, T(0));
+    std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
+        Ae(Aeb.data(), num_rows, num_cols);
+
+    const std::array perm{
+        get_perm(cells[0] * num_cell_facets + local_facet[0]),
+        get_perm(cells[1] * num_cell_facets + local_facet[1])};
+    kernel(Aeb.data(), coeffs.data() + index / 2 * cstride, constants.data(),
+           coordinate_dofs.data(), local_facet.data(), perm.data());
+
+    std::span<T> _Ae(Aeb);
+    std::span<T> sub_Ae0 = _Ae.subspan(bs0 * dmap0_cell0.size() * num_cols,
+                                       bs0 * dmap0_cell1.size() * num_cols);
+    std::span<T> sub_Ae1
+        = _Ae.subspan(bs1 * dmap1_cell0.size(),
+                      num_rows * num_cols - bs1 * dmap1_cell0.size());
+
+    // Need to apply DOF transformations for parts of the matrix due to cell 0
+    // and cell 1. For example, if the space has 3 DOFs, then Ae will be 6 by 6
+    // (3 rows/columns for each cell). Subspans are used to offset to the right
+    // blocks of the matrix
+
+    apply_dof_transformation(_Ae, cell_info, cells[0], num_cols);
+    apply_dof_transformation(sub_Ae0, cell_info, cells[1], num_cols);
+    apply_dof_transformation_to_transpose(_Ae, cell_info, cells[0], num_rows);
+    apply_dof_transformation_to_transpose(sub_Ae1, cell_info, cells[1],
+                                          num_rows);
+
+    // Zero rows/columns for essential bcs
+    std::span<const std::int32_t> dmap0 = dofmap0.links(cells[0]);
+    std::span<const std::int32_t> dmap1 = dofmap1.links(cells[1]);
+    if (!bc0.empty())
+    {
+      for (std::size_t i = 0; i < dmapjoint0.size(); ++i)
+      {
+        for (int k = 0; k < bs0; ++k)
+        {
+          if (bc0[bs0 * dmapjoint0[i] + k])
+          {
+            // Zero row bs0 * i + k
+            std::fill_n(std::next(Aeb.begin(), num_cols * (bs0 * i + k)),
+                        num_cols, 0.0);
+          }
+        }
+      }
+    }
+    if (!bc1.empty())
+    {
+      for (std::size_t j = 0; j < dmapjoint1.size(); ++j)
+      {
+        for (int k = 0; k < bs1; ++k)
+        {
+          if (bc1[bs1 * dmapjoint1[j] + k])
+          {
+            // Zero column bs1 * j + k
+            for (int m = 0; m < num_rows; ++m)
+              Aeb[m * num_cols + bs1 * j + k] = 0.0;
+          }
+        }
+      }
+    }
+
+    // Modify local element matrix Ae and insert contributions into master
+    // locations
+    if ((cell_to_slaves[0]->num_links(cells[0]) > 0)
+        || (cell_to_slaves[1]->num_links(cells[1]) > 0))
+    {
+      std::vector<std::int32_t> slaves0, slaves1;
+      slaves0.reserve(cell_to_slaves[0]->num_links(cells[0])
+                      + cell_to_slaves[0]->num_links(cells[1]));
+      slaves1.reserve(cell_to_slaves[1]->num_links(cells[0])
+                      + cell_to_slaves[1]->num_links(cells[1]));
+      std::copy(cell_to_slaves[0]->links(cells[0]).begin(),
+                cell_to_slaves[0]->links(cells[0]).end(),
+                std::back_inserter(slaves0));
+      std::copy(cell_to_slaves[0]->links(cells[1]).begin(),
+                cell_to_slaves[0]->links(cells[1]).end(),
+                std::back_inserter(slaves0));
+      std::copy(cell_to_slaves[1]->links(cells[0]).begin(),
+                cell_to_slaves[1]->links(cells[0]).end(),
+                std::back_inserter(slaves1));
+      std::copy(cell_to_slaves[1]->links(cells[1]).begin(),
+                cell_to_slaves[1]->links(cells[1]).end(),
+                std::back_inserter(slaves1));
+
+      const std::array<const std::span<const int32_t>, 2> slaves
+          = {slaves0, slaves1};
+
+      const std::array<const std::span<const int32_t>, 2> dofs
+          = {dmapjoint0, dmapjoint1};
+      modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
+                         masters, coefficients, is_slave, scratch_memory);
+    }
+
+    mat_add_block_values(dmapjoint0, dmapjoint1, Aeb);
+  }
+}
 //-----------------------------------------------------------------------------
 template <typename T>
 void assemble_cells_impl(
@@ -591,24 +796,38 @@ void assemble_matrix_impl(
                                 cell_info, mpc0, mpc1);
   }
 
-  // if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
-  // {
-  //   throw std::runtime_error("Not implemented yet");
-  //   // const int tdim = mesh->topology().dim();
-  //   // mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
-  //   // mesh->topology_mutable().create_entity_permutations();
+  if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
+  {
+    std::function<std::uint8_t(std::size_t)> get_perm;
+    if (a.needs_facet_permutations())
+    {
+      mesh->topology_mutable().create_entity_permutations();
+      const std::vector<std::uint8_t>& perms
+          = mesh->topology().get_facet_permutations();
+      get_perm = [&perms](std::size_t i) { return perms[i]; };
+    }
+    else
+    {
+      get_perm = [](std::size_t) { return 0; };
+    }
 
-  //   // std::function<std::uint8_t(std::size_t)> get_perm;
-  //   // if (a.needs_facet_permutations())
-  //   // {
-  //   //   mesh->topology_mutable().create_entity_permutations();
-  //   //   const std::vector<std::uint8_t>& perms
-  //   //       = mesh->topology().get_facet_permutations();
-  //   //   get_perm = [&perms](std::size_t i) { return perms[i]; };
-  //   // }
-  //   // else
-  //   //   get_perm = [](std::size_t) { return 0; };
-  // }
+    int num_cell_facets = mesh::cell_num_entities(mesh->topology().cell_type(),
+                                                  mesh->topology().dim() - 1);
+    const std::vector<int> c_offsets = a.coefficient_offsets();
+    for (int i : a.integral_ids(dolfinx::fem::IntegralType::interior_facet))
+    {
+      const auto& fn = a.kernel(dolfinx::fem::IntegralType::interior_facet, i);
+      const auto& [coeffs, cstride]
+          = coefficients.at({dolfinx::fem::IntegralType::interior_facet, i});
+      const std::vector<std::int32_t>& facets = a.interior_facet_domains(i);
+      assemble_interior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
+                                  num_cell_facets, facets,
+                                  apply_dof_transformation, dofs0, bs0,
+                                  apply_dof_transformation_to_transpose, dofs1,
+                                  bs1, bc0, bc1, fn, coeffs, cstride, c_offsets,
+                                  constants, cell_info, get_perm, mpc0, mpc1);
+    }
+  }
 }
 //-----------------------------------------------------------------------------
 template <typename T>
