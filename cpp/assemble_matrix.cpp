@@ -226,7 +226,7 @@ void modify_mpc_cell(
     {
       col[0] = flattened_masters[1][j];
       A0[0] = coeff_i * flattened_coeffs[1][j]
-                * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
+              * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
       mat_set(row, col, A0);
     }
   }
@@ -251,7 +251,7 @@ void modify_mpc_cell(
     col[0] = flattened_masters[1][i];
     mat_set(unrolled_dofs, col, Arow);
   }
-} // namespace
+}
 
 //-----------------------------------------------------------------------------
 template <typename T>
@@ -319,7 +319,6 @@ void assemble_exterior_facets(
   std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
   for (std::size_t l = 0; l < facets.size(); l += 2)
   {
-
     const std::int32_t cell = facets[l];
     const int local_facet = facets[l + 1];
 
@@ -385,7 +384,7 @@ void assemble_exterior_facets(
     }
     mat_add_block_values(dmap0, dmap1, Aeb);
   }
-} // namespace
+}
 //-----------------------------------------------------------------------------
 template <typename T>
 void assemble_cells_impl(
