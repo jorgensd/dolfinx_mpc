@@ -282,7 +282,7 @@ title="Open an issue"
 
 <div class="viewcode-block" id="apply_lifting"><a class="viewcode-back" href="../../api.html#dolfinx_mpc.apply_lifting">[docs]</a><span class="k">def</span> <span class="nf">apply_lifting</span><span class="p">(</span><span class="n">b</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span> <span class="n">form</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">FormMetaClass</span><span class="p">],</span> <span class="n">bcs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">DirichletBCMetaClass</span><span class="p">]],</span>
                   <span class="n">constraint</span><span class="p">:</span> <span class="n">MultiPointConstraint</span><span class="p">,</span> <span class="n">x0</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Apply lifting to vector b, i.e.</span>
 <span class="sd">    :math:`b = b - scale \\cdot K^T (A_j (g_j - x0_j))`</span>
 
@@ -306,7 +306,7 @@ title="Open an issue"
 
 <div class="viewcode-block" id="assemble_vector"><a class="viewcode-back" href="../../api.html#dolfinx_mpc.assemble_vector">[docs]</a><span class="k">def</span> <span class="nf">assemble_vector</span><span class="p">(</span><span class="n">form</span><span class="p">:</span> <span class="n">ufl</span><span class="o">.</span><span class="n">form</span><span class="o">.</span><span class="n">Form</span><span class="p">,</span> <span class="n">constraint</span><span class="p">:</span> <span class="n">MultiPointConstraint</span><span class="p">,</span>
                     <span class="n">b</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assemble a linear form into vector `b` with corresponding multi point constraint</span>
 
 <span class="sd">    Args:</span>
@@ -332,7 +332,7 @@ title="Open an issue"
 <div class="viewcode-block" id="create_vector_nest"><a class="viewcode-back" href="../../api.html#dolfinx_mpc.create_vector_nest">[docs]</a><span class="k">def</span> <span class="nf">create_vector_nest</span><span class="p">(</span>
         <span class="n">L</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">FormMetaClass</span><span class="p">],</span>
         <span class="n">constraints</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MultiPointConstraint</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Create a PETSc vector of type &quot;nest&quot; appropriate for the provided multi</span>
 <span class="sd">    point constraints</span>
 
@@ -355,7 +355,7 @@ title="Open an issue"
         <span class="n">b</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span>
         <span class="n">L</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">FormMetaClass</span><span class="p">],</span>
         <span class="n">constraints</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MultiPointConstraint</span><span class="p">]):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assemble a linear form into a PETSc vector of type &quot;nest&quot;</span>
 
 <span class="sd">    Args:</span>

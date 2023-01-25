@@ -290,7 +290,7 @@ title="Open an issue"
 <div class="viewcode-block" id="assemble_matrix"><a class="viewcode-back" href="../../../numba.html#dolfinx_mpc.numba.assemble_matrix">[docs]</a><span class="k">def</span> <span class="nf">assemble_matrix</span><span class="p">(</span><span class="n">form</span><span class="p">:</span> <span class="n">_forms</span><span class="p">,</span> <span class="n">constraint</span><span class="p">:</span> <span class="n">MultiPointConstraint</span><span class="p">,</span>
                     <span class="n">bcs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">_bcs</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mf">1.</span><span class="p">,</span>
                     <span class="n">A</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assembles a compiled DOLFINx form with given a multi point constraint and possible</span>
 <span class="sd">    Dirichlet boundary conditions.</span>
 <span class="sd">    NOTE: Strong Dirichlet conditions cannot be on master dofs.</span>
@@ -428,7 +428,7 @@ title="Open an issue"
 
 <span class="nd">@numba</span><span class="o">.</span><span class="n">jit</span>
 <span class="k">def</span> <span class="nf">add_diagonal</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dofs</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mi">1</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Insert value on diagonal of matrix for given dofs.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">ffi_fb</span> <span class="o">=</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span>
@@ -457,7 +457,7 @@ title="Open an issue"
                                     <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
                                     <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">]],</span>
                          <span class="n">is_bc</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">bool_</span><span class="p">]):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assemble MPC contributions for cell integrals</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">ffi_fb</span> <span class="o">=</span> <span class="n">ffi</span><span class="o">.</span><span class="n">from_buffer</span>
@@ -533,7 +533,7 @@ title="Open an issue"
                     <span class="n">mpc_cell</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
                                     <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span>
                                     <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int8</span><span class="p">]]):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Given an element matrix Ae, modify the contributions to respect the MPCs, and add contributions to appropriate</span>
 <span class="sd">    places in the global matrix A.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -637,7 +637,7 @@ title="Open an issue"
                                               <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">],</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">int32</span><span class="p">]],</span>
                                    <span class="n">is_bc</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">numpy</span><span class="o">.</span><span class="n">bool_</span><span class="p">],</span>
                                    <span class="n">num_facets_per_cell</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;Assemble MPC contributions over exterior facet integrals&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Assemble MPC contributions over exterior facet integrals&quot;&quot;&quot;</span>
     <span class="c1"># Unpack mpc data</span>
     <span class="n">masters</span><span class="p">,</span> <span class="n">coefficients</span><span class="p">,</span> <span class="n">offsets</span><span class="p">,</span> <span class="n">c_to_s</span><span class="p">,</span> <span class="n">c_to_s_off</span><span class="p">,</span> <span class="n">is_slave</span> <span class="o">=</span> <span class="n">mpc</span>
 

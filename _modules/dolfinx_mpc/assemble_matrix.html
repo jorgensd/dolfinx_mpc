@@ -283,7 +283,7 @@ title="Open an issue"
                     <span class="n">bcs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">DirichletBCMetaClass</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span>
                     <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
                     <span class="n">A</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints</span>
 <span class="sd">    and Dirichlet boundary conditions.</span>
 
@@ -324,7 +324,7 @@ title="Open an issue"
 <div class="viewcode-block" id="create_sparsity_pattern"><a class="viewcode-back" href="../../api.html#dolfinx_mpc.create_sparsity_pattern">[docs]</a><span class="k">def</span> <span class="nf">create_sparsity_pattern</span><span class="p">(</span><span class="n">form</span><span class="p">:</span> <span class="n">_fem</span><span class="o">.</span><span class="n">FormMetaClass</span><span class="p">,</span>
                             <span class="n">mpc</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">MultiPointConstraint</span><span class="p">,</span>
                                        <span class="n">Sequence</span><span class="p">[</span><span class="n">MultiPointConstraint</span><span class="p">]]):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Create sparsity-pattern for MPC given a compiled DOLFINx form</span>
 
 <span class="sd">    Args:</span>
@@ -349,7 +349,7 @@ title="Open an issue"
 <div class="viewcode-block" id="create_matrix_nest"><a class="viewcode-back" href="../../api.html#dolfinx_mpc.create_matrix_nest">[docs]</a><span class="k">def</span> <span class="nf">create_matrix_nest</span><span class="p">(</span>
         <span class="n">a</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">FormMetaClass</span><span class="p">]],</span>
         <span class="n">constraints</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MultiPointConstraint</span><span class="p">]):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Create a PETSc matrix of type &quot;nest&quot; with appropriate sparsity pattern</span>
 <span class="sd">    given the provided multi points constraints</span>
 
@@ -379,7 +379,7 @@ title="Open an issue"
         <span class="n">constraints</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MultiPointConstraint</span><span class="p">],</span>
         <span class="n">bcs</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">_fem</span><span class="o">.</span><span class="n">DirichletBCMetaClass</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span>
         <span class="n">diagval</span><span class="p">:</span> <span class="n">_PETSc</span><span class="o">.</span><span class="n">ScalarType</span> <span class="o">=</span> <span class="mi">1</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type</span>
 <span class="sd">    &quot;nest&quot; with corresponding multi point constraints and Dirichlet boundary</span>
 <span class="sd">    conditions.</span>

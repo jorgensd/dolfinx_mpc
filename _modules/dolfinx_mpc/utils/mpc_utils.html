@@ -305,7 +305,7 @@ title="Open an issue"
 
 <div class="viewcode-block" id="facet_normal_approximation"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.facet_normal_approximation">[docs]</a><span class="k">def</span> <span class="nf">facet_normal_approximation</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">mt</span><span class="p">:</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">MeshTags_int32</span><span class="p">,</span> <span class="n">mt_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">tangent</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">jit_options</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{},</span>
                                <span class="n">form_compiler_options</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Approximate the facet normal by projecting it into the function space for a set of facets</span>
 
 <span class="sd">    Args:</span>
@@ -335,7 +335,7 @@ title="Open an issue"
             <span class="n">L</span> <span class="o">=</span> <span class="n">ufl</span><span class="o">.</span><span class="n">inner</span><span class="p">(</span><span class="n">ufl</span><span class="o">.</span><span class="n">as_vector</span><span class="p">([</span><span class="o">-</span><span class="n">n</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">n</span><span class="p">[</span><span class="mi">0</span><span class="p">]]),</span> <span class="n">v</span><span class="p">)</span> <span class="o">*</span> <span class="n">ds</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">def</span> <span class="nf">tangential_proj</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
-                <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">                </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">                See for instance:</span>
 <span class="sd">                https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf</span>
 <span class="sd">                &quot;&quot;&quot;</span>
@@ -396,7 +396,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="log_info"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.log_info">[docs]</a><span class="k">def</span> <span class="nf">log_info</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Wrapper for logging a simple string on the zeroth communicator</span>
 <span class="sd">    Reverting the log level</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -409,7 +409,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="rigid_motions_nullspace"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.rigid_motions_nullspace">[docs]</a><span class="k">def</span> <span class="nf">rigid_motions_nullspace</span><span class="p">(</span><span class="n">V</span><span class="p">:</span> <span class="n">_fem</span><span class="o">.</span><span class="n">FunctionSpace</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Function to build nullspace for 2D/3D elasticity.</span>
 
 <span class="sd">    Args:</span>
@@ -458,7 +458,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="determine_closest_block"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.determine_closest_block">[docs]</a><span class="k">def</span> <span class="nf">determine_closest_block</span><span class="p">(</span><span class="n">V</span><span class="p">,</span> <span class="n">point</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Determine the closest dofs (in a single block) to a point and the distance</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Create boundingboxtree of cells connected to boundary facets</span>
@@ -659,7 +659,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="create_normal_approximation"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.create_normal_approximation">[docs]</a><span class="k">def</span> <span class="nf">create_normal_approximation</span><span class="p">(</span><span class="n">V</span><span class="p">:</span> <span class="n">_fem</span><span class="o">.</span><span class="n">FunctionSpace</span><span class="p">,</span> <span class="n">mt</span><span class="p">:</span> <span class="n">_cpp</span><span class="o">.</span><span class="n">mesh</span><span class="o">.</span><span class="n">MeshTags_int32</span><span class="p">,</span> <span class="n">value</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Creates a normal approximation for the dofs in the closure of the attached entities.</span>
 <span class="sd">    Where a dof is attached to entities facets, an average is computed</span>
 

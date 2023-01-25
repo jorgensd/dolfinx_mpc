@@ -280,7 +280,7 @@ title="Open an issue"
 
 <div class="viewcode-block" id="get_assemblers"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.get_assemblers">[docs]</a><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
 <span class="k">def</span> <span class="nf">get_assemblers</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Get eiher numba assembler or C++ assembler depending on the request</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">param</span> <span class="o">==</span> <span class="s2">&quot;numba&quot;</span><span class="p">:</span>
@@ -299,7 +299,7 @@ title="Open an issue"
 
 
 <span class="k">def</span> <span class="nf">_gather_slaves_global</span><span class="p">(</span><span class="n">constraint</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Given a multi point constraint, return slaves for all processors with global dof numbering</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">imap</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">function_space</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span>
@@ -318,7 +318,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="gather_constants"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_constants">[docs]</a><span class="k">def</span> <span class="nf">gather_constants</span><span class="p">(</span><span class="n">constraint</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Given a multi-point constraint, gather all constants</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">imap</span> <span class="o">=</span> <span class="n">constraint</span><span class="o">.</span><span class="n">index_map</span><span class="p">()</span>
@@ -337,7 +337,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="gather_transformation_matrix"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_transformation_matrix">[docs]</a><span class="k">def</span> <span class="nf">gather_transformation_matrix</span><span class="p">(</span><span class="n">constraint</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Creates the transformation matrix K (dim x dim-len(slaves)) for a given MPC</span>
 <span class="sd">    and gathers it as a scipy CSR matrix on process &#39;root&#39;.</span>
 
@@ -416,7 +416,7 @@ title="Open an issue"
 
 
 <span class="k">def</span> <span class="nf">petsc_to_local_CSR</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span> <span class="n">mpc</span><span class="p">:</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">MultiPointConstraint</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Convert a PETSc matrix to a local CSR matrix (scipy) including ghost entries</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">global_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mpc</span><span class="o">.</span><span class="n">function_space</span><span class="o">.</span><span class="n">dofmap</span><span class="o">.</span><span class="n">index_map</span><span class="o">.</span><span class="n">global_indices</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">PETSc</span><span class="o">.</span><span class="n">IntType</span><span class="p">)</span>
@@ -429,7 +429,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="gather_PETScMatrix"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_PETScMatrix">[docs]</a><span class="k">def</span> <span class="nf">gather_PETScMatrix</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Given a distributed PETSc matrix, gather in on process &#39;root&#39; in</span>
 <span class="sd">    a scipy CSR matrix</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -447,7 +447,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="gather_PETScVector"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.gather_PETScVector">[docs]</a><span class="k">def</span> <span class="nf">gather_PETScVector</span><span class="p">(</span><span class="n">vector</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span> <span class="n">root</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Gather a PETScVector from different processors on</span>
 <span class="sd">    process &#39;root&#39; as an numpy array</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -459,14 +459,14 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="compare_CSR"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.compare_CSR">[docs]</a><span class="k">def</span> <span class="nf">compare_CSR</span><span class="p">(</span><span class="n">A</span><span class="p">:</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">,</span> <span class="n">B</span><span class="p">:</span> <span class="n">scipy</span><span class="o">.</span><span class="n">sparse</span><span class="o">.</span><span class="n">csr_matrix</span><span class="p">,</span> <span class="n">atol</span><span class="o">=</span><span class="mf">1e-10</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot; Compare CSR matrices A and B &quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot; Compare CSR matrices A and B &quot;&quot;&quot;</span>
     <span class="n">diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">A</span> <span class="o">-</span> <span class="n">B</span><span class="p">)</span>
     <span class="k">assert</span> <span class="n">diff</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">atol</span></div>
 
 
 <div class="viewcode-block" id="compare_mpc_lhs"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.compare_mpc_lhs">[docs]</a><span class="k">def</span> <span class="nf">compare_mpc_lhs</span><span class="p">(</span><span class="n">A_org</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span> <span class="n">A_mpc</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Mat</span><span class="p">,</span>
                     <span class="n">mpc</span><span class="p">:</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">MultiPointConstraint</span><span class="p">,</span> <span class="n">root</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Compare an unmodified matrix for the problem with the one assembled with a</span>
 <span class="sd">    multi point constraint.</span>
 
@@ -499,7 +499,7 @@ title="Open an issue"
 
 
 <div class="viewcode-block" id="compare_mpc_rhs"><a class="viewcode-back" href="../../../utils.html#dolfinx_mpc.utils.compare_mpc_rhs">[docs]</a><span class="k">def</span> <span class="nf">compare_mpc_rhs</span><span class="p">(</span><span class="n">b_org</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">PETSc</span><span class="o">.</span><span class="n">Vec</span><span class="p">,</span> <span class="n">constraint</span><span class="p">:</span> <span class="n">dolfinx_mpc</span><span class="o">.</span><span class="n">MultiPointConstraint</span><span class="p">,</span> <span class="n">root</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
-    <span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Compare an unconstrained RHS with an MPC rhs.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">glob_slaves</span> <span class="o">=</span> <span class="n">_gather_slaves_global</span><span class="p">(</span><span class="n">constraint</span><span class="p">)</span>
