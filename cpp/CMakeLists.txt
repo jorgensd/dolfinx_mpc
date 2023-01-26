@@ -38,7 +38,7 @@ option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and install
 add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
 
 # Check for required package DOLFINX
-find_package(DOLFINX 0.6.0...<1.0.0 REQUIRED)
+find_package(DOLFINX 0.6.0 REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     DESCRIPTION "New generation Dynamic Object-oriented Library for - FINite element computation"
     URL "https://github.com/FEniCS/dolfinx"
