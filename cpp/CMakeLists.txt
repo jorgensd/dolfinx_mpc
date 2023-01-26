@@ -1,6 +1,6 @@
 #------------------------------------------------------------------------------
 # Top level CMakeLists.txt file for DOLFIN
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.19)
 
 #------------------------------------------------------------------------------
 # Set project name and version number
@@ -9,13 +9,7 @@ project(DOLFINX_MPC VERSION "0.5.1.0")
 #------------------------------------------------------------------------------
 # Set CMake options, see `cmake --help-policy CMP000x`
 
-cmake_policy(VERSION 3.10)
-if (POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
-endif()
-if (POLICY CMP0075)
-  cmake_policy(SET CMP0075 NEW)
-endif()
+cmake_policy(VERSION 3.19)
 
 #------------------------------------------------------------------------------
 # Use C++17
@@ -44,7 +38,7 @@ option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and install
 add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
 
 # Check for required package DOLFINX
-find_package(DOLFINX 0.6.0 REQUIRED)
+find_package(DOLFINX 0.6.0...<1.0.0 REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     DESCRIPTION "New generation Dynamic Object-oriented Library for - FINite element computation"
     URL "https://github.com/FEniCS/dolfinx"
@@ -56,7 +50,7 @@ feature_summary(WHAT ALL)
 
 # Declare the library (target)
 
-add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
+add_library(dolfinx_mpc)
 
 # dolfinx gives us transitive dependency on mpi, petsc, basix, ufcx
 # without us needing to reimplement detection/dependency
