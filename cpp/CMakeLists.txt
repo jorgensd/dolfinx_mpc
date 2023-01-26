@@ -1,6 +1,6 @@
 #------------------------------------------------------------------------------
 # Top level CMakeLists.txt file for DOLFIN
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.19)
 
 #------------------------------------------------------------------------------
 # Set project name and version number
@@ -9,13 +9,7 @@ project(DOLFINX_MPC VERSION "0.5.1.0")
 #------------------------------------------------------------------------------
 # Set CMake options, see `cmake --help-policy CMP000x`
 
-cmake_policy(VERSION 3.10)
-if (POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
-endif()
-if (POLICY CMP0075)
-  cmake_policy(SET CMP0075 NEW)
-endif()
+cmake_policy(VERSION 3.19)
 
 #------------------------------------------------------------------------------
 # Use C++17
@@ -56,7 +50,7 @@ feature_summary(WHAT ALL)
 
 # Declare the library (target)
 
-add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
+add_library(dolfinx_mpc)
 
 # dolfinx gives us transitive dependency on mpi, petsc, basix, ufcx
 # without us needing to reimplement detection/dependency
