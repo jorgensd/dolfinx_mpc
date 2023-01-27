@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
@@ -153,7 +153,7 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple[_cpp.mesh.MeshTags_int32, int],
+    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: Tuple[_cpp.mesh.MeshTags_int32, int],
                                v: _fem.Function, bcs: List[_fem.DirichletBCMetaClass] = []):
         """
         Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
