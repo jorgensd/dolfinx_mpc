@@ -435,8 +435,6 @@ void assemble_interior_facets(
   // Data structures used in assembly
   using X = dolfinx::fem::impl::scalar_value_type_t<T>;
   std::vector<X> coordinate_dofs(2 * num_dofs_g * 3);
-  const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
-  const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
   const std::array<const int, 2> bs = {bs0, bs1};
   std::span<X> cdofs0(coordinate_dofs.data(), num_dofs_g * 3);
   std::span<X> cdofs1(coordinate_dofs.data() + num_dofs_g * 3, num_dofs_g * 3);
@@ -522,8 +520,6 @@ void assemble_interior_facets(
                                           num_rows);
 
     // Zero rows/columns for essential bcs
-    std::span<const std::int32_t> dmap0 = dofmap0.links(cells[0]);
-    std::span<const std::int32_t> dmap1 = dofmap1.links(cells[1]);
     if (!bc0.empty())
     {
       for (std::size_t i = 0; i < dmapjoint0.size(); ++i)
