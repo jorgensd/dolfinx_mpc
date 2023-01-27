@@ -102,7 +102,7 @@ class MultiPointConstraint():
 
     def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _cpp.mesh.MeshTags_int32, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: list[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
+                                               bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
         :math:`u(x_i) = scale * u(relation(x_i))` for all of :math:`x_i` on marked entities.
@@ -154,7 +154,7 @@ class MultiPointConstraint():
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: tuple[_cpp.mesh.MeshTags_int32, int],
-                               v: _fem.Function, bcs: list[_fem.DirichletBCMetaClass] = []):
+                               v: _fem.Function, bcs: List[_fem.DirichletBCMetaClass] = []):
         """
         Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
 
