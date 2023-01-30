@@ -9,9 +9,6 @@ on:
       - main
 
 
-env:
-  DOLFINX_IMAGE: "v0.6.0"
-
 jobs:
   build:
     name: Build
@@ -20,7 +17,7 @@ jobs:
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: dolfinx/dolfinx:${{ env.DOLFINX_IMAGE }}
+    container: dolfinx/dolfinx:v0.6.0
 
     env:
       SONAR_SCANNER_VERSION:
