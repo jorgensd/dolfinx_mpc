@@ -7,14 +7,18 @@ on:
   pull_request:
     branches:
       - main
+
+
 jobs:
   build:
     name: Build
     runs-on: ubuntu-22.04
+
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: dolfinx/dev-env:nightly
+    container: dolfinx/dolfinx:v0.6.0
+
     env:
       SONAR_SCANNER_VERSION:
         4.7.0.2747 # Find the latest version in at:
@@ -23,7 +27,7 @@ jobs:
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       PETSC_ARCH: linux-gnu-real-32
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
       - name: Install zip
@@ -55,31 +59,7 @@ jobs:
           wget -O $HOME/.sonar/build-wrapper-linux-x86.zip ${{ env.BUILD_WRAPPER_DOWNLOAD_URL }}
           unzip -o $HOME/.sonar/build-wrapper-linux-x86.zip -d $HOME/.sonar/
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
-      - name: Install FEniCS Python components
-        run: |
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@main
-          python3 -m pip install git+https://github.com/FEniCS/basix.git@main
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@main
-
-      - name: Get DOLFINx
-        uses: actions/checkout@v2
-        with:
-          path: ./dolfinx
-          repository: FEniCS/dolfinx
-          ref: main
-
-      - name: Configure C++ (dolfinx)
-        run: |
-          cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
-
-      - name: Build and install C++ library (dolfinx)
-        run: |
-          cmake --build build-dolfinx
-          cmake --install build-dolfinx
-
-      - name: Build Python interface (dolfinx)
-        run: BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
-
+    
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc
@@ -103,7 +83,7 @@ jobs:
 
       - name: Run coverage report (with 4 process to hit all mpi special handling)
         run: |
-          pip3 install coverage
+          python3 -m pip install coverage
           mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/
           coverage combine
           coverage report --rcfile=.coveragerc
