@@ -103,7 +103,7 @@ jobs:
 
       - name: Run coverage report (with 4 process to hit all mpi special handling)
         run: |
-          pip3 install coverage
+          python3 -m pip install coverage
           mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/
           coverage combine
           coverage report --rcfile=.coveragerc
