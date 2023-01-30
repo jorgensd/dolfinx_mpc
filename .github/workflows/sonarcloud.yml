@@ -8,12 +8,10 @@ on:
     branches:
       - main
 
-  workflow_dispatch:
-    inputs:
-      dolfinx_branch:
-        description: "Name of DOLFINx image"
-        default: "v0.6.0"
-        type: string
+
+env:
+  DOLFINX_IMAGE: "v0.6.0"
+
 jobs:
   build:
     name: Build
@@ -22,7 +20,7 @@ jobs:
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: dolfinx/dolfinx:${{ inputs.dolfinx_branch }}
+    container: dolfinx/dolfinx:${{ env.DOLFINX_IMAGE }}
 
     env:
       SONAR_SCANNER_VERSION:

@@ -12,24 +12,6 @@ on:
     # '*' is a special character in YAML, so string must be quoted
     - cron: "0 8 * * *"
 
-  workflow_dispatch:
-    inputs:
-      dolfinx_branch:
-        description: "Name of DOLFINx branch"
-        default: "v0.6.0"
-        type: string
-      basix_branch:
-        description: "Name of BASIX branch"
-        default: "v0.6.0"
-        type: string
-      ufl_branch:
-        description: "Name of UFL branch"
-        default: "2023.1.0.post0"
-        type: string
-      ffcx_branch:
-        description: "Name of FFCx branch"
-        default: "v0.6.0"
-        type: string
 
 jobs:
   build:
@@ -48,6 +30,10 @@ jobs:
           - CC: clang
             CXX: c++
     env:
+      DOLFINX_BRANCH: "v0.6.0"
+      BASIX_BRANCH: "v0.6.0"
+      UFL_BRANCH: "2023.1.0.post0"
+      FFCX_BRANCH: "v0.6.0"
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
       PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-32"
@@ -90,7 +76,7 @@ jobs:
         with:
           path: ./basix
           repository: FEniCS/basix
-          ref: ${{ github.event.inputs.basix_branch }}
+          ref: ${{ env.BASIX_BRANCH }}
 
       - name: Install UFL, Basix, FFCx
         run: |
@@ -98,15 +84,15 @@ jobs:
           cmake --build build-basix --parallel 3
           cmake --install build-basix
           BUILD_TYPE="Release" python3 -m pip install ./basix/python
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@${{ inputs.ufl_branch }}
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${{ inputs.ffcx_branch }}
+          python3 -m pip install git+https://github.com/FEniCS/ufl.git@${{ env.UFL_BRANCH }}
+          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${{ env.FFCX_BRANCH }}
 
       - name: Get DOLFINx
         uses: actions/checkout@v3
         with:
           path: ./dolfinx
           repository: FEniCS/dolfinx
-          ref: ${{ github.event.inputs.dolfinx_branch }}
+          ref: ${{ env.DOLFINX_BRANCH }}
 
       - name: Configure C++ (dolfinx)
         run:
