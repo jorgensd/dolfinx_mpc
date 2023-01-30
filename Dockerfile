@@ -15,6 +15,6 @@ RUN git clone -b v0.6.0 --single-branch --depth 1 https://github.com/jorgensd/do
 # Install h5py https://github.com/h5py/h5py/issues/2222
 RUN python3 -m pip install mpi4py cython numpy && \
     python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
-RUN python3 -m pip install --no-binary=h5py meshio 
+RUN python3 -m pip install meshio 
 
 WORKDIR /root
