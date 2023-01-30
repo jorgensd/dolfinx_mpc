@@ -22,7 +22,7 @@ jobs:
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: dolfinx/dolfinx:${{ github.event.inputs.dolfinx_branch }}
+    container: dolfinx/dolfinx:${{ inputs.dolfinx_branch }}
 
     env:
       SONAR_SCANNER_VERSION:

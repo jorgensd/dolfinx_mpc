@@ -98,8 +98,8 @@ jobs:
           cmake --build build-basix --parallel 3
           cmake --install build-basix
           BUILD_TYPE="Release" python3 -m pip install ./basix/python
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@${{ github.event.inputs.ufl_branch }}
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${{ github.event.inputs.ffcx_branch }}
+          python3 -m pip install git+https://github.com/FEniCS/ufl.git@${{ inputs.ufl_branch }}
+          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${{ inputs.ffcx_branch }}
 
       - name: Get DOLFINx
         uses: actions/checkout@v3

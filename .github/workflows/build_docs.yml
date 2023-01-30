@@ -15,7 +15,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-22.04
-    container: dolfinx/dolfinx:${{ github.event.inputs.dolfinx_branch }}
+    container: dolfinx/dolfinx:${{ inputs.dolfinx_branch }}
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./docs/_build/html
