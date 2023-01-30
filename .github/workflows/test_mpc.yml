@@ -11,6 +11,26 @@ on:
   schedule:
     # '*' is a special character in YAML, so string must be quoted
     - cron: "0 8 * * *"
+
+  workflow_dispatch:
+    inputs:
+      dolfinx_branch:
+        description: "Name of DOLFINx branch"
+        default: "v0.6.0"
+        type: string
+      basix_branch:
+        description: "Name of BASIX branch"
+        default: "v0.6.0"
+        type: string
+      ufl_branch:
+        description: "Name of UFL branch"
+        default: "2023.1.0.post0"
+        type: string
+      ffcx_branch:
+        description: "Name of FFCx branch"
+        default: "v0.6.0"
+        type: string
+
 jobs:
   build:
     if: "!(contains(github.event.head_commit.message, '[ci skip]') || contains(github.event.head_commit.message, '[skip ci]'))"
@@ -70,7 +90,7 @@ jobs:
         with:
           path: ./basix
           repository: FEniCS/basix
-          ref: main
+          ref: ${{ github.event.inputs.basix_branch }}
 
       - name: Install UFL, Basix, FFCx
         run: |
@@ -78,15 +98,15 @@ jobs:
           cmake --build build-basix --parallel 3
           cmake --install build-basix
           BUILD_TYPE="Release" python3 -m pip install ./basix/python
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@main
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@main
+          python3 -m pip install git+https://github.com/FEniCS/ufl.git@${{ github.event.inputs.ufl_branch }}
+          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${{ github.event.inputs.ffcx_branch }}
 
       - name: Get DOLFINx
         uses: actions/checkout@v3
         with:
           path: ./dolfinx
           repository: FEniCS/dolfinx
-          ref: main
+          ref: ${{ github.event.inputs.dolfinx_branch }}
 
       - name: Configure C++ (dolfinx)
         run:

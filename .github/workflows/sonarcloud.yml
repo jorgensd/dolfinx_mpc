@@ -7,14 +7,23 @@ on:
   pull_request:
     branches:
       - main
+
+  workflow_dispatch:
+    inputs:
+      dolfinx_branch:
+        description: "Name of DOLFINx image"
+        default: "v0.6.0"
+        type: string
 jobs:
   build:
     name: Build
     runs-on: ubuntu-22.04
+
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: dolfinx/dev-env:nightly
+    container: dolfinx/dolfinx:${{ github.event.inputs.dolfinx_branch }}
+
     env:
       SONAR_SCANNER_VERSION:
         4.7.0.2747 # Find the latest version in at:
@@ -55,31 +64,7 @@ jobs:
           wget -O $HOME/.sonar/build-wrapper-linux-x86.zip ${{ env.BUILD_WRAPPER_DOWNLOAD_URL }}
           unzip -o $HOME/.sonar/build-wrapper-linux-x86.zip -d $HOME/.sonar/
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
-      - name: Install FEniCS Python components
-        run: |
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@main
-          python3 -m pip install git+https://github.com/FEniCS/basix.git@main
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@main
-
-      - name: Get DOLFINx
-        uses: actions/checkout@v3
-        with:
-          path: ./dolfinx
-          repository: FEniCS/dolfinx
-          ref: main
-
-      - name: Configure C++ (dolfinx)
-        run: |
-          cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
-
-      - name: Build and install C++ library (dolfinx)
-        run: |
-          cmake --build build-dolfinx
-          cmake --install build-dolfinx
-
-      - name: Build Python interface (dolfinx)
-        run: BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
-
+    
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc

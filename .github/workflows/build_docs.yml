@@ -4,10 +4,18 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      dolfinx_release:
+        description: "Name of DOLFINx image"
+        default: "v0.6.0"
+        type: string
+
+
 jobs:
   deploy:
     runs-on: ubuntu-22.04
-    container: dolfinx/dolfinx:v0.6.0
+    container: dolfinx/dolfinx:${{ github.event.inputs.dolfinx_branch }}
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./docs/_build/html
