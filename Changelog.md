@@ -3,6 +3,20 @@
 ## main
 - No changes
 
+## v0.6.1 (30.01.2023)
+  - Fixes for CI
+  - Add auto-publishing CI
+  - Fixes for `h5py` installation
+
+## v0.6.0 (27.01.2023)
+  - Remove `dolfinx::common::impl::copy_N` in favor of `std::copy_n` by @jorgensd in #24
+  - Improving and fixing `demo_periodic_gep.py` by @fmonteghetti in #22 and @conpierce8 in #30
+  - Remove xtensor by @jorgensd in #25
+  - Complex valued periodic constraint (scale) by @jorgensd in #34
+  - Implement Hermitian pre-multiplication by @conpierce8 in #38
+  - Fixes for packaging by @mirk in #41, #42, #4
+  - Various updates to dependencies 
+
 ## v0.5.0 (12.08.2022)
  - Minimal C++ standard is now [C++20](https://en.cppreference.com/w/cpp/20)
  - Deprecating GMSH IO functions from `dolfinx_mpc.utils`, see: [DOLFINx PR: 2261](https://github.com/FEniCS/dolfinx/pull/2261) for details.
