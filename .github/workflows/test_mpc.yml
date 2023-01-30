@@ -44,12 +44,12 @@ jobs:
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
       PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib"
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
-
+      DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: upgrade pip
-        run: pip3 install --upgrade setuptools pip
+        run: python3 -m pip install --upgrade setuptools pip
 
       - name: Flake8 code
         run: flake8 python/
@@ -60,12 +60,13 @@ jobs:
            cd python
            python3 -m mypy . --exclude=build
 
-      - name: Install h5py
+      - name: Install h5py (https://github.com/h5py/h5py/issues/2222)
         run: |
-          pip3 install --no-cache-dir --no-binary=h5py h5py
+          python3 -m pip install mpi4py cython numpy
+          python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
 
       - name: Get Basix
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: ./basix
           repository: FEniCS/basix
@@ -81,7 +82,7 @@ jobs:
           python3 -m pip install git+https://github.com/FEniCS/ffcx.git@main
 
       - name: Get DOLFINx
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: ./dolfinx
           repository: FEniCS/dolfinx
