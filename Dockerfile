@@ -1,20 +1,21 @@
-FROM dolfinx/dolfinx:v0.6.0 as dolfinx-mpc
-WORKDIR /tmp
-# Set env variables
-ENV HDF5_MPI="ON" \
-    CC=mpicc \
-    HDF5_DIR="/usr/local"
+FROM ghcr.io/jorgensd/dolfinx_mpc:v0.6.1.post1
 
-# Install dolfinx_mpc
-RUN git clone -b v0.6.0 --single-branch --depth 1 https://github.com/jorgensd/dolfinx_mpc.git && \
-    cd dolfinx_mpc && \
-    cmake -G Ninja -DCMAKE_BUILD_TYPE=Developer -B build-dir cpp/ && \
-    ninja install -j4  -C build-dir && \
-    python3 -m pip install python/. --upgrade
+# create user with a home directory
+ARG NB_USER=jovyan
+ARG NB_UID=1000
+RUN useradd -m ${NB_USER} -u ${NB_UID}
+ENV HOME /home/${NB_USER}
 
-# Install h5py https://github.com/h5py/h5py/issues/2222
-RUN python3 -m pip install mpi4py cython numpy && \
-    python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
-RUN python3 -m pip install meshio 
+# for binder: base image upgrades lab to require jupyter-server 2,
+# but binder explicitly launches jupyter-notebook
+# force binder to launch jupyter-server instead
+RUN nb=$(which jupyter-notebook) \
+ && rm $nb \
+ && ln -s $(which jupyter-lab) $nb
 
-WORKDIR /root
+# Copy home directory for usage in binder
+WORKDIR ${HOME}
+COPY --chown=${NB_UID} . ${HOME}
+
+USER ${NB_USER}
+ENTRYPOINT []
