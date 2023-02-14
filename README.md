@@ -30,28 +30,32 @@ The library performs custom matrix and vector assembly adding the extra constrai
 These assemblers are written in C++, but have equivalent Python assemblers in the optional `dolfinx_mpc.numba` module.
 
 # Documentation
-Experimental documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.github.io/dolfinx_mpc)
+Documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.github.io/dolfinx_mpc)
 
 # Installation
 
-A Docker image can be found in the [Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc) tab.
+## Conda
+The DOLFINx MPC package is now on Conda.
+The C++ library can be found under [libdolfinx_mpc](https://anaconda.org/conda-forge/libdolfinx_mpc) and the Python library under
+[dolfinx_mpc](https://anaconda.org/conda-forge/dolfinx_mpc). If you have any issues with these installations, add an issue at [dolfinx_mpc feedstock](https://github.com/conda-forge/dolfinx_mpc-feedstock).
+
+## Docker
+
+Version 0.6.1.post0 is available as an docker image at [Github Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc)
+and can be ran using
+```bash
+docker run -ti -v $(pwd):/root/shared -w /root/shared ghcr.io/jorgensd/dolfinx_mpc:v0.6.1.post0
+```
 
 ## Source
 
-To install the latest version (main branch), you need to install the latest release of [dolfinx](https://github.com/FEniCS/dolfinx).
-Easiest way to install dolfinx is to use docker. The dolfinx docker images goes under the name [dolfinx/dolfinx](https://hub.docker.com/r/dolfinx/dolfinx)
+To install the latest version (main branch), you need to install the latest release of [DOLFINx](https://github.com/FEniCS/dolfinx).
+Easiest way to install DOLFINx is to use docker. The DOLFINx docker images goes under the name [dolfinx/dolfinx](https://hub.docker.com/r/dolfinx/dolfinx).
+Remember to use an appropriate tag to get the correct version of DOLFINx, i.e. (`:nightly` or `:vx.y.z`).
 
 To install the `dolfinx_mpc`-library run the following code from this directory:
 ```bash
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build-dir cpp/
 ninja -j3 install -C build-dir
-pip3 install python/. --upgrade
-```
-
-## Dockerhub
-
-Version 0.5.0 is available as an docker image at [DockerHub](https://hub.docker.com/r/dokken92/dolfinx_mpc)
-and can be ran using
-```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared dokken92/dolfinx_mpc:v0.5.0
+python3 -m pip install python/. --upgrade
 ```
