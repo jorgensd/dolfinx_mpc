@@ -3,6 +3,8 @@
 
 [![SonarCloud](https://sonarcloud.io/images/project_badges/sonarcloud-orange.svg)](https://sonarcloud.io/summary/new_code?id=jorgensd_dolfinx_mpc)
 
+[![Anaconda-Server Badge](https://anaconda.org/conda-forge/dolfinx_mpc/badges/downloads.svg)](https://anaconda.org/conda-forge/dolfinx_mpc)
+
 Author: Jørgen S. Dokken
 
 This library contains an add-on to FEniCSx enabling the possibilities
