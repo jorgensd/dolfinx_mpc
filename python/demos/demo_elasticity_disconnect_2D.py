@@ -78,7 +78,8 @@ with mu.vector.localForm() as local:
 with lmbda.vector.localForm() as local:
     local.array[left_dofs] = E_left * nu_left / ((1 + nu_left) * (1 - 2 * nu_left))
     local.array[right_dofs] = E_right * nu_right / ((1 + nu_right) * (1 - 2 * nu_right))
-
+mu.vector.destroy()
+lmbda.vector.destroy()
 
 # Stress computation
 def sigma(v):

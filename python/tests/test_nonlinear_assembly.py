@@ -113,6 +113,7 @@ def test_nonlinear_possion(poly_order):
         u_bc = dolfinx.fem.Function(V)
         with u_bc.vector.localForm() as u_local:
             u_local.set(0.0)
+        u_bc.vector.destroy()
 
         facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, boundary)
         topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
@@ -218,3 +219,4 @@ def test_homogenize(element, poly_order):
                 assert np.isclose(u_.array_r[i], 0.0)
             else:
                 assert np.isclose(u_.array_r[i], 1.0)
+    u.vector.destroy()

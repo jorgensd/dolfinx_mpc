@@ -38,6 +38,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
 
     bdofsV = fem.locate_dofs_geometrical(V, boundary)
     bc = fem.dirichletbc(u_bc, bdofsV)

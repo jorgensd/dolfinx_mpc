@@ -38,6 +38,8 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
+
     bc = fem.dirichletbc(u_bc, bc_dofs)
     bcs = [bc]
 

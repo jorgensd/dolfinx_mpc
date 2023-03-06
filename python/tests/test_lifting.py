@@ -46,6 +46,7 @@ def test_lifting(get_assemblers):  # noqa: F811
     u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(2.3)
+    u_bc.vector.destroy()
 
     def dirichletboundary(x):
         return np.isclose(x[0], 1)
@@ -88,7 +89,7 @@ def test_lifting(get_assemblers):  # noqa: F811
     uh = fem.Function(mpc.function_space)
     uh.x.set(0)
     solver.solve(b, uh.vector)
-    uh.x.scatter_reverse(la.ScatterMode.add)
+    uh.x.scatter_forward()
     mpc.backsubstitution(uh)
 
     root = 0

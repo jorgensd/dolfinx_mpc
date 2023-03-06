@@ -186,6 +186,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     u_bc = Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
 
     bottom_dofs = locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = dirichletbc(u_bc, bottom_dofs)

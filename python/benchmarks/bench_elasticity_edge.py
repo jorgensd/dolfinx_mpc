@@ -39,6 +39,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     u_bc = Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)

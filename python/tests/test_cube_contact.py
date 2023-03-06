@@ -182,6 +182,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
 
     bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs)
