@@ -91,7 +91,7 @@ jobs:
           coverage html --rcfile=.coveragerc
           coverage xml --rcfile=.coveragerc
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           name: code-coverage
           path: htmlcov
