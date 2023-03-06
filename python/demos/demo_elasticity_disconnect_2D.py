@@ -82,6 +82,8 @@ mu.vector.destroy()
 lmbda.vector.destroy()
 
 # Stress computation
+
+
 def sigma(v):
     return (2.0 * mu * sym(grad(v))
             + lmbda * tr(sym(grad(v))) * Identity(len(v)))

@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from dolfinx import la, fem
+from dolfinx import fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
