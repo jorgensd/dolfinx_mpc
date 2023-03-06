@@ -329,9 +329,9 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     # update slave DoF
     for i in range(len(eigval)):
         eigvec_r[i].x.scatter_forward()
-        mpc.backsubstitution(eigvec_r[i].vector)
+        mpc.backsubstitution(eigvec_r[i])
         eigvec_i[i].x.scatter_forward()
-        mpc.backsubstitution(eigvec_i[i].vector)
+        mpc.backsubstitution(eigvec_i[i])
     print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
 
     # Save all eigenvectors

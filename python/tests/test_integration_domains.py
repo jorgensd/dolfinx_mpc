@@ -6,6 +6,7 @@
 
 
 import dolfinx.fem as fem
+import dolfinx.la as la
 import dolfinx_mpc
 import numpy as np
 import pytest
@@ -86,11 +87,10 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     solver.setOperators(A)
 
     # Solve
-    uh = b.copy()
-    uh.set(0)
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-
+    uh = fem.Function(mpc.function_space)
+    uh.x.set(0)
+    solver.solve(b, uh.vector)
+    uh.x.scatter_reverse(la.ScatterMode.add)
     mpc.backsubstitution(uh)
 
     root = 0
@@ -103,7 +103,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -113,4 +113,5 @@ def test_cell_domains(get_assemblers):  # noqa: F811
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
+    uh.vector.destroy()
     list_timings(comm, [TimingType.wall])

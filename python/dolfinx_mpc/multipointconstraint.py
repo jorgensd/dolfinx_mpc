@@ -8,6 +8,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
 from petsc4py import PETSc as _PETSc
@@ -94,13 +95,13 @@ class MultiPointConstraint():
         self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
             self.V._cpp_object, self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
         # Replace function space
-        self.V = _fem.FunctionSpace(None, self.V.ufl_element(), self._cpp_object.function_space)
+        self.V = _fem.FunctionSpace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
 
         self.finalized = True
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
-    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _cpp.mesh.MeshTags_int32, tag: int,
+    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
         """
@@ -117,10 +118,10 @@ class MultiPointConstraint():
         """
         if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object, meshtag, tag, relation, bcs, scale, False)
+                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs, scale, False)
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object, meshtag, tag, relation, bcs, scale, True)
+                V._cpp_object, meshtag._cpp_object, tag, relation, bcs, scale, True)
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
@@ -153,7 +154,7 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: Tuple[_cpp.mesh.MeshTags_int32, int],
+    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: Tuple[_mesh.MeshTags, int],
                                v: _fem.Function, bcs: List[_fem.DirichletBCMetaClass] = []):
         """
         Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
@@ -210,7 +211,7 @@ class MultiPointConstraint():
         else:
             raise ValueError("Input space has to be a sub space of the MPC space")
         mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(
-            space._cpp_object, facet_marker[0], facet_marker[1], v._cpp_object, bcs, sub_space)
+            space._cpp_object, facet_marker[0]._cpp_object, facet_marker[1], v._cpp_object, bcs, sub_space)
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_general_constraint(self, slave_master_dict: Dict[bytes, Dict[bytes, float]],
@@ -242,7 +243,7 @@ class MultiPointConstraint():
             self.V, slave_master_dict, subspace_slave, subspace_master)
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def create_contact_slip_condition(self, meshtags: _cpp.mesh.MeshTags_int32, slave_marker: int, master_marker: int,
+    def create_contact_slip_condition(self, meshtags: _mesh.MeshTags, slave_marker: int, master_marker: int,
                                       normal: _fem.Function, eps2: float = 1e-20):
         """
         Create a slip condition between two sets of facets marker with individual markers.
@@ -258,7 +259,7 @@ class MultiPointConstraint():
             eps2: The tolerance for the squared distance between cells to be considered as a collision
         """
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-            self.V._cpp_object, meshtags, slave_marker, master_marker, normal._cpp_object, eps2)
+            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, normal._cpp_object, eps2)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
     def create_contact_inelastic_condition(self, meshtags: _cpp.mesh.MeshTags_int32,
@@ -276,7 +277,7 @@ class MultiPointConstraint():
             eps2: The tolerance for the squared distance between cells to be considered as a collision
         """
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
-            self.V._cpp_object, meshtags, slave_marker, master_marker, eps2)
+            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, eps2)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
     @property
@@ -362,31 +363,28 @@ class MultiPointConstraint():
         self._not_finalized()
         return self.V
 
-    def backsubstitution(self, vector: _PETSc.Vec) -> None:
+    def backsubstitution(self, u: _fem.Function) -> None:
         """
-        For a vector, impose the multi-point constraint by backsubstiution.
+        For a Function, impose the multi-point constraint by backsubstiution.
         This function is used after solving the reduced problem to obtain the values
         at the slave degrees of freedom
 
         Args:
-            vector: The input vector
+            u: The input function
         """
-        # Unravel data from constraint
-        with vector.localForm() as vector_local:
-            self._cpp_object.backsubstitution(vector_local.array_w)
-        vector.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
+        self._cpp_object.backsubstitution(u.x.array)
+        u.x.scatter_forward()
 
-    def homogenize(self, vector: _PETSc.Vec) -> None:
+    def homogenize(self, u: _fem.Function) -> None:
         """
         For a vector, homogenize (set to zero) the vector components at the multi-point
         constraint slave DoF indices. This is particularly useful for nonlinear problems.
 
         Args:
-            vector: The input vector
+            u: The input vector
         """
-        with vector.localForm() as vector_local:
-            self._cpp_object.homogenize(vector_local.array_w)
-        vector.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
+        self._cpp_object.homogenize(u.x.array)
+        u.x.scatter_forward()
 
     def _already_finalized(self):
         """

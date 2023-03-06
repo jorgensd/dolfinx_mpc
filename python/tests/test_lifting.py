@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-import dolfinx.fem as fem
+from dolfinx import la, fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
@@ -85,15 +85,11 @@ def test_lifting(get_assemblers):  # noqa: F811
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
     # Solve
-    uh = b.copy()
-    uh.set(0)
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    uh = fem.Function(mpc.function_space)
+    uh.x.set(0)
+    solver.solve(b, uh.vector)
+    uh.x.scatter_reverse(la.ScatterMode.add)
     mpc.backsubstitution(uh)
-
-    V_mpc = mpc.function_space
-    u_out = fem.Function(V_mpc)
-    u_out.vector.array[:] = uh.array
 
     root = 0
     comm = mesh.comm
@@ -106,7 +102,7 @@ def test_lifting(get_assemblers):  # noqa: F811
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
         # constants = dolfinx_mpc.utils.gather_contants(mpc, root=root)
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K

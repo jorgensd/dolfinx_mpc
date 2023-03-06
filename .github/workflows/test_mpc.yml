@@ -17,7 +17,7 @@ jobs:
   build:
     if: "!(contains(github.event.head_commit.message, '[ci skip]') || contains(github.event.head_commit.message, '[skip ci]'))"
     runs-on: ubuntu-22.04
-    container: dolfinx/dev-env:v0.6.0
+    container: docker pull ghcr.io/fenics/test-env:nightly-mpich
 
     strategy:
       matrix:
@@ -53,6 +53,12 @@ jobs:
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
       - uses: actions/checkout@v3
+
+      - name: Install clang
+        if: ${{ matrix.CC }} == "clang"
+        run: |
+          apt-get update
+          apt-get install -y clang
 
       - name: upgrade pip
         run: python3 -m pip install --upgrade setuptools pip

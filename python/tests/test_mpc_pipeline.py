@@ -5,13 +5,13 @@
 # SPDX-License-Identifier:    MIT
 
 
-import dolfinx.fem as fem
 import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx import fem
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import create_unit_square
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
@@ -22,7 +22,6 @@ from petsc4py import PETSc
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 def test_pipeline(master_point, get_assemblers):  # noqa: F811
-
     assemble_matrix, assemble_vector = get_assemblers
 
     # Create mesh and function space
@@ -72,10 +71,10 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     solver.setOperators(A)
 
     # Solve
-    uh = b.copy()
-    uh.set(0)
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    uh = fem.Function(mpc.function_space)
+    uh.x.set(0)
+    solver.solve(b, uh.vector)
+    uh.x.scatter_forward()
     mpc.backsubstitution(uh)
 
     root = 0
@@ -89,7 +88,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -135,9 +134,9 @@ def test_linearproblem(master_point):
         return np.array(li, dtype=np.float64).tobytes()
     s_m_c = {l2b([1, 0]):
              {l2b([0, 1]): 0.43,
-              l2b([1, 1]): 0.11},
+             l2b([1, 1]): 0.11},
              l2b([0, 0]):
-                 {l2b(master_point): 0.69}}
+             {l2b(master_point): 0.69}}
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)

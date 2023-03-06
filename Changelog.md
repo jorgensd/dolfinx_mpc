@@ -1,7 +1,7 @@
 # Changelog
 
 ## main
-- No changes
+- Change input of `dolfinx_mpc.MultiPointConstraint.homogenize` and `dolfinx_mpc.backsubstitution` to `dolfinx.fem.Function` instead of `PETSc.Vec`.
 
 ## v0.6.1 (30.01.2023)
   - Fixes for CI

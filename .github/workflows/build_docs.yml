@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container: dolfinx/dolfinx:v0.6.0-r1
+    container: ghcr.io/fenics/dolfinx/dolfinx:nightly
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./docs/_build/html

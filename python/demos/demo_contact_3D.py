@@ -62,7 +62,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     # Define boundary conditions
 
     # Bottom boundary is fixed in all directions
-    bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))  # type: ignore
+    bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))
     u_bc = np.array((0, ) * mesh.geometry.dim, dtype=PETSc.ScalarType)
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs, V)
 
@@ -74,7 +74,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, g_vec)
 
-    top_dofs = fem.locate_dofs_topological(V, fdim, mt.find(3))  # type: ignore
+    top_dofs = fem.locate_dofs_topological(V, fdim, mt.find(3))
     bc_top = fem.dirichletbc(g_vec, top_dofs, V)
 
     bcs = [bc_bottom, bc_top]
@@ -152,7 +152,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         solver.solve(b, u_h.vector)
         u_h.x.scatter_forward()
     with Timer("~~Contact: Backsubstitution"):
-        mpc.backsubstitution(u_h.vector)
+        mpc.backsubstitution(u_h)
 
     it = solver.getIterationNumber()
     unorm = u_h.vector.norm()

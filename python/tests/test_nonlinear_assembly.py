@@ -66,8 +66,8 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
         self.u_mpc.vector.axpy(-1.0, dx)
         self.u_mpc.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                                       mode=PETSc.ScatterMode.FORWARD)
-        self.mpc.homogenize(self.u_mpc.vector)
-        self.mpc.backsubstitution(self.u_mpc.vector)
+        self.mpc.homogenize(self.u_mpc)
+        self.mpc.backsubstitution(self.u_mpc)
         x.array = self.u_mpc.vector.array_r
         x.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                       mode=PETSc.ScatterMode.FORWARD)
@@ -210,7 +210,7 @@ def test_homogenize(element, poly_order):
     assert np.isclose(u.vector.min()[1], u.vector.max()[1])
     assert np.isclose(u.vector.array_r[0], 1.0)
 
-    mpc.homogenize(u.vector)
+    mpc.homogenize(u)
 
     with u.vector.localForm() as u_:
         for i in range(V.dofmap.index_map.size_local * V.dofmap.index_map_bs):

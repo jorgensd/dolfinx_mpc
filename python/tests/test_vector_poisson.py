@@ -77,11 +77,11 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     fem.petsc.set_bc(b, bcs)
 
     solver.setOperators(A)
-    uh = b.copy()
-    uh.set(0)
+    uh = fem.Function(mpc.function_space)
+    uh.x.set(0)
 
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    solver.solve(b, uh.vector)
+    uh.x.scatter_forward()
     mpc.backsubstitution(uh)
 
     # Generate reference matrices for unconstrained problem
@@ -103,7 +103,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K

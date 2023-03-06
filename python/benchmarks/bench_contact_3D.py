@@ -68,10 +68,12 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
-        cells0 = entities_to_geometry(mesh0, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+        cells0 = entities_to_geometry(mesh0._cpp_object, tdim0, np.arange(
+            num_cells0, dtype=np.int32).reshape((-1, 1)), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
-        cells1 = entities_to_geometry(mesh1, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
+        cells1 = entities_to_geometry(mesh1._cpp_object, tdim1, np.arange(
+            num_cells1, dtype=np.int32).reshape((-1, 1)), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         # Concatenate points and cells
@@ -278,12 +280,12 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     solver = PETSc.KSP().create(comm)
     solver.setOperators(A)
     solver.setFromOptions()
-    uh = b.copy()
-    uh.set(0)
+    uh = Function(mpc.function_space)
+    uh.x.set(0)
     log_info("Solve")
     with Timer(f"{num_dofs}: Solve"):
-        solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        solver.solve(b, uh.vector)
+        uh.x.scatter_forward()
     log_info("Backsub")
     with Timer(f"{num_dofs}: Backsubstitution"):
         mpc.backsubstitution(uh)
@@ -291,12 +293,9 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     it = solver.getIterationNumber()
 
     # Write solution to file
-    u_h = Function(mpc.function_space)
-    u_h.vector.setArray(uh.array)
-    u_h.name = "u"
     with XDMFFile(comm, f"results/bench_contact_{num_dofs}.xdmf", "w") as outfile:
         outfile.write_mesh(mesh)
-        outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
+        outfile.write_function(uh, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
     # Write performance data to file
     if timings:
         log_info("Timings")
