@@ -30,10 +30,10 @@ jobs:
           - CC: clang
             CXX: c++
     env:
-      DOLFINX_BRANCH: "v0.6.0"
-      BASIX_BRANCH: "v0.6.0"
-      UFL_BRANCH:  "2023.1.1.post0"
-      FFCX_BRANCH: "v0.6.0"
+      DOLFINX_BRANCH: "main"
+      BASIX_BRANCH: "main"
+      UFL_BRANCH:  "main"
+      FFCX_BRANCH: "main"
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
       PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-32"
