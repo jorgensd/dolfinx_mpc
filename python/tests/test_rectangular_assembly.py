@@ -131,7 +131,7 @@ def test_mixed_element(cell_type, ghost_mode):
 
     bcs = [bc1]
 
-    V, V_to_W = W.sub(0).collapse()
+    V, _ = W.sub(0).collapse()
     mpc_vq = dolfinx_mpc.MultiPointConstraint(W)
     n_approx = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
     mpc_vq.create_slip_constraint(W.sub(0), (mt, 1), n_approx, bcs=bcs)
@@ -190,3 +190,9 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # -- Ensure monolithic and nest matrices are the same
     assert np.isclose(nest_matrix_norm(A_nest), A.norm())
+    for b_sub in b_nest.getNestSubVecs():
+        b_sub.destroy()
+    b_nest.destroy()
+    for b_sub in b_org_nest.getNestSubVecs():
+        b_sub.destroy()
+    b_org_nest.destroy()
