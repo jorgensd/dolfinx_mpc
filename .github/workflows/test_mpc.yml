@@ -22,8 +22,11 @@ jobs:
     strategy:
       matrix:
         petsc_arch: [real, complex]
-        CXX: [c++, clang++]
-        CC: [cc, clang]
+        # Due to: https://gitlab.com/petsc/petsc/-/issues/1288
+        CXX: [c++]
+        #, clang++]
+        CC: [cc] 
+        #, clang]
         exclude:
           - CC: cc
             CXX: clang++
