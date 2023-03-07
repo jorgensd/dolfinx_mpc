@@ -11,11 +11,13 @@ on:
   schedule:
     # '*' is a special character in YAML, so string must be quoted
     - cron: "0 8 * * *"
+
+
 jobs:
   build:
     if: "!(contains(github.event.head_commit.message, '[ci skip]') || contains(github.event.head_commit.message, '[skip ci]'))"
     runs-on: ubuntu-22.04
-    container: dolfinx/dev-env:nightly
+    container: dolfinx/dev-env:v0.6.0
 
     strategy:
       matrix:
@@ -28,6 +30,10 @@ jobs:
           - CC: clang
             CXX: c++
     env:
+      DOLFINX_BRANCH: "v0.6.0"
+      BASIX_BRANCH: "v0.6.0"
+      UFL_BRANCH:  "2023.1.1.post0"
+      FFCX_BRANCH: "v0.6.0"
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
       PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-32"
@@ -44,45 +50,49 @@ jobs:
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
       PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib"
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
-
+      DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+
+      - name: upgrade pip
+        run: python3 -m pip install --upgrade setuptools pip
 
       - name: Flake8 code
         run: flake8 python/
 
       - name: Mypy check
         run: |
-           pip3 install mypy
+           python3 -m pip install mypy
            cd python
            python3 -m mypy . --exclude=build
 
-      - name: Install h5py
+      - name: Install h5py (https://github.com/h5py/h5py/issues/2222)
         run: |
-          pip3 install --no-cache-dir --no-binary=h5py h5py
+          python3 -m pip install mpi4py cython numpy
+          python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
 
       - name: Get Basix
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: ./basix
           repository: FEniCS/basix
-          ref: main
+          ref: ${{ env.BASIX_BRANCH }}
 
       - name: Install UFL, Basix, FFCx
         run: |
           cmake -G Ninja -B build-basix -DCMAKE_BUILD_TYPE="Release" -S ./basix/cpp/
           cmake --build build-basix --parallel 3
           cmake --install build-basix
-          BUILD_TYPE="Release" pip3 install ./basix/python
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@main
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@main
+          BUILD_TYPE="Release" python3 -m pip install ./basix/python
+          python3 -m pip install git+https://github.com/FEniCS/ufl.git@${{ env.UFL_BRANCH }}
+          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${{ env.FFCX_BRANCH }}
 
       - name: Get DOLFINx
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           path: ./dolfinx
           repository: FEniCS/dolfinx
-          ref: main
+          ref: ${{ env.DOLFINX_BRANCH }}
 
       - name: Configure C++ (dolfinx)
         run:
@@ -107,7 +117,7 @@ jobs:
 
       - name: Run tests (serial)
         run: python3 -m pytest python/tests -vs
-          
+
       - name: Run tests (2 processes)
         run: mpirun -n 2 python3 -m pytest python/tests -vs
 

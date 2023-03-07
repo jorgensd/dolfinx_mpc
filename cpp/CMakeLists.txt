@@ -1,21 +1,15 @@
 #------------------------------------------------------------------------------
 # Top level CMakeLists.txt file for DOLFIN
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.19)
 
 #------------------------------------------------------------------------------
 # Set project name and version number
-project(DOLFINX_MPC VERSION "0.5.1.0")
+project(DOLFINX_MPC VERSION "0.6.1")
 
 #------------------------------------------------------------------------------
 # Set CMake options, see `cmake --help-policy CMP000x`
 
-cmake_policy(VERSION 3.10)
-if (POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
-endif()
-if (POLICY CMP0075)
-  cmake_policy(SET CMP0075 NEW)
-endif()
+cmake_policy(VERSION 3.19)
 
 #------------------------------------------------------------------------------
 # Use C++17
@@ -43,114 +37,25 @@ add_feature_info(BUILD_SHARED_LIBS BUILD_SHARED_LIBS "Build DOLFINX_MPC with sha
 option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath." ON)
 add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
 
-
-
-# Check for required package UFC (part of ffcx)
-MESSAGE(STATUS "Asking Python module FFCX for location of UFC...")
-  find_package(PythonInterp 3 REQUIRED)
-  execute_process(
-	  COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx.codegeneration, sys; sys.stdout.write(ffcx.codegeneration.get_include_path())"
-    OUTPUT_VARIABLE UFC_INCLUDE_DIR
-    )
-
-  if (UFC_INCLUDE_DIR)
-    set(UFC_INCLUDE_DIRS ${UFC_INCLUDE_DIR} CACHE STRING "Where to find ufc.h and ufc_geometry.h")
-
-    execute_process(
-      COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx, sys; sys.stdout.write(ffcx.__version__)"
-      OUTPUT_VARIABLE UFC_VERSION
-      )
-
-    if (UFC_FIND_VERSION)
-      # Check if version found is >= required version
-      if (NOT "${UFC_VERSION}" VERSION_LESS "${UFC_FIND_VERSION}")
-        set(UFC_VERSION_OK TRUE)
-      endif()
-    else()
-      # No specific version requested
-      set(UFC_VERSION_OK TRUE)
-    endif()
-  endif()
-
-  execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} -c "import ffcx.codegeneration, sys; sys.stdout.write(ffcx.codegeneration.get_signature())"
-    OUTPUT_VARIABLE UFC_SIGNATURE
-  )
-
-mark_as_advanced(UFC_VERSION UFC_INCLUDE_DIRS UFC_SIGNATURE UFC_VERSION_OK)
-# Standard package handling
-find_package_handle_standard_args(UFC
-                                  "UFC could not be found."
-                                  UFC_INCLUDE_DIRS
-                                  UFC_VERSION
-                                  UFC_VERSION_OK
-                                  UFC_SIGNATURE)
-set_package_properties(UFC PROPERTIES TYPE REQUIRED
-  DESCRIPTION "Unified language for form-compilers (part of FFC-X)"
-  URL "https://github.com/fenics/ffcx")
-
 # Check for required package DOLFINX
 find_package(DOLFINX 0.6.0 REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     DESCRIPTION "New generation Dynamic Object-oriented Library for - FINite element computation"
     URL "https://github.com/FEniCS/dolfinx"
     PURPOSE "Main dependency of library")
-
-find_package(Basix 0.6.0 REQUIRED)
-set_package_properties(basix PROPERTIES TYPE REQUIRED
-      DESCRIPTION "FEniCS tabulation library"
-      URL "https://github.com/fenics/basix")
-
-
-# MPI and PETSC
-
-# MPI
-find_package(MPI 3 REQUIRED)
-
-# Check for PETSc
-find_package(PkgConfig REQUIRED)
-set(ENV{PKG_CONFIG_PATH} "$ENV{PETSC_DIR}/$ENV{PETSC_ARCH}/lib/pkgconfig:$ENV{PETSC_DIR}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
-pkg_search_module(PETSC REQUIRED IMPORTED_TARGET PETSc>=3.15 petsc>=3.15)
-
-# Check if PETSc build uses real or complex scalars (this is configured
-# in DOLFINxConfig.cmake.in)
-include(CheckSymbolExists)
-set(CMAKE_REQUIRED_INCLUDES ${PETSC_INCLUDE_DIRS})
-check_symbol_exists(PETSC_USE_COMPLEX petscsystypes.h HAVE_PETSC_SCALAR_COMPLEX)
-
-# Setting for FeatureSummary
-if(PETSC_FOUND)
-  set_property(GLOBAL APPEND PROPERTY PACKAGES_FOUND PETSc)
-else()
-  set_property(GLOBAL APPEND PROPERTY PACKAGES_NOT_FOUND PETSc)
-endif()
-set_package_properties(PETSc PROPERTIES TYPE REQUIRED
-  DESCRIPTION "Portable, Extensible Toolkit for Scientific Computation (PETSc)"
-  URL "https://www.mcs.anl.gov/petsc/"
-  PURPOSE "PETSc linear algebra backend")
-
 feature_summary(WHAT ALL)
 
 
 # Installation of DOLFIN_MPC library
 
-add_library(dolfinx_mpc "")  # The "" is needed for older CMake. Remove later.
+# Declare the library (target)
 
-target_link_libraries(dolfinx_mpc PUBLIC MPI::MPI_CXX)
-target_link_libraries(dolfinx_mpc PUBLIC PkgConfig::PETSC)
+add_library(dolfinx_mpc)
 
-# Basix
-target_link_libraries(dolfinx_mpc PUBLIC Basix::basix)
-
-
-
-if (UFC_FOUND)
-    target_include_directories(dolfinx_mpc PRIVATE ${UFC_INCLUDE_DIRS})
-endif()
+# dolfinx gives us transitive dependency on mpi, petsc, basix, ufcx
+# without us needing to reimplement detection/dependency
 target_link_libraries(dolfinx_mpc PUBLIC dolfinx)
 
-
-# Delcare the library (target)
 
 #------------------------------------------------------------------------------
 include(GNUInstallDirs)
