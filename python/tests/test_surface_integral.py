@@ -133,7 +133,8 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
-
+    L_org.destroy()
+    b.destroy()
     list_timings(comm, [TimingType.wall])
 
 
@@ -200,5 +201,6 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
     with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
-
+    L_org.destroy()
+    b.destroy()
     list_timings(comm, [TimingType.wall])

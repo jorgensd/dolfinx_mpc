@@ -27,11 +27,11 @@ jobs:
         #, clang++]
         CC: [cc] 
         #, clang]
-        exclude:
-          - CC: cc
-            CXX: clang++
-          - CC: clang
-            CXX: c++
+        # exclude:
+        #   - CC: cc
+        #     CXX: clang++
+        #   - CC: clang
+        #     CXX: c++
     env:
       DOLFINX_BRANCH: "main"
       BASIX_BRANCH: "main"

@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
@@ -363,17 +363,25 @@ class MultiPointConstraint():
         self._not_finalized()
         return self.V
 
-    def backsubstitution(self, u: _fem.Function) -> None:
+    def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:
         """
         For a Function, impose the multi-point constraint by backsubstiution.
         This function is used after solving the reduced problem to obtain the values
         at the slave degrees of freedom
 
+        .. note::
+            It is the users responsibility to destroy the PETSc vector
+
         Args:
             u: The input function
         """
-        self._cpp_object.backsubstitution(u.x.array)
-        u.x.scatter_forward()
+        try:
+            self._cpp_object.backsubstitution(u.x.array)
+            u.x.scatter_forward()
+        except AttributeError:
+            with u.localForm() as vector_local:
+                self._cpp_object.backsubstitution(vector_local.array_w)
+            u.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
 
     def homogenize(self, u: _fem.Function) -> None:
         """

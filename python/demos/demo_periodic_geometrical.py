@@ -161,3 +161,4 @@ with Timer("~Demo: Verification"):
         uh_numpy = K @ d
         assert np.allclose(uh_numpy, u_mpc)
 list_timings(MPI.COMM_WORLD, [TimingType.wall])
+L_org.destroy()

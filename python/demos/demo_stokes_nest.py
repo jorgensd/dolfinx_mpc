@@ -241,18 +241,22 @@ ksp.solve(b, Uh)
 for Uh_sub in Uh.getNestSubVecs():
     Uh_sub.ghostUpdate(addv=PETSc.InsertMode.INSERT,
                        mode=PETSc.ScatterMode.FORWARD)
+# ----------------------------- Put NestVec into DOLFINx Function - ---------
+uh = dolfinx.fem.Function(mpc.function_space)
+uh.vector.setArray(Uh.getNestSubVecs()[0].array)
+
+ph = dolfinx.fem.Function(mpc_q.function_space)
+ph.vector.setArray(Uh.getNestSubVecs()[1].array)
+
+uh.x.scatter_forward()
+ph.x.scatter_forward()
 
 # Backsubstitute to update slave dofs in solution vector
-mpc.backsubstitution(Uh.getNestSubVecs()[0])
+mpc.backsubstitution(uh)
+mpc_q.backsubstitution(ph)
 
 # ------------------------------ Output ----------------------------------
 
-uh = dolfinx.fem.Function(mpc.function_space)
-uh.vector.setArray(Uh.getNestSubVecs()[0].array)
-ph = dolfinx.fem.Function(mpc_q.function_space)
-ph.vector.setArray(Uh.getNestSubVecs()[1].array)
-uh.x.scatter_forward()
-ph.x.scatter_forward()
 uh.name = "u"
 ph.name = "p"
 with dolfinx.io.XDMFFile(
@@ -262,13 +266,14 @@ with dolfinx.io.XDMFFile(
     outfile.write_function(uh)
     outfile.write_function(ph)
 
-with dolfinx.io.VTXWriter(mesh.comm, "results/stokes_nest.bp", uh) as vtx:
+with dolfinx.io.VTXWriter(mesh.comm, "results/stokes_nest_uh.bp", uh) as vtx:
     vtx.write(0.0)
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison
 with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix reduction"):
-    W = dolfinx.fem.FunctionSpace(mesh, Ve * Qe)
+    W = dolfinx.fem.FunctionSpace(mesh, ufl.MixedElement([Ve, Qe]))
     V, V_to_W = W.sub(0).collapse()
+    _, Q_to_W = W.sub(1).collapse()
 
     # Inlet velocity Dirichlet BC
     inlet_velocity = dolfinx.fem.Function(V)
@@ -318,8 +323,10 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
     K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-    u_mpc = dolfinx_mpc.utils.gather_PETScVector(Uh, root=root)
 
+    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+    p_mpc = dolfinx_mpc.utils.gather_PETScVector(ph.vector, root=root)
+    up_mpc = np.hstack([u_mpc, p_mpc])
     if MPI.COMM_WORLD.rank == root:
         KTAK = K.T * A_csr * K
         reduced_L = K.T @ L_np
@@ -327,8 +334,14 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = K @ d
-        assert np.allclose(np.linalg.norm(uh_numpy, 2),
-                           np.linalg.norm(u_mpc, 2))
+        assert np.allclose(np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2))
 
+
+A.destroy()
+b.destroy()
+for Uh_sub in Uh.getNestSubVecs():
+    Uh_sub.destroy()
+Uh.destroy()
+ksp.destroy()
 # -------------------- List timings --------------------------
 dolfinx.common.list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])

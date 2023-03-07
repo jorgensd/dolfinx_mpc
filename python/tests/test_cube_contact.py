@@ -288,7 +288,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(u_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -298,5 +298,6 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
-    u_vec.destroy()
+    L_org.destroy()
+
     list_timings(comm, [TimingType.wall])

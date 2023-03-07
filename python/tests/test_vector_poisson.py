@@ -114,5 +114,6 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
-
+    b.destroy()
+    L_org.destroy()
     list_timings(comm, [TimingType.wall])
