@@ -21,6 +21,7 @@ jobs:
 
     strategy:
       matrix:
+        build_mode: [Release, Debug]
         petsc_arch: [real, complex]
         # Due to: https://gitlab.com/petsc/petsc/-/issues/1288
         CXX: [c++]
@@ -49,7 +50,7 @@ jobs:
       OMPI_MCA_hwloc_base_binding_policy: none
       HDF5_MPI: "ON"
       HDF5_DIR: "/usr/local/"
-      MPC_BUILD_MODE: "Debug"
+      MPC_BUILD_MODE: ${{ matrix.build_mode }}
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
       PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib"
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
