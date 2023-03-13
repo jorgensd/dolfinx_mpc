@@ -162,7 +162,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
 
         return self.u
 
-    LinearProblem.solve = patch_solve
+    LinearProblem.solve = patch_solve  # type: ignore
     problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
     # Build near nullspace
