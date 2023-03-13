@@ -3,17 +3,17 @@ from typing import Dict, List, Sequence, Tuple
 import dolfinx.common as _common
 import dolfinx.cpp as _cpp
 import dolfinx.io as _io
-from dolfinx.io import gmshio
 import dolfinx.mesh as _mesh
 import dolfinx_mpc.utils as _utils
 import gmsh
 import numpy as np
 import ufl
+from dolfinx.io import gmshio
 from mpi4py import MPI
 
 
 def gmsh_3D_stacked(celltype: str, theta: float, res: float = 0.1,
-                    verbose: bool = False) -> Tuple[_mesh.Mesh, _cpp.mesh.MeshTags_int32]:
+                    verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     if celltype == "tetrahedron":
         mesh, ft = generate_tet_boxes(0, 0, 0, 1, 1, 1, 2, res,
                                       facet_markers=[[11, 5, 12, 13, 4, 14],
@@ -120,7 +120,7 @@ def tag_cube_model(model: gmsh.model, x0: float, y0: float, z0: float, x1: float
 def generate_tet_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float,
                        z2: float, res: float, facet_markers: Sequence[Sequence[int]],
                        volume_markers: Sequence[int],
-                       verbose: bool = False) -> Tuple[_mesh.Mesh, _cpp.mesh.MeshTags_int32]:
+                       verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
@@ -379,11 +379,11 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0):
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
         cells0 = _cpp.mesh.entities_to_geometry(
-            mesh0, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
         cells1 = _cpp.mesh.entities_to_geometry(
-            mesh1, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
+            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
@@ -411,7 +411,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0):
         top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
 
         num_cells = mesh.topology.index_map(tdim).size_local
-        cell_midpoints = _cpp.mesh.compute_midpoints(mesh, tdim, range(num_cells))
+        cell_midpoints = _mesh.compute_midpoints(mesh, tdim, np.arange(num_cells, dtype=np.int32))
         interface = find_line_function(bottom_points[:, 2], bottom_points[:, 3])
         i_facets = _mesh.locate_entities_boundary(mesh, fdim, interface)
         bottom_interface = []
@@ -447,7 +447,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0):
             all_values.append(np.full(len(markers[key]), key, dtype=np.intc))
         arg_sort = np.argsort(np.hstack(all_indices))
         mt = _mesh.meshtags(mesh, fdim, np.hstack(all_indices)[arg_sort], np.hstack(all_values)[arg_sort])
-        mt.name = "facet_tags"  # type: ignore
+        mt.name = "facet_tags"
         with _io.XDMFFile(MPI.COMM_SELF, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "w") as o_f:
             o_f.write_mesh(mesh)
             o_f.write_meshtags(ct)
@@ -498,11 +498,11 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
         cells0 = _cpp.mesh.entities_to_geometry(
-            mesh0, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
         cells1 = _cpp.mesh.entities_to_geometry(
-            mesh1, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
+            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
@@ -537,7 +537,7 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         bottom_interface = []
         facet_to_cell = mesh.topology.connectivity(fdim, tdim)
         num_cells = mesh.topology.index_map(tdim).size_local
-        cell_midpoints = _cpp.mesh.compute_midpoints(mesh, tdim, range(num_cells))
+        cell_midpoints = _mesh.compute_midpoints(mesh, tdim, np.arange(num_cells, dtype=np.int32))
         top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
         for facet in i_facets:
             i_cells = facet_to_cell.links(facet)
@@ -549,7 +549,7 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
                 bottom_interface.append(facet)
 
         num_cells = mesh.topology.index_map(tdim).size_local
-        cell_midpoints = _cpp.mesh.compute_midpoints(mesh, tdim, range(num_cells))
+        cell_midpoints = _mesh.compute_midpoints(mesh, tdim, np.arange(num_cells, dtype=np.int32))
         top_cube_marker = 2
         indices = []
         values = []
@@ -572,7 +572,7 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         sorted_vals = np.asarray(np.hstack(all_values)[arg_sort], dtype=np.int32)
         sorted_indices = np.asarray(np.hstack(all_indices)[arg_sort], dtype=np.int32)
         mt = _mesh.meshtags(mesh, fdim, sorted_indices, sorted_vals)
-        mt.name = "facet_tags"  # type: ignore
+        mt.name = "facet_tags"
         fname = f"meshes/mesh_{ext}_{theta:.2f}.xdmf"
 
         with _io.XDMFFile(MPI.COMM_SELF, fname, "w") as o_f:

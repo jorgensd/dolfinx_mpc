@@ -125,7 +125,8 @@ with mu.vector.localForm() as local:
 with lmbda.vector.localForm() as local:
     local.array[inner_dofs] = E_inner * nu_inner / ((1 + nu_inner) * (1 - 2 * nu_inner))
     local.array[outer_dofs] = E_outer * nu_outer / ((1 + nu_outer) * (1 - 2 * nu_outer))
-
+mu.vector.destroy()
+lmbda.vector.destroy()
 
 # Stress computation
 

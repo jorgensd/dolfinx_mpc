@@ -189,6 +189,8 @@ def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:
     Gather a PETScVector from different processors on
     process 'root' as an numpy array
     """
+    if vector.handle == 0:
+        raise RuntimeError("Vector has been destroyed prior to this call")
     numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]

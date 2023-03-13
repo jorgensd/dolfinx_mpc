@@ -226,7 +226,7 @@ void modify_mpc_cell(
     {
       col[0] = flattened_masters[1][j];
       A0[0] = coeff_i * flattened_coeffs[1][j]
-                * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
+              * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
       mat_set(row, col, A0);
     }
   }
@@ -395,7 +395,7 @@ void assemble_cells_impl(
     const std::function<int(const std::span<const std::int32_t>&,
                             const std::span<const std::int32_t>&,
                             const std::span<const T>)>& mat_add_values,
-    const dolfinx::mesh::Geometry& geometry,
+    const dolfinx::mesh::Geometry<double>& geometry,
     const std::vector<std::int32_t>& active_cells,
     std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                        const std::int32_t, const int)>

@@ -41,7 +41,7 @@ def rotation_matrix(axis, angle):
     return np.sin(angle) * axis_x + identity + outer
 
 
-def facet_normal_approximation(V, mt: _cpp.mesh.MeshTags_int32, mt_id: int, tangent=False, jit_options: dict = {},
+def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False, jit_options: dict = {},
                                form_compiler_options: dict = {}):
     """
     Approximate the facet normal by projecting it into the function space for a set of facets
@@ -211,7 +211,7 @@ def determine_closest_block(V, point):
     boundary_cells = np.array(np.unique(boundary_cells), dtype=np.int32)
     boundary_cells = boundary_cells[boundary_cells < cell_imap.size_local]
     bb_tree = _geometry.BoundingBoxTree(V.mesh, tdim, boundary_cells)
-    midpoint_tree = _cpp.geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
+    midpoint_tree = _geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest
 
@@ -224,7 +224,8 @@ def determine_closest_block(V, point):
     else:
         # Get cell geometry
         p = V.mesh.geometry.x
-        entities = _cpp.mesh.entities_to_geometry(V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False)
+        entities = _cpp.mesh.entities_to_geometry(
+            V.mesh._cpp_object, tdim, np.array([closest_cell], dtype=np.int32), False)
         R = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, p[entities[0]]))
 
     # Find processor with cell closest to point

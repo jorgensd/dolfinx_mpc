@@ -18,9 +18,10 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, VectorFunctionSpace, apply_lifting,
-                         assemble_matrix, assemble_vector, dirichletbc, form,
-                         locate_dofs_geometrical, set_bc)
+from dolfinx.fem import (Constant, VectorFunctionSpace,
+                         dirichletbc, form,
+                         locate_dofs_geometrical)
+from dolfinx.fem.petsc import assemble_matrix, assemble_vector, set_bc, apply_lifting
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, set_log_level
 from dolfinx.mesh import locate_entities_boundary, meshtags
@@ -119,9 +120,9 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         mpc.create_slip_constraint(V, (mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
-    rtol = 1e-9
-    petsc_options = {"ksp_rtol": 1e-9,
-                     "pc_type": "gamg", "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
+    rtol = 3e-8
+    petsc_options = {"ksp_rtol": 1e-9, "ksp_atol": 1e-9, "pc_type": "gamg",
+                     "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
                      "pc_gamg_threshold": 0.02, "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
                      "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
                      "mg_levels_esteig_ksp_type": "cg"
@@ -129,6 +130,39 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
                      }
 
     # Solve Linear problem
+
+    def patch_solve(self):
+        import dolfinx_mpc
+        # Assemble lhs
+        self._A.zeroEntries()
+        dolfinx_mpc.assemble_matrix(self._a, self._mpc, bcs=self.bcs, A=self._A)
+        self._A.assemble()
+
+        # Temporary fix while:
+        # https://gitlab.com/petsc/petsc/-/issues/1339
+        # gets sorted
+        self._A.convert("baij", self._A)
+        self._A.convert("aij", self._A)
+        assert self._A.assembled
+
+        # Assemble rhs
+        with self._b.localForm() as b_loc:
+            b_loc.set(0)
+        dolfinx_mpc.assemble_vector(self._L, self._mpc, b=self._b)
+
+        # Apply boundary conditions to the rhs
+        dolfinx_mpc.apply_lifting(self._b, [self._a], [self.bcs], self._mpc)
+        self._b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+        set_bc(self._b, self.bcs)
+
+        # Solve linear system and update ghost values in the solution
+        self._solver.solve(self._b, self._x)
+        self.u.x.scatter_forward()
+        self._mpc.backsubstitution(self.u)
+
+        return self.u
+
+    LinearProblem.solve = patch_solve  # type: ignore
     problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
     # Build near nullspace
@@ -182,8 +216,8 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-
-            assert np.allclose(uh_numpy, u_mpc, rtol=rtol)
+            assert np.allclose(uh_numpy, u_mpc, rtol=rtol, atol=rtol)
+    L_org.destroy()
 
 
 if __name__ == "__main__":

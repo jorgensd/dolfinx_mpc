@@ -39,6 +39,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     u_bc = Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
@@ -149,10 +150,10 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
 
     with Timer("~Elasticity: Solve problem") as timer:
         solver.setOperators(A)
-        uh = b.copy()
-        uh.set(0)
-        solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        uh = Function(mpc.function_space)
+        uh.x.set(0)
+        solver.solve(b, uh.vector)
+        uh.x.scatter_forward()
         mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
     if kspview:

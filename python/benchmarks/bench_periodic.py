@@ -137,12 +137,14 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
     with Timer("~Periodic: Solve") as timer:
         # Create solver, set operator and options
         PETSc.Mat.setNearNullSpace(A, nullspace)
-        uh = b.copy()
+        uh = Function(mpc.function_space)
+        uh.x.set(0)
         solver.setFromOptions()
         solver.setOperators(A)
-        solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        solver.solve(b, uh.vector)
+        uh.x.scatter_forward()
         mpc.backsubstitution(uh)
+
         solver_time = timer.elapsed()
         if kspview:
             solver.view()

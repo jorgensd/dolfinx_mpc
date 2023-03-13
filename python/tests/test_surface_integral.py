@@ -38,6 +38,8 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
+
     bc = fem.dirichletbc(u_bc, bc_dofs)
     bcs = [bc]
 
@@ -95,20 +97,11 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     fem.petsc.set_bc(b, bcs)
 
     solver.setOperators(A)
-    uh = b.copy()
-    uh.set(0)
-    solver.solve(b, uh)
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    uh = fem.Function(mpc.function_space)
+    uh.x.set(0)
+    solver.solve(b, uh.vector)
+    uh.x.scatter_forward()
     mpc.backsubstitution(uh)
-
-    # Write solution to file
-    # u_h = dolfinx.Function(mpc.function_space)
-    # u_h.vector.setArray(uh.array)
-    # u_h.name = "u_mpc"
-    # outfile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, "output/uh.xdmf", "w")
-    # outfile.write_mesh(mesh)
-    # outfile.write_function(u_h)
-    # outfile.close()
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
@@ -130,7 +123,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -140,7 +133,8 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
-
+    L_org.destroy()
+    b.destroy()
     list_timings(comm, [TimingType.wall])
 
 
@@ -207,5 +201,6 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
     with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
-
+    L_org.destroy()
+    b.destroy()
     list_timings(comm, [TimingType.wall])

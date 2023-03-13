@@ -182,6 +182,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     u_bc = fem.Function(V)
     with u_bc.vector.localForm() as u_local:
         u_local.set(0.0)
+    u_bc.vector.destroy()
 
     bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs)
@@ -259,22 +260,13 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
 
     with Timer("~MPC: Solve"):
         solver.setOperators(A)
-        uh = b.copy()
-        uh.set(0)
-        solver.solve(b, uh)
+        uh = fem.Function(mpc.function_space)
+        uh.x.set(0)
+        u_vec = uh.vector
+        solver.solve(b, u_vec)
 
-    uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    u_vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     mpc.backsubstitution(uh)
-
-    # Write solution to file
-    # u_h = fem.Function(mpc.function_space)
-    # u_h.vector.setArray(uh.array)
-    # u_h.x.scatter_forward()
-    # u_h.name = "u_{0:.2f}".format(theta)
-    # import dolfinx.io as io
-    # with io.XDMFFile(comm, "output/rotated_cube3D.xdmf", "w") as outfile:
-    #     outfile.write_mesh(mesh)
-    #     outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
@@ -296,7 +288,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(u_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -306,5 +298,6 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             # Back substitution to full solution vector
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
+    L_org.destroy()
 
     list_timings(comm, [TimingType.wall])

@@ -60,6 +60,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
     _A: PETSc.Mat
     _b: PETSc.Vec
     _solver: PETSc.KSP
+    _x: PETSc.Vec
     bcs: typing.List[_fem.DirichletBCMetaClass]
     __slots__ = tuple(__annotations__)
 
@@ -78,7 +79,6 @@ class LinearProblem(_fem.petsc.LinearProblem):
         if not mpc.finalized:
             raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
         self._mpc = mpc
-
         # Create function containing solution vector
         if u is None:
             self.u = _fem.Function(self._mpc.function_space)
@@ -88,6 +88,8 @@ class LinearProblem(_fem.petsc.LinearProblem):
             else:
                 raise ValueError("The input function has to be in the function space in the multi-point constraint",
                                  "i.e. u = dolfinx.fem.Function(mpc.function_space)")
+        self._x = self.u.vector
+
         # Create MPC matrix
         pattern = create_sparsity_pattern(self._a, self._mpc)
         pattern.assemble()
@@ -136,8 +138,8 @@ class LinearProblem(_fem.petsc.LinearProblem):
         _fem.petsc.set_bc(self._b, self.bcs)
 
         # Solve linear system and update ghost values in the solution
-        self._solver.solve(self._b, self.u.vector)
+        self._solver.solve(self._b, self._x)
         self.u.x.scatter_forward()
-        self._mpc.backsubstitution(self.u.vector)
+        self._mpc.backsubstitution(self.u)
 
         return self.u
