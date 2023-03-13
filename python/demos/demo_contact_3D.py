@@ -149,8 +149,14 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
 
     u_h = fem.Function(mpc.function_space)
     with Timer("~~Contact: Solve"):
+        # Temporary fix while:
+        # https://gitlab.com/petsc/petsc/-/issues/1339
+        # gets sorted
+        A.convert("baij", A)
+        A.convert("aij", A)
         solver.solve(b, u_h.vector)
         u_h.x.scatter_forward()
+
     with Timer("~~Contact: Backsubstitution"):
         mpc.backsubstitution(u_h)
 
@@ -165,12 +171,16 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         print(f"Norm of u {unorm:.5e}")
 
     # Write solution to file
-    u_h.name = f"u_{celltype}_{theta:.2f}{mesh_ext}{type_ext}".format(celltype, theta, type_ext, mesh_ext)
+    u_h.name = f"u_{celltype}_{theta:.2f}{mesh_ext}{type_ext}"
     outfile.write_mesh(mesh)
     outfile.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
+    outfile.close()
+
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     if not compare:
+        b.destroy()
+        solver.destroy()
         return
 
     log_info("Solving reference problem with global matrix (using scipy)")
@@ -203,6 +213,9 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
             assert np.allclose(uh_numpy, u_mpc)
 
     list_timings(mesh.comm, [TimingType.wall])
+    b.destroy()
+    L_org.destroy()
+    solver.destroy()
 
 
 if __name__ == "__main__":
