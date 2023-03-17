@@ -139,9 +139,9 @@ jobs:
 
       - name: Run benchmarks
         run: |
-          mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_periodic.py --nref=2 --tet --gamg --timings
-          mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_elasticity_edge.py --nref=2 --gamg --timings
-          mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_contact_3D.py
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_periodic.py --nref=2 --tet --gamg --timings
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_elasticity_edge.py --nref=2 --gamg --timings
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_contact_3D.py
 
       - name: Run demos (serial)
         run: |
