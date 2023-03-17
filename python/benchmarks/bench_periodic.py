@@ -27,6 +27,7 @@ from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
 from dolfinx_mpc.utils import log_info
 from mpi4py import MPI
 from petsc4py import PETSc
+from pathlib import Path
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 
@@ -175,7 +176,9 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
         ext = "tet" if tetra else "hex"
         mesh.name = f"mesh_{ext}"
         u_h.name = f"u_{ext}"
-        fname = f"results/bench_periodic3d_{r_lvl}_{ext}.xdmf"
+        results = Path("results").absolute()
+        results.mkdir(exist_ok=True)
+        fname = results / f"bench_periodic3d_{r_lvl}_{ext}.xdmf"
         with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
             out_xdmf.write_mesh(mesh)
             out_xdmf.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
@@ -203,6 +206,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     N = args.n_ref + 1
+    out_file = Path(args.hdf5).absolute()
+    out_file.parent.mkdir(exist_ok=True)
 
     # Prepare output HDF5 file
     h5f = h5py.File(args.hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)

@@ -20,6 +20,7 @@ REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>0.6.0.dev0"]
 
 extras = {
     'docs': ['jupyter-book'],
+    "test": ["pytest", "coverage"]
 }
 
 # 'all' includes all of the above

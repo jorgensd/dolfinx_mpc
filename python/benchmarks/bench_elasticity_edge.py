@@ -23,6 +23,8 @@ from petsc4py import PETSc
 from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
                  as_vector, ds, dx, grad, inner, sym, tr)
 
+from pathlib import Path
+
 
 def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdmf: bool = False,
                           boomeramg: bool = False, kspview: bool = False, degree: int = 1, info: bool = False):
@@ -180,7 +182,9 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         u_h = Function(mpc.function_space)
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
-        fname = f"results/bench_elasticity_edge_{r_lvl}.xdmf"
+        results = Path("results").absolute()
+        results.mkdir(exist_ok=True)
+        fname = results / f"bench_elasticity_edge_{r_lvl}.xdmf"
         with XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)
@@ -205,8 +209,9 @@ if __name__ == "__main__":
                                help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
     N = args.n_ref + 1
-
-    h5f = h5py.File('bench_edge_output.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
+    out_file = Path('output/ench_edge_output.hdf5').absolute()
+    out_file.parent.mkdir(exist_ok=True)
+    h5f = h5py.File(out_file, 'w', driver='mpio', comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     h5f.create_dataset("num_slaves", (N, MPI.COMM_WORLD.size), dtype=np.int32)
