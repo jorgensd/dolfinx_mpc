@@ -134,7 +134,7 @@ jobs:
       - name: Run tests (3 processes)
         run: mpirun -n 3 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/
 
-      - name: Run tests (4 processss)
+      - name: Run tests (4 processes)
         run: mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/
 
       - name: Run benchmarks
