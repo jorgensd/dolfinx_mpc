@@ -174,7 +174,7 @@ jobs:
           coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --quad --gmsh --theta 0 --timing
           coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --quad --gmsh --theta 1.05 --timing
 
-      - name Run contact demos 2D (parallel)
+      - name: Run contact demos 2D (parallel)
         run: |
           mpirun -n 2 coverage run --rcfile=../../.coveragerc -m mpi4py python/demos/demo_contact_2D.py --theta 0 --timing
           mpirun -n 2 coverage run --rcfile=../../.coveragerc -m mpi4py python/demos/demo_contact_2D.py --theta 1.05 --timing
