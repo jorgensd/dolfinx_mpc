@@ -26,7 +26,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Cell, Identity, Mesh, TestFunction, TrialFunction,
                  VectorElement, dx, grad, inner, sym, tr)
-
+from pathlib import Path
 comm = MPI.COMM_WORLD
 
 
@@ -56,8 +56,8 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         n = np.cross(v1, v2)
         D = -(n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2])
         return lambda x: n[0] * x[0] + n[1] * x[1] + D > -n[2] * x[2]
-
-    tmp_mesh_name = "tmp_mesh.xdmf"
+    tmp_mesh_name = Path("tmp_mesh.xdmf").absolute()
+    tmp_mesh_name.parent.mkdir(exist_ok=True)
     r_matrix = rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
     if MPI.COMM_WORLD.rank == 0:
@@ -152,7 +152,9 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     sorted_indices = np.argsort(indices)
     mt = meshtags(mesh, fdim, indices[sorted_indices], values[sorted_indices])
     mt.name = "facet_tags"
-    fname = f"meshes/mesh_{ext}_{theta:.2f}.xdmf"
+    mesh_dir = Path("meshes").absolute()
+    mesh_dir.mkdir(exist_ok=True)
+    fname = mesh_dir / f"mesh_{ext}_{theta:.2f}.xdmf"
 
     with XDMFFile(MPI.COMM_WORLD, fname, "w") as o_f:
         o_f.write_mesh(mesh)
@@ -169,7 +171,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     # Read in mesh
     mesh_3D_dolfin(theta=theta, ct=ct, ext=celltype, num_refinements=num_refinements, N0=N0)
     comm.barrier()
-    with XDMFFile(comm, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
+    mesh_dir = Path("meshes").absolute()
+    with XDMFFile(comm, mesh_dir / f"mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
         mesh = xdmf.read_mesh(name="mesh")
         tdim = mesh.topology.dim
         fdim = tdim - 1
@@ -294,7 +297,9 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     it = solver.getIterationNumber()
 
     # Write solution to file
-    with XDMFFile(comm, f"results/bench_contact_{num_dofs}.xdmf", "w") as outfile:
+    results = Path("results").absolute()
+    results.mkdir(exist_ok=True)
+    with XDMFFile(comm, results / f"bench_contact_{num_dofs}.xdmf", "w") as outfile:
         outfile.write_mesh(mesh)
         outfile.write_function(uh, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
     # Write performance data to file
@@ -304,7 +309,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
         results_file = None
         num_procs = comm.size
         if comm.rank == 0:
-            results_file = open(f"results_bench_{num_dofs}.txt", "w")
+            results_file = open(results / f"results_bench_{num_dofs}.txt", "w")
             print(f"#Procs: {num_procs}", file=results_file)
             print(f"#Dofs: {num_dofs}", file=results_file)
             print(f"#Slaves: {num_slaves}", file=results_file)

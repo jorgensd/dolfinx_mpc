@@ -20,3 +20,5 @@ CMakeFiles
 
 **/html/**
 **/_build/**
+.coverage
+.coverage.*

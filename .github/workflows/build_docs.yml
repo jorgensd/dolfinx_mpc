@@ -1,23 +1,10 @@
-name: Github Pages
+name: Build docs
 
 on:
-  push:
-    branches:
-      - "**"
-
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-# Allow one concurrent deployment
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
+  workflow_run:
+    workflows: [Test MPC]
+    types:
+      - completed
 
 jobs:
   build:
@@ -26,6 +13,7 @@ jobs:
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./docs/_build/html
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v3
@@ -40,30 +28,38 @@ jobs:
         run: python3 -m pip -v install python/[docs]
 
       - name: Build docs
-        run: jupyter book build -W docs
+        run: jupyter book build docs
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v1
+      # Based on: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#using-data-from-the-triggering-workflow
+      - name: 'Download coverage artifact'
+        uses: actions/github-script@v6.4.0
         with:
+          script: |
+            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               run_id: context.payload.workflow_run.id,
+            });
+            let matchArtifact = allArtifacts.data.artifacts.filter((artifact) => {
+              return artifact.name == "code-coverage-report"
+            })[0];
+            let download = await github.rest.actions.downloadArtifact({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               artifact_id: matchArtifact.id,
+               archive_format: 'zip',
+            });
+            let fs = require('fs');
+            fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/code-coverage-report.zip`, Buffer.from(download.data));
+
+      - name: Unzip artifact
+        run: |
+          unzip code-coverage-report.zip -d ${{ env.PUBLISH_DIR }}/code-coverage-report
+
+
+      - name: Upload documentation as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: documentation
           path: ${{ env.PUBLISH_DIR }}
-
-  # Single deploy job since we're just deploying
-  deploy:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v2
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v1
+          if-no-files-found: error
