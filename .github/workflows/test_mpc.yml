@@ -165,7 +165,7 @@ jobs:
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_elasticity_disconnect.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_periodic_gep.py
 
-      - name Run contact demos 2D (serial)
+      - name: Run contact demos 2D (serial)
         run: |
           coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --theta 0 --timing
           coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --theta 1.05 --timing
