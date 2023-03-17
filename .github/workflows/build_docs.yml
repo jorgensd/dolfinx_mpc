@@ -54,6 +54,8 @@ jobs:
 
       - name: Unzip artifact
         run: |
+          apt-get update 
+          apt-get install -y unzip
           unzip code-coverage-report.zip -d ${{ env.PUBLISH_DIR }}/code-coverage-report
 
 
