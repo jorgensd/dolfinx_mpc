@@ -212,7 +212,7 @@ jobs:
           coverage html
 
       - name: Upload coverage report as artifact
-        if: matrix.build_mode == 'release' && matrix.petsc_arch == 'real'  && matrix.CC == "cc" && matrix.CXX == "c++"
+        if: matrix.build_mode == 'release' && matrix.petsc_arch == 'real' && matrix.CC == 'cc' && matrix.CXX == 'c++''
         uses: actions/upload-artifact@v3
         with:
           name: code-coverage-report
