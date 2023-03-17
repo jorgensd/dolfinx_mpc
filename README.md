@@ -3,6 +3,8 @@
 
 [![SonarCloud](https://sonarcloud.io/images/project_badges/sonarcloud-orange.svg)](https://sonarcloud.io/summary/new_code?id=jorgensd_dolfinx_mpc)
 
+[Code Coverage Report](https://jsdokken.com/dolfinx_mpc/code-coverage-report/index.html)
+
 Author: Jørgen S. Dokken
 
 This library contains an add-on to FEniCSx enabling the possibilities
