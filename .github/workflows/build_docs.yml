@@ -2,7 +2,7 @@ name: Build docs
 
 on:
   workflow_run:
-    workflows: [Test DOLFINx-MPC]
+    workflows: [Test MPC]
     types:
       - completed
 
