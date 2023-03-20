@@ -2,9 +2,8 @@ name: Test MPC
 
 on:
   # Trigger tests on push
-  push:
-    branches:
-      - "**"
+  workflow_dispatch:
+  workflow_call:
   pull_request:
     branches:
       - main

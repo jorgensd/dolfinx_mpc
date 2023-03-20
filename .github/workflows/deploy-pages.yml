@@ -1,12 +1,8 @@
 name: Github Pages
 
 on:
-  workflow_run:
-    workflows: [Build docs]
+  push:
     branches: [main]
-    types:
-      - completed
-
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -19,45 +15,41 @@ concurrency:
   group: "pages"
   cancel-in-progress: true
 
-jobs:
+jobs:  
+  run-coverage:
+    uses: ./.github/workflows/test_mpc.yml
+
+  build-docs:
+    uses: ./.github/workflows/build_docs.yml
+
+
   deploy:
+    needs: [run-coverage, build-docs]
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
     runs-on: ubuntu-latest
 
-    steps:
-      # Based on: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#using-data-from-the-triggering-workflow
-      - name: 'Download pages artifact'
-        uses: actions/github-script@v6.4.0
-        with:
-          script: |
-            let allArtifacts = await github.rest.actions.listWorkflowRunArtifacts({
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               run_id: context.payload.workflow_run.id,
-            });
-            let matchArtifact = allArtifacts.data.artifacts.filter((artifact) => {
-              return artifact.name == "documentation"
-            })[0];
-            let download = await github.rest.actions.downloadArtifact({
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               artifact_id: matchArtifact.id,
-               archive_format: 'zip',
-            });
-            let fs = require('fs');
-            fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/documentation.zip`, Buffer.from(download.data));
-    
-      - name: Unzip artifact
-        run: |
-          unzip documentation.zip -d documentation
+    - name: Download docs artifact
+      # docs artifact is uploaded by build-docs job
+      uses: actions/download-artifact@v3
+      with:
+        name: documentation
+        path: "./public"
 
+      - name: Download docs artifact
+        # docs artifact is uploaded by build-docs job
+        uses: actions/download-artifact@v3
+        with:
+          name: code-coverage-report
+          path: "./public/code-coverage-report"
+  
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
         with:
-          path: documentation
+          path: "./public"
 
       - name: Checkout
         uses: actions/checkout@v3
