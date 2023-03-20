@@ -22,7 +22,6 @@ jobs:
   build-docs:
     uses: ./.github/workflows/build_docs.yml
 
-
   deploy:
     needs: [run-coverage, build-docs]
 
@@ -31,13 +30,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     runs-on: ubuntu-latest
-
-    - name: Download docs artifact
-      # docs artifact is uploaded by build-docs job
-      uses: actions/download-artifact@v3
-      with:
-        name: documentation
-        path: "./public"
+    steps:
+      - name: Download docs artifact
+        # docs artifact is uploaded by build-docs job
+        uses: actions/download-artifact@v3
+        with:
+          name: documentation
+          path: "./public"
 
       - name: Download docs artifact
         # docs artifact is uploaded by build-docs job
