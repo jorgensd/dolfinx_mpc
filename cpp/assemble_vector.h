@@ -14,7 +14,7 @@
 
 namespace dolfinx_mpc
 {
-template <typename T>
+template <typename T, std::floating_point U>
 class MultiPointConstraint;
 
 /// Given a local element vector, move all slave contributions to the global
@@ -59,7 +59,8 @@ void modify_mpc_vec(
         b[masters_i[j]] += coeffs_i[j] * b_local_copy[local_index[i]];
       else
         // Use Hermitian transpose for type std::complex<double>
-        b[masters_i[j]] += std::conj(coeffs_i[j]) * b_local_copy[local_index[i]];
+        b[masters_i[j]]
+            += std::conj(coeffs_i[j]) * b_local_copy[local_index[i]];
       b_local[local_index[i]] = 0;
     }
   }
@@ -72,8 +73,8 @@ void modify_mpc_vec(
 /// @param[in] mpc The multi-point constraint
 void assemble_vector(
     std::span<double> b, const dolfinx::fem::Form<double>& L,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
-        mpc);
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc);
 
 /// Assemble a linear form into a vector
 /// @param[in] b The vector to be assembled. It will not be zeroed before
@@ -84,6 +85,7 @@ void assemble_vector(
     std::span<std::complex<double>> b,
     const dolfinx::fem::Form<std::complex<double>>& L,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc);
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc);
 
 } // namespace dolfinx_mpc

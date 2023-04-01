@@ -16,7 +16,7 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Geometry.h>
 
-namespace
+namespace impl
 {
 
 /// Implementation of bc application (lifting) for an given a set of integration
@@ -41,14 +41,14 @@ namespace
 /// vector be, i.e. be <- be - scale * (A (g - x0))
 /// @tparam T Scalartype of local vector
 /// @tparam estride Stride in actiave entities
-template <typename T, std::size_t estride>
-void _lift_bc_entities(
+template <typename T, std::size_t estride, std::floating_point U>
+void lift_bc_entities(
     std::span<T> b, std::span<const std::int32_t> active_entities,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs0,
     int bs1, const std::span<const T>& bc_values1,
     const std::vector<std::int8_t>& bc_markers1,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
     const std::function<const std::int32_t(std::span<const std::int32_t>)>
         fetch_cells,
     const std::function<void(std::span<T>, std::span<T>, const int, const int,
@@ -140,12 +140,12 @@ void _lift_bc_entities(
 /// @param[in] x0 The function to subtract
 /// @param[in] scale Scale of lifting
 /// @param[in] mpc1 The multi point constraints
-template <typename T>
-void _apply_lifting(
+template <typename T, std::floating_point U>
+void apply_lifting(
     std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     const std::span<const T>& x0, double scale,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
   const std::vector<T> constants = pack_constants(*a);
   auto coeff_vec = dolfinx::fem::allocate_coefficient_storage(*a);
@@ -239,9 +239,8 @@ void _apply_lifting(
         const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(
-              std::next(x_g.begin(), 3 * x_dofs[i]),3,
-              std::next(coordinate_dofs.begin(), 3 * i));
+          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                      std::next(coordinate_dofs.begin(), 3 * i));
         }
         // Tabulate tensor
         std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
@@ -280,8 +279,8 @@ void _apply_lifting(
       };
       // Assemble over all active cells
       const std::vector<std::int32_t>& cells = a->cell_domains(i);
-      _lift_bc_entities<T, 1>(b, cells, dofmap0, dofmap1, bs0, bs1, bc_values1,
-                              bc_markers1, mpc1, fetch_cells, lift_bcs_cell);
+      lift_bc_entities<T, 1>(b, cells, dofmap0, dofmap1, bs0, bs1, bc_values1,
+                             bc_markers1, mpc1, fetch_cells, lift_bcs_cell);
     }
   }
 
@@ -324,9 +323,8 @@ void _apply_lifting(
         std::vector<double> coordinate_dofs(3 * num_dofs_g);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(
-              std::next(x_g.begin(), 3 * x_dofs[i]),3,
-              std::next(coordinate_dofs.begin(), 3 * i));
+          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                      std::next(coordinate_dofs.begin(), 3 * i));
         }
 
         // Tabulate tensor
@@ -369,9 +367,9 @@ void _apply_lifting(
       // Assemble over all active cells
       const std::vector<std::int32_t>& active_facets
           = a->exterior_facet_domains(i);
-      _lift_bc_entities<T, 2>(b, active_facets, dofmap0, dofmap1, bs0, bs1,
-                              bc_values1, bc_markers1, mpc1, fetch_cell,
-                              lift_bc_exterior_facet);
+      impl::lift_bc_entities<T, 2>(b, active_facets, dofmap0, dofmap1, bs0, bs1,
+                                   bc_values1, bc_markers1, mpc1, fetch_cell,
+                                   lift_bc_exterior_facet);
     }
   }
   if (a->num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
@@ -392,7 +390,7 @@ void _apply_lifting(
     //     get_perm = [](std::size_t) { return 0; };
   }
 }
-} // namespace
+} // namespace impl
 
 namespace dolfinx_mpc
 {
@@ -423,7 +421,8 @@ void apply_lifting(
         std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>>&
         bcs1,
     const std::vector<std::span<const double>>& x0, double scale,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc)
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -440,12 +439,12 @@ void apply_lifting(
   {
     if (x0.empty())
     {
-      _apply_lifting<double>(b, a[j], bcs1[j], std::span<const double>(), scale,
-                             mpc);
+      impl::apply_lifting<double>(b, a[j], bcs1[j], std::span<const double>(),
+                                  scale, mpc);
     }
     else
     {
-      _apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc);
+      impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc);
     }
   }
 }
@@ -478,7 +477,8 @@ void apply_lifting(
     const std::vector<std::span<const std::complex<double>>>& x0, double scale,
 
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc)
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -495,13 +495,14 @@ void apply_lifting(
   {
     if (x0.empty())
     {
-      _apply_lifting<std::complex<double>>(
+      impl::apply_lifting<std::complex<double>>(
           b, a[j], bcs1[j], std::span<const std::complex<double>>(), scale,
           mpc);
     }
     else
     {
-      _apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j], scale, mpc);
+      impl::apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j], scale,
+                                                mpc);
     }
   }
 }

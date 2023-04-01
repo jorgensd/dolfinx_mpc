@@ -18,7 +18,7 @@
 
 namespace dolfinx_mpc
 {
-template <typename T>
+template <typename T, std::floating_point U>
 class MultiPointConstraint
 
 {
@@ -32,7 +32,8 @@ public:
   /// @param[in] coeffs Coefficients corresponding to each master
   /// @param[in] owners Owners for each master
   /// @param[in] offsets Offsets for masters
-  MultiPointConstraint(std::shared_ptr<const dolfinx::fem::FunctionSpace> V,
+  /// @tparam The floating type of the mesh
+  MultiPointConstraint(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
                        const std::vector<std::int32_t>& slaves,
                        const std::vector<std::int64_t>& masters,
                        const std::vector<T>& coeffs,
@@ -115,12 +116,12 @@ public:
     _num_local_slaves = std::distance(_slaves.begin(), it);
 
     // Create new function space with extended index map
-    _V = std::make_shared<const dolfinx::fem::FunctionSpace>(
+    _V = std::make_shared<const dolfinx::fem::FunctionSpace<U>>(
         create_extended_functionspace(V, _master_data, _owner_data));
 
     // Map global masters to local index in extended function space
     std::vector<std::int32_t> masters_local
-        = map_dofs_global_to_local(_V, _master_data);
+        = map_dofs_global_to_local<U>(_V, _master_data);
     _master_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
         masters_local, masters_offsets);
   }
@@ -185,14 +186,14 @@ public:
   const std::int32_t num_local_slaves() const { return _num_local_slaves; }
 
   /// Return the MPC FunctionSpace
-  std::shared_ptr<const dolfinx::fem::FunctionSpace> function_space() const
+  std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> function_space() const
   {
     return _V;
   }
 
 private:
   // MPC function space
-  std::shared_ptr<const dolfinx::fem::FunctionSpace> _V;
+  std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> _V;
 
   // Array including all slaves (local + ghosts)
   std::vector<std::int32_t> _slaves;
