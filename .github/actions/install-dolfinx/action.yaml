@@ -60,7 +60,7 @@ runs:
     - name: Configure C++ (dolfinx)
       shell: bash -el {0}
       run:
-        PETSC_DIR=${{ github.event.inputs.petsc_dir }} PETSC_ARCH=${{ github.event.inputs.petsc_arch }} cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
+        PETSC_DIR=${{ inputs.petsc_dir }} PETSC_ARCH=${{ inputs.petsc_arch }} cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
 
     - name: Build and install C++ library (dolfinx)
       shell: bash -el {0}
