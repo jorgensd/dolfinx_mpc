@@ -158,8 +158,8 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
     with XDMFFile(MPI.COMM_WORLD, fname, "w") as o_f:
         o_f.write_mesh(mesh)
-        o_f.write_meshtags(ct)
-        o_f.write_meshtags(mt)
+        o_f.write_meshtags(ct, x=mesh.geometry)
+        o_f.write_meshtags(mt, x=mesh.geometry)
     timer.stop()
 
 

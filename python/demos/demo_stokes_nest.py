@@ -262,7 +262,7 @@ ph.name = "p"
 with dolfinx.io.XDMFFile(
         mesh.comm, "results/demo_stokes_nest.xdmf", "w") as outfile:
     outfile.write_mesh(mesh)
-    outfile.write_meshtags(mt)
+    outfile.write_meshtags(mt, mesh.geometry)
     outfile.write_function(uh)
     outfile.write_function(ph)
 

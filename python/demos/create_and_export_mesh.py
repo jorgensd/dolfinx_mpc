@@ -450,8 +450,8 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0):
         mt.name = "facet_tags"
         with _io.XDMFFile(MPI.COMM_SELF, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "w") as o_f:
             o_f.write_mesh(mesh)
-            o_f.write_meshtags(ct)
-            o_f.write_meshtags(mt)
+            o_f.write_meshtags(ct, x=mesh.geometry)
+            o_f.write_meshtags(mt, x=mesh.geometry)
     MPI.COMM_WORLD.barrier()
 
 
@@ -577,6 +577,6 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
 
         with _io.XDMFFile(MPI.COMM_SELF, fname, "w") as o_f:
             o_f.write_mesh(mesh)
-            o_f.write_meshtags(ct)
-            o_f.write_meshtags(mt)
+            o_f.write_meshtags(ct, mesh.geometry)
+            o_f.write_meshtags(mt, mesh.geometry)
     timer.stop()

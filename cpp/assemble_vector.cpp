@@ -31,7 +31,8 @@ template <typename T, std::size_t estride>
 void _assemble_entities_impl(
     std::span<T> b, std::span<const std::int32_t> active_entities,
     const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap, int bs,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, double>>&
+        mpc,
     const std::function<const std::int32_t(std::span<const std::int32_t>)>
         fetch_cells,
     const std::function<void(std::span<T>, std::span<const std::int32_t>,
@@ -82,13 +83,13 @@ void _assemble_entities_impl(
   }
 }
 
-template <typename T>
+template <typename T, std::floating_point U>
 void _assemble_vector(
     std::span<T> b, const dolfinx::fem::Form<T>& L,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
 {
 
-  std::shared_ptr<const dolfinx::mesh::Mesh> mesh = L.mesh();
+  const auto mesh = L.mesh();
   assert(mesh);
 
   // Get dofmap data
@@ -121,8 +122,8 @@ void _assemble_vector(
   std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = std::span(mesh->topology().get_cell_permutation_info());
+    mesh->topology_mutable()->create_entity_permutations();
+    cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
   // FIXME: Add proper interface for num coordinate dofs
   const std::size_t num_dofs_g = x_dofmap.num_links(cell);
@@ -152,9 +153,9 @@ void _assemble_vector(
         // Fetch the coordinates of the cell
         const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
-        {std::copy_n(
-              std::next(x_g.begin(), 3 * x_dofs[i]),3,
-              std::next(coordinate_dofs.begin(), 3 * i));
+        {
+          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                      std::next(coordinate_dofs.begin(), 3 * i));
         }
         // Tabulate tensor
         std::fill(be.data(), be.data() + be.size(), 0);
@@ -199,9 +200,8 @@ void _assemble_vector(
         const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-         std::copy_n(
-              std::next(x_g.begin(), 3 * x_dofs[i]),3,
-              std::next(coordinate_dofs.begin(), 3 * i));
+          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                      std::next(coordinate_dofs.begin(), 3 * i));
         }
 
         // Tabulate tensor
@@ -228,11 +228,11 @@ void _assemble_vector(
     // std::function<std::uint8_t(std::size_t)> get_perm;
     // if (L.needs_facet_permutations())
     // {
-    //   const int tdim = mesh->topology().dim();
+    //   const int tdim = mesh->topology()->dim();
     //   mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
     //   mesh->topology_mutable().create_entity_permutations();
     //   const std::vector<std::uint8_t>& perms
-    //       = mesh->topology().get_facet_permutations();
+    //       = mesh->topology()->get_facet_permutations();
     //   get_perm = [&perms](std::size_t i) { return perms[i]; };
     // }
     // else
@@ -244,7 +244,8 @@ void _assemble_vector(
 
 void dolfinx_mpc::assemble_vector(
     std::span<double> b, const dolfinx::fem::Form<double>& L,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>& mpc)
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc)
 {
   _assemble_vector<double>(b, L, mpc);
 }
@@ -253,7 +254,8 @@ void dolfinx_mpc::assemble_vector(
     std::span<std::complex<double>> b,
     const dolfinx::fem::Form<std::complex<double>>& L,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc)
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc)
 {
   _assemble_vector<std::complex<double>>(b, L, mpc);
 }

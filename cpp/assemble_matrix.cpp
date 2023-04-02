@@ -254,7 +254,7 @@ void modify_mpc_cell(
 } // namespace
 
 //-----------------------------------------------------------------------------
-template <typename T>
+template <typename T, std::floating_point U>
 void assemble_exterior_facets(
     const std::function<int(const std::span<const std::int32_t>&,
                             const std::span<const std::int32_t>&,
@@ -262,7 +262,7 @@ void assemble_exterior_facets(
     const std::function<int(const std::span<const std::int32_t>&,
                             const std::span<const std::int32_t>&,
                             const std::span<const T>)>& mat_add_values,
-    const dolfinx::mesh::Mesh& mesh,
+    const dolfinx::mesh::Mesh<double>& mesh,
     const std::span<const std::int32_t>& facets,
     const std::function<void(const std::span<T>&,
                              const std::span<const std::uint32_t>&,
@@ -278,8 +278,8 @@ void assemble_exterior_facets(
     const std::span<const T> coeffs, int cstride,
     const std::vector<T>& constants,
     const std::span<const std::uint32_t>& cell_info,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
   // Get MPC data
   const std::array<
@@ -300,10 +300,10 @@ void assemble_exterior_facets(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  std::span<const double> x_g = mesh.geometry().x();
+  std::span<const U> x_g = mesh.geometry().x();
 
   // Iterate over all facets
-  std::vector<double> coordinate_dofs(3 * num_dofs_g);
+  std::vector<U> coordinate_dofs(3 * num_dofs_g);
   const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
   const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
   const std::uint32_t ndim0 = bs0 * num_dofs0;
@@ -387,7 +387,7 @@ void assemble_exterior_facets(
   }
 } // namespace
 //-----------------------------------------------------------------------------
-template <typename T>
+template <typename T, std::floating_point U>
 void assemble_cells_impl(
     const std::function<int(const std::span<const std::int32_t>&,
                             const std::span<const std::int32_t>&,
@@ -411,8 +411,8 @@ void assemble_cells_impl(
     const std::span<const T>& coeffs, int cstride,
     const std::vector<T>& constants,
     const std::span<const std::uint32_t>& cell_info,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
   // Get MPC data
   const std::array<
@@ -434,10 +434,10 @@ void assemble_cells_impl(
 
   // FIXME: Add proper interface for num coordinate dofs
   const int num_dofs_g = x_dofmap.num_links(0);
-  std::span<const double> x_g = geometry.x();
+  std::span<const U> x_g = geometry.x();
 
   // Iterate over active cells
-  std::vector<double> coordinate_dofs(3 * num_dofs_g);
+  std::vector<U> coordinate_dofs(3 * num_dofs_g);
   const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
   const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
   const std::uint32_t ndim0 = num_dofs0 * bs0;
@@ -509,7 +509,7 @@ void assemble_cells_impl(
   }
 }
 //-----------------------------------------------------------------------------
-template <typename T>
+template <typename T, std::floating_point U>
 void assemble_matrix_impl(
     const std::function<int(const std::span<const std::int32_t>&,
                             const std::span<const std::int32_t>&,
@@ -519,10 +519,10 @@ void assemble_matrix_impl(
                             const std::span<const T>)>& mat_add_values,
     const dolfinx::fem::Form<T>& a, const std::vector<std::int8_t>& bc0,
     const std::vector<std::int8_t>& bc1,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
-  std::shared_ptr<const dolfinx::mesh::Mesh> mesh = a.mesh();
+  auto mesh = a.mesh();
   assert(mesh);
 
   // Get dofmap data
@@ -563,8 +563,8 @@ void assemble_matrix_impl(
   std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = std::span(mesh->topology().get_cell_permutation_info());
+    mesh->topology_mutable()->create_entity_permutations();
+    cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
   for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
   {
@@ -595,7 +595,7 @@ void assemble_matrix_impl(
   // if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   // {
   //   throw std::runtime_error("Not implemented yet");
-  //   // const int tdim = mesh->topology().dim();
+  //   // const int tdim = mesh->topology()->dim();
   //   // mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
   //   // mesh->topology_mutable().create_entity_permutations();
 
@@ -604,7 +604,7 @@ void assemble_matrix_impl(
   //   // {
   //   //   mesh->topology_mutable().create_entity_permutations();
   //   //   const std::vector<std::uint8_t>& perms
-  //   //       = mesh->topology().get_facet_permutations();
+  //   //       = mesh->topology()->get_facet_permutations();
   //   //   get_perm = [&perms](std::size_t i) { return perms[i]; };
   //   // }
   //   // else
@@ -612,7 +612,7 @@ void assemble_matrix_impl(
   // }
 }
 //-----------------------------------------------------------------------------
-template <typename T>
+template <typename T, std::floating_point U>
 void _assemble_matrix(
     const std::function<int(const std::span<const std::int32_t>&,
                             const std::span<const std::int32_t>&,
@@ -621,8 +621,8 @@ void _assemble_matrix(
                             const std::span<const std::int32_t>&,
                             const std::span<const T>&)>& mat_add,
     const dolfinx::fem::Form<T>& a,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T>>& mpc1,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     const T diagval)
 {
@@ -686,10 +686,10 @@ void dolfinx_mpc::assemble_matrix(
                             const std::span<const std::int32_t>&,
                             const std::span<const double>&)>& mat_add,
     const dolfinx::fem::Form<double>& a,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
-        mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
-        mpc1,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     const double diagval)
@@ -708,9 +708,11 @@ void dolfinx_mpc::assemble_matrix(
         mat_add,
     const dolfinx::fem::Form<std::complex<double>>& a,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc0,
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc0,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc1,
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc1,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,

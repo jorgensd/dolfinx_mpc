@@ -12,7 +12,7 @@
 
 namespace dolfinx_mpc
 {
-template <typename T>
+template <typename T, std::floating_point U>
 class MultiPointConstraint;
 
 /// Assemble bilinear form into a matrix
@@ -32,10 +32,10 @@ void assemble_matrix(
                             const std::span<const std::int32_t>&,
                             const std::span<const double>&)>& mat_add,
     const dolfinx::fem::Form<double>& a,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
-        mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<double>>&
-        mpc1,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     const double diagval = 1.0);
@@ -61,9 +61,11 @@ void assemble_matrix(
         mat_add,
     const dolfinx::fem::Form<std::complex<double>>& a,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc0,
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc0,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>>>& mpc1,
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc1,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
