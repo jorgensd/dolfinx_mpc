@@ -15,12 +15,26 @@ inputs:
     required: false
     default: 'main'
   basix:  # id of input
-    description: 'Branch of Basixx'
+    description: 'Branch of Basix'
     required: false
     default: 'main'
+  petsc_dir:  # id of input
+    description: 'PETSc Directory'
+    required: false
+    default: '/usr/local/petsc'
+  petsc_arch:  # id of input
+    description: 'PETSc Arch'
+    required: false
+    default: 'linux-gnu-real-32'
 
 runs:
   using: composite
+
+  - name: Set PETSC_DIR and PETSC_ARCH
+      run: |
+        echo "PETSC_DIR=${{ inputs.petsc_dir }}" >> $GITHUB_ENV
+        echo "PETSC_ARCH=${{ inputs.petsc_arch }}" >> $GITHUB_ENV
+
   steps:
     - name: Get Basix
       uses: actions/checkout@v3

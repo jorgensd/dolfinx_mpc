@@ -80,40 +80,15 @@ jobs:
           python3 -m pip install mpi4py cython numpy
           python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
 
-      - name: Get Basix
-        uses: actions/checkout@v3
+     
+      - name: Special handling of some installation
+        uses: ./.github/actions/install-dolfinx
         with:
-          path: ./basix
-          repository: FEniCS/basix
-          ref: ${{ env.BASIX_BRANCH }}
-
-      - name: Install UFL, Basix, FFCx
-        run: |
-          cmake -G Ninja -B build-basix -DCMAKE_BUILD_TYPE="Release" -S ./basix/cpp/
-          cmake --build build-basix --parallel 3
-          cmake --install build-basix
-          BUILD_TYPE="Release" python3 -m pip install ./basix/python
-          python3 -m pip install git+https://github.com/FEniCS/ufl.git@${{ env.UFL_BRANCH }}
-          python3 -m pip install git+https://github.com/FEniCS/ffcx.git@${{ env.FFCX_BRANCH }}
-
-      - name: Get DOLFINx
-        uses: actions/checkout@v3
-        with:
-          path: ./dolfinx
-          repository: FEniCS/dolfinx
-          ref: ${{ env.DOLFINX_BRANCH }}
-
-      - name: Configure C++ (dolfinx)
-        run:
-          cmake -G Ninja -DCMAKE_BUILD_TYPE="Release" -B build-dolfinx -S ./dolfinx/cpp/
-
-      - name: Build and install C++ library (dolfinx)
-        run: |
-          cmake --build build-dolfinx
-          cmake --install build-dolfinx
-
-      - name: Build Python interface (dolfinx)
-        run: BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
+          dolfinx: ${{ env.DOLFINX_BRANCH }}
+          ufl: ${{ env.UFL_BRANCH }}
+          basix: ${{ env.BASIX_BRANCH }}
+          ffcx: ${{ env.FFCX_BRANCH }}
+          petsc_arch: ${{ env.PETSC_ARCH }}
 
       - name: Install DOLFINx-MPC (C++)
         run: |
