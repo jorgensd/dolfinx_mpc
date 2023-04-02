@@ -10,13 +10,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container: ghcr.io/fenics/dolfinx/dolfinx:nightly
+    container: ghcr.io/fenics/dolfinx/dev-env:nightly
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./docs/_build/html
 
     steps:
       - uses: actions/checkout@v3
+
+      - name: Special handling of some installation
+        uses: ./.github/actions/install-dolfinx
 
       - name: Install DOLFINx-MPC (C++)
         run: |
