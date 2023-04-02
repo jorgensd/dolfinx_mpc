@@ -82,7 +82,7 @@ jobs:
 
      
       - name: Install DOLFINx
-        uses: ./.github/actions/install-dolfinx>
+        uses: ./.github/actions/install-dolfinx
         with:
           dolfinx: ${{ env.DOLFINX_BRANCH }}
           ufl: ${{ env.UFL_BRANCH }}
