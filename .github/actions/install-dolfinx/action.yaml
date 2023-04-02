@@ -30,7 +30,7 @@ inputs:
 runs:
   using: composite
 
-  - name: Set PETSC_DIR and PETSC_ARCH
+  - name: Set PETSC DIR and PETSC ARCH
       run: |
         echo "PETSC_DIR=${{ inputs.petsc_dir }}" >> $GITHUB_ENV
         echo "PETSC_ARCH=${{ inputs.petsc_arch }}" >> $GITHUB_ENV
