@@ -311,8 +311,8 @@ void mpc(py::module& m)
 
   m.def("create_periodic_constraint_topological",
         [](const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>>& V,
-           const std::shared_ptr<
-               const dolfinx::mesh::MeshTags<std::int32_t, double>>& meshtags,
+           const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>>&
+               meshtags,
            const int dim,
            const std::function<py::array_t<double>(const py::array_t<double>&)>&
                relation,

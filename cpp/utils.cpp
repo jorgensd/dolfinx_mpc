@@ -51,10 +51,9 @@ dolfinx::la::petsc::Matrix dolfinx_mpc::create_matrix(
 }
 //-----------------------------------------------------------------------------
 std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
-    dolfinx::mesh::MeshTags<std::int32_t, double>& meshtags,
+    MPI_Comm comm, const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
     const bool has_slave, std::int32_t& master_marker)
 {
-  MPI_Comm comm = meshtags.mesh()->comm();
   int mpi_size = -1;
   MPI_Comm_size(comm, &mpi_size);
   int rank = -1;

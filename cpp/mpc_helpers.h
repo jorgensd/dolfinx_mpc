@@ -23,8 +23,8 @@ create_cell_to_dofs_map(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
 {
   const auto& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
-  const int tdim = mesh.topology().dim();
-  const int num_cells = mesh.topology().index_map(tdim)->size_local();
+  const int tdim = mesh.topology()->dim();
+  const int num_cells = mesh.topology()->index_map(tdim)->size_local();
 
   const std::int32_t local_size
       = dofmap.index_map->size_local() + dofmap.index_map->num_ghosts();

@@ -15,8 +15,8 @@ namespace dolfinx_mpc
 template <std::floating_point U>
 mpc_data<PetscScalar> create_slip_condition(
     std::shared_ptr<dolfinx::fem::FunctionSpace<U>>& space,
-    const dolfinx::mesh::MeshTags<std::int32_t, U>& meshtags,
-    std::int32_t marker, const dolfinx::fem::Function<PetscScalar>& v,
+    const dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t marker,
+    const dolfinx::fem::Function<PetscScalar>& v,
     std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<PetscScalar>>>
         bcs,
     const bool sub_space)
@@ -68,7 +68,7 @@ mpc_data<PetscScalar> create_slip_condition(
     // Get all degrees of freedom in the sub-space on the given facets
     std::array<std::vector<std::int32_t>, 2> entity_dofs
         = dolfinx::fem::locate_dofs_topological(
-            space->mesh()->topology_mutable(),
+            *space->mesh()->topology_mutable(),
             {*space->dofmap(), *n->function_space()->dofmap()}, meshtags.dim(),
             slave_facets);
 
@@ -90,8 +90,8 @@ mpc_data<PetscScalar> create_slip_condition(
     num_normal_components = W_bs;
     std::vector<std::int32_t> all_slave_blocks
         = dolfinx::fem::locate_dofs_topological(
-            space->mesh()->topology_mutable(), *space->dofmap(), meshtags.dim(),
-            slave_facets);
+            *space->mesh()->topology_mutable(), *space->dofmap(),
+            meshtags.dim(), slave_facets);
     // Remove Dirichlet BC dofs
     const std::vector<std::int8_t> bc_marker
         = dolfinx_mpc::is_bc<PetscScalar>(*space, all_slave_blocks, bcs);

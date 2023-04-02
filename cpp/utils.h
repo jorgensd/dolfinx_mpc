@@ -150,12 +150,14 @@ create_matrix(const dolfinx::fem::Form<PetscScalar>& a,
               const std::string& type = std::string());
 /// Create neighborhood communicators from every processor with a slave dof on
 /// it, to the processors with a set of master facets.
+/// @param[in] comm The MPI communicator to base communications on
 /// @param[in] meshtags The meshtag
 /// @param[in] has_slaves Boolean saying if the processor owns slave dofs
 /// @param[in] master_marker Tag for the other interface
-std::array<MPI_Comm, 2> create_neighborhood_comms(
-    dolfinx::mesh::MeshTags<std::int32_t, double>& meshtags,
-    const bool has_slave, std::int32_t& master_marker);
+std::array<MPI_Comm, 2>
+create_neighborhood_comms(MPI_Comm comm,
+                          const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
+                          const bool has_slave, std::int32_t& master_marker);
 
 /// Create neighbourhood communicators from a set of local indices to process
 /// who has these indices as ghosts.
@@ -176,7 +178,7 @@ create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
                             const std::span<const std::int32_t>& entities)
 {
   dolfinx::graph::AdjacencyList<std::int32_t> block_to_entities
-      = impl::create_block_to_facet_map(V->mesh()->topology_mutable(),
+      = impl::create_block_to_facet_map(*V->mesh()->topology_mutable(),
                                         *V->dofmap(), dim, entities);
 
   // Create normal vector function and get local span
@@ -260,25 +262,25 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 
   if (a.integral_ids(dolfinx::fem::IntegralType::cell).size() > 0)
   {
-    dolfinx::fem::sparsitybuild::cells(pattern, mesh.topology(),
+    dolfinx::fem::sparsitybuild::cells(pattern, *mesh.topology(),
                                        {{dofmaps[0], dofmaps[1]}});
   }
 
   if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
   {
-    mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
-    mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
-                                                mesh.topology().dim());
-    dolfinx::fem::sparsitybuild::interior_facets(pattern, mesh.topology(),
+    mesh.topology_mutable()->create_entities(mesh.topology()->dim() - 1);
+    mesh.topology_mutable()->create_connectivity(mesh.topology()->dim() - 1,
+                                                 mesh.topology()->dim());
+    dolfinx::fem::sparsitybuild::interior_facets(pattern, *mesh.topology(),
                                                  {{dofmaps[0], dofmaps[1]}});
   }
 
   if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
   {
-    mesh.topology_mutable().create_entities(mesh.topology().dim() - 1);
-    mesh.topology_mutable().create_connectivity(mesh.topology().dim() - 1,
-                                                mesh.topology().dim());
-    dolfinx::fem::sparsitybuild::exterior_facets(pattern, mesh.topology(),
+    mesh.topology_mutable()->create_entities(mesh.topology()->dim() - 1);
+    mesh.topology_mutable()->create_connectivity(mesh.topology()->dim() - 1,
+                                                 mesh.topology()->dim());
+    dolfinx::fem::sparsitybuild::exterior_facets(pattern, *mesh.topology(),
                                                  {{dofmaps[0], dofmaps[1]}});
   }
 }
@@ -903,17 +905,21 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   auto mesh = V.mesh();
   assert(mesh);
   const std::size_t gdim = mesh->geometry().dim();
-  const std::size_t tdim = mesh->topology().dim();
-  auto map = mesh->topology().index_map(tdim);
+  const std::size_t tdim = mesh->topology()->dim();
+  auto map = mesh->topology()->index_map(tdim);
 
   // Get geometry data
   const graph::AdjacencyList<std::int32_t>& x_dofmap
       = mesh->geometry().dofmap();
-  const std::size_t num_dofs_g = mesh->geometry().cmap().dim();
-  std::span<const U> x_g = mesh->geometry().x();
 
-  // Get coordinate map
-  const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
+  auto cmaps = mesh->geometry().cmaps();
+  if (cmaps.size() > 1)
+  {
+    throw std::runtime_error(
+        "Multiple coordinate maps in evaluate basis functions");
+  }
+  const std::size_t num_dofs_g = cmaps[0].dim();
+  std::span<const U> x_g = mesh->geometry().x();
 
   // Get element
   std::shared_ptr<const dolfinx::fem::FiniteElement> element = V.element();
@@ -950,8 +956,8 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = std::span(mesh->topology().get_cell_permutation_info());
+    mesh->topology_mutable()->create_entity_permutations();
+    cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 
   namespace stdex = std::experimental;
@@ -968,17 +974,17 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
 
   // Evaluate geometry basis at point (0, 0, 0) on the reference cell.
   // Used in affine case.
-  std::array<std::size_t, 4> phi0_shape = cmap.tabulate_shape(1, 1);
+  std::array<std::size_t, 4> phi0_shape = cmaps[0].tabulate_shape(1, 1);
   std::vector<double> phi0_b(
       std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi0(phi0_b.data(), phi0_shape);
-  cmap.tabulate(1, std::vector<double>(tdim), {1, tdim}, phi0_b);
+  cmaps[0].tabulate(1, std::vector<double>(tdim), {1, tdim}, phi0_b);
   auto dphi0 = stdex::submdspan(phi0, std::pair(1, tdim + 1), 0,
                                 stdex::full_extent, 0);
 
   // Data structure for evaluating geometry basis at specific points.
   // Used in non-affine case.
-  std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
+  std::array<std::size_t, 4> phi_shape = cmaps[0].tabulate_shape(1, 1);
   std::vector<double> phi_b(
       std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi(phi_b.data(), phi_shape);
@@ -1027,7 +1033,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
         Xp(Xpb.data(), 1, tdim);
 
     // Compute reference coordinates X, and J, detJ and K
-    if (cmap.is_affine())
+    if (cmaps[0].is_affine())
     {
       dolfinx::fem::CoordinateElement::compute_jacobian(dphi0, coord_dofs, _J);
       dolfinx::fem::CoordinateElement::compute_jacobian_inverse(_J, _K);
@@ -1041,9 +1047,9 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     else
     {
       // Pull-back physical point xp to reference coordinate Xp
-      cmap.pull_back_nonaffine(Xp, xp, coord_dofs);
+      cmaps[0].pull_back_nonaffine(Xp, xp, coord_dofs);
 
-      cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
+      cmaps[0].tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
       dolfinx::fem::CoordinateElement::compute_jacobian(dphi, coord_dofs, _J);
       dolfinx::fem::CoordinateElement::compute_jacobian_inverse(_J, _K);
       detJ[p] = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(
@@ -1150,7 +1156,12 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   auto [X_b, X_shape] = element->interpolation_points();
 
   // Get coordinate map
-  const dolfinx::fem::CoordinateElement& cmap = mesh->geometry().cmap();
+  auto cmaps = mesh->geometry().cmaps();
+  if (cmaps.size() > 1)
+  {
+    throw std::runtime_error(
+        "Multiple coordinate maps in evaluate tabulate dof coordinates");
+  }
 
   // Prepare cell geometry
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
@@ -1182,17 +1193,18 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = std::span(mesh->topology().get_cell_permutation_info());
+    mesh->topology_mutable()->create_entity_permutations();
+    cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 
   const auto apply_dof_transformation
       = element->template get_dof_transformation_function<U>();
 
-  const std::array<std::size_t, 4> bsize = cmap.tabulate_shape(0, X_shape[0]);
+  const std::array<std::size_t, 4> bsize
+      = cmaps[0].tabulate_shape(0, X_shape[0]);
   std::vector<double> phi_b(
       std::reduce(bsize.begin(), bsize.end(), 1, std::multiplies{}));
-  cmap.tabulate(0, X_b, X_shape, phi_b);
+  cmaps[0].tabulate(0, X_b, X_shape, phi_b);
   stdex::mdspan<const double, stdex::dextents<std::size_t, 4>> phi_full(
       phi_b.data(), bsize);
   auto phi = stdex::submdspan(phi_full, 0, stdex::full_extent,
@@ -1265,7 +1277,7 @@ dolfinx::graph::AdjacencyList<int> compute_colliding_cells(
   std::vector<std::int32_t> offsets = {0};
   offsets.reserve(candidate_cells.num_nodes() + 1);
   std::vector<std::int32_t> colliding_cells;
-  const int tdim = mesh.topology().dim();
+  const int tdim = mesh.topology()->dim();
   std::vector<std::int32_t> result;
   for (std::int32_t i = 0; i < candidate_cells.num_nodes(); i++)
   {

@@ -97,7 +97,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Create map from slave dof blocks to a cell containing them
   std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
-      V.mesh()->topology(), *V.dofmap(), local_blocks);
+      *V.mesh()->topology(), *V.dofmap(), local_blocks);
 
   // Compute relation(slave_blocks)
   std::vector<double> mapped_T_b(local_blocks.size() * 3);
@@ -123,8 +123,8 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
         mapped_T(i, j) = x_(j, i);
   }
   // Get mesh info
-  const int tdim = mesh->topology().dim();
-  auto cell_imap = mesh->topology().index_map(tdim);
+  const int tdim = mesh->topology()->dim();
+  auto cell_imap = mesh->topology()->index_map(tdim);
   const int num_cells_local = cell_imap->size_local();
 
   // Create bounding-box tree over owned cells
@@ -560,8 +560,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> topological_condition(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t, U>>
-        meshtag,
+    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
@@ -577,7 +576,7 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const dolfinx::fem::FunctionSpace<U>& V_sub = sub_space.first;
     const std::vector<std::int32_t>& parent_map = sub_space.second;
     std::array<std::vector<std::int32_t>, 2> slave_blocks
-        = dolfinx::fem::locate_dofs_topological(V->mesh()->topology_mutable(),
+        = dolfinx::fem::locate_dofs_topological(*V->mesh()->topology_mutable(),
                                                 {*V->dofmap(), *V_sub.dofmap()},
                                                 meshtag->dim(), entities);
     // Remove DirichletBC dofs from sub space
@@ -598,7 +597,7 @@ dolfinx_mpc::mpc_data<T> topological_condition(
   else
   {
     std::vector<std::int32_t> slave_blocks
-        = dolfinx::fem::locate_dofs_topological(V->mesh()->topology_mutable(),
+        = dolfinx::fem::locate_dofs_topological(*V->mesh()->topology_mutable(),
                                                 *V->dofmap(), meshtag->dim(),
                                                 entities);
     const std::vector<std::int8_t> bc_marker
@@ -657,8 +656,7 @@ mpc_data<std::complex<double>> create_periodic_condition_geometrical(
 
 mpc_data<double> create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t, double>>
-        meshtag,
+    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
@@ -671,8 +669,7 @@ mpc_data<double> create_periodic_condition_topological(
 
 mpc_data<std::complex<double>> create_periodic_condition_topological(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t, double>>
-        meshtag,
+    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<

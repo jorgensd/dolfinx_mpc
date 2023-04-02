@@ -563,8 +563,8 @@ void assemble_matrix_impl(
   std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = std::span(mesh->topology().get_cell_permutation_info());
+    mesh->topology_mutable()->create_entity_permutations();
+    cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
   for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
   {
@@ -595,7 +595,7 @@ void assemble_matrix_impl(
   // if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet) > 0)
   // {
   //   throw std::runtime_error("Not implemented yet");
-  //   // const int tdim = mesh->topology().dim();
+  //   // const int tdim = mesh->topology()->dim();
   //   // mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
   //   // mesh->topology_mutable().create_entity_permutations();
 
@@ -604,7 +604,7 @@ void assemble_matrix_impl(
   //   // {
   //   //   mesh->topology_mutable().create_entity_permutations();
   //   //   const std::vector<std::uint8_t>& perms
-  //   //       = mesh->topology().get_facet_permutations();
+  //   //       = mesh->topology()->get_facet_permutations();
   //   //   get_perm = [&perms](std::size_t i) { return perms[i]; };
   //   // }
   //   // else

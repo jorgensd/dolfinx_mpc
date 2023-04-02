@@ -18,41 +18,31 @@ namespace impl
 /// Create bounding box tree (of cells) based on a mesh tag and a given set of
 /// markers in the tag. This means that for a given set of facets, we compute
 /// the bounding box tree of the cells connected to the facets
+/// @param[in] mesh The mesh
 /// @param[in] meshtags The meshtags for a set of entities
-/// @param[in] dim The entitiy dimension
 /// @param[in] marker The value in meshtags to extract entities for
 /// @param[in] padding How much to pad the boundingboxtree
 /// @returns A bounding box tree of the cells connected to the entities
 template <std::floating_point U>
-dolfinx::geometry::BoundingBoxTree<U> create_boundingbox_tree(
-    const dolfinx::mesh::MeshTags<std::int32_t, U>& meshtags, std::int32_t dim,
-    std::int32_t marker, double padding)
+dolfinx::geometry::BoundingBoxTree<U>
+create_boundingbox_tree(const dolfinx::mesh::Mesh<U>& mesh,
+                        const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
+                        std::int32_t marker, double padding)
 {
 
-  auto mesh = meshtags.mesh();
-  const std::int32_t tdim = mesh->topology().dim();
-  auto entity_to_cell = meshtags.mesh()->topology().connectivity(dim, tdim);
+  assert(mesh.topology() == meshtags.topology());
+  const std::int32_t tdim = mesh.topology()->dim();
+  int dim = meshtags.dim();
+  auto entity_to_cell = mesh.topology()->connectivity(dim, tdim);
   assert(entity_to_cell);
 
   // Find all cells connected to master facets for collision detection
-  std::int32_t num_local_cells = mesh->topology().index_map(tdim)->size_local();
-  std::set<std::int32_t> cells;
-  auto facet_values = meshtags.values();
-  auto facet_indices = meshtags.indices();
-  for (std::size_t i = 0; i < facet_indices.size(); ++i)
-  {
-    if (facet_values[i] == marker)
-    {
-      auto cell = entity_to_cell->links(facet_indices[i]);
-      assert(cell.size() == 1);
-      if (cell[0] < num_local_cells)
-        cells.insert(cell[0]);
-    }
-  }
-  // Create bounding box tree of all master dofs
-  std::vector<int> cells_vec(cells.begin(), cells.end());
-  dolfinx::geometry::BoundingBoxTree<U> bb_tree(*mesh, tdim, cells_vec,
-                                                padding);
+  std::int32_t num_local_cells = mesh.topology()->index_map(tdim)->size_local();
+  const std::vector<std::int32_t> facets = meshtags.find(marker);
+  std::vector<std::int32_t> cells = dolfinx::mesh::compute_incident_entities(
+      *mesh.topology(), facets, dim, tdim);
+
+  dolfinx::geometry::BoundingBoxTree<U> bb_tree(mesh, tdim, cells, padding);
   return bb_tree;
 }
 
@@ -180,7 +170,7 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
 template <std::floating_point U>
 std::vector<std::int32_t>
 locate_slave_dofs(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-                  const dolfinx::mesh::MeshTags<std::int32_t, U>& meshtags,
+                  const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
                   std::int32_t slave_marker)
 {
   const std::int32_t edim = meshtags.dim();
@@ -198,8 +188,9 @@ locate_slave_dofs(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
 
   std::array<std::vector<std::int32_t>, 2> slave_dofs
       = dolfinx::fem::locate_dofs_topological(
-          V->mesh()->topology_mutable(), {*V->sub({0})->dofmap(), *V0.dofmap()},
-          edim, std::span(slave_facets));
+          *V->mesh()->topology_mutable(),
+          {*V->sub({0})->dofmap(), *V0.dofmap()}, edim,
+          std::span(slave_facets));
   return slave_dofs[0];
 }
 
@@ -357,32 +348,31 @@ namespace dolfinx_mpc
 template <std::floating_point U>
 mpc_data<PetscScalar> create_contact_slip_condition(
     std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
-    dolfinx::mesh::MeshTags<std::int32_t, U> meshtags,
+    const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
     std::int32_t slave_marker, std::int32_t master_marker,
     std::shared_ptr<dolfinx::fem::Function<PetscScalar, U>> nh,
     const U eps2 = 1e-20)
 {
 
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
-
-  MPI_Comm comm = meshtags.mesh()->comm();
+  std::shared_ptr<const mesh::Mesh<U>> mesh = V->mesh();
+  MPI_Comm comm = mesh->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
-  auto mesh = V->mesh();
-  assert(mesh == meshtags.mesh());
-  const int tdim = mesh->topology().dim();
+  assert(mesh->topology() == meshtags.topology());
+  const int tdim = mesh->topology()->dim();
   const int gdim = mesh->geometry().dim();
   const int fdim = tdim - 1;
   const int block_size = V->dofmap()->index_map_bs();
   std::int32_t size_local = V->dofmap()->index_map->size_local();
 
-  mesh->topology_mutable().create_connectivity(fdim, tdim);
-  mesh->topology_mutable().create_connectivity(tdim, tdim);
-  mesh->topology_mutable().create_entity_permutations();
+  mesh->topology_mutable()->create_connectivity(fdim, tdim);
+  mesh->topology_mutable()->create_connectivity(tdim, tdim);
+  mesh->topology_mutable()->create_entity_permutations();
 
   // Find all slave dofs and split them into locally owned and ghosted blocks
   std::vector<std::int32_t> local_slave_blocks;
@@ -452,14 +442,14 @@ mpc_data<PetscScalar> create_contact_slip_condition(
           local_slaves, local_slave_blocks, normals, imap, block_size, rank);
 
   dolfinx::geometry::BoundingBoxTree bb_tree = impl::create_boundingbox_tree(
-      meshtags, fdim, master_marker, std::sqrt(eps2));
+      *mesh, meshtags, master_marker, std::sqrt(eps2));
 
   // Compute contributions on other side local to process
   mpc_data<PetscScalar> mpc_master_local;
 
   // Create map from slave dof blocks to a cell containing them
   std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
-      V->mesh()->topology(), *V->dofmap(), local_slave_blocks);
+      *mesh->topology(), *V->dofmap(), local_slave_blocks);
   std::vector<double> slave_coordinates;
   std::array<std::size_t, 2> coord_shape;
   {
@@ -514,7 +504,7 @@ mpc_data<PetscScalar> create_contact_slip_condition(
   // Create slave_dofs->master facets and master->slave dofs neighborhood comms
   const bool has_slave = !local_slave_blocks.empty();
   std::array<MPI_Comm, 2> neighborhood_comms
-      = create_neighborhood_comms(meshtags, has_slave, master_marker);
+      = create_neighborhood_comms(comm, meshtags, has_slave, master_marker);
 
   // Get the  slave->master recv from and send to ranks
   int indegree(-1);
@@ -898,30 +888,29 @@ mpc_data<PetscScalar> create_contact_slip_condition(
 template <std::floating_point U>
 mpc_data<PetscScalar> create_contact_inelastic_condition(
     std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
-    dolfinx::mesh::MeshTags<std::int32_t, U> meshtags,
-    std::int32_t slave_marker, std::int32_t master_marker,
-    const double eps2 = 1e-20)
+    dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
+    std::int32_t master_marker, const double eps2 = 1e-20)
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
 
-  MPI_Comm comm = meshtags.mesh()->comm();
+  MPI_Comm comm = V->mesh()->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
       = V->dofmap()->index_map;
-  const int tdim = V->mesh()->topology().dim();
+  const int tdim = V->mesh()->topology()->dim();
   const int fdim = tdim - 1;
   const int block_size = V->dofmap()->index_map_bs();
   std::int32_t size_local = V->dofmap()->index_map->size_local();
 
   // Create entity permutations needed in evaluate_basis_functions
-  V->mesh()->topology_mutable().create_entity_permutations();
+  V->mesh()->topology_mutable()->create_entity_permutations();
   // Create connectivities needed for evaluate_basis_functions and
   // select_colliding cells
-  V->mesh()->topology_mutable().create_connectivity(fdim, tdim);
-  V->mesh()->topology_mutable().create_connectivity(tdim, tdim);
+  V->mesh()->topology_mutable()->create_connectivity(fdim, tdim);
+  V->mesh()->topology_mutable()->create_connectivity(tdim, tdim);
 
   std::vector<std::int32_t> slave_blocks
       = impl::locate_slave_dofs<U>(V, meshtags, slave_marker);
@@ -954,7 +943,7 @@ mpc_data<PetscScalar> create_contact_inelastic_condition(
   // comms
   const bool has_slave = !local_blocks.empty();
   std::array<MPI_Comm, 2> neighborhood_comms
-      = create_neighborhood_comms(meshtags, has_slave, master_marker);
+      = create_neighborhood_comms(comm, meshtags, has_slave, master_marker);
 
   // Create communicator local_blocks -> ghost_block
   MPI_Comm slave_to_ghost
@@ -976,14 +965,14 @@ mpc_data<PetscScalar> create_contact_inelastic_condition(
   }
 
   // Create boundingboxtree for master surface
-  auto facet_to_cell = V->mesh()->topology().connectivity(fdim, tdim);
+  auto facet_to_cell = V->mesh()->topology()->connectivity(fdim, tdim);
   assert(facet_to_cell);
   dolfinx::geometry::BoundingBoxTree<U> bb_tree = impl::create_boundingbox_tree(
-      meshtags, fdim, master_marker, std::sqrt(eps2));
+      *V->mesh(), meshtags, master_marker, std::sqrt(eps2));
 
   // Tabulate slave block coordinates and find colliding cells
   std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
-      V->mesh()->topology(), *V->dofmap(), local_blocks);
+      *V->mesh()->topology(), *V->dofmap(), local_blocks);
   std::vector<double> slave_coordinates;
   {
     std::array<std::size_t, 2> c_shape;

@@ -122,8 +122,8 @@ void _assemble_vector(
   std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = std::span(mesh->topology().get_cell_permutation_info());
+    mesh->topology_mutable()->create_entity_permutations();
+    cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
   // FIXME: Add proper interface for num coordinate dofs
   const std::size_t num_dofs_g = x_dofmap.num_links(cell);
@@ -228,11 +228,11 @@ void _assemble_vector(
     // std::function<std::uint8_t(std::size_t)> get_perm;
     // if (L.needs_facet_permutations())
     // {
-    //   const int tdim = mesh->topology().dim();
+    //   const int tdim = mesh->topology()->dim();
     //   mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
     //   mesh->topology_mutable().create_entity_permutations();
     //   const std::vector<std::uint8_t>& perms
-    //       = mesh->topology().get_facet_permutations();
+    //       = mesh->topology()->get_facet_permutations();
     //   get_perm = [&perms](std::size_t i) { return perms[i]; };
     // }
     // else

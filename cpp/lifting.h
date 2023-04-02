@@ -192,13 +192,13 @@ void apply_lifting(
   const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
       = mesh->geometry().dofmap();
   std::span<const double> x_g = mesh->geometry().x();
-  const int tdim = mesh->topology().dim();
+  const int tdim = mesh->topology()->dim();
 
   std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
   {
-    mesh->topology_mutable().create_entity_permutations();
-    cell_info = std::span(mesh->topology().get_cell_permutation_info());
+    mesh->topology_mutable()->create_entity_permutations();
+    cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 
   // Get dof-transformations for the element matrix
@@ -292,9 +292,7 @@ void apply_lifting(
         = [&](std::span<const std::int32_t> entity) { return entity.front(); };
 
     // Get number of cells per facet to be able to get the facet permutation
-    const int tdim = mesh->topology().dim();
-    const int num_cell_facets = dolfinx::mesh::cell_num_entities(
-        mesh->topology().cell_type(), tdim - 1);
+    const int tdim = mesh->topology()->dim();
     for (int i : a->integral_ids(dolfinx::fem::IntegralType::exterior_facet))
     {
       const auto& coeffs
@@ -383,7 +381,7 @@ void apply_lifting(
     //     mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
     //     mesh->topology_mutable().create_entity_permutations();
     //     const std::vector<std::uint8_t>& perms
-    //         = mesh->topology().get_facet_permutations();
+    //         = mesh->topology()->get_facet_permutations();
     //     get_perm = [&perms](std::size_t i) { return perms[i]; };
     //   }
     //   else
