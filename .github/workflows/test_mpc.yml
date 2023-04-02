@@ -81,8 +81,8 @@ jobs:
           python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
 
      
-      - name: Special handling of some installation
-        uses: ./.github/actions/install-dolfinx
+      - name: Install DOLFINx
+        uses: ./.github/actions/install-dolfinx>
         with:
           dolfinx: ${{ env.DOLFINX_BRANCH }}
           ufl: ${{ env.UFL_BRANCH }}

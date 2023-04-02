@@ -16,27 +16,27 @@ jobs:
       PUBLISH_DIR: ./docs/_build/html
       PETSC_ARCH: "linux-gnu-real-32"
 
-      steps:
-      - uses: actions/checkout@v3
+    steps:
+    - uses: actions/checkout@v3
 
-      - name: Special handling of some installation
-        uses: ./.github/actions/install-dolfinx
+    - name: Install DOLFINx
+      uses: ./.github/actions/install-dolfinx
 
-      - name: Install DOLFINx-MPC (C++)
-        run: |
-          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -S cpp/
-          cmake --build build-dir --parallel 3
-          cmake --install build-dir
+    - name: Install DOLFINx-MPC (C++)
+      run: |
+        cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -S cpp/
+        cmake --build build-dir --parallel 3
+        cmake --install build-dir
 
-      - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install python/[docs]
+    - name: Install DOLFINx-MPC (Python)
+      run: python3 -m pip -v install python/[docs]
 
-      - name: Build docs
-        run: jupyter book build docs
+    - name: Build docs
+      run: jupyter book build docs
 
-      - name: Upload documentation as artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: documentation
-          path: ${{ env.PUBLISH_DIR }}
-          if-no-files-found: error
+    - name: Upload documentation as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: documentation
+        path: ${{ env.PUBLISH_DIR }}
+        if-no-files-found: error
