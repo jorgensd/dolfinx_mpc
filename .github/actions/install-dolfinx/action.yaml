@@ -24,14 +24,12 @@ runs:
   steps:
     - name: Get Basix
       uses: actions/checkout@v3
-      shell: bash -el {0}
       with:
         path: ./basix
         repository: FEniCS/basix
         ref: ${{ inputs.basix }}
 
     - name: Get DOLFINx
-      shell: bash -el {0}
       uses: actions/checkout@v3
       with:
         path: ./dolfinx
