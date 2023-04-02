@@ -32,8 +32,8 @@ runs:
 
   - name: Set PETSC DIR and PETSC ARCH
       run: |
-        echo "PETSC_DIR=${{ inputs.petsc_dir }}" >> $GITHUB_ENV
-        echo "PETSC_ARCH=${{ inputs.petsc_arch }}" >> $GITHUB_ENV
+        echo "PETSC_DIR=${{ github.event.inputs.petsc_dir }}" >> $GITHUB_ENV
+        echo "PETSC_ARCH=${{ github.event.inputs.petsc_arch }}" >> $GITHUB_ENV
 
   steps:
     - name: Get Basix
