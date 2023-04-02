@@ -14,8 +14,9 @@ jobs:
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./docs/_build/html
+      PETSC_ARCH: "linux-gnu-real-32"
 
-    steps:
+      steps:
       - uses: actions/checkout@v3
 
       - name: Special handling of some installation
