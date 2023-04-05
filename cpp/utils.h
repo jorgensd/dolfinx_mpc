@@ -243,6 +243,9 @@ create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
 
 /// Append standard sparsity pattern for a given form to a pre-initialized
 /// pattern and a DofMap
+///
+/// @note This function is almost a copy of
+/// dolfinx::fem::utils.h::create_sparsity_pattern
 /// @param[in] pattern The sparsity pattern
 /// @param[in] a       The variational formulation
 template <typename T>
@@ -251,38 +254,72 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 {
 
   dolfinx::common::Timer timer("~MPC: Create sparsity pattern (Classic)");
-  // Get dof maps
-  std::array<const std::reference_wrapper<const dolfinx::fem::DofMap>, 2>
-      dofmaps{*a.function_spaces().at(0)->dofmap(),
-              *a.function_spaces().at(1)->dofmap()};
-
-  // Get mesh
-  assert(a.mesh());
-  const auto& mesh = *(a.mesh());
-
-  if (a.integral_ids(dolfinx::fem::IntegralType::cell).size() > 0)
+  if (a.rank() != 2)
   {
-    dolfinx::fem::sparsitybuild::cells(pattern, *mesh.topology(),
-                                       {{dofmaps[0], dofmaps[1]}});
+    throw std::runtime_error(
+        "Cannot create sparsity pattern. Form is not a bilinear.");
   }
 
-  if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
+  // Get dof maps and mesh
+  std::array<std::reference_wrapper<const dolfinx::fem::DofMap>, 2> dofmaps{
+      *a.function_spaces().at(0)->dofmap(),
+      *a.function_spaces().at(1)->dofmap()};
+  std::shared_ptr mesh = a.mesh();
+  assert(mesh);
+
+  const std::set<dolfinx::fem::IntegralType> types = a.integral_types();
+  if (types.find(dolfinx::fem::IntegralType::interior_facet) != types.end()
+      or types.find(dolfinx::fem::IntegralType::exterior_facet) != types.end())
   {
-    mesh.topology_mutable()->create_entities(mesh.topology()->dim() - 1);
-    mesh.topology_mutable()->create_connectivity(mesh.topology()->dim() - 1,
-                                                 mesh.topology()->dim());
-    dolfinx::fem::sparsitybuild::interior_facets(pattern, *mesh.topology(),
-                                                 {{dofmaps[0], dofmaps[1]}});
+    // FIXME: cleanup these calls? Some of the happen internally again.
+    int tdim = mesh->topology()->dim();
+    mesh->topology_mutable()->create_entities(tdim - 1);
+    mesh->topology_mutable()->create_connectivity(tdim - 1, tdim);
   }
 
-  if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
+  for (auto type : types)
   {
-    mesh.topology_mutable()->create_entities(mesh.topology()->dim() - 1);
-    mesh.topology_mutable()->create_connectivity(mesh.topology()->dim() - 1,
-                                                 mesh.topology()->dim());
-    dolfinx::fem::sparsitybuild::exterior_facets(pattern, *mesh.topology(),
-                                                 {{dofmaps[0], dofmaps[1]}});
+    std::vector<int> ids = a.integral_ids(type);
+    switch (type)
+    {
+    case dolfinx::fem::IntegralType::cell:
+      for (int id : ids)
+      {
+        const std::vector<std::int32_t>& cells = a.cell_domains(id);
+        dolfinx::fem::sparsitybuild::cells(pattern, cells,
+                                           {{dofmaps[0], dofmaps[1]}});
+      }
+      break;
+    case dolfinx::fem::IntegralType::interior_facet:
+      for (int id : ids)
+      {
+        const std::vector<std::int32_t>& facets = a.interior_facet_domains(id);
+        std::vector<std::int32_t> f;
+        f.reserve(facets.size() / 2);
+        for (std::size_t i = 0; i < facets.size(); i += 4)
+          f.insert(f.end(), {facets[i], facets[i + 2]});
+        dolfinx::fem::sparsitybuild::interior_facets(
+            pattern, f, {{dofmaps[0], dofmaps[1]}});
+      }
+      break;
+    case dolfinx::fem::IntegralType::exterior_facet:
+      for (int id : ids)
+      {
+        const std::vector<std::int32_t>& facets = a.exterior_facet_domains(id);
+        std::vector<std::int32_t> cells;
+        cells.reserve(facets.size() / 2);
+        for (std::size_t i = 0; i < facets.size(); i += 2)
+          cells.push_back(facets[i]);
+        dolfinx::fem::sparsitybuild::cells(pattern, cells,
+                                           {{dofmaps[0], dofmaps[1]}});
+      }
+      break;
+    default:
+      throw std::runtime_error("Unsupported integral type");
+    }
   }
+
+  timer.stop();
 }
 
 /// Create a map from dof blocks to one of the cells that contains the degree of
