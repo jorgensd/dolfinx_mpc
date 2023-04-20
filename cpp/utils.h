@@ -18,6 +18,7 @@
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/petsc.h>
+#include <dolfinx/mesh/MeshTags.h>
 #include <span>
 
 namespace impl
@@ -285,7 +286,7 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     case dolfinx::fem::IntegralType::cell:
       for (int id : ids)
       {
-        const std::vector<std::int32_t>& cells = a.cell_domains(id);
+        std::span<const std::int32_t> cells = a.domain(type, id);
         dolfinx::fem::sparsitybuild::cells(pattern, cells,
                                            {{dofmaps[0], dofmaps[1]}});
       }
@@ -293,7 +294,7 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     case dolfinx::fem::IntegralType::interior_facet:
       for (int id : ids)
       {
-        const std::vector<std::int32_t>& facets = a.interior_facet_domains(id);
+        std::span<const std::int32_t> facets = a.domain(type, id);
         std::vector<std::int32_t> f;
         f.reserve(facets.size() / 2);
         for (std::size_t i = 0; i < facets.size(); i += 4)
@@ -305,7 +306,7 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     case dolfinx::fem::IntegralType::exterior_facet:
       for (int id : ids)
       {
-        const std::vector<std::int32_t>& facets = a.exterior_facet_domains(id);
+        std::span<const std::int32_t> facets = a.domain(type, id);
         std::vector<std::int32_t> cells;
         cells.reserve(facets.size() / 2);
         for (std::size_t i = 0; i < facets.size(); i += 2)

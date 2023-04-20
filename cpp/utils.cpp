@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <basix/mdspan.hpp>
 #include <dolfinx/geometry/utils.h>
+#include <dolfinx/la/petsc.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/utils.h>
 

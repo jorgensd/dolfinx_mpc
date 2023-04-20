@@ -278,7 +278,8 @@ void apply_lifting(
         }
       };
       // Assemble over all active cells
-      const std::vector<std::int32_t>& cells = a->cell_domains(i);
+      std::span<const std::int32_t> cells
+          = a->domain(dolfinx::fem::IntegralType::exterior_facet, i);
       lift_bc_entities<T, 1>(b, cells, dofmap0, dofmap1, bs0, bs1, bc_values1,
                              bc_markers1, mpc1, fetch_cells, lift_bcs_cell);
     }
@@ -363,8 +364,8 @@ void apply_lifting(
       };
 
       // Assemble over all active cells
-      const std::vector<std::int32_t>& active_facets
-          = a->exterior_facet_domains(i);
+      std::span<const std::int32_t> active_facets
+          = a->domain(dolfinx::fem::IntegralType::exterior_facet, i);
       impl::lift_bc_entities<T, 2>(b, active_facets, dofmap0, dofmap1, bs0, bs1,
                                    bc_values1, bc_markers1, mpc1, fetch_cell,
                                    lift_bc_exterior_facet);
