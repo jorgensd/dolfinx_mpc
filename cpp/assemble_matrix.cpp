@@ -263,7 +263,7 @@ void assemble_exterior_facets(
                             const std::span<const std::int32_t>&,
                             const std::span<const T>)>& mat_add_values,
     const dolfinx::mesh::Mesh<double>& mesh,
-    const std::span<const std::int32_t>& facets,
+    std::span<const std::int32_t> facets,
     const std::function<void(const std::span<T>&,
                              const std::span<const std::uint32_t>&,
                              std::int32_t, int)>& apply_dof_transformation,
@@ -396,7 +396,7 @@ void assemble_cells_impl(
                             const std::span<const std::int32_t>&,
                             const std::span<const T>)>& mat_add_values,
     const dolfinx::mesh::Geometry<double>& geometry,
-    const std::vector<std::int32_t>& active_cells,
+    std::span<const std::int32_t> active_cells,
     std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                        const std::int32_t, const int)>
         apply_dof_transformation,
@@ -571,7 +571,8 @@ void assemble_matrix_impl(
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i);
     const auto& [coeffs, cstride]
         = coefficients.at({dolfinx::fem::IntegralType::cell, i});
-    const std::vector<std::int32_t>& active_cells = a.cell_domains(i);
+    std::span<const std::int32_t> active_cells
+        = a.domain(dolfinx::fem::IntegralType::cell, i);
     assemble_cells_impl<T>(
         mat_add_block_values, mat_add_values, mesh->geometry(), active_cells,
         apply_dof_transformation, dofs0, bs0,
@@ -584,7 +585,8 @@ void assemble_matrix_impl(
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i);
     const auto& [coeffs, cstride]
         = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
-    const std::vector<std::int32_t>& facets = a.exterior_facet_domains(i);
+    std::span<const std::int32_t> facets
+        = a.domain(dolfinx::fem::IntegralType::exterior_facet, i);
     assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
                                 facets, apply_dof_transformation, dofs0, bs0,
                                 apply_dof_transformation_to_transpose, dofs1,

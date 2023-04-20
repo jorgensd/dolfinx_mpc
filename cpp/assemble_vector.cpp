@@ -167,7 +167,8 @@ void _assemble_vector(
       };
 
       // Assemble over all active cells
-      const std::vector<std::int32_t>& active_cells = L.cell_domains(i);
+      std::span<const std::int32_t> active_cells
+          = L.domain(dolfinx::fem::IntegralType::cell, i);
       _assemble_entities_impl<T, 1>(b, active_cells, dofs, bs, mpc, fetch_cell,
                                     assemble_local_cell_vector);
     }
@@ -214,8 +215,8 @@ void _assemble_vector(
       };
 
       // Assemble over all active cells
-      const std::vector<std::int32_t>& active_facets
-          = L.exterior_facet_domains(i);
+      std::span<const std::int32_t> active_facets
+          = L.domain(dolfinx::fem::IntegralType::exterior_facet, i);
       _assemble_entities_impl<T, 2>(b, active_facets, dofs, bs, mpc, fetch_cell,
                                     assemble_local_exterior_facet_vector);
     }
