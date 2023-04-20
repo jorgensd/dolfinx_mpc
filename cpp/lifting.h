@@ -279,7 +279,7 @@ void apply_lifting(
       };
       // Assemble over all active cells
       std::span<const std::int32_t> cells
-          = a->domain(dolfinx::fem::IntegralType::exterior_facet, i);
+          = a->domain(dolfinx::fem::IntegralType::cell, i);
       lift_bc_entities<T, 1>(b, cells, dofmap0, dofmap1, bs0, bs1, bc_values1,
                              bc_markers1, mpc1, fetch_cells, lift_bcs_cell);
     }
