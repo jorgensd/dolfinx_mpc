@@ -44,7 +44,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
 
     V = constraint.function_space
     dofmap = V.dofmap
-    dofs = dofmap.list.array
+    dofs = dofmap.list
 
     # Pack MPC data for numba kernels
     coefficients = constraint.coefficients()[0]
@@ -65,8 +65,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
             is_bc[bc.dof_indices()[0]] = True
 
     # Get data from mesh
-    pos = V.mesh.geometry.dofmap.offsets
-    x_dofs = V.mesh.geometry.dofmap.array
+    x_dofs = V.mesh.geometry.dofmap
     x = V.mesh.geometry.x
 
     # Pack constants and coefficients
@@ -118,7 +117,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
             cell_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
             active_cells = form.domains(_fem.IntegralType.cell, id)
             assemble_slave_cells(A.handle, cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
-                                 (pos, x_dofs, x), coeffs_i, form_consts, cell_perms, dofs,
+                                 (x_dofs, x), coeffs_i, form_consts, cell_perms, dofs,
                                  block_size, num_dofs_per_element, mpc_data, is_bc)
 
     # Assemble over exterior facets
@@ -183,7 +182,7 @@ def add_diagonal(A: int, dofs: npt.NDArray[numpy.int32], diagval: _PETSc.ScalarT
 def assemble_slave_cells(A: int,
                          kernel: cffi.FFI,
                          active_cells: npt.NDArray[numpy.int32],
-                         mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                         mesh: Tuple[npt.NDArray[numpy.int32],
                                      npt.NDArray[numpy.float64]],
                          coeffs: npt.NDArray[_PETSc.ScalarType],
                          constants: npt.NDArray[_PETSc.ScalarType],
@@ -201,15 +200,15 @@ def assemble_slave_cells(A: int,
     ffi_fb = ffi.from_buffer
 
     # Get mesh and geometry data
-    pos, x_dofmap, x = mesh
+    x_dofmap, x = mesh
 
     # Empty arrays mimicking Nullpointers
     facet_index = numpy.zeros(0, dtype=numpy.intc)
     facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
     # NOTE: All cells are assumed to be of the same type
-    geometry = numpy.zeros((pos[1] - pos[0], 3))
-
+    num_xdofs_per_cell = x_dofmap.shape[1]
+    geometry = numpy.zeros((num_xdofs_per_cell, 3))
     A_local = numpy.zeros((block_size * num_dofs_per_element, block_size
                            * num_dofs_per_element), dtype=_PETSc.ScalarType)
     masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
@@ -221,7 +220,7 @@ def assemble_slave_cells(A: int,
         geom_dofs = pos[cell]
 
         # Compute vertices of cell from mesh data
-        geometry[:, :] = x[x_dofmap[geom_dofs:geom_dofs + num_vertices]]
+        geometry[:, :] = x[x_dofmap[cell]]
 
         # Assemble local contributions
         A_local.fill(0.0)
