@@ -118,7 +118,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
-                assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x),
+                assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (x_dofs, x),
                                                coeffs_i, form_consts, perm,
                                                dofs, block_size, num_dofs_per_element, mpc_data, num_facets_per_cell)
     timer_vector.stop()
@@ -171,7 +171,7 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
                                  block_size, num_dofs_per_element)
         for j in range(num_dofs_per_element):
             for k in range(block_size):
-                position = dofmap[cell_index,j] * block_size + k
+                position = dofmap[cell_index, j] * block_size + k
                 b[position] += (b_local[j * block_size + k] - b_local_copy[j * block_size + k])
 
 
