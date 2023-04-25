@@ -28,8 +28,6 @@ namespace impl
 /// facets or interior facets in their specified format)
 /// @param[in] dofmap0 The dofmap for the rows of the matrix
 /// @param[in] dofmap0 The dofmap for the columns of the matrix
-/// @param[in] bs0 The block size for the rows
-/// @param[in] bs1 The block size for the columns
 /// @param[in] bc_values1 Array of Dirichlet condition values for dofs local to
 /// process
 /// @param[in] bc_markers1 Array indicating what dofs local to process is in a
@@ -44,29 +42,27 @@ namespace impl
 template <typename T, std::size_t estride, std::floating_point U>
 void lift_bc_entities(
     std::span<T> b, std::span<const std::int32_t> active_entities,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs0,
-    int bs1, const std::span<const T>& bc_values1,
-    const std::vector<std::int8_t>& bc_markers1,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
+    const dolfinx::fem::DofMap& dofmap0, const dolfinx::fem::DofMap& dofmap1,
+    std::span<const T> bc_values1, std::span<const std::int8_t> bc_markers1,
+    const dolfinx_mpc::MultiPointConstraint<T, U>& mpc1,
     const std::function<const std::int32_t(std::span<const std::int32_t>)>
         fetch_cells,
     const std::function<void(std::span<T>, std::span<T>, const int, const int,
                              std::span<const std::int32_t>, std::size_t)>
         lift_local_vector)
 {
-
+  const int bs0 = dofmap0.bs();
+  const int bs1 = dofmap1.bs();
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-      masters = mpc1->masters();
+      masters = mpc1.masters();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
-      = mpc1->coefficients();
-  const std::vector<std::int8_t>& is_slave = mpc1->is_slave();
+      = mpc1.coefficients();
+  std::span<const std::int8_t> is_slave = mpc1.is_slave();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-      cell_to_slaves = mpc1->cell_to_slaves();
+      cell_to_slaves = mpc1.cell_to_slaves();
 
-  // NOTE: Assertion that all links have the same size (no P refinement)
-  const int num_dofs0 = dofmap0.links(0).size();
+  const int num_dofs0 = dofmap0.map().extent(1);
   std::vector<T> be;
   std::vector<T> be_copy;
   std::vector<T> Ae;
@@ -77,8 +73,8 @@ void lift_bc_entities(
     auto entity = active_entities.subspan(e, estride);
     const std::int32_t cell = fetch_cells(entity);
     // Size data structure for assembly
-    auto dmap0 = dofmap0.links(cell);
-    auto dmap1 = dofmap1.links(cell);
+    auto dmap0 = dofmap0.cell_dofs(cell);
+    auto dmap1 = dofmap1.cell_dofs(cell);
     const int num_rows = bs0 * dmap0.size();
     const int num_cols = bs1 * dmap1.size();
     be.resize(num_rows);
@@ -107,7 +103,7 @@ void lift_bc_entities(
     const std::span<T> _Ae(Ae);
     lift_local_vector(_be, _Ae, num_rows, num_cols, entity, e / estride);
     // Modify local element matrix if entity is connected to a slave cell
-    std::span<const int32_t> slaves = cell_to_slaves->links(cell);
+    std::span<const std::int32_t> slaves = cell_to_slaves->links(cell);
 
     if (slaves.size() > 0)
     {
@@ -151,7 +147,7 @@ void apply_lifting(
   auto coeff_vec = dolfinx::fem::allocate_coefficient_storage(*a);
   dolfinx::fem::pack_coefficients(*a, coeff_vec);
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
-  const std::vector<std::int8_t>& is_slave = mpc1->is_slave();
+  std::span<const std::int8_t> is_slave = mpc1->is_slave();
 
   // Create 1D arrays of bc values and bc indicator
   std::vector<std::int8_t> bc_markers1;
@@ -172,14 +168,11 @@ void apply_lifting(
 
   // Extract dofmaps for columns and rows of a
   assert(a->function_spaces().at(0));
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1
-      = V1->dofmap()->list();
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element1 = V1->element();
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0
-      = a->function_spaces()[0]->dofmap()->list();
+  auto dofmap1 = V1->dofmap();
+  auto element1 = V1->element();
+  auto dofmap0 = a->function_spaces()[0]->dofmap();
   const int bs0 = a->function_spaces()[0]->dofmap()->bs();
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element0
-      = a->function_spaces()[0]->element();
+  auto element0 = a->function_spaces()[0]->element();
 
   const bool needs_transformation_data
       = element0->needs_dof_transformations()
@@ -189,10 +182,14 @@ void apply_lifting(
   auto mesh = a->function_spaces()[0]->mesh();
 
   // Prepare cell geometry
-  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = mesh->geometry().dofmap();
+  namespace stdex = std::experimental;
+  std::experimental::mdspan<const std::int32_t,
+                            std::experimental::dextents<std::size_t, 2>>
+      x_dofmap = mesh->geometry().dofmap();
   std::span<const double> x_g = mesh->geometry().x();
   const int tdim = mesh->topology()->dim();
+  const std::size_t num_dofs_g = x_dofmap.extent(1);
+  std::vector<double> coordinate_dofs(3 * num_dofs_g);
 
   std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
@@ -205,12 +202,12 @@ void apply_lifting(
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
-      dof_transform = element0->get_dof_transformation_function<T>();
+      dof_transform = element0->template get_dof_transformation_function<T>();
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
       dof_transform_to_transpose
-      = element1->get_dof_transformation_to_transpose_function<T>();
+      = element1->template get_dof_transformation_to_transpose_function<T>();
 
   // Loop over cell integrals and lift bc
   if (a->num_integrals(dolfinx::fem::IntegralType::cell) > 0)
@@ -230,18 +227,15 @@ void apply_lifting(
                 std::size_t index)
       {
         auto cell = entity.front();
-        // FIXME: Add proper interface for num coordinate dofs
-        const std::size_t num_dofs_g = x_dofmap.num_links(cell);
-        // FIXME: Reconsider when using mixed topology (mixed celltypes)
-        std::vector<double> coordinate_dofs(3 * num_dofs_g);
 
         // Fetch the coordinates of the cell
-        const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
+        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
                       std::next(coordinate_dofs.begin(), 3 * i));
         }
+
         // Tabulate tensor
         std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
         kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
@@ -249,7 +243,7 @@ void apply_lifting(
         dof_transform(Ae, cell_info, cell, num_cols);
         dof_transform_to_transpose(Ae, cell_info, cell, num_rows);
 
-        auto dmap1 = dofmap1.links(cell);
+        auto dmap1 = dofmap1->cell_dofs(cell);
         std::fill(be.begin(), be.end(), 0);
         for (std::size_t j = 0; j < dmap1.size(); ++j)
         {
@@ -280,8 +274,10 @@ void apply_lifting(
       // Assemble over all active cells
       std::span<const std::int32_t> cells
           = a->domain(dolfinx::fem::IntegralType::cell, i);
-      lift_bc_entities<T, 1>(b, cells, dofmap0, dofmap1, bs0, bs1, bc_values1,
-                             bc_markers1, mpc1, fetch_cells, lift_bcs_cell);
+      lift_bc_entities<T, 1>(b, cells, *dofmap0, *dofmap1,
+                             std::span<const T>(bc_values1),
+                             std::span<const std::int8_t>(bc_markers1), *mpc1,
+                             fetch_cells, lift_bcs_cell);
     }
   }
 
@@ -314,12 +310,9 @@ void apply_lifting(
         // Fetch the coordiantes of the cell
         const std::int32_t cell = entity[0];
         const int local_facet = entity[1];
-        const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
-        // FIXME: Add proper interface for num coordinate dofs
-        const std::size_t num_dofs_g = x_dofmap.num_links(cell);
-        // FIXME: Reconsider when using mixed topology (mixed celltypes)
 
-        std::vector<double> coordinate_dofs(3 * num_dofs_g);
+        // Fetch the coordinates of the cell
+        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -333,7 +326,7 @@ void apply_lifting(
         dof_transform(Ae, cell_info, cell, num_cols);
         dof_transform_to_transpose(Ae, cell_info, cell, num_rows);
 
-        auto dmap1 = dofmap1.links(cell);
+        auto dmap1 = dofmap1->cell_dofs(cell);
         std::fill(be.begin(), be.end(), 0);
         for (std::size_t j = 0; j < dmap1.size(); ++j)
         {
@@ -366,8 +359,8 @@ void apply_lifting(
       // Assemble over all active cells
       std::span<const std::int32_t> active_facets
           = a->domain(dolfinx::fem::IntegralType::exterior_facet, i);
-      impl::lift_bc_entities<T, 2>(b, active_facets, dofmap0, dofmap1, bs0, bs1,
-                                   bc_values1, bc_markers1, mpc1, fetch_cell,
+      impl::lift_bc_entities<T, 2>(b, active_facets, *dofmap0, *dofmap1,
+                                   bc_values1, bc_markers1, *mpc1, fetch_cell,
                                    lift_bc_exterior_facet);
     }
   }

@@ -91,7 +91,7 @@ void mpc(py::module& m)
           "is_slave",
           [](dolfinx_mpc::MultiPointConstraint<PetscScalar, double>& self)
           {
-            const std::vector<std::int8_t>& slaves = self.is_slave();
+            std::span<const std::int8_t> slaves = self.is_slave();
             return py::array_t<std::int8_t>(slaves.size(), slaves.data(),
                                             py::cast(self));
           })

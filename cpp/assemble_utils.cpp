@@ -7,13 +7,13 @@
 #include "assemble_utils.h"
 #include <algorithm>
 
-std::vector<std::int32_t> dolfinx_mpc::compute_local_slave_index(
-    const std::span<const std::int32_t>& slaves, const std::uint32_t num_dofs,
-    const int bs, const std::span<const std::int32_t> cell_dofs,
-    const std::vector<std::int8_t>& is_slave)
+std::vector<std::int32_t>
+compute_local_slave_index(std::span<const std::int32_t> slaves,
+                          const std::uint32_t num_dofs, const int bs,
+                          std::span<const std::int32_t> cell_dofs,
+                          std::span<const std::int8_t> is_slave)
 {
   std::vector<std::int32_t> local_index(slaves.size());
-
   for (std::uint32_t i = 0; i < num_dofs; i++)
     for (int j = 0; j < bs; j++)
     {

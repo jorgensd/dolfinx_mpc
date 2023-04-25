@@ -33,7 +33,7 @@ namespace impl
 dolfinx::graph::AdjacencyList<std::int32_t>
 create_block_to_facet_map(dolfinx::mesh::Topology& topology,
                           const dolfinx::fem::DofMap& dofmap, std::int32_t dim,
-                          const std::span<const std::int32_t>& entities)
+                          std::span<const std::int32_t> entities)
 {
   std::shared_ptr<const dolfinx::common::IndexMap> imap = dofmap.index_map;
   const std::int32_t tdim = topology.dim();
@@ -176,7 +176,7 @@ template <std::floating_point U>
 dolfinx::fem::Function<PetscScalar>
 create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
                             std::int32_t dim,
-                            const std::span<const std::int32_t>& entities)
+                            std::span<const std::int32_t> entities)
 {
   dolfinx::graph::AdjacencyList<std::int32_t> block_to_entities
       = impl::create_block_to_facet_map(*V->mesh()->topology_mutable(),
@@ -929,7 +929,7 @@ template <std::floating_point U>
 std::pair<std::vector<double>, std::array<std::size_t, 3>>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
                          std::span<const double> x,
-                         const std::span<const std::int32_t>& cells)
+                         std::span<const std::int32_t> cells)
 {
   assert(x.size() % 3 == 0);
   const std::size_t num_points = x.size() / 3;
@@ -947,8 +947,10 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   auto map = mesh->topology()->index_map(tdim);
 
   // Get geometry data
-  const graph::AdjacencyList<std::int32_t>& x_dofmap
-      = mesh->geometry().dofmap();
+  namespace stdex = std::experimental;
+  std::experimental::mdspan<const std::int32_t,
+                            std::experimental::dextents<std::size_t, 2>>
+      x_dofmap = mesh->geometry().dofmap();
 
   auto cmaps = mesh->geometry().cmaps();
   if (cmaps.size() > 1)
@@ -960,7 +962,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   std::span<const U> x_g = mesh->geometry().x();
 
   // Get element
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element = V.element();
+  auto element = V.element();
   assert(element);
   const int bs_element = element->block_size();
   const std::size_t reference_value_size
@@ -998,7 +1000,6 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 
-  namespace stdex = std::experimental;
   using cmdspan4_t
       = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
   using mdspan2_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
@@ -1051,8 +1052,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       continue;
 
     // Get cell geometry (coordinate dofs)
-    auto x_dofs = x_dofmap.links(cell_index);
-    assert(x_dofs.size() == num_dofs_g);
+    auto x_dofs = stdex::submdspan(x_dofmap, cell_index, stdex::full_extent);
     for (std::size_t i = 0; i < num_dofs_g; ++i)
     {
       const int pos = 3 * x_dofs[i];
@@ -1073,14 +1073,16 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     // Compute reference coordinates X, and J, detJ and K
     if (cmaps[0].is_affine())
     {
-      dolfinx::fem::CoordinateElement::compute_jacobian(dphi0, coord_dofs, _J);
-      dolfinx::fem::CoordinateElement::compute_jacobian_inverse(_J, _K);
+      dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi0, coord_dofs,
+                                                           _J);
+      dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
       std::array<double, 3> x0 = {0, 0, 0};
       for (std::size_t i = 0; i < coord_dofs.extent(1); ++i)
         x0[i] += coord_dofs(0, i);
-      dolfinx::fem::CoordinateElement::pull_back_affine(Xp, _K, x0, xp);
-      detJ[p] = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(
-          _J, det_scratch);
+      dolfinx::fem::CoordinateElement<U>::pull_back_affine(Xp, _K, x0, xp);
+      detJ[p]
+          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
+              _J, det_scratch);
     }
     else
     {
@@ -1088,10 +1090,12 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       cmaps[0].pull_back_nonaffine(Xp, xp, coord_dofs);
 
       cmaps[0].tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
-      dolfinx::fem::CoordinateElement::compute_jacobian(dphi, coord_dofs, _J);
-      dolfinx::fem::CoordinateElement::compute_jacobian_inverse(_J, _K);
-      detJ[p] = dolfinx::fem::CoordinateElement::compute_jacobian_determinant(
-          _J, det_scratch);
+      dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
+                                                           _J);
+      dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
+      detJ[p]
+          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
+              _J, det_scratch);
     }
 
     for (std::size_t j = 0; j < X.extent(1); ++j)
@@ -1099,24 +1103,24 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   }
 
   // Compute basis on reference element
-  std::vector<double> reference_basisb(std::reduce(
+  std::vector<U> reference_basisb(std::reduce(
       basis_shape.begin(), basis_shape.end(), 1, std::multiplies{}));
   element->tabulate(reference_basisb, Xb, {X.extent(0), X.extent(1)}, 0);
 
   // Data structure to hold basis for transformation
   const std::size_t num_basis_values = basis_shape[2] * basis_shape[3];
-  std::vector<double> basis_valuesb(num_basis_values);
+  std::vector<U> basis_valuesb(num_basis_values);
   mdspan2_t basis_values(basis_valuesb.data(), basis_shape[2], basis_shape[3]);
 
-  using xu_t = stdex::mdspan<double, stdex::dextents<std::size_t, 2>>;
-  using xU_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
-  using xJ_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
-  using xK_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 2>>;
+  using xu_t = stdex::mdspan<U, stdex::dextents<std::size_t, 2>>;
+  using xU_t = stdex::mdspan<const U, stdex::dextents<std::size_t, 2>>;
+  using xJ_t = stdex::mdspan<const U, stdex::dextents<std::size_t, 2>>;
+  using xK_t = stdex::mdspan<const U, stdex::dextents<std::size_t, 2>>;
   auto push_forward_fn
-      = element->basix_element().map_fn<xu_t, xU_t, xJ_t, xK_t>();
+      = element->basix_element().template map_fn<xu_t, xU_t, xJ_t, xK_t>();
 
   auto apply_dof_transformation
-      = element->get_dof_transformation_function<double>();
+      = element->template get_dof_transformation_function<U>();
 
   mdspan3_t full_basis(output_basis.data(), reference_shape);
   for (std::size_t p = 0; p < cells.size(); ++p)
@@ -1202,11 +1206,12 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   }
 
   // Prepare cell geometry
-  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = mesh->geometry().dofmap();
-  // FIXME: Add proper interface for num coordinate dofs
+  namespace stdex = std::experimental;
+  std::experimental::mdspan<const std::int32_t,
+                            std::experimental::dextents<std::size_t, 2>>
+      x_dofmap = mesh->geometry().dofmap();
   std::span<const U> x_g = mesh->geometry().x();
-  const std::size_t num_dofs_g = x_dofmap.num_links(0);
+  const std::size_t num_dofs_g = x_dofmap.extent(1);
 
   // Array to hold coordinates to return
   namespace stdex = std::experimental;
@@ -1216,7 +1221,6 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   std::vector<U> coordsb(std::reduce(coord_shape.cbegin(), coord_shape.cend(),
                                      1, std::multiplies{}));
 
-  namespace stdex = std::experimental;
   using mdspan2_t = stdex::mdspan<U, stdex::dextents<std::size_t, 2>>;
 
   // Loop over cells and tabulate dofs
@@ -1265,17 +1269,16 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
 
   for (std::size_t c = 0; c < cells.size(); ++c)
   {
-    // Extract cell geometry
-    auto x_dofs = x_dofmap.links(cells[c]);
-    for (std::size_t i = 0; i < num_dofs_g; ++i)
+    // Fetch the coordinates of the cell
+    auto x_dofs = stdex::submdspan(x_dofmap, cells[c], stdex::full_extent);
+    for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      const int pos = 3 * x_dofs[i];
-      for (std::size_t j = 0; j < gdim; ++j)
-        coordinate_dofs(i, j) = x_g[pos + j];
+      std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                  std::next(coordinate_dofs_b.begin(), 3 * i));
     }
 
     // Tabulate dof coordinates on cell
-    dolfinx::fem::CoordinateElement::push_forward(x, coordinate_dofs, phi);
+    dolfinx::fem::CoordinateElement<U>::push_forward(x, coordinate_dofs, phi);
     apply_dof_transformation(std::span(xb.data(), x.size()),
                              std::span(cell_info.data(), cell_info.size()),
                              (std::int32_t)c, (int)gdim);

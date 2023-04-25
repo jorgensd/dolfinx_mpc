@@ -174,7 +174,10 @@ public:
   }
 
   /// Return of local dofs + num ghosts indicating if a dof is a slave
-  const std::vector<std::int8_t>& is_slave() const { return _is_slave; }
+  std::span<const std::int8_t> is_slave() const
+  {
+    return std::span<const std::int8_t>(_is_slave);
+  }
 
   /// Return the constant values for the constraint
   const std::vector<T>& constant_values() const { return _mpc_constants; }

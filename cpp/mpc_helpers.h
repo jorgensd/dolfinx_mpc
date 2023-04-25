@@ -19,7 +19,7 @@ namespace dolfinx_mpc
 template <std::floating_point U>
 std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
 create_cell_to_dofs_map(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-                        const std::span<const std::int32_t>& dofs)
+                        std::span<const std::int32_t> dofs)
 {
   const auto& mesh = *(V->mesh());
   const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
@@ -209,14 +209,22 @@ dolfinx::fem::FunctionSpace<U> create_extended_functionspace(
   }
 
   // Extract information from the old dofmap to create a new one
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap_adj
-      = old_dofmap.list();
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element = V->element();
+  namespace stdex = std::experimental;
+  stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>> dofmap_adj
+      = old_dofmap.map();
+  // Copy dofmap
+  std::vector<std::int32_t> flattened_dofmap;
+  flattened_dofmap.reserve(dofmap_adj.extent(0) * dofmap_adj.extent(1));
+  for (std::size_t i = 0; i < dofmap_adj.extent(0); ++i)
+    for (std::size_t j = 0; j < dofmap_adj.extent(1); ++j)
+      flattened_dofmap.push_back(dofmap_adj(i, j));
+
+  auto element = V->element();
 
   // Create the new dofmap based on the extended index map
   auto new_dofmap = std::make_shared<const dolfinx::fem::DofMap>(
       old_dofmap.element_dof_layout(), new_index_map, old_dofmap.bs(),
-      dofmap_adj, old_dofmap.bs());
+      std::move(flattened_dofmap), old_dofmap.bs());
 
   return dolfinx::fem::FunctionSpace(V->mesh(), element, new_dofmap);
 }

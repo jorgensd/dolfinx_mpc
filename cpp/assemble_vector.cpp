@@ -11,6 +11,10 @@
 #include <dolfinx/fem/utils.h>
 #include <iostream>
 
+namespace stdex = std::experimental;
+using mdspan2_t
+    = stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>>;
+
 namespace
 {
 
@@ -19,7 +23,6 @@ namespace
 /// @param[in, out] b The vector to assemble into
 /// @param[in] active_entities The set of active entities.
 /// @param[in] dofmap The dofmap
-/// @param[in] bs The block size of the dofmap
 /// @param[in] mpc The multipoint constraint
 /// @param[in] fetch_cells Function that fetches the cell index for an entity
 /// in active_entities
@@ -30,7 +33,7 @@ namespace
 template <typename T, std::size_t estride>
 void _assemble_entities_impl(
     std::span<T> b, std::span<const std::int32_t> active_entities,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap, int bs,
+    const dolfinx::fem::DofMap& dofmap,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, double>>&
         mpc,
     const std::function<const std::int32_t(std::span<const std::int32_t>)>
@@ -45,12 +48,13 @@ void _assemble_entities_impl(
       masters = mpc->masters();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
       = mpc->coefficients();
-  const std::vector<std::int8_t>& is_slave = mpc->is_slave();
+  std::span<const std::int8_t> is_slave = mpc->is_slave();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       cell_to_slaves = mpc->cell_to_slaves();
 
   // NOTE: Assertion that all links have the same size (no P refinement)
-  const int num_dofs = dofmap.links(0).size();
+  const int num_dofs = dofmap.map().extent(1);
+  int bs = dofmap.bs();
   std::vector<T> be(bs * num_dofs);
   const std::span<T> _be(be);
   std::vector<T> be_copy(bs * num_dofs);
@@ -59,14 +63,15 @@ void _assemble_entities_impl(
   // Assemble over all entities
   for (std::size_t e = 0; e < active_entities.size(); e += estride)
   {
-    auto entity = active_entities.subspan(e, estride);
+    std::span<const std::int32_t> entity = active_entities.subspan(e, estride);
     // Assemble into element vector
     assemble_local_element_vector(_be, entity, e / estride);
 
     const std::int32_t cell = fetch_cells(entity);
-    auto dofs = dofmap.links(cell);
+    auto dofs = dofmap.cell_dofs(cell);
+
     // Modify local element matrix if entity is connected to a slave cell
-    std::span<const int32_t> slaves = cell_to_slaves->links(cell);
+    std::span<const std::int32_t> slaves = cell_to_slaves->links(cell);
     if (!slaves.empty())
     {
       // Modify element vector for MPC and insert into b for non-local
@@ -96,8 +101,6 @@ void _assemble_vector(
   std::shared_ptr<const dolfinx::fem::DofMap> dofmap
       = L.function_spaces().at(0)->dofmap();
   assert(dofmap);
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofs = dofmap->list();
-  const int bs = dofmap->bs();
 
   // Prepare constants & coefficients
   const std::vector<T> constants = pack_constants(L);
@@ -106,17 +109,18 @@ void _assemble_vector(
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
 
   // Prepare cell geometry
-  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = mesh->geometry().dofmap();
+  namespace stdex = std::experimental;
+  std::experimental::mdspan<const std::int32_t,
+                            std::experimental::dextents<std::size_t, 2>>
+      x_dofmap = mesh->geometry().dofmap();
   std::span<const double> x_g = mesh->geometry().x();
 
   // Prepare dof tranformation data
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element
-      = L.function_spaces().at(0)->element();
+  auto element = L.function_spaces().at(0)->element();
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
-      dof_transform = element->get_dof_transformation_function<T>();
+      dof_transform = element->template get_dof_transformation_function<T>();
   const bool needs_transformation_data
       = element->needs_dof_transformations() or L.needs_facet_permutations();
   std::span<const std::uint32_t> cell_info;
@@ -125,9 +129,7 @@ void _assemble_vector(
     mesh->topology_mutable()->create_entity_permutations();
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
-  // FIXME: Add proper interface for num coordinate dofs
-  const std::size_t num_dofs_g = x_dofmap.num_links(cell);
-  // FIXME: Reconsider when using mixed topology (mixed celltypes)
+  const std::size_t num_dofs_g = x_dofmap.extent(1);
   std::vector<double> coordinate_dofs(3 * num_dofs_g);
 
   if (L.num_integrals(dolfinx::fem::IntegralType::cell) > 0)
@@ -151,12 +153,13 @@ void _assemble_vector(
         auto cell = entity.front();
 
         // Fetch the coordinates of the cell
-        const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
+        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
                       std::next(coordinate_dofs.begin(), 3 * i));
         }
+
         // Tabulate tensor
         std::fill(be.data(), be.data() + be.size(), 0);
         fn(be.data(), coeffs.first.data() + index * coeffs.second,
@@ -169,7 +172,7 @@ void _assemble_vector(
       // Assemble over all active cells
       std::span<const std::int32_t> active_cells
           = L.domain(dolfinx::fem::IntegralType::cell, i);
-      _assemble_entities_impl<T, 1>(b, active_cells, dofs, bs, mpc, fetch_cell,
+      _assemble_entities_impl<T, 1>(b, active_cells, *dofmap, mpc, fetch_cell,
                                     assemble_local_cell_vector);
     }
   }
@@ -198,7 +201,7 @@ void _assemble_vector(
         // Fetch the coordinates of the cell
         const std::int32_t cell = entity[0];
         const int local_facet = entity[1];
-        const std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
+        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -217,7 +220,7 @@ void _assemble_vector(
       // Assemble over all active cells
       std::span<const std::int32_t> active_facets
           = L.domain(dolfinx::fem::IntegralType::exterior_facet, i);
-      _assemble_entities_impl<T, 2>(b, active_facets, dofs, bs, mpc, fetch_cell,
+      _assemble_entities_impl<T, 2>(b, active_facets, *dofmap, mpc, fetch_cell,
                                     assemble_local_exterior_facet_vector);
     }
   }
