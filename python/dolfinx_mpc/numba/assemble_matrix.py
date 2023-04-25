@@ -71,7 +71,6 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     # Pack constants and coefficients
     form_coeffs = _cpp.fem.pack_coefficients(form)
     form_consts = _cpp.fem.pack_constants(form)
-
     # Create sparsity pattern and matrix if not supplied
     if A is None:
         pattern = create_sparsity_pattern(form, constraint)
@@ -142,7 +141,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
             coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
-            assemble_exterior_slave_facets(A.handle, facet_kernel, (pos, x_dofs, x), coeffs_i, form_consts,
+            assemble_exterior_slave_facets(A.handle, facet_kernel, (x_dofs, x), coeffs_i, form_consts,
                                            perm, dofs, block_size, num_dofs_per_element, facet_info, mpc_data, is_bc,
                                            num_facets_per_cell)
 
@@ -216,9 +215,6 @@ def assemble_slave_cells(A: int,
     # Loop over all cells
     local_dofs = numpy.zeros(block_size * num_dofs_per_element, dtype=numpy.int32)
     for cell in active_cells:
-        num_vertices = pos[cell + 1] - pos[cell]
-        geom_dofs = pos[cell]
-
         # Compute vertices of cell from mesh data
         geometry[:, :] = x[x_dofmap[cell]]
 
@@ -229,9 +225,7 @@ def assemble_slave_cells(A: int,
 
         # NOTE: Here we need to apply dof transformations
 
-        # Local dof position
-        local_blocks = dofmap[num_dofs_per_element
-                              * cell: num_dofs_per_element * cell + num_dofs_per_element]
+        local_blocks = dofmap[cell]
 
         # Remove all contributions for dofs that are in the Dirichlet bcs
         for j in range(num_dofs_per_element):
@@ -360,7 +354,7 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
 
 @numba.njit
 def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
-                                   mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                                   mesh: Tuple[npt.NDArray[numpy.int32],
                                                npt.NDArray[numpy.float64]],
                                    coeffs: npt.NDArray[_PETSc.ScalarType],
                                    consts: npt.NDArray[_PETSc.ScalarType],
@@ -379,14 +373,14 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
     masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
 
     # Mesh data
-    pos, x_dofmap, x = mesh
+    x_dofmap, x = mesh
 
     # Empty arrays for facet information
     facet_index = numpy.zeros(1, dtype=numpy.int32)
     facet_perm = numpy.zeros(1, dtype=numpy.uint8)
 
     # NOTE: All cells are assumed to be of the same type
-    geometry = numpy.zeros((pos[1] - pos[0], 3))
+    geometry = numpy.zeros((x_dofmap.shape[1], 3))
 
     # Numpy data used in facet loop
     A_local = numpy.zeros((num_dofs_per_element * block_size,
@@ -401,10 +395,8 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
         #  Get cell index (local to process) and facet index (local to cell)
         cell_index, local_facet = facet_info[i]
         # Get mesh geometry
-        cell = pos[cell_index]
         facet_index[0] = local_facet
-        num_vertices = pos[cell_index + 1] - pos[cell_index]
-        geometry[:, :] = x[x_dofmap[cell:cell + num_vertices]]
+        geometry[:, :] = x[x_dofmap[cell_index]]
 
         # Assemble local matrix
         A_local.fill(0.0)
