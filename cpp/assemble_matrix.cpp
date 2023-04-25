@@ -462,7 +462,7 @@ void assemble_cells_impl(
   {
     const std::int32_t cell = active_cells[c];
     // Get cell coordinates/geometry
-    auto x_dofs = stdex::submdspan(x_dofmap, c, stdex::full_extent);
+    auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
