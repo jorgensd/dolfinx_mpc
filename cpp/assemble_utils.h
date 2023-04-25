@@ -5,15 +5,9 @@
 // SPDX-License-Identifier:    MIT
 
 #pragma once
-#include <basix/mdspan.hpp>
 #include <cstdint>
 #include <span>
-#include <utility>
 #include <vector>
-
-namespace stdex = std::experimental;
-using mdspan2_t
-    = stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>>;
 
 namespace dolfinx_mpc
 {
