@@ -82,7 +82,7 @@ void _assemble_entities_impl(
     }
 
     // Add local contribution to b
-    for (int i = 0; i < num_dofs; ++i)
+    for (std::size_t i = 0; i < num_dofs; ++i)
       for (int k = 0; k < bs; ++k)
         b[bs * dofs[i] + k] += be[bs * i + k];
   }
