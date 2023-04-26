@@ -38,10 +38,9 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
 
     # Unpack Function space data
     V = form.function_spaces[0]
-    pos = V.mesh.geometry.dofmap.offsets
-    x_dofs = V.mesh.geometry.dofmap.array
+    x_dofs = V.mesh.geometry.dofmap
     x = V.mesh.geometry.x
-    dofs = V.dofmap.list().array
+    dofs = V.dofmap.map()
     block_size = V.dofmap.index_map_bs
 
     # Data from multipointconstraint
@@ -97,7 +96,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
-                               (pos, x_dofs, x), coeffs_i, form_consts,
+                               (x_dofs, x), coeffs_i, form_consts,
                                cell_perms, dofs, block_size, num_dofs_per_element, mpc_data)
 
     # Assemble exterior facet integrals
@@ -119,7 +118,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:
-                assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (pos, x_dofs, x),
+                assemble_exterior_slave_facets(numpy.asarray(b), facet_kernel, facet_info, (x_dofs, x),
                                                coeffs_i, form_consts, perm,
                                                dofs, block_size, num_dofs_per_element, mpc_data, num_facets_per_cell)
     timer_vector.stop()
@@ -129,7 +128,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
 @numba.njit
 def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
                    kernel: cffi.FFI, active_cells: npt.NDArray[numpy.int32],
-                   mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                   mesh: Tuple[npt.NDArray[numpy.int32],
                                npt.NDArray[numpy.float64]],
                    coeffs: npt.NDArray[_PETSc.ScalarType],
                    constants: npt.NDArray[_PETSc.ScalarType],
@@ -148,24 +147,22 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
     facet_perm = numpy.zeros(0, dtype=numpy.uint8)
 
     # Unpack mesh data
-    pos, x_dofmap, x = mesh
+    x_dofmap, x = mesh
 
     # NOTE: All cells are assumed to be of the same type
-    geometry = numpy.zeros((pos[1] - pos[0], 3))
+    geometry = numpy.zeros((x_dofmap.shape[1], 3))
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)
 
     for cell_index in active_cells:
-        num_vertices = pos[cell_index + 1] - pos[cell_index]
-        cell = pos[cell_index]
 
         # Compute mesh geometry for cell
-        geometry[:, :] = x[x_dofmap[cell:cell + num_vertices]]
+        geometry[:, :] = x[x_dofmap[cell_index]]
 
         # Assemble local element vector
         b_local.fill(0.0)
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
-               ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
-               ffi_fb(facet_perm))
+               ffi_fb(constants), ffi_fb(geometry),
+               ffi_fb(facet_index), ffi_fb(facet_perm))
         # NOTE: Here we need to add the apply_dof_transformation function
 
         # Modify global vector and local cell contributions
@@ -174,7 +171,7 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
                                  block_size, num_dofs_per_element)
         for j in range(num_dofs_per_element):
             for k in range(block_size):
-                position = dofmap[num_dofs_per_element * cell_index + j] * block_size + k
+                position = dofmap[cell_index, j] * block_size + k
                 b[position] += (b_local[j * block_size + k] - b_local_copy[j * block_size + k])
 
 
@@ -182,7 +179,7 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
 def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
                                    kernel: cffi.FFI,
                                    facet_info: npt.NDArray[numpy.int32],
-                                   mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                                   mesh: Tuple[npt.NDArray[numpy.int32],
                                                npt.NDArray[numpy.float64]],
                                    coeffs: npt.NDArray[_PETSc.ScalarType],
                                    constants: npt.NDArray[_PETSc.ScalarType],
@@ -203,9 +200,9 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
     facet_perm = numpy.zeros(1, dtype=numpy.uint8)
 
     # Unpack mesh data
-    pos, x_dofmap, x = mesh
+    x_dofmap, x = mesh
 
-    geometry = numpy.zeros((pos[1] - pos[0], 3))
+    geometry = numpy.zeros((x_dofmap.shape[1], 3))
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)
     for i in range(facet_info.shape[0]):
         # Extract cell index (local to process) and facet index (local to cell) for kernel
@@ -213,25 +210,24 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
         facet_index[0] = local_facet
 
         # Extract cell geometry
-        cell = pos[cell_index]
-        num_vertices = pos[cell_index + 1] - pos[cell_index]
-        geometry[:, :] = x[x_dofmap[cell:cell + num_vertices]]
+        geometry[:, :] = x[x_dofmap[cell_index]]
 
         # Compute local facet kernel
-        b_local.fill(0.0)
         if needs_facet_perm:
             facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
-        kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
+        b_local.fill(0.0)
+        kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
+               ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm))
         # NOTE: Here we need to add the apply_dof_transformation
 
         # Modify local contributions and add global MPC contributions
         b_local_copy = b_local.copy()
-        modify_mpc_contributions(b, cell_index, b_local, b_local_copy,
-                                 mpc, dofmap, block_size, num_dofs_per_element)
+        modify_mpc_contributions(b, cell_index, b_local, b_local_copy, mpc, dofmap,
+                                 block_size, num_dofs_per_element)
         for j in range(num_dofs_per_element):
             for k in range(block_size):
-                position = dofmap[num_dofs_per_element * cell_index + j] * block_size + k
+                position = dofmap[cell_index, j] * block_size + k
                 b[position] += (b_local[j * block_size + k] - b_local_copy[j * block_size + k])
 
 
@@ -259,8 +255,7 @@ def modify_mpc_contributions(b: npt.NDArray[_PETSc.ScalarType], cell_index: int,
                                 cell_to_slave_offset[cell_index + 1]]
 
     # Get local index of slaves in cell
-    cell_blocks = dofmap[num_dofs_per_element * cell_index:
-                         num_dofs_per_element * cell_index + num_dofs_per_element]
+    cell_blocks = dofmap[cell_index]
     local_index = numpy.empty(len(cell_slaves), dtype=numpy.int32)
     for i in range(num_dofs_per_element):
         for j in range(block_size):

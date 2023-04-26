@@ -10,6 +10,11 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
+
+namespace stdex = std::experimental;
+using mdspan2_t
+    = stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>>;
+
 namespace
 {
 
@@ -33,8 +38,8 @@ void fill_stripped_matrix(
         Ae,
     const std::array<const std::uint32_t, 2>& num_dofs,
     const std::array<const int, 2>& bs,
-    const std::array<const std::vector<std::int8_t>, 2>& is_slave,
-    const std::array<const std::span<const int32_t>, 2>& dofs)
+    const std::array<std::span<const std::int8_t>, 2>& is_slave,
+    const std::array<std::span<const std::int32_t>, 2>& dofs)
 {
   const auto& [row_bs, col_bs] = bs;
   const auto& [num_row_dofs, num_col_dofs] = num_dofs;
@@ -91,21 +96,21 @@ void fill_stripped_matrix(
 /// num_cols(Ae) + num_rows(Ae)
 template <typename T>
 void modify_mpc_cell(
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
-                            const std::span<const T>)>& mat_set,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>, std::span<const T>)>&
+        mat_set,
     const std::array<const std::uint32_t, 2>& num_dofs,
     std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>>
         Ae,
-    const std::array<const std::span<const int32_t>, 2>& dofs,
+    const std::array<std::span<const std::int32_t>, 2>& dofs,
     const std::array<const int, 2>& bs,
-    const std::array<const std::span<const int32_t>, 2>& slaves,
+    const std::array<std::span<const std::int32_t>, 2>& slaves,
     const std::array<
         std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>&
         masters,
     const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>,
                      2>& coeffs,
-    const std::array<const std::vector<std::int8_t>, 2>& is_slave,
+    const std::array<std::span<const std::int8_t>, 2>& is_slave,
     std::span<T> scratch_memory)
 {
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
@@ -256,23 +261,23 @@ void modify_mpc_cell(
 //-----------------------------------------------------------------------------
 template <typename T, std::floating_point U>
 void assemble_exterior_facets(
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_block_values,
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_values,
     const dolfinx::mesh::Mesh<double>& mesh,
     std::span<const std::int32_t> facets,
     const std::function<void(const std::span<T>&,
                              const std::span<const std::uint32_t>&,
                              std::int32_t, int)>& apply_dof_transformation,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
+    const dolfinx::fem::DofMap& dofmap0,
     const std::function<
         void(const std::span<T>&, const std::span<const std::uint32_t>&,
              std::int32_t, int)>& apply_dof_transformation_to_transpose,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
-    const std::vector<std::int8_t>& bc0, const std::vector<std::int8_t>& bc1,
+    const dolfinx::fem::DofMap& dofmap1, const std::vector<std::int8_t>& bc0,
+    const std::vector<std::int8_t>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*)>& kernel,
     const std::span<const T> coeffs, int cstride,
@@ -287,7 +292,7 @@ void assemble_exterior_facets(
       masters = {mpc0->masters(), mpc1->masters()};
   const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
       coefficients = {mpc0->coefficients(), mpc1->coefficients()};
-  const std::array<const std::vector<std::int8_t>, 2> is_slave
+  const std::array<std::span<const std::int8_t>, 2> is_slave
       = {mpc0->is_slave(), mpc1->is_slave()};
 
   const std::array<
@@ -295,17 +300,19 @@ void assemble_exterior_facets(
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
   // Get mesh data
-  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = mesh.geometry().dofmap();
+  std::experimental::mdspan<const std::int32_t,
+                            std::experimental::dextents<std::size_t, 2>>
+      x_dofmap = mesh.geometry().dofmap();
 
-  // FIXME: Add proper interface for num coordinate dofs
-  const int num_dofs_g = x_dofmap.num_links(0);
+  const int num_dofs_g = x_dofmap.extent(1);
   std::span<const U> x_g = mesh.geometry().x();
 
   // Iterate over all facets
   std::vector<U> coordinate_dofs(3 * num_dofs_g);
-  const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
-  const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
+  const auto num_dofs0 = (std::uint32_t)dofmap0.map().extent(1);
+  const auto num_dofs1 = (std::uint32_t)dofmap1.map().extent(1);
+  int bs0 = dofmap0.bs();
+  int bs1 = dofmap1.bs();
   const std::uint32_t ndim0 = bs0 * num_dofs0;
   const std::uint32_t ndim1 = bs1 * num_dofs1;
   const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
@@ -324,7 +331,7 @@ void assemble_exterior_facets(
     const int local_facet = facets[l + 1];
 
     // Get cell vertex coordinates
-    std::span<const std::int32_t> x_dofs = x_dofmap.links(cell);
+    auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -338,8 +345,8 @@ void assemble_exterior_facets(
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
 
     // Zero rows/columns for essential bcs
-    std::span<const std::int32_t> dmap0 = dofmap0.links(cell);
-    std::span<const std::int32_t> dmap1 = dofmap1.links(cell);
+    auto dmap0 = dofmap0.cell_dofs(cell);
+    auto dmap1 = dofmap1.cell_dofs(cell);
     if (!bc0.empty())
     {
       for (std::uint32_t i = 0; i < num_dofs0; ++i)
@@ -377,9 +384,9 @@ void assemble_exterior_facets(
     if ((cell_to_slaves[0]->num_links(cell) > 0)
         || (cell_to_slaves[1]->num_links(cell) > 0))
     {
-      const std::array<const std::span<const int32_t>, 2> slaves
+      const std::array<std::span<const std::int32_t>, 2> slaves
           = {cell_to_slaves[0]->links(cell), cell_to_slaves[1]->links(cell)};
-      const std::array<const std::span<const int32_t>, 2> dofs = {dmap0, dmap1};
+      const std::array<std::span<const std::int32_t>, 2> dofs = {dmap0, dmap1};
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
                          masters, coefficients, is_slave, scratch_memory);
     }
@@ -389,23 +396,23 @@ void assemble_exterior_facets(
 //-----------------------------------------------------------------------------
 template <typename T, std::floating_point U>
 void assemble_cells_impl(
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_block_values,
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_values,
     const dolfinx::mesh::Geometry<double>& geometry,
     std::span<const std::int32_t> active_cells,
     std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                        const std::int32_t, const int)>
         apply_dof_transformation,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap0, int bs0,
+    const dolfinx::fem::DofMap& dofmap0,
     std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                        const std::int32_t, const int)>
         apply_dof_transformation_to_transpose,
-    const dolfinx::graph::AdjacencyList<std::int32_t>& dofmap1, int bs1,
-    const std::vector<std::int8_t>& bc0, const std::vector<std::int8_t>& bc1,
+    const dolfinx::fem::DofMap& dofmap1, const std::vector<std::int8_t>& bc0,
+    const std::vector<std::int8_t>& bc1,
     const std::function<void(T*, const T*, const T*, const double*, const int*,
                              const std::uint8_t*)>& kernel,
     const std::span<const T>& coeffs, int cstride,
@@ -420,7 +427,7 @@ void assemble_cells_impl(
       masters = {mpc0->masters(), mpc1->masters()};
   const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
       coefficients = {mpc0->coefficients(), mpc1->coefficients()};
-  const std::array<const std::vector<std::int8_t>, 2> is_slave
+  const std::array<std::span<const std::int8_t>, 2> is_slave
       = {mpc0->is_slave(), mpc1->is_slave()};
 
   const std::array<
@@ -429,21 +436,21 @@ void assemble_cells_impl(
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
   // Prepare cell geometry
-  const dolfinx::graph::AdjacencyList<std::int32_t>& x_dofmap
-      = geometry.dofmap();
-
-  // FIXME: Add proper interface for num coordinate dofs
-  const int num_dofs_g = x_dofmap.num_links(0);
+  namespace stdex = std::experimental;
+  std::experimental::mdspan<const std::int32_t,
+                            std::experimental::dextents<std::size_t, 2>>
+      x_dofmap = geometry.dofmap();
+  const std::size_t num_dofs_g = x_dofmap.extent(1);
   std::span<const U> x_g = geometry.x();
 
   // Iterate over active cells
   std::vector<U> coordinate_dofs(3 * num_dofs_g);
-  const auto num_dofs0 = (std::uint32_t)dofmap0.links(0).size();
-  const auto num_dofs1 = (std::uint32_t)dofmap1.links(0).size();
-  const std::uint32_t ndim0 = num_dofs0 * bs0;
-  const std::uint32_t ndim1 = num_dofs1 * bs1;
+  const auto num_dofs0 = (std::uint32_t)dofmap0.map().extent(1);
+  const auto num_dofs1 = (std::uint32_t)dofmap1.map().extent(1);
+  const std::array<const int, 2> bs = {dofmap0.bs(), dofmap1.bs()};
+  const std::uint32_t ndim0 = num_dofs0 * bs.front();
+  const std::uint32_t ndim1 = num_dofs1 * bs.back();
   const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
-  const std::array<const int, 2> bs = {bs0, bs1};
 
   std::vector<T> Aeb(ndim0 * ndim1);
   std::experimental::mdspan<T, std::experimental::dextents<std::size_t, 2>> Ae(
@@ -455,7 +462,7 @@ void assemble_cells_impl(
   {
     const std::int32_t cell = active_cells[c];
     // Get cell coordinates/geometry
-    std::span<const int32_t> x_dofs = x_dofmap.links(cell);
+    auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -470,27 +477,27 @@ void assemble_cells_impl(
     apply_dof_transformation_to_transpose(_Ae, cell_info, cell, ndim0);
 
     // Zero rows/columns for essential bcs
-    std::span<const int32_t> dofs0 = dofmap0.links(cell);
-    std::span<const int32_t> dofs1 = dofmap1.links(cell);
+    std::span<const std::int32_t> dofs0 = dofmap0.cell_dofs(cell);
+    std::span<const std::int32_t> dofs1 = dofmap1.cell_dofs(cell);
     if (!bc0.empty())
     {
       for (std::uint32_t i = 0; i < num_dofs0; ++i)
       {
-        for (std::int32_t k = 0; k < bs0; ++k)
+        for (std::int32_t k = 0; k < bs.front(); ++k)
         {
-          if (bc0[bs0 * dofs0[i] + k])
-            std::fill_n(std::next(Aeb.begin(), ndim1 * (bs0 * i + k)), ndim1,
-                        T(0));
+          if (bc0[bs.front() * dofs0[i] + k])
+            std::fill_n(std::next(Aeb.begin(), ndim1 * (bs.front() * i + k)),
+                        ndim1, T(0));
         }
       }
     }
     if (!bc1.empty())
     {
       for (std::uint32_t j = 0; j < num_dofs1; ++j)
-        for (std::int32_t k = 0; k < bs1; ++k)
-          if (bc1[bs1 * dofs1[j] + k])
+        for (std::int32_t k = 0; k < bs.back(); ++k)
+          if (bc1[bs.back() * dofs1[j] + k])
             for (std::size_t l = 0; l < ndim0; ++l)
-              Aeb[l * ndim1 + bs1 * j + k] = 0;
+              Aeb[l * ndim1 + bs.back() * j + k] = 0;
     }
 
     // Modify local element matrix Ae and insert contributions into master
@@ -498,10 +505,9 @@ void assemble_cells_impl(
     if ((cell_to_slaves[0]->num_links(cell) > 0)
         || (cell_to_slaves[1]->num_links(cell) > 0))
     {
-      const std::array<const std::span<const int32_t>, 2> slaves
+      const std::array<std::span<const std::int32_t>, 2> slaves
           = {cell_to_slaves[0]->links(cell), cell_to_slaves[1]->links(cell)};
-      const std::array<const std::span<const int32_t>, 2> dofs = {dofs0, dofs1};
-
+      const std::array<std::span<const std::int32_t>, 2> dofs = {dofs0, dofs1};
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
                          masters, coefficients, is_slave, scratch_memory);
     }
@@ -511,11 +517,11 @@ void assemble_cells_impl(
 //-----------------------------------------------------------------------------
 template <typename T, std::floating_point U>
 void assemble_matrix_impl(
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_block_values,
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_values,
     const dolfinx::fem::Form<T>& a, const std::vector<std::int8_t>& bc0,
     const std::vector<std::int8_t>& bc1,
@@ -532,10 +538,6 @@ void assemble_matrix_impl(
       = a.function_spaces().at(1)->dofmap();
   assert(dofmap0);
   assert(dofmap1);
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofs0 = dofmap0->list();
-  const int bs0 = dofmap0->bs();
-  const dolfinx::graph::AdjacencyList<std::int32_t>& dofs1 = dofmap1->list();
-  const int bs1 = dofmap1->bs();
   // Prepare constants
   const std::vector<T> constants = pack_constants(a);
 
@@ -544,17 +546,16 @@ void assemble_matrix_impl(
   dolfinx::fem::pack_coefficients(a, coeff_vec);
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
 
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element0
-      = a.function_spaces().at(0)->element();
-  std::shared_ptr<const dolfinx::fem::FiniteElement> element1
-      = a.function_spaces().at(1)->element();
+  auto element0 = a.function_spaces().at(0)->element();
+  auto element1 = a.function_spaces().at(1)->element();
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
-      apply_dof_transformation = element0->get_dof_transformation_function<T>();
+      apply_dof_transformation
+      = element0->template get_dof_transformation_function<T>();
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
       apply_dof_transformation_to_transpose
-      = element1->get_dof_transformation_to_transpose_function<T>();
+      = element1->template get_dof_transformation_to_transpose_function<T>();
 
   const bool needs_transformation_data
       = element0->needs_dof_transformations()
@@ -575,8 +576,8 @@ void assemble_matrix_impl(
         = a.domain(dolfinx::fem::IntegralType::cell, i);
     assemble_cells_impl<T>(
         mat_add_block_values, mat_add_values, mesh->geometry(), active_cells,
-        apply_dof_transformation, dofs0, bs0,
-        apply_dof_transformation_to_transpose, dofs1, bs1, bc0, bc1, fn, coeffs,
+        apply_dof_transformation, *dofmap0,
+        apply_dof_transformation_to_transpose, *dofmap1, bc0, bc1, fn, coeffs,
         cstride, constants, cell_info, mpc0, mpc1);
   }
 
@@ -588,9 +589,9 @@ void assemble_matrix_impl(
     std::span<const std::int32_t> facets
         = a.domain(dolfinx::fem::IntegralType::exterior_facet, i);
     assemble_exterior_facets<T>(mat_add_block_values, mat_add_values, *mesh,
-                                facets, apply_dof_transformation, dofs0, bs0,
-                                apply_dof_transformation_to_transpose, dofs1,
-                                bs1, bc0, bc1, fn, coeffs, cstride, constants,
+                                facets, apply_dof_transformation, *dofmap0,
+                                apply_dof_transformation_to_transpose, *dofmap1,
+                                bc0, bc1, fn, coeffs, cstride, constants,
                                 cell_info, mpc0, mpc1);
   }
 
@@ -616,11 +617,11 @@ void assemble_matrix_impl(
 //-----------------------------------------------------------------------------
 template <typename T, std::floating_point U>
 void _assemble_matrix(
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>&)>& mat_add_block,
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const T>&)>& mat_add,
     const dolfinx::fem::Form<T>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
@@ -681,11 +682,11 @@ void _assemble_matrix(
 } // namespace
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const double>&)>& mat_add_block,
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
                             const std::span<const double>&)>& mat_add,
     const dolfinx::fem::Form<double>& a,
     const std::shared_ptr<
@@ -700,14 +701,12 @@ void dolfinx_mpc::assemble_matrix(
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
-                            const std::span<const std::complex<double>>&)>&
-        mat_add_block,
-    const std::function<int(const std::span<const std::int32_t>&,
-                            const std::span<const std::int32_t>&,
-                            const std::span<const std::complex<double>>&)>&
-        mat_add,
+    const std::function<
+        int(std::span<const std::int32_t>, std::span<const std::int32_t>,
+            const std::span<const std::complex<double>>&)>& mat_add_block,
+    const std::function<
+        int(std::span<const std::int32_t>, std::span<const std::int32_t>,
+            const std::span<const std::complex<double>>&)>& mat_add,
     const dolfinx::fem::Form<std::complex<double>>& a,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&

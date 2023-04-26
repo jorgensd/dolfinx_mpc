@@ -11,6 +11,9 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <functional>
+namespace stdex = std::experimental;
+using mdspan2_t
+    = stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>>;
 
 namespace dolfinx_mpc
 {
@@ -22,7 +25,7 @@ class MultiPointConstraint;
 /// @param [in, out] b The global (local to process) vector
 /// @param [in, out] b_local The local element vector
 /// @param [in] b_local_copy Copy of the local element vector
-/// @param [in] cell_blocks Dofmap for the blocks in the cell
+/// @param [in] dofs The cell dofs (blocked)
 /// @param [in] num_dofs The number of degrees of freedom in the local vector
 /// @param [in] bs The element block size
 /// @param [in] is_slave Vector indicating if a dof is a slave
@@ -32,10 +35,9 @@ class MultiPointConstraint;
 template <typename T>
 void modify_mpc_vec(
     const std::span<T>& b, const std::span<T>& b_local,
-    const std::span<T>& b_local_copy,
-    const std::span<const std::int32_t>& cell_blocks, const int num_dofs,
-    const int bs, const std::vector<std::int8_t>& is_slave,
-    const std::span<const std::int32_t>& slaves,
+    const std::span<T>& b_local_copy, std::span<const std::int32_t> dofs,
+    const int num_dofs, const int bs, std::span<const std::int8_t> is_slave,
+    std::span<const std::int32_t> slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
         masters,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coeffs)
@@ -44,7 +46,7 @@ void modify_mpc_vec(
   // NOTE: Should this be moved into the MPC constructor?
   // Get local index of slaves in cell
   std::vector<std::int32_t> local_index
-      = compute_local_slave_index(slaves, num_dofs, bs, cell_blocks, is_slave);
+      = compute_local_slave_index(slaves, num_dofs, bs, dofs, is_slave);
 
   // Move contribution from each slave to corresponding master dof
   for (std::size_t i = 0; i < local_index.size(); i++)
