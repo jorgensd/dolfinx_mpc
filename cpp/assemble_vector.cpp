@@ -53,7 +53,7 @@ void _assemble_entities_impl(
       cell_to_slaves = mpc->cell_to_slaves();
 
   // NOTE: Assertion that all links have the same size (no P refinement)
-  const int num_dofs = dofmap.map().extent(1);
+  const std::size_t num_dofs = dofmap.map().extent(1);
   int bs = dofmap.bs();
   std::vector<T> be(bs * num_dofs);
   const std::span<T> _be(be);
