@@ -190,10 +190,10 @@ def test_homogenize(tensor_order, poly_order):
     elif tensor_order == 2:
         shape = (mesh.geometry.dim, mesh.geometry.dim)
     else:
-        pytest.xfail("Unknown tensoor order")
+        pytest.xfail("Unknown tensor order")
 
     cellname = mesh.ufl_cell().cellname()
-    el = basix.ufl.element(basix.ElementFamily.P, cellname , poly_order, shape=shape)
+    el = basix.ufl.element(basix.ElementFamily.P, cellname, poly_order, shape=shape)
 
     V = dolfinx.fem.FunctionSpace(mesh, el)
 

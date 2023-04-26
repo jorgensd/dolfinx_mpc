@@ -11,8 +11,8 @@
 #  block preconditioners with PETSc
 
 
+import basix
 import dolfinx.io
-import dolfinx_mpc
 import dolfinx_mpc.utils
 import gmsh
 import numpy as np
@@ -22,7 +22,9 @@ from dolfinx.io import gmshio
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl.core.expr import Expr
-import basix
+
+import dolfinx_mpc
+
 
 def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
                      wall_marker: int = 1, outlet_marker: int = 2, inlet_marker: int = 3):
@@ -108,8 +110,8 @@ fdim = mesh.topology.dim - 1
 
 # Create the function space
 cellname = mesh.ufl_cell().cellname()
-Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
-Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
+Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
+Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
 
 V = dolfinx.fem.FunctionSpace(mesh, Ve)
 Q = dolfinx.fem.FunctionSpace(mesh, Qe)

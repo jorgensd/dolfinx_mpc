@@ -8,13 +8,14 @@ import basix
 import dolfinx
 import dolfinx.fem
 import dolfinx.mesh
-import dolfinx_mpc
 import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
+
+import dolfinx_mpc
 
 
 @pytest.mark.parametrize("cell_type",
@@ -46,9 +47,9 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # Create the function space
     cellname = mesh.ufl_cell().cellname()
-    Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
-    Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
-    
+    Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
+    Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
+
     V = dolfinx.fem.FunctionSpace(mesh, Ve)
     Q = dolfinx.fem.FunctionSpace(mesh, Qe)
     W = dolfinx.fem.FunctionSpace(mesh, Ve * Qe)
