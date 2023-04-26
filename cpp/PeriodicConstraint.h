@@ -375,7 +375,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
     for (std::int32_t j = disp_in[i]; j < disp_in[i + 1]; j++)
     {
-      if (const std::int32_t cell = remote_cell_collisions[j]; j == -1)
+      if (const std::int32_t cell = remote_cell_collisions[j]; cell == -1)
       {
         for (int b = 0; b < bs; b++)
           num_masters_per_slave_remote.push_back(0);
