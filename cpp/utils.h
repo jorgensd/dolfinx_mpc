@@ -1008,16 +1008,16 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   // Create buffer for coordinate dofs and point in physical space
   std::vector<U> coord_dofs_b(num_dofs_g * gdim);
   mdspan2_t coord_dofs(coord_dofs_b.data(), num_dofs_g, gdim);
-  std::vector<double> xp_b(1 * gdim);
+  std::vector<U> xp_b(1 * gdim);
   mdspan2_t xp(xp_b.data(), 1, gdim);
 
   // Evaluate geometry basis at point (0, 0, 0) on the reference cell.
   // Used in affine case.
   std::array<std::size_t, 4> phi0_shape = cmaps[0].tabulate_shape(1, 1);
-  std::vector<double> phi0_b(
+  std::vector<U> phi0_b(
       std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi0(phi0_b.data(), phi0_shape);
-  cmaps[0].tabulate(1, std::vector<double>(tdim), {1, tdim}, phi0_b);
+  cmaps[0].tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
   auto dphi0 = stdex::submdspan(phi0, std::pair(1, tdim + 1), 0,
                                 stdex::full_extent, 0);
 
@@ -1244,11 +1244,11 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
 
   const std::array<std::size_t, 4> bsize
       = cmaps[0].tabulate_shape(0, X_shape[0]);
-  std::vector<double> phi_b(
+  std::vector<U> phi_b(
       std::reduce(bsize.begin(), bsize.end(), 1, std::multiplies{}));
   cmaps[0].tabulate(0, X_b, X_shape, phi_b);
-  stdex::mdspan<const double, stdex::dextents<std::size_t, 4>> phi_full(
-      phi_b.data(), bsize);
+  stdex::mdspan<const U, stdex::dextents<std::size_t, 4>> phi_full(phi_b.data(),
+                                                                   bsize);
   auto phi = stdex::submdspan(phi_full, 0, stdex::full_extent,
                               stdex::full_extent, 0);
 
@@ -1271,10 +1271,11 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   {
     // Fetch the coordinates of the cell
     auto x_dofs = stdex::submdspan(x_dofmap, cells[c], stdex::full_extent);
-    for (std::size_t i = 0; i < x_dofs.size(); ++i)
+    for (std::size_t i = 0; i < num_dofs_g; ++i)
     {
-      std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                  std::next(coordinate_dofs_b.begin(), 3 * i));
+      const int pos = 3 * x_dofs[i];
+      for (std::size_t j = 0; j < gdim; ++j)
+        coordinate_dofs(i, j) = x_g[pos + j];
     }
 
     // Tabulate dof coordinates on cell

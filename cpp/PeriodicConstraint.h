@@ -411,8 +411,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
               if (cell_blocks[k] < size_local)
                 owners_remote.push_back(rank);
               else
+              {
                 owners_remote.push_back(
                     ghost_owners[cell_blocks[k] - size_local]);
+              }
             }
           }
           r_masters += num_masters;
