@@ -181,10 +181,12 @@ class MultiPointConstraint():
             .. highlight:: python
             .. code-block:: python
 
-                me = ufl.MixedElement(ufl.VectorElement("CG", triangle, 2),
-                                      ufl.FiniteElement("CG", triangle, 1))
+                cellname = mesh.ufl_cell().cellname()
+                Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
+                Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
+                me = basix.ufl.mixed_element([Ve, Qe], gdim=mesh.geometry.dim)
                 W = dolfinx.fem.FunctionSpace(mesh, me)
-                mpc = MultiPointConstraint()
+                mpc = MultiPointConstraint(W)
                 n_space, _ = W.sub(0).collapse()
                 normal = dolfinx.fem.Function(n_space)
                 mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[])
@@ -195,10 +197,12 @@ class MultiPointConstraint():
             .. highlight:: python
             .. code-block:: python
 
-                me = ufl.MixedElement(ufl.VectorElement("CG", triangle, 2),
-                                      ufl.FiniteElement("CG", triangle 1))
+                cellname = mesh.ufl_cell().cellname()
+                Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
+                Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
+                me = basix.ufl.mixed_element([Ve, Qe], gdim=mesh.geometry.dim)
                 W = dolfinx.fem.FunctionSpace(mesh, me)
-                mpc = MultiPointConstraint()
+                mpc = MultiPointConstraint(W)
                 n_space, _ = W.sub(0).collapse()
                 normal = Function(n_space)
                 bc = dolfinx.fem.dirichletbc(inlet_velocity, dofs, W.sub(0))

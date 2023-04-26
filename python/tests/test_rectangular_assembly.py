@@ -4,6 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
+import basix
 import dolfinx
 import dolfinx.fem
 import dolfinx.mesh
@@ -44,8 +45,10 @@ def test_mixed_element(cell_type, ghost_mode):
     mesh.geometry.x[:, :gdim] = (rot @ mesh.geometry.x[:, :gdim].T).T
 
     # Create the function space
-    Ve = ufl.VectorElement("Lagrange", mesh.ufl_cell(), 2)
-    Qe = ufl.FiniteElement("Lagrange", mesh.ufl_cell(), 1)
+    cellname = mesh.ufl_cell().cellname()
+    Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
+    Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
+    
     V = dolfinx.fem.FunctionSpace(mesh, Ve)
     Q = dolfinx.fem.FunctionSpace(mesh, Qe)
     W = dolfinx.fem.FunctionSpace(mesh, Ve * Qe)
