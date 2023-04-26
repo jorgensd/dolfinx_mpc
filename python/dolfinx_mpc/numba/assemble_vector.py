@@ -223,7 +223,7 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
 
         # Modify local contributions and add global MPC contributions
         b_local_copy = b_local.copy()
-        modify_mpc_contributions(b, cell_index, b_local, b_local_copy, mpc, dofmap, 
+        modify_mpc_contributions(b, cell_index, b_local, b_local_copy, mpc, dofmap,
                                  block_size, num_dofs_per_element)
         for j in range(num_dofs_per_element):
             for k in range(block_size):
