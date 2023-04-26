@@ -577,7 +577,7 @@ void assemble_matrix_impl(
     assemble_cells_impl<T>(
         mat_add_block_values, mat_add_values, mesh->geometry(), active_cells,
         apply_dof_transformation, *dofmap0,
-        apply_dof_transformation_to_transpose, *dofmap0, bc0, bc1, fn, coeffs,
+        apply_dof_transformation_to_transpose, *dofmap1, bc0, bc1, fn, coeffs,
         cstride, constants, cell_info, mpc0, mpc1);
   }
 

@@ -200,9 +200,9 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
     facet_perm = numpy.zeros(1, dtype=numpy.uint8)
 
     # Unpack mesh data
-    pos, x_dofmap, x = mesh
+    x_dofmap, x = mesh
 
-    geometry = numpy.zeros((pos[1] - pos[0], 3))
+    geometry = numpy.zeros((x_dofmap.shape[1], 3))
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)
     for i in range(facet_info.shape[0]):
         # Extract cell index (local to process) and facet index (local to cell) for kernel
@@ -210,9 +210,7 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
         facet_index[0] = local_facet
 
         # Extract cell geometry
-        cell = pos[cell_index]
-        num_vertices = pos[cell_index + 1] - pos[cell_index]
-        geometry[:, :] = x[x_dofmap[cell:cell + num_vertices]]
+        geometry[:, :] = x[x_dofmap[cell_index]]
 
         # Compute local facet kernel
         b_local.fill(0.0)
