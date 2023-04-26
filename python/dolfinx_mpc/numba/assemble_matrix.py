@@ -407,8 +407,7 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
         # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
 
         # Extract local blocks of dofs
-        block_pos = num_dofs_per_element * cell_index
-        local_blocks = dofmap[block_pos: block_pos + num_dofs_per_element]
+        local_blocks = dofmap[cell_index]
 
         # Remove all contributions for dofs that are in the Dirichlet bcs
         for j in range(num_dofs_per_element):

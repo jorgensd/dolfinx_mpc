@@ -161,8 +161,8 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
         # Assemble local element vector
         b_local.fill(0.0)
         kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
-               ffi_fb(constants), ffi_fb(geometry), ffi_fb(facet_index),
-               ffi_fb(facet_perm))
+               ffi_fb(constants), ffi_fb(geometry),
+               ffi_fb(facet_index), ffi_fb(facet_perm))
         # NOTE: Here we need to add the apply_dof_transformation function
 
         # Modify global vector and local cell contributions
@@ -179,7 +179,7 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
 def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
                                    kernel: cffi.FFI,
                                    facet_info: npt.NDArray[numpy.int32],
-                                   mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                                   mesh: Tuple[npt.NDArray[numpy.int32],
                                                npt.NDArray[numpy.float64]],
                                    coeffs: npt.NDArray[_PETSc.ScalarType],
                                    constants: npt.NDArray[_PETSc.ScalarType],
@@ -213,20 +213,21 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
         geometry[:, :] = x[x_dofmap[cell_index]]
 
         # Compute local facet kernel
-        b_local.fill(0.0)
         if needs_facet_perm:
             facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
-        kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]), ffi_fb(constants), ffi_fb(geometry),
+        b_local.fill(0.0)
+        kernel(ffi_fb(b_local), ffi_fb(coeffs[cell_index, :]),
+               ffi_fb(constants), ffi_fb(geometry),
                ffi_fb(facet_index), ffi_fb(facet_perm))
         # NOTE: Here we need to add the apply_dof_transformation
 
         # Modify local contributions and add global MPC contributions
         b_local_copy = b_local.copy()
-        modify_mpc_contributions(b, cell_index, b_local, b_local_copy,
-                                 mpc, dofmap, block_size, num_dofs_per_element)
+        modify_mpc_contributions(b, cell_index, b_local, b_local_copy, mpc, dofmap, 
+                                 block_size, num_dofs_per_element)
         for j in range(num_dofs_per_element):
             for k in range(block_size):
-                position = dofmap[num_dofs_per_element * cell_index + j] * block_size + k
+                position = dofmap[cell_index, j] * block_size + k
                 b[position] += (b_local[j * block_size + k] - b_local_copy[j * block_size + k])
 
 
