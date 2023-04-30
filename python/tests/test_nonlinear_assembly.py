@@ -10,6 +10,7 @@ import numpy as np
 import dolfinx
 import dolfinx_mpc
 import ufl
+import basix
 
 
 class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
@@ -93,7 +94,7 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
 @pytest.mark.skipif(np.issubdtype(PETSc.ScalarType, np.complexfloating),
                     reason="This test does not work in complex mode.")
 @pytest.mark.parametrize("poly_order", [1, 2, 3])
-def test_nonlinear_possion(poly_order):
+def test_nonlinear_poisson(poly_order):
     # Solve a standard Poisson problem with known solution which has
     # rotational symmetry of pi/2 at (x, y) = (0.5, 0.5). Therefore we may
     # impose MPCs on those DoFs which lie on the symmetry plane(s) and test
@@ -178,13 +179,23 @@ def test_nonlinear_possion(poly_order):
     assert np.all(rates > poly_order + 0.9)
 
 
-@pytest.mark.parametrize("element", [ufl.FiniteElement, ufl.VectorElement])
+@pytest.mark.parametrize("tensor_order", [0, 1, 2])
 @pytest.mark.parametrize("poly_order", [1, 2, 3])
-def test_homogenize(element, poly_order):
+def test_homogenize(tensor_order, poly_order):
     mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, 8, 8)
+    if tensor_order == 0:
+        shape = ()
+    elif tensor_order == 1:
+        shape = (mesh.geometry.dim, )
+    elif tensor_order == 2:
+        shape = (mesh.geometry.dim, mesh.geometry.dim)
+    else:
+        pytest.xfail("Unknown tensor order")
 
-    V = dolfinx.fem.FunctionSpace(
-        mesh, element("CG", mesh.ufl_cell(), poly_order))
+    cellname = mesh.ufl_cell().cellname()
+    el = basix.ufl.element(basix.ElementFamily.P, cellname, poly_order, shape=shape)
+
+    V = dolfinx.fem.FunctionSpace(mesh, el)
 
     def periodic_boundary(x):
         return np.isclose(x[0], 0.0)
@@ -207,7 +218,6 @@ def test_homogenize(element, poly_order):
 
     u = dolfinx.fem.Function(V)
     u.vector.set(1.0)
-
     assert np.isclose(u.vector.min()[1], u.vector.max()[1])
     assert np.isclose(u.vector.array_r[0], 1.0)
 
