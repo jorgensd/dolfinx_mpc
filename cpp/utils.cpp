@@ -32,7 +32,7 @@ dolfinx::la::petsc::Matrix dolfinx_mpc::create_matrix(
 
   // Finalise communication
   dolfinx::common::Timer timer_s("~MPC: Assemble sparsity pattern");
-  pattern.assemble();
+  pattern.finalize();
   timer_s.stop();
 
   // Initialize matrix
