@@ -97,7 +97,7 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
                               form_compiler_options=form_compiler_options)
     pattern = _fem.create_sparsity_pattern(bilinear_form)
     pattern.insert_diagonal(deac_blocks)
-    pattern.assemble()
+    pattern.finalize()
     u_0 = _fem.Function(V)
     u_0.vector.set(0)
 

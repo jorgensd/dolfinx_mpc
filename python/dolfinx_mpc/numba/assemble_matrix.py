@@ -74,7 +74,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     # Create sparsity pattern and matrix if not supplied
     if A is None:
         pattern = create_sparsity_pattern(form, constraint)
-        pattern.assemble()
+        pattern.finalize()
         A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern)
     A.zeroEntries()
 

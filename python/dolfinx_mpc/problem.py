@@ -92,7 +92,7 @@ class LinearProblem(_fem.petsc.LinearProblem):
 
         # Create MPC matrix
         pattern = create_sparsity_pattern(self._a, self._mpc)
-        pattern.assemble()
+        pattern.finalize()
         self._A = _cpp.la.petsc.create_matrix(self._mpc.function_space.mesh.comm, pattern)
 
         self._b = _cpp.la.petsc.create_vector(self._mpc.function_space.dofmap.index_map,

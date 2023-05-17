@@ -119,9 +119,9 @@ def demo_periodic3D(celltype: CellType):
 
     # NOTE: Workaround as tabulate dof coordinates does not like extra ghosts
     u_out = fem.Function(V)
-    old_local = u_out.x.map.size_local * u_out.x.bs
-    old_ghosts = u_out.x.map.num_ghosts * u_out.x.bs
-    mpc_local = u_h.x.map.size_local * u_h.x.bs
+    old_local = u_out.x.index_map.size_local * u_out.x.bs
+    old_ghosts = u_out.x.index_map.num_ghosts * u_out.x.bs
+    mpc_local = u_h.x.index_map.size_local * u_h.x.bs
     assert old_local == mpc_local
     u_out.x.array[:old_local + old_ghosts] = u_h.x.array[:mpc_local + old_ghosts]
     u_out.name = "u_" + ext
