@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.19)
 
 PROJECT(dolfinx_mpc_pybind11)
 
+# We can use newer FindPython because scikit-build-core backports it
+set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 REQUIRED CONFIG HINTS ${PYBIND11_DIR} ${PYBIND11_ROOT}
   $ENV{PYBIND11_DIR} $ENV{PYBIND11_ROOT})
 
@@ -19,6 +21,7 @@ pybind11_add_module(cpp SHARED
    dolfinx_mpc/mpc.cpp
    dolfinx_mpc/dolfinx_mpc.cpp)
 
+target_compile_definitions(cpp PRIVATE VERSION_INFO=${SKBUILD_PROJECT_VERSION})
 target_link_libraries(cpp PRIVATE pybind11::module)
 target_link_libraries(cpp PUBLIC dolfinx_mpc)
 
@@ -40,7 +43,6 @@ if (HAVE_PEDANTIC)
   target_compile_options(cpp PRIVATE -Wall;-Werror;-pedantic)
 endif()
 
-
 # Find petsc4py through python
 execute_process(
   COMMAND ${PYTHON_EXECUTABLE} -c "import petsc4py; print(petsc4py.get_include())"
@@ -50,3 +52,5 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
   )
 target_include_directories(cpp PRIVATE ${PETSC4PY_INCLUDE_DIR})
+
+install(TARGETS cpp LIBRARY DESTINATION "dolfinx_mpc")

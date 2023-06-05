@@ -1,0 +1,28 @@
+[build-system]
+requires = ["scikit-build-core[pyproject]", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "dolfinx-mpc"
+version = "0.7.0"
+readme = "README.md"
+# license = {file = "../LICENSE"}
+requires-python = ">=3.8"
+description = 'Python interface for multipointconstraints in dolfinx'
+authors = [
+    {name = "Jørgen S. Dokken", email = "jorgensd@simula.no"},
+]
+dependencies = [
+    "numpy>=1.21",
+    "fenics-dolfinx>0.6.0.dev0"
+]
+
+[project.optional-dependencies]
+docs = ["jupyter-book"]
+test = ["pytest", "coverage"]
+
+[tool.scikit-build]
+# see https://scikit-build-core.readthedocs.io/en/latest/configuration.html for options
+logging.level = "INFO"
+cmake.verbose = true
+cmake.minimum-version = "3.19"
