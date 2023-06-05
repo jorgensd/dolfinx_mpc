@@ -2,6 +2,21 @@ cmake_minimum_required(VERSION 3.19)
 
 PROJECT(dolfinx_mpc_pybind11)
 
+get_filename_component(_parent_exe "$ENV{_}" NAME)
+if ("${_parent_exe}" MATCHES "^python")
+    # $_ is generally the parent command
+    # which is the Python interpreter that launched the build
+    # this lets us skip out of build isolation for our
+    # detection of dolfinx, petsc4py
+    # I have no idea how stable this is!
+    MESSAGE(STATUS "Found unisolated Python ${parent_python}")
+    set(parent_python "$ENV{_}")
+else()
+    # default path:
+    set(parent_python ${Python3_EXECUTABLE})
+endif()
+MESSAGE(STATUS "Using ${parent_python} to detect dolfinx, petsc4py")
+
 # We can use newer FindPython because scikit-build-core backports it
 set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 REQUIRED CONFIG HINTS ${PYBIND11_DIR} ${PYBIND11_ROOT}
@@ -27,7 +42,7 @@ target_link_libraries(cpp PUBLIC dolfinx_mpc)
 
 # Get python include-dirs
 execute_process(
-  COMMAND ${Python3_EXECUTABLE} -c "import dolfinx.wrappers, sys; sys.stdout.write(str(dolfinx.wrappers.get_include_path()))"
+  COMMAND ${parent_python} -c "import dolfinx.wrappers, sys; sys.stdout.write(str(dolfinx.wrappers.get_include_path()))"
   OUTPUT_VARIABLE DOLFINX_PY_DIR
   RESULT_VARIABLE DOLFINX_PY_COMMAND_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
 
@@ -45,7 +60,7 @@ endif()
 
 # Find petsc4py through python
 execute_process(
-  COMMAND ${PYTHON_EXECUTABLE} -c "import petsc4py; print(petsc4py.get_include())"
+  COMMAND ${parent_python} -c "import petsc4py; print(petsc4py.get_include())"
   OUTPUT_VARIABLE PETSC4PY_INCLUDE_DIR
   RESULT_VARIABLE PETSC4PY_NOT_FOUND
   ERROR_QUIET

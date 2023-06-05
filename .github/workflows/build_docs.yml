@@ -30,8 +30,7 @@ jobs:
 
     - name: Install DOLFINx-MPC (Python)
       run: |
-        python3 -m pip install scikit-build-core[pyproject]
-        python3 -m pip -v install --no-build-isolation ./python[docs]
+        python3 -m pip -v install ./python[docs]
 
     - name: Build docs
       run: jupyter book build docs

@@ -105,8 +105,7 @@ jobs:
 
       - name: Install DOLFINx-MPC (Python)
         run: |
-        python3 -m pip install sckikit-build-core[pyproject]
-        python3 -m pip install --no-build-isolation ./python[test]
+        python3 -m pip install ./python[test]
 
       - name: Run tests (serial)
         run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/
