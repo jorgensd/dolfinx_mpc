@@ -3,9 +3,6 @@
 
 @PACKAGE_INIT@
 
-# Compilers
-set_and_check(DOLFINX_MPC_CXX_COMPILER "@CMAKE_CXX_COMPILER@")
-
 include(CMakeFindDependencyMacro)
 find_dependency(DOLFINX REQUIRED)
 find_dependency(MPI REQUIRED)
