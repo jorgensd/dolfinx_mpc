@@ -103,7 +103,7 @@ class MultiPointConstraint():
 
     def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
+                                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
         :math:`u(x_i) = scale * u(relation(x_i))` for all of :math:`x_i` on marked entities.
@@ -129,7 +129,7 @@ class MultiPointConstraint():
     def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpace,
                                                indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: List[_fem.DirichletBCMetaClass], scale: _PETSc.ScalarType = 1):
+                                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies
         :math:`indicator(x_i)==True`, i.e.
@@ -143,7 +143,7 @@ class MultiPointConstraint():
                  (Periodic constraints will be ignored for these dofs)
             scale: Float for scaling bc
         """
-
+        bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
                 self.V._cpp_object, indicator, relation, bcs, scale, False)
@@ -155,7 +155,7 @@ class MultiPointConstraint():
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: Tuple[_mesh.MeshTags, int],
-                               v: _fem.Function, bcs: List[_fem.DirichletBCMetaClass] = []):
+                               v: _fem.Function, bcs: List[_fem.DirichletBC] = []):
         """
         Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
 
@@ -208,6 +208,7 @@ class MultiPointConstraint():
                 bc = dolfinx.fem.dirichletbc(inlet_velocity, dofs, W.sub(0))
                 mpc.create_slip_constraint(W.sub(0), (mt, i), normal, bcs=[bc])
         """
+        bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         if (space is self.V):
             sub_space = False
         elif self.V.contains(space):

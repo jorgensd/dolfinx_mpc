@@ -61,20 +61,21 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
         vector = b
 
     # Pack constants and coefficients
-    form_coeffs = _cpp.fem.pack_coefficients(form)
-    form_consts = _cpp.fem.pack_constants(form)
+    form_coeffs = _cpp.fem.pack_coefficients(form._cpp_object)
+    form_consts = _cpp.fem.pack_constants(form._cpp_object)
 
     tdim = V.mesh.topology.dim
     num_dofs_per_element = V.dofmap.dof_layout.num_dofs
 
     # Assemble vector with all entries
     with vector.localForm() as b_local:
-        _cpp.fem.assemble_vector(b_local.array_w, form, form_consts, form_coeffs)
+        _cpp.fem.assemble_vector(b_local.array_w, form._cpp_object,
+                                 form_consts, form_coeffs)
 
     # Check if we need facet permutations
     # FIXME: access apply_dof_transformations here
     e0 = form.function_spaces[0].element
-    needs_transformation_data = e0.needs_dof_transformations or form.needs_facet_permutations
+    needs_transformation_data = e0.needs_dof_transformations or form._cpp_object.needs_facet_permutations
     cell_perms = numpy.array([], dtype=numpy.uint32)
     if needs_transformation_data:
         V.mesh.topology.create_entity_permutations()
@@ -82,7 +83,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
     if e0.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
     # Assemble over cells
-    subdomain_ids = form.integral_ids(_fem.IntegralType.cell)
+    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
 
     is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)
@@ -92,7 +93,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
         V.mesh.topology.create_entity_permutations()
         for i, id in enumerate(subdomain_ids):
             cell_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
-            active_cells = form.domains(_fem.IntegralType.cell, id)
+            active_cells = form._cpp_object.domains(_fem.IntegralType.cell, id)
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
             with vector.localForm() as b:
                 assemble_cells(numpy.asarray(b), cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
@@ -100,21 +101,21 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
                                cell_perms, dofs, block_size, num_dofs_per_element, mpc_data)
 
     # Assemble exterior facet integrals
-    subdomain_ids = form.integral_ids(_fem.IntegralType.exterior_facet)
+    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
         # Get facet permutations if required
         facet_perms = numpy.array([], dtype=numpy.uint8)
-        if form.needs_facet_permutations:
+        if form._cpp_object.needs_facet_permutations:
             facet_perms = V.mesh.topology.get_facet_permutations()
-        perm = (cell_perms, form.needs_facet_permutations, facet_perms)
+        perm = (cell_perms, form._cpp_object.needs_facet_permutations, facet_perms)
         for i, id in enumerate(subdomain_ids):
             facet_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.exterior_facet)[i],
                                    f"tabulate_tensor_{nptype}")
             coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
-            facets = form.domains(_fem.IntegralType.exterior_facet, id)
+            facets = form._cpp_object.domains(_fem.IntegralType.exterior_facet, id)
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:

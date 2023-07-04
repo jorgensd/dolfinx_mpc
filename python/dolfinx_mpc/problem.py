@@ -54,18 +54,18 @@ class LinearProblem(_fem.petsc.LinearProblem):
 
     """
     u: _fem.Function
-    _a: _fem.FormMetaClass
-    _L: _fem.FormMetaClass
+    _a: _fem.Form
+    _L: _fem.Form
     _mpc: MultiPointConstraint
     _A: PETSc.Mat
     _b: PETSc.Vec
     _solver: PETSc.KSP
     _x: PETSc.Vec
-    bcs: typing.List[_fem.DirichletBCMetaClass]
+    bcs: typing.List[_fem.DirichletBC]
     __slots__ = tuple(__annotations__)
 
     def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint,
-                 bcs: typing.Optional[typing.List[_fem.DirichletBCMetaClass]] = None,
+                 bcs: typing.Optional[typing.List[_fem.DirichletBC]] = None,
                  u: typing.Optional[_fem.Function] = None,
                  petsc_options: typing.Optional[dict] = None,
                  form_compiler_options: typing.Optional[dict] = None, jit_options: typing.Optional[dict] = None):

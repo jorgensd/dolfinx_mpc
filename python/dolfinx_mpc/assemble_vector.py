@@ -18,7 +18,7 @@ import dolfinx_mpc.cpp
 from .multipointconstraint import MultiPointConstraint
 
 
-def apply_lifting(b: _PETSc.Vec, form: List[_fem.FormMetaClass], bcs: List[List[_fem.DirichletBCMetaClass]],
+def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.DirichletBC]],
                   constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: float = 1.0):
     """
     Apply lifting to vector b, i.e.
@@ -37,8 +37,10 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.FormMetaClass], bcs: List[List[
         x0 = [stack.enter_context(x.localForm()) for x in x0]
         x0_r = [x.array_r for x in x0]
         b_local = stack.enter_context(b.localForm())
-        dolfinx_mpc.cpp.mpc.apply_lifting(b_local.array_w, form,
-                                          bcs, x0_r, scale, constraint._cpp_object)
+        _forms = [f._cpp_object for f in form]
+        _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]
+        dolfinx_mpc.cpp.mpc.apply_lifting(b_local.array_w, _forms,
+                                          _bcs, x0_r, scale, constraint._cpp_object)
     t.stop()
 
 
@@ -62,13 +64,14 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)
-        dolfinx_mpc.cpp.mpc.assemble_vector(b_local, form, constraint._cpp_object)
+        dolfinx_mpc.cpp.mpc.assemble_vector(b_local, form._cpp_object,
+                                            constraint._cpp_object)
     t.stop()
     return b
 
 
 def create_vector_nest(
-        L: Sequence[_fem.FormMetaClass],
+        L: Sequence[_fem.Form],
         constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:
     """
     Create a PETSc vector of type "nest" appropriate for the provided multi
@@ -91,7 +94,7 @@ def create_vector_nest(
 
 def assemble_vector_nest(
         b: _PETSc.Vec,
-        L: Sequence[_fem.FormMetaClass],
+        L: Sequence[_fem.Form],
         constraints: Sequence[MultiPointConstraint]):
     """
     Assemble a linear form into a PETSc vector of type "nest"

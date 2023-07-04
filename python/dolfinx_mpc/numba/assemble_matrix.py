@@ -59,7 +59,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     # Create 1D bc indicator for matrix assembly
     num_dofs_local = (dofmap.index_map.size_local + dofmap.index_map.num_ghosts) * dofmap.index_map_bs
     is_bc = numpy.zeros(num_dofs_local, dtype=bool)
-    bcs = [] if bcs is None else bcs
+    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
     if len(bcs) > 0:
         for bc in bcs:
             is_bc[bc.dof_indices()[0]] = True
@@ -69,8 +69,8 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     x = V.mesh.geometry.x
 
     # Pack constants and coefficients
-    form_coeffs = _cpp.fem.pack_coefficients(form)
-    form_consts = _cpp.fem.pack_constants(form)
+    form_coeffs = _cpp.fem.pack_coefficients(form._cpp_object)
+    form_consts = _cpp.fem.pack_constants(form._cpp_object)
     # Create sparsity pattern and matrix if not supplied
     if A is None:
         pattern = create_sparsity_pattern(form, constraint)
@@ -79,7 +79,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     A.zeroEntries()
 
     # Assemble the matrix with all entries
-    _cpp.fem.petsc.assemble_matrix(A, form, form_consts, form_coeffs, bcs, False)
+    _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, bcs, False)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size
@@ -88,7 +88,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     tdim = V.mesh.topology.dim
 
     # Assemble over cells
-    subdomain_ids = form.integral_ids(_fem.IntegralType.cell)
+    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
 
     e0 = form.function_spaces[0].element
@@ -96,7 +96,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
 
     # Get dof transformations
     needs_transformation_data = e0.needs_dof_transformations or e1.needs_dof_transformations or \
-        form.needs_facet_permutations
+        form._cpp_object.needs_facet_permutations
     cell_perms = numpy.array([], dtype=numpy.uint32)
     if needs_transformation_data:
         V.mesh.topology.create_entity_permutations()
@@ -114,13 +114,13 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
         for i, id in enumerate(subdomain_ids):
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
             cell_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
-            active_cells = form.domains(_fem.IntegralType.cell, id)
+            active_cells = form._cpp_object.domains(_fem.IntegralType.cell, id)
             assemble_slave_cells(A.handle, cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                                  (x_dofs, x), coeffs_i, form_consts, cell_perms, dofs,
                                  block_size, num_dofs_per_element, mpc_data, is_bc)
 
     # Assemble over exterior facets
-    subdomain_ids = form.integral_ids(_fem.IntegralType.exterior_facet)
+    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.exterior_facet)
     num_exterior_integrals = len(subdomain_ids)
 
     if num_exterior_integrals > 0:
@@ -130,14 +130,14 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
         # Get facet permutations if required
         facet_perms = numpy.array([], dtype=numpy.uint8)
 
-        if form.needs_facet_permutations:
+        if form._cpp_object.needs_facet_permutations:
             facet_perms = V.mesh.topology.get_facet_permutations()
-        perm = (cell_perms, form.needs_facet_permutations, facet_perms)
+        perm = (cell_perms, form._cpp_object.needs_facet_permutations, facet_perms)
 
         for i, id in enumerate(subdomain_ids):
             facet_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.exterior_facet)
                                    [i], f"tabulate_tensor_{nptype}")
-            facets = form.domains(_fem.IntegralType.exterior_facet, id)
+            facets = form._cpp_object.domains(_fem.IntegralType.exterior_facet, id)
             coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))

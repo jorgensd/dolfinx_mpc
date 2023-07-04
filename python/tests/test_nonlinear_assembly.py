@@ -50,7 +50,7 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
         # Create matrix and vector to be used for assembly of the non-linear
         # MPC problem
         self._A = dolfinx_mpc.cpp.mpc.create_matrix(
-            problem.a, mpc._cpp_object)
+            problem.a._cpp_object, mpc._cpp_object)
         self._b = dolfinx.cpp.la.petsc.create_vector(
             mpc.function_space.dofmap.index_map,
             mpc.function_space.dofmap.index_map_bs)
