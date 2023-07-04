@@ -309,16 +309,17 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     a -= ufl.inner(ufl.outer(n, n) * ufl.dot(T(u, p, mu), n), v) * ds
     L += ufl.inner(g_tau, v) * ds
 
-    a, L = dolfinx.fem.form(a), dolfinx.fem.form(L)
+    af = dolfinx.fem.form(a)
+    Lf = dolfinx.fem.form(L)
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     # Generate reference matrices and unconstrained solution
-    A_org = dolfinx.fem.petsc.assemble_matrix(a, bcs)
+    A_org = dolfinx.fem.petsc.assemble_matrix(af, bcs)
     A_org.assemble()
-    L_org = dolfinx.fem.petsc.assemble_vector(L)
+    L_org = dolfinx.fem.petsc.assemble_vector(Lf)
 
-    dolfinx.fem.petsc.apply_lifting(L_org, [a], [bcs])
+    dolfinx.fem.petsc.apply_lifting(L_org, [af], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.petsc.set_bc(L_org, bcs)
     root = 0
