@@ -98,7 +98,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         self._A = _cpp.la.petsc.create_matrix(self._mpc.function_space.mesh.comm, pattern)
 
         self._b = _la.create_petsc_vector(self._mpc.function_space.dofmap.index_map,
-                                              self._mpc.function_space.dofmap.index_map_bs)
+                                          self._mpc.function_space.dofmap.index_map_bs)
         self.bcs = [] if bcs is None else bcs
 
         self._solver = PETSc.KSP().create(self.u.function_space.mesh.comm)
