@@ -162,7 +162,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     return A
 
 
-@numba.jit
+@numba.njit
 def add_diagonal(A: int, dofs: npt.NDArray[numpy.int32], diagval: _PETSc.ScalarType = 1):
     """
     Insert value on diagonal of matrix for given dofs.

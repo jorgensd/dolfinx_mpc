@@ -139,7 +139,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
         # Create solver, set operator and options
         PETSc.Mat.setNearNullSpace(A, nullspace)
         uh = Function(mpc.function_space)
-        uh.x.set(0)
+        uh.x.array[:] = 0
         solver.setFromOptions()
         solver.setOperators(A)
         solver.solve(b, uh.vector)

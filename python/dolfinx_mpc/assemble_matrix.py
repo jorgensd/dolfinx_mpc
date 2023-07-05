@@ -18,7 +18,7 @@ from .multipointconstraint import MultiPointConstraint
 def assemble_matrix(form: _fem.Form,
                     constraint: Union[MultiPointConstraint,
                                       Sequence[MultiPointConstraint]],
-                    bcs: Sequence[_fem.DirichletBC] = None,
+                    bcs: Optional[Sequence[_fem.DirichletBC]] = None,
                     diagval: _PETSc.ScalarType = 1,
                     A: Optional[_PETSc.Mat] = None) -> _PETSc.Mat:
     """

@@ -79,7 +79,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
 
     solver.setOperators(A)
     uh = fem.Function(mpc.function_space)
-    uh.x.set(0)
+    uh.x.array[:] = 0
 
     solver.solve(b, uh.vector)
     uh.x.scatter_forward()

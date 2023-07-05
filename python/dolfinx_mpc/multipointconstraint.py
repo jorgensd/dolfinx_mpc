@@ -116,12 +116,13 @@ class MultiPointConstraint():
             bcs: Dirichlet boundary conditions for the problem (Periodic constraints will be ignored for these dofs)
             scale: Float for scaling bc
         """
+        bcs_ = [bc._cpp_object for bc in bcs]
         if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs, scale, False)
+                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, False)
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object, meshtag._cpp_object, tag, relation, bcs, scale, True)
+                V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, True)
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)

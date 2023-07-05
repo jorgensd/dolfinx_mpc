@@ -285,7 +285,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     solver.setOperators(A)
     solver.setFromOptions()
     uh = Function(mpc.function_space)
-    uh.x.set(0)
+    uh.x.array[:] = 0
     log_info("Solve")
     with Timer(f"{num_dofs}: Solve"):
         solver.solve(b, uh.vector)

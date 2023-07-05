@@ -106,13 +106,14 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
     A.zeroEntries()
 
     # Assemble the matrix with all entries
-    form_coeffs = _cpp.fem.pack_coefficients(bilinear_form)
-    form_consts = _cpp.fem.pack_constants(bilinear_form)
-    _cpp.fem.petsc.assemble_matrix(A, bilinear_form, form_consts, form_coeffs, [bc_deac])
+    form_coeffs = _cpp.fem.pack_coefficients(bilinear_form._cpp_object)
+    form_consts = _cpp.fem.pack_constants(bilinear_form._cpp_object)
+    _cpp.fem.petsc.assemble_matrix(A, bilinear_form._cpp_object,
+                                   form_consts, form_coeffs, [bc_deac._cpp_object])
     if bilinear_form.function_spaces[0] is bilinear_form.function_spaces[1]:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
-        _cpp.fem.petsc.insert_diagonal(A, bilinear_form.function_spaces[0], [bc_deac], 1.0)
+        _cpp.fem.petsc.insert_diagonal(A, bilinear_form.function_spaces[0], [bc_deac._cpp_object], 1.0)
     A.assemble()
     linear_form = _fem.form(L, jit_options=jit_options,
                             form_compiler_options=form_compiler_options)
@@ -209,7 +210,7 @@ def determine_closest_block(V, point):
     cell_imap = V.mesh.topology.index_map(tdim)
     boundary_cells = np.array(np.unique(boundary_cells), dtype=np.int32)
     boundary_cells = boundary_cells[boundary_cells < cell_imap.size_local]
-    bb_tree = _geometry.BoundingBoxTree(V.mesh, tdim, boundary_cells)
+    bb_tree = _geometry.bb_tree(V.mesh, tdim, boundary_cells)
     midpoint_tree = _geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest

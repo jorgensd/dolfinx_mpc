@@ -98,7 +98,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
 
     solver.setOperators(A)
     uh = fem.Function(mpc.function_space)
-    uh.x.set(0)
+    uh.x.array[:] = 0
     solver.solve(b, uh.vector)
     uh.x.scatter_forward()
     mpc.backsubstitution(uh)

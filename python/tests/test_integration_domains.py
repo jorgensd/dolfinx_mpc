@@ -87,7 +87,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
 
     # Solve
     uh = fem.Function(mpc.function_space)
-    uh.x.set(0)
+    uh.x.array[:] = 0
     solver.solve(b, uh.vector)
     uh.x.scatter_forward()
     mpc.backsubstitution(uh)
