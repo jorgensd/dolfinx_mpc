@@ -261,7 +261,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     with Timer("~MPC: Solve"):
         solver.setOperators(A)
         uh = fem.Function(mpc.function_space)
-        uh.x.set(0)
+        uh.x.array[:] = 0
         u_vec = uh.vector
         solver.solve(b, u_vec)
 

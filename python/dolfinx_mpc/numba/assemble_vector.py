@@ -9,13 +9,15 @@ from typing import Optional, Tuple
 import cffi
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import dolfinx.la as _la
 import dolfinx.log as _log
 import numba
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
-from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 from petsc4py import PETSc as _PETSc
+
+from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 
 from .helpers import _forms, extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc
@@ -56,7 +58,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
     # Get index map and ghost info
     if b is None:
         index_map = constraint.function_space.dofmap.index_map
-        vector = _cpp.la.petsc.create_vector(index_map, block_size)
+        vector = _la.create_petsc_vector(index_map, block_size)
     else:
         vector = b
 

@@ -3,14 +3,18 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
+import basix
+import dolfinx
+import dolfinx.fem.petsc
+import dolfinx.la as _la
+import dolfinx.nls.petsc
+import numpy as np
 import pytest
+import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
-import numpy as np
-import dolfinx
+
 import dolfinx_mpc
-import ufl
-import basix
 
 
 class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
@@ -51,7 +55,7 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
         # MPC problem
         self._A = dolfinx_mpc.cpp.mpc.create_matrix(
             problem.a._cpp_object, mpc._cpp_object)
-        self._b = dolfinx.cpp.la.petsc.create_vector(
+        self._b = _la.create_petsc_vector(
             mpc.function_space.dofmap.index_map,
             mpc.function_space.dofmap.index_map_bs)
 

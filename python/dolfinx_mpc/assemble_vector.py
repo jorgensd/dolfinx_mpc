@@ -9,6 +9,7 @@ from typing import List, Optional, Sequence
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import dolfinx.la as _la
 import ufl
 from dolfinx.common import Timer
 from petsc4py import PETSc as _PETSc
@@ -59,7 +60,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
     """
 
     if b is None:
-        b = _cpp.la.petsc.create_vector(constraint.function_space.dofmap.index_map,
+        b = _la.create_petsc_vector(constraint.function_space.dofmap.index_map,
                                         constraint.function_space.dofmap.index_map_bs)
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
