@@ -174,7 +174,8 @@ def generate_tet_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1
 
 
 def generate_hex_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, z2: float, res: float,
-                       facet_markers: Sequence[Sequence[int]], volume_markers: Sequence[int], verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
+                       facet_markers: Sequence[Sequence[int]], volume_markers: Sequence[int],
+                       verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.

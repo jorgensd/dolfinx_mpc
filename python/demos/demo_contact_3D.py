@@ -243,7 +243,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     outdir = Path("results")
     outdir.mkdir(exist_ok=True, parents=True)
-    outfile = XDMFFile(MPI.COMM_WORLD, results / "demo_contact_3D.xdmf", "w")
+    outfile = XDMFFile(MPI.COMM_WORLD, outdir / "demo_contact_3D.xdmf", "w")
 
     ct = CellType.hexahedron if args.hex else CellType.tetrahedron
 
