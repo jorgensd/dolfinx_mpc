@@ -119,8 +119,6 @@ jobs:
 
       - name: Run demos (serial)
         run: |
-          mkdir -p meshes
-          mkdir -p results
           coverage run --rcfile=.coveragerc python/demos/demo_elasticity.py
           coverage run --rcfile=.coveragerc python/demos/demo_periodic_geometrical.py
           coverage run --rcfile=.coveragerc python/demos/demo_stokes.py
