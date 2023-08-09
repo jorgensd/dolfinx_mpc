@@ -7,20 +7,24 @@
 # Create constraint between two bodies that are not in contact
 
 
+from pathlib import Path
+
+import basix.ufl
 import gmsh
 import numpy as np
 from dolfinx.fem import (Constant, Function, FunctionSpace,
                          VectorFunctionSpace, dirichletbc,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
-from dolfinx_mpc import LinearProblem, MultiPointConstraint
-from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               determine_closest_block,
-                               rigid_motions_nullspace)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, as_vector, grad, inner, sym, tr)
+
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
+from dolfinx_mpc.utils import (create_point_to_point_constraint,
+                               determine_closest_block,
+                               rigid_motions_nullspace)
 
 # Mesh parameters for creating a mesh consisting of two spheres,
 # Sphere(r2)\Sphere(r1) and Sphere(r_0)
@@ -193,7 +197,14 @@ if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 
 # Write solution to file
-u_h.name = "u"
-with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect.xdmf", "w") as xdmf:
+V_out = FunctionSpace(mesh, basix.ufl.element("Lagrange", mesh.topology.cell_name(),
+                      mesh.geometry.cmaps[0].degree, mesh.geometry.cmaps[0].variant,
+                      gdim=mesh.geometry.dim, shape=(V.dofmap.bs,)))
+u_out = Function(V_out)
+u_out.interpolate(u_h)
+u_out.name = "uh"
+out_path = Path("results")
+out_path.mkdir(exist_ok=True, parents=True)
+with XDMFFile(MPI.COMM_WORLD, out_path / "demo_elasticity_disconnect.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
-    xdmf.write_function(u_h)
+    xdmf.write_function(u_out)

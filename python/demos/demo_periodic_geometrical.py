@@ -12,19 +12,22 @@
 # SPDX-License-Identifier:    MIT
 
 
+from pathlib import Path
 from typing import Union
+
 import dolfinx.fem as fem
-import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
-from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)
+
+import dolfinx_mpc.utils
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
 
 # Get PETSc int and scalar types
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
@@ -114,8 +117,11 @@ with Timer("~PERIODIC: Assemble and solve MPC problem"):
     print("Constrained solver iterations {0:d}".format(it))
 
 # Write solution to file
+outdir = Path("results")
+outdir.mkdir(exist_ok=True, parents=True)
+
 uh.name = "u_mpc"
-outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_periodic_geometrical.xdmf", "w")
+outfile = XDMFFile(MPI.COMM_WORLD, outdir / "demo_periodic_geometrical.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(uh)
 

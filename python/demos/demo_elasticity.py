@@ -3,21 +3,21 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
-
+from pathlib import Path
 
 import dolfinx.fem as fem
-import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
-
 from dolfinx.common import Timer
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
-from dolfinx_mpc import (MultiPointConstraint, LinearProblem)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
                  as_vector, dx, grad, inner, sym, tr)
+
+import dolfinx_mpc.utils
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
 
 
 def demo_elasticity():
@@ -69,7 +69,10 @@ def demo_elasticity():
     problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
     u_h = problem.solve()
     u_h.name = "u_mpc"
-    with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity.xdmf", "w") as outfile:
+    outdir = Path("results")
+    outdir.mkdir(exist_ok=True, parents=True)
+
+    with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity.xdmf", "w") as outfile:
         outfile.write_mesh(mesh)
         outfile.write_function(u_h)
 
@@ -92,7 +95,7 @@ def demo_elasticity():
     u_.x.scatter_forward()
     u_.name = "u_unconstrained"
 
-    with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity.xdmf", "a") as outfile:
+    with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity.xdmf", "a") as outfile:
         outfile.write_function(u_)
         outfile.close()
 

@@ -8,15 +8,14 @@
 # interface not aligned with the coordiante axis.
 # The demos solves the Stokes problem
 
+from pathlib import Path
 
-import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx import fem, io
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import gmshio
-from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from mpi4py import MPI
 from numpy.typing import NDArray
 from petsc4py import PETSc
@@ -24,6 +23,9 @@ from ufl import (FacetNormal, FiniteElement, Identity, Measure, TestFunctions,
                  TrialFunctions, VectorElement, div, dot, dx, grad, inner,
                  outer, sym)
 from ufl.core.expr import Expr
+
+import dolfinx_mpc.utils
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
 
 
 def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
@@ -188,9 +190,12 @@ p = U.sub(1).collapse()
 u.name = "u"
 p.name = "p"
 
-with io.VTXWriter(mesh.comm, "results/demo_stokes_u.bp", u) as vtx:
+outdir = Path("results")
+outdir.mkdir(exist_ok=True, parents=True)
+
+with io.VTXWriter(mesh.comm, outdir / "demo_stokes_u.bp", u) as vtx:
     vtx.write(0.0)
-with io.VTXWriter(mesh.comm, "results/demo_stokes_p.bp", p) as vtx:
+with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", p) as vtx:
     vtx.write(0.0)
 
 # -------------------- Verification --------------------------------

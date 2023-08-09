@@ -14,17 +14,24 @@
 
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 
 import numpy as np
 import scipy.sparse.linalg
+from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, VectorFunctionSpace,
-                         dirichletbc, form,
+from dolfinx.fem import (Constant, VectorFunctionSpace, dirichletbc, form,
                          locate_dofs_geometrical)
-from dolfinx.fem.petsc import assemble_matrix, assemble_vector, set_bc, apply_lifting
+from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
+                               set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, set_log_level
 from dolfinx.mesh import locate_entities_boundary, meshtags
+from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import (Identity, Measure, TestFunction, TrialFunction, dx, grad,
+                 inner, sym, tr)
+
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
                                create_normal_approximation,
@@ -32,12 +39,6 @@ from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
                                gather_PETScVector,
                                gather_transformation_matrix, log_info,
                                rigid_motions_nullspace, rotation_matrix)
-from mpi4py import MPI
-from petsc4py import PETSc
-from ufl import (Identity, Measure, TestFunction, TrialFunction, dx, grad,
-                 inner, sym, tr)
-
-from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 
 set_log_level(LogLevel.ERROR)
 
@@ -47,13 +48,15 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     log_info(f"Run theta:{theta:.2f}, Quad: {quad}, Gmsh {gmsh}, Res {res:.2e}")
 
     celltype = "quadrilateral" if quad else "triangle"
+    meshdir = Path("meshes")
+    meshdir.mkdir(exist_ok=True, parents=True)
     if gmsh:
         mesh, mt = gmsh_2D_stacked(celltype, theta)
         mesh.name = f"mesh_{celltype}_{theta:.2f}_gmsh"
 
     else:
         mesh_name = "mesh"
-        filename = f"meshes/mesh_{celltype}_{theta:.2f}.xdmf"
+        filename = meshdir / f"mesh_{celltype}_{theta:.2f}.xdmf"
 
         mesh_2D_dolfin(celltype, theta)
         with XDMFFile(MPI.COMM_WORLD, filename, "r") as xdmf:
@@ -130,39 +133,6 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
                      }
 
     # Solve Linear problem
-
-    def patch_solve(self):
-        import dolfinx_mpc
-        # Assemble lhs
-        self._A.zeroEntries()
-        dolfinx_mpc.assemble_matrix(self._a, self._mpc, bcs=self.bcs, A=self._A)
-        self._A.assemble()
-
-        # Temporary fix while:
-        # https://gitlab.com/petsc/petsc/-/issues/1339
-        # gets sorted
-        self._A.convert("baij", self._A)
-        self._A.convert("aij", self._A)
-        assert self._A.assembled
-
-        # Assemble rhs
-        with self._b.localForm() as b_loc:
-            b_loc.set(0)
-        dolfinx_mpc.assemble_vector(self._L, self._mpc, b=self._b)
-
-        # Apply boundary conditions to the rhs
-        dolfinx_mpc.apply_lifting(self._b, [self._a], [self.bcs], self._mpc)
-        self._b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-        set_bc(self._b, self.bcs)
-
-        # Solve linear system and update ghost values in the solution
-        self._solver.solve(self._b, self._x)
-        self.u.x.scatter_forward()
-        self._mpc.backsubstitution(self.u)
-
-        return self.u
-
-    LinearProblem.solve = patch_solve  # type: ignore
     problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
     # Build near nullspace
@@ -242,7 +212,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Create results file
-    outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_contact_2D.xdmf", "w")
+    outdir = Path("results")
+    outdir.mkdir(parents=True, exist_ok=True)
+    outfile = XDMFFile(MPI.COMM_WORLD, outdir / "demo_contact_2D.xdmf", "w")
 
     # Run demo for input parameters
     demo_stacked_cubes(outfile, theta=args.theta, gmsh=args.gmsh, quad=args.quad,

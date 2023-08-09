@@ -6,6 +6,7 @@
 
 import resource
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 from typing import Optional
 
 import h5py
@@ -16,7 +17,6 @@ from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
-from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, TestFunction, TrialFunction, ds, dx, grad, inner,
@@ -24,6 +24,7 @@ from ufl import (Identity, TestFunction, TrialFunction, ds, dx, grad, inner,
 
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
+from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 
 
 def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
@@ -161,8 +162,9 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         u_h = Function(mpc.function_space)
         u_h.vector.setArray(uh.array)
         u_h.name = "u_mpc"
-
-        fname = f"results/bench_elasticity_{r_lvl}.xdmf"
+        outdir = Path("results")
+        outdir.mkdir(exist_ok=True, parents=True)
+        fname = outdir / f"bench_elasticity_{r_lvl}.xdmf"
         with XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)

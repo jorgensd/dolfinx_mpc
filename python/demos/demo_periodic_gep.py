@@ -27,17 +27,19 @@
 # eigenvalue problem is solved using SLEPc and the computed eigenvalues are
 # compared to the exact ones.
 
+from pathlib import Path
 from typing import List, Tuple
 
 import dolfinx.fem as fem
 import numpy as np
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
-from dolfinx_mpc import MultiPointConstraint, assemble_matrix
 from mpi4py import MPI
 from petsc4py import PETSc
 from slepc4py import SLEPc
 from ufl import TestFunction, TrialFunction, dx, grad, inner
+
+from dolfinx_mpc import MultiPointConstraint, assemble_matrix
 
 
 def print0(string: str):
@@ -336,7 +338,9 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
 
     # Save all eigenvectors
     suffix = "".join([bc_type[0] for bc_type in boundary_condition])
-    with XDMFFile(mesh.comm, f"results/eigenvector_{suffix}.xdmf", "w") as xdmf:
+    outdir = Path("results")
+    outdir.mkdir(exist_ok=True, parents=True)
+    with XDMFFile(mesh.comm, outdir / f"eigenvector_{suffix}.xdmf", "w") as xdmf:
         xdmf.write_mesh(mesh)
         for i, e_vec in enumerate(eigvec_r):
             xdmf.write_function(e_vec, i)

@@ -16,22 +16,24 @@
 #
 # SPDX-License-Identifier:    MIT
 
+from pathlib import Path
 from typing import Dict, Union
 
 import dolfinx.fem as fem
-import dolfinx_mpc.utils
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import VTXWriter
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
-from dolfinx_mpc import LinearProblem
 from mpi4py import MPI
 from numpy.typing import NDArray
 from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)
+
+import dolfinx_mpc.utils
+from dolfinx_mpc import LinearProblem
 
 # Get PETSc int and scalar types
 complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
@@ -125,7 +127,9 @@ def demo_periodic3D(celltype: CellType):
     assert old_local == mpc_local
     u_out.x.array[:old_local + old_ghosts] = u_h.x.array[:mpc_local + old_ghosts]
     u_out.name = "u_" + ext
-    fname = f"results/demo_periodic3d_{ext}.bp"
+    outdir = Path("results")
+    outdir.mkdir(exist_ok=True, parents=True)
+    fname = outdir / f"demo_periodic3d_{ext}.bp"
     out_periodic = VTXWriter(MPI.COMM_WORLD, fname, u_out)
     out_periodic.write(0)
     out_periodic.close()
