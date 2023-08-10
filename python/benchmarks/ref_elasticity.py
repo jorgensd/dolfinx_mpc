@@ -4,9 +4,9 @@
 #
 # SPDX-License-Identifier:    MIT
 
-
 import resource
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 from time import perf_counter
 from typing import Optional
 
@@ -21,11 +21,12 @@ from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags, refine)
-from dolfinx_mpc.utils import rigid_motions_nullspace
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
                  as_vector, ds, dx, grad, inner, sym, tr)
+
+from dolfinx_mpc.utils import rigid_motions_nullspace
 
 
 def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
@@ -169,7 +170,10 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
 
         # Name formatting of functions
         u_.name = "u_unconstrained"
-        fname = "results/ref_elasticity_{0:d}.xdmf".format(r_lvl)
+        outdir = Path("results")
+        outdir.mkdir(exist_ok=True, parents=True)
+
+        fname = outdir / "ref_elasticity_{0:d}.xdmf".format(r_lvl)
         with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
             out_xdmf.write_mesh(mesh)
             out_xdmf.write_function(u_, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))

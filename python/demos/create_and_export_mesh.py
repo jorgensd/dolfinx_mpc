@@ -1,15 +1,17 @@
-from typing import Dict, List, Sequence, Tuple
+from pathlib import Path
+from typing import Dict, List, Sequence, Tuple, Union
 
 import dolfinx.common as _common
 import dolfinx.cpp as _cpp
 import dolfinx.io as _io
 import dolfinx.mesh as _mesh
-import dolfinx_mpc.utils as _utils
 import gmsh
 import numpy as np
 import ufl
 from dolfinx.io import gmshio
 from mpi4py import MPI
+
+import dolfinx_mpc.utils as _utils
 
 
 def gmsh_3D_stacked(celltype: str, theta: float, res: float = 0.1,
@@ -172,7 +174,8 @@ def generate_tet_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1
 
 
 def generate_hex_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, z2: float, res: float,
-                       facet_markers: Sequence[Sequence[int]], volume_markers: Sequence[int], verbose: bool = False):
+                       facet_markers: Sequence[Sequence[int]], volume_markers: Sequence[int],
+                       verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
@@ -221,7 +224,7 @@ def generate_hex_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1
     return mesh, ft
 
 
-def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False):
+def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     res = 0.1
     x0, y0, z0 = 0, 0, 0
     x1, y1 = 1, 1
@@ -334,7 +337,7 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False):
     return mesh, ft
 
 
-def mesh_2D_dolfin(celltype: str, theta: float = 0):
+def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = Path("meshes")):
     """
     Create two 2D cubes stacked on top of each other,
     and the corresponding mesh markers using dolfin built-in meshes
@@ -448,7 +451,9 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0):
         arg_sort = np.argsort(np.hstack(all_indices))
         mt = _mesh.meshtags(mesh, fdim, np.hstack(all_indices)[arg_sort], np.hstack(all_values)[arg_sort])
         mt.name = "facet_tags"
-        with _io.XDMFFile(MPI.COMM_SELF, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "w") as o_f:
+        outpath = Path(outdir)
+        outpath.mkdir(exist_ok=True, parents=True)
+        with _io.XDMFFile(MPI.COMM_SELF, outpath / f"mesh_{celltype}_{theta:.2f}.xdmf", "w") as o_f:
             o_f.write_mesh(mesh)
             o_f.write_meshtags(ct, x=mesh.geometry)
             o_f.write_meshtags(mt, x=mesh.geometry)
@@ -456,7 +461,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0):
 
 
 def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahedron,
-                   ext: str = "tetrahedron", res: float = 0.1):
+                   ext: str = "tetrahedron", res: float = 0.1, outdir: Union[str, Path] = Path("meshes")):
     timer = _common.Timer("~~Contact: Create mesh")
 
     def find_plane_function(p0, p1, p2):
@@ -573,7 +578,9 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         sorted_indices = np.asarray(np.hstack(all_indices)[arg_sort], dtype=np.int32)
         mt = _mesh.meshtags(mesh, fdim, sorted_indices, sorted_vals)
         mt.name = "facet_tags"
-        fname = f"meshes/mesh_{ext}_{theta:.2f}.xdmf"
+        outpath = Path(outdir)
+        outpath.mkdir(exist_ok=True, parents=True)
+        fname = outpath / f"mesh_{ext}_{theta:.2f}.xdmf"
 
         with _io.XDMFFile(MPI.COMM_SELF, fname, "w") as o_f:
             o_f.write_mesh(mesh)

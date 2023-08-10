@@ -9,13 +9,19 @@
 
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
+from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import CellType
+from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
+
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
@@ -23,11 +29,6 @@ from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
                                gather_PETScVector,
                                gather_transformation_matrix, log_info,
                                rigid_motions_nullspace, rotation_matrix)
-from mpi4py import MPI
-from petsc4py import PETSc
-from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
-
-from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 
 
 def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: CellType = CellType.tetrahedron,
@@ -240,8 +241,9 @@ if __name__ == "__main__":
                       help="List timings", default=False)
 
     args = parser.parse_args()
-
-    outfile = XDMFFile(MPI.COMM_WORLD, "results/demo_contact_3D.xdmf", "w")
+    outdir = Path("results")
+    outdir.mkdir(exist_ok=True, parents=True)
+    outfile = XDMFFile(MPI.COMM_WORLD, outdir / "demo_contact_3D.xdmf", "w")
 
     ct = CellType.hexahedron if args.hex else CellType.tetrahedron
 

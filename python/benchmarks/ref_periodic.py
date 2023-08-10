@@ -18,6 +18,7 @@
 
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 from time import perf_counter
 from typing import Optional
 
@@ -151,7 +152,9 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     # Output solution to XDMF
     if xdmf:
         ext = "tet" if tetra else "hex"
-        fname = "results/reference_periodic_{0:d}_{1:s}.xdmf".format(
+        outdir = Path("results")
+        outdir.mkdir(exist_ok=True, parents=True)
+        fname = outdir / "reference_periodic_{0:d}_{1:s}.xdmf".format(
             r_lvl, ext)
         u_.name = "u_" + ext + "_unconstrained"
         with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_periodic:

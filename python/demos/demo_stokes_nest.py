@@ -10,10 +10,10 @@
 # avoid using mixed function spaces. The demo also illustrates how to use
 #  block preconditioners with PETSc
 
+from pathlib import Path
 
 import basix
 import dolfinx.io
-import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import scipy.sparse.linalg
@@ -24,6 +24,7 @@ from petsc4py import PETSc
 from ufl.core.expr import Expr
 
 import dolfinx_mpc
+import dolfinx_mpc.utils
 
 
 def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
@@ -263,14 +264,17 @@ mpc_q.backsubstitution(ph)
 
 uh.name = "u"
 ph.name = "p"
+outdir = Path("results")
+outdir.mkdir(exist_ok=True, parents=True)
+
 with dolfinx.io.XDMFFile(
-        mesh.comm, "results/demo_stokes_nest.xdmf", "w") as outfile:
+        mesh.comm, outdir / "demo_stokes_nest.xdmf", "w") as outfile:
     outfile.write_mesh(mesh)
     outfile.write_meshtags(mt, mesh.geometry)
     outfile.write_function(uh)
     outfile.write_function(ph)
 
-with dolfinx.io.VTXWriter(mesh.comm, "results/stokes_nest_uh.bp", uh) as vtx:
+with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh) as vtx:
     vtx.write(0.0)
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison

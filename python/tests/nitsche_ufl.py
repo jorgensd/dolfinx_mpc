@@ -172,8 +172,12 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[dmesh.MeshTags, int, int],
 
     # DEBUG: Write each step of Newton iterations
     # problem.i = 0
-    # xdmf = _io.XDMFFile(mesh.comm, "results/tmp_sol.xdmf", "w")
+    # from pathlib import Path
+    # outdir = Path("results")
+    # outdir.mkdir(exist_ok=True, parents=True)
+    # xdmf = _io.XDMFFile(mesh.comm, outdir / "tmp_sol.xdmf", "w")
     # xdmf.write_mesh(mesh)
+    # xdmf.close()
 
     solver = _nls.petsc.NewtonSolver(mesh.comm, problem)
     null_space = rigid_motions_nullspace(V)

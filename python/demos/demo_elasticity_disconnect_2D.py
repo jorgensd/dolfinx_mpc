@@ -6,6 +6,7 @@
 #
 # Create constraint between two bodies that are not in contact
 
+from pathlib import Path
 
 import gmsh
 import numpy as np
@@ -14,13 +15,14 @@ from dolfinx.fem import (Constant, Function, FunctionSpace,
                          locate_dofs_geometrical, locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
-from dolfinx_mpc import LinearProblem, MultiPointConstraint
-from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               rigid_motions_nullspace)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, grad, inner, sym, tr)
+
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
+from dolfinx_mpc.utils import (create_point_to_point_constraint,
+                               rigid_motions_nullspace)
 
 # Mesh parameters for creating a mesh consisting of two disjoint rectangles
 right_tag = 1
@@ -184,6 +186,8 @@ if MPI.COMM_WORLD.rank == 0:
 
 # Write solution to file
 u_h.name = "u"
-with XDMFFile(MPI.COMM_WORLD, "results/demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
+outdir = Path("results")
+outdir.mkdir(exist_ok=True, parents=True)
+with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_function(u_h)
