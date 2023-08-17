@@ -116,6 +116,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
         if form._cpp_object.needs_facet_permutations:
             facet_perms = V.mesh.topology.get_facet_permutations()
         perm = (cell_perms, form._cpp_object.needs_facet_permutations, facet_perms)
+        # NOTE: This depends on enum ordering in ufcx.h
         ext_facet_pos = ufcx_form.form_integral_offsets[1]
         for i, id in enumerate(subdomain_ids):
             facet_kernel = getattr(ufcx_form.form_integrals[ext_facet_pos + i],
