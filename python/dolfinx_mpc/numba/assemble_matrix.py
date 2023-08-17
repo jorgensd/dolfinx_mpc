@@ -110,10 +110,13 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     nptype = "complex128" if is_complex else "float64"
     ufcx_form = form.ufcx_form
     if num_cell_integrals > 0:
+        # NOTE: This depends on enum ordering in ufcx.h
+        cell_form_pos = ufcx_form.form_integral_offsets[0]
         V.mesh.topology.create_entity_permutations()
         for i, id in enumerate(subdomain_ids):
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
-            cell_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.cell)[i], f"tabulate_tensor_{nptype}")
+
+            cell_kernel = getattr(ufcx_form.form_integrals[cell_form_pos + i], f"tabulate_tensor_{nptype}")
             active_cells = form._cpp_object.domains(_fem.IntegralType.cell, id)
             assemble_slave_cells(A.handle, cell_kernel, active_cells[numpy.isin(active_cells, slave_cells)],
                                  (x_dofs, x), coeffs_i, form_consts, cell_perms, dofs,
@@ -133,10 +136,11 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
         if form._cpp_object.needs_facet_permutations:
             facet_perms = V.mesh.topology.get_facet_permutations()
         perm = (cell_perms, form._cpp_object.needs_facet_permutations, facet_perms)
-
+        # NOTE: This depends on enum ordering in ufcx.h
+        ext_facet_pos = ufcx_form.form_integral_offsets[1]
         for i, id in enumerate(subdomain_ids):
-            facet_kernel = getattr(ufcx_form.integrals(_fem.IntegralType.exterior_facet)
-                                   [i], f"tabulate_tensor_{nptype}")
+
+            facet_kernel = getattr(ufcx_form.form_integrals[ext_facet_pos + i], f"tabulate_tensor_{nptype}")
             facets = form._cpp_object.domains(_fem.IntegralType.exterior_facet, id)
             coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
             facet_info = pack_slave_facet_info(facets, slave_cells)
