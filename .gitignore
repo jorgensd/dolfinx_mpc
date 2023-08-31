@@ -22,3 +22,5 @@ CMakeFiles
 **/_build/**
 .coverage
 .coverage.*
+
+python/dist

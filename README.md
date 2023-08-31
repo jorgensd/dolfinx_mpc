@@ -8,7 +8,7 @@
 Author: Jørgen S. Dokken
 
 This library contains an add-on to FEniCSx enabling the possibilities
-of enforce multi-point constraints, such as 
+of enforce multi-point constraints, such as
 
 $$u_i =\sum_{j=0,i \neq j}^n \alpha_j u_j, i\in I_N,$$
 
@@ -16,14 +16,14 @@ where $I_N$ is the set of degrees of freedom to constrain.
 
 This can be used to for instance enforce slip conditions strongly.
 
-Consider a linear system of the form 
-$Au=b$, with the additional constraints written on the form $K\hat u=u$, where $K$ is a prolongation matrix, $\hat u$ is the vector of unknowns excluding the $I_N$ entries. 
+Consider a linear system of the form
+$Au=b$, with the additional constraints written on the form $K\hat u=u$, where $K$ is a prolongation matrix, $\hat u$ is the vector of unknowns excluding the $I_N$ entries.
 
-We then solve the system 
+We then solve the system
 $K^T A K \hat u = K^T b$, where $K^T A K$ is symmetric if $A$ was symmetric.
 (For complex numbers, we use the Hermitian transpose and solve the system $\overline{K^T} A K \hat u = \overline{K^T} b$, where $\overline{K^T}$ is the complex conjugate of $K^T$, and $\overline{K^T} A K$ is Hermitian if $A$ was Hermitian.)
 
-If we include boundary conditions on the form $u=g$, we 
+If we include boundary conditions on the form $u=g$, we
 assemble the system
 $K^TAK\hat u = K^T(b-A\hat g)$ where $A\hat g$ is an extension of the boundary condition $g$ to all degrees of freedom.
 
@@ -58,8 +58,12 @@ Easiest way to install DOLFINx is to use docker. The DOLFINx docker images goes 
 Remember to use an appropriate tag to get the correct version of DOLFINx, i.e. (`:nightly` or `:vx.y.z`).
 
 To install the `dolfinx_mpc`-library run the following code from this directory:
+
 ```bash
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build-dir cpp/
 ninja -j3 install -C build-dir
-python3 -m pip install python/. --upgrade
+python3 -m pip install sckikit-build-core[pyproject]
+python3 -m pip install --no-build-isolation ./python --upgrade
 ```
+
+Note: `--no-build-isolation` is required for `dolfinx_mpc` to find petsc4py, etc.
