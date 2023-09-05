@@ -11,10 +11,8 @@ on:
     # '*' is a special character in YAML, so string must be quoted
     - cron: "0 8 * * *"
 
-
 jobs:
   build:
-    if: "!(contains(github.event.head_commit.message, '[ci skip]') || contains(github.event.head_commit.message, '[skip ci]'))"
     runs-on: ubuntu-latest
     container: ghcr.io/fenics/test-env:nightly-mpich
 
@@ -25,7 +23,7 @@ jobs:
         # Due to: https://gitlab.com/petsc/petsc/-/issues/1288
         CXX: [c++]
         #, clang++]
-        CC: [cc] 
+        CC: [cc]
         #, clang]
         # exclude:
         #   - CC: cc
@@ -35,7 +33,7 @@ jobs:
     env:
       DOLFINX_BRANCH: "main"
       BASIX_BRANCH: "main"
-      UFL_BRANCH:  "main"
+      UFL_BRANCH: "main"
       FFCX_BRANCH: "main"
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
@@ -55,7 +53,7 @@ jobs:
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install clang
         if: ${{ matrix.CC }} == "clang"
@@ -71,16 +69,15 @@ jobs:
 
       - name: Mypy check
         run: |
-           python3 -m pip install mypy
-           cd python
-           python3 -m mypy . --exclude=build
+          python3 -m pip install mypy
+          cd python
+          python3 -m mypy . --exclude=build
 
       - name: Install h5py (https://github.com/h5py/h5py/issues/2222)
         run: |
           python3 -m pip install mpi4py cython numpy
           python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
 
-     
       - name: Install DOLFINx
         uses: ./.github/actions/install-dolfinx
         with:
@@ -176,7 +173,7 @@ jobs:
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --theta 1.05 --timing
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 0 --timing
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 1.05 --timing
-    
+
       - name: Combine coverage reports
         run: |
           coverage combine
