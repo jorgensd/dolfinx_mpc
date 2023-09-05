@@ -17,7 +17,7 @@ jobs:
       PETSC_ARCH: "linux-gnu-real-32"
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Install DOLFINx
       uses: ./.github/actions/install-dolfinx
