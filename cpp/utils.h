@@ -191,6 +191,7 @@ MPI_Comm create_owner_to_ghost_comm(
 
 /// Creates a normal approximation for the dofs in the closure of the attached
 /// facets, where the normal is an average if a dof belongs to multiple facets
+/// FIXME: Remove petsc dependency here
 template <std::floating_point U>
 dolfinx::fem::Function<PetscScalar>
 create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
@@ -360,13 +361,11 @@ create_block_to_cell_map(const dolfinx::mesh::Topology& topology,
 /// matrix.
 /// @param[in] mpc1 The multi point constraint to apply to the columns of the
 /// matrix.
-template <std::floating_point U>
+template <typename T, std::floating_point U>
 dolfinx::la::SparsityPattern create_sparsity_pattern(
-    const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar, U>>
-        mpc0,
-    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<PetscScalar, U>>
-        mpc1)
+    const dolfinx::fem::Form<T>& a,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc0,
+    const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc1)
 {
   {
     LOG(INFO) << "Generating MPC sparsity pattern";
@@ -395,17 +394,14 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     LOG(INFO) << "Build standard pattern\n";
     ///  Create and build sparsity pattern for original form. Should be
     ///  equivalent to calling create_sparsity_pattern(Form a)
-    build_standard_pattern<PetscScalar>(pattern, a);
+    build_standard_pattern<T>(pattern, a);
     LOG(INFO) << "Build new pattern\n";
 
     // Arrays replacing slave dof with master dof in sparsity pattern
     auto pattern_populator
         = [](dolfinx::la::SparsityPattern& pattern,
-             const std::shared_ptr<
-                 dolfinx_mpc::MultiPointConstraint<PetscScalar, U>>
-                 mpc,
-             const std::shared_ptr<
-                 dolfinx_mpc::MultiPointConstraint<PetscScalar, U>>
+             const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc,
+             const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>
                  mpc_off_axis,
              const auto& pattern_inserter, const auto& master_inserter)
     {

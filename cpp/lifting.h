@@ -140,7 +140,7 @@ template <typename T, std::floating_point U>
 void apply_lifting(
     std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    const std::span<const T>& x0, double scale,
+    const std::span<const T>& x0, T scale,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
   const std::vector<T> constants = pack_constants(*a);

@@ -12,27 +12,26 @@ namespace dolfinx_mpc
 {
 
 //
-template <std::floating_point U>
-mpc_data<PetscScalar> create_slip_condition(
+template <typename T, std::floating_point U>
+mpc_data<T> create_slip_condition(
     std::shared_ptr<dolfinx::fem::FunctionSpace<U>>& space,
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags, std::int32_t marker,
-    const dolfinx::fem::Function<PetscScalar>& v,
-    std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<PetscScalar>>>
-        bcs,
+    const dolfinx::fem::Function<T>& v,
+    std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>> bcs,
     const bool sub_space)
 {
   // Map from collapsed sub space to parent space
   std::function<const std::int32_t(const std::int32_t&)> parent_map;
 
   // Interpolate input function into suitable space
-  std::shared_ptr<dolfinx::fem::Function<PetscScalar>> n;
+  std::shared_ptr<dolfinx::fem::Function<T>> n;
   if (sub_space)
   {
     std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<int32_t>>
         collapsed_space = space->collapse();
     auto V_ptr = std::make_shared<dolfinx::fem::FunctionSpace<U>>(
         std::move(collapsed_space.first));
-    n = std::make_shared<dolfinx::fem::Function<PetscScalar>>(V_ptr);
+    n = std::make_shared<dolfinx::fem::Function<T>>(V_ptr);
     n->interpolate(v);
     parent_map = [sub_map = collapsed_space.second](const std::int32_t dof)
     { return sub_map[dof]; };
@@ -40,7 +39,7 @@ mpc_data<PetscScalar> create_slip_condition(
   else
   {
     parent_map = [](const std::int32_t dof) { return dof; };
-    n = std::make_shared<dolfinx::fem::Function<PetscScalar>>(space);
+    n = std::make_shared<dolfinx::fem::Function<T>>(space);
     n->interpolate(v);
   }
 
@@ -74,7 +73,7 @@ mpc_data<PetscScalar> create_slip_condition(
 
     // Remove Dirichlet BC dofs
     const std::vector<std::int8_t> bc_marker
-        = dolfinx_mpc::is_bc<PetscScalar>(*space, entity_dofs[0], bcs);
+        = dolfinx_mpc::is_bc<T>(*space, entity_dofs[0], bcs);
     num_normal_components = n->function_space()->dofmap()->index_map_bs();
     slave_blocks.reserve(entity_dofs[0].size());
     for (std::size_t i = 0; i < bc_marker.size(); i++)
@@ -94,32 +93,32 @@ mpc_data<PetscScalar> create_slip_condition(
             meshtags.dim(), slave_facets);
     // Remove Dirichlet BC dofs
     const std::vector<std::int8_t> bc_marker
-        = dolfinx_mpc::is_bc<PetscScalar>(*space, all_slave_blocks, bcs);
+        = dolfinx_mpc::is_bc<T>(*space, all_slave_blocks, bcs);
     for (std::size_t i = 0; i < bc_marker.size(); i++)
       if (!bc_marker[i])
         slave_blocks.push_back(all_slave_blocks[i]);
   }
 
-  const std::span<const PetscScalar>& n_vec = n->x()->array();
+  const std::span<const T>& n_vec = n->x()->array();
 
   // Arrays holding MPC data
   std::vector<std::int32_t> slaves;
   std::vector<std::int64_t> masters;
-  std::vector<PetscScalar> coeffs;
+  std::vector<T> coeffs;
   std::vector<std::int32_t> owners;
   std::vector<std::int32_t> offsets(1, 0);
   // Temporary arrays used to hold information about masters
   std::vector<std::int64_t> pair_m;
   for (auto block : slave_blocks)
   {
-    std::span<const PetscScalar> normal(
+    std::span<const T> normal(
         std::next(n_vec.begin(), block * num_normal_components),
         num_normal_components);
 
     // Determine slave dof by component with biggest normal vector (to avoid
     // issues with grids aligned with coordiante system)
     auto max_el = std::max_element(normal.begin(), normal.end(),
-                                   [](PetscScalar a, PetscScalar b)
+                                   [](T a, T b)
                                    { return std::norm(a) < std::norm(b); });
     auto slave_index = std::distance(normal.begin(), max_el);
     assert(slave_index < num_normal_components);
@@ -128,7 +127,7 @@ mpc_data<PetscScalar> create_slip_condition(
     slaves.push_back(parent_slave);
 
     std::vector<std::int32_t> parent_masters;
-    std::vector<PetscScalar> pair_c;
+    std::vector<T> pair_c;
     std::vector<std::int32_t> pair_o;
     for (std::int32_t i = 0; i < num_normal_components; ++i)
     {
@@ -136,7 +135,7 @@ mpc_data<PetscScalar> create_slip_condition(
       {
         const std::int32_t parent_dof
             = parent_map(block * num_normal_components + i);
-        PetscScalar coeff = -normal[i] / normal[slave_index];
+        T coeff = -normal[i] / normal[slave_index];
         parent_masters.push_back(parent_dof);
         pair_c.push_back(coeff);
         const std::int32_t m_rank
@@ -164,7 +163,7 @@ mpc_data<PetscScalar> create_slip_condition(
     offsets.push_back((std::int32_t)masters.size());
     owners.insert(owners.end(), pair_o.begin(), pair_o.end());
   }
-  mpc_data<PetscScalar> data;
+  mpc_data<T> data;
   data.slaves = slaves;
 
   data.masters = masters;
