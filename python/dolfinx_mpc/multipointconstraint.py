@@ -31,12 +31,12 @@ class MultiPointConstraint():
     _coeffs: npt.NDArray[_PETSc.ScalarType]
     _owners: npt.NDArray[numpy.int32]
     _offsets: npt.NDArray[numpy.int32]
-    V: _fem.FunctionSpace
+    V: _fem.FunctionSpaceBase
     finalized: bool
     _cpp_object: dolfinx_mpc.cpp.mpc.MultiPointConstraint
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, V: _fem.FunctionSpace):
+    def __init__(self, V: _fem.FunctionSpaceBase):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=_PETSc.ScalarType)
@@ -45,7 +45,7 @@ class MultiPointConstraint():
         self.V = V
         self.finalized = False
 
-    def add_constraint(self, V: _fem.FunctionSpace, slaves: npt.NDArray[numpy.int32],
+    def add_constraint(self, V: _fem.FunctionSpaceBase, slaves: npt.NDArray[numpy.int32],
                        masters: npt.NDArray[numpy.int64], coeffs: npt.NDArray[_PETSc.ScalarType],
                        owners: npt.NDArray[numpy.int32], offsets: npt.NDArray[numpy.int32]):
         """
@@ -76,7 +76,7 @@ class MultiPointConstraint():
             self._coeffs = numpy.append(self._coeffs, coeffs)
             self._owners = numpy.append(self._owners, owners)
 
-    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
+    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpaceBase, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
         """
@@ -95,13 +95,13 @@ class MultiPointConstraint():
         self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
             self.V._cpp_object, self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
         # Replace function space
-        self.V = _fem.FunctionSpace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
+        self.V = _fem.functionspace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
 
         self.finalized = True
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
-    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTags, tag: int,
+    def create_periodic_constraint_topological(self, V: _fem.FunctionSpaceBase, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
         """
@@ -127,7 +127,7 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpace,
+    def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpaceBase,
                                                indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
@@ -155,7 +155,7 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: Tuple[_mesh.MeshTags, int],
+    def create_slip_constraint(self, space: _fem.FunctionSpaceBase, facet_marker: Tuple[_mesh.MeshTags, int],
                                v: _fem.Function, bcs: List[_fem.DirichletBC] = []):
         """
         Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
@@ -186,7 +186,7 @@ class MultiPointConstraint():
                 Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
                 Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
                 me = basix.ufl.mixed_element([Ve, Qe], gdim=mesh.geometry.dim)
-                W = dolfinx.fem.FunctionSpace(mesh, me)
+                W = dolfinx.fem.functionspace(mesh, me)
                 mpc = MultiPointConstraint(W)
                 n_space, _ = W.sub(0).collapse()
                 normal = dolfinx.fem.Function(n_space)
@@ -202,7 +202,7 @@ class MultiPointConstraint():
                 Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
                 Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
                 me = basix.ufl.mixed_element([Ve, Qe], gdim=mesh.geometry.dim)
-                W = dolfinx.fem.FunctionSpace(mesh, me)
+                W = dolfinx.fem.functionspace(mesh, me)
                 mpc = MultiPointConstraint(W)
                 n_space, _ = W.sub(0).collapse()
                 normal = Function(n_space)
