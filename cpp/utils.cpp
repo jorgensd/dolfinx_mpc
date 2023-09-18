@@ -15,42 +15,6 @@
 using namespace dolfinx_mpc;
 
 //-----------------------------------------------------------------------------
-dolfinx::la::petsc::Matrix dolfinx_mpc::create_matrix(
-    const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<
-        dolfinx_mpc::MultiPointConstraint<PetscScalar, double>>
-        mpc0,
-    const std::shared_ptr<
-        dolfinx_mpc::MultiPointConstraint<PetscScalar, double>>
-        mpc1,
-    const std::string& type)
-{
-  dolfinx::common::Timer timer("~MPC: Create Matrix");
-
-  // Build sparsitypattern
-  dolfinx::la::SparsityPattern pattern = create_sparsity_pattern(a, mpc0, mpc1);
-
-  // Finalise communication
-  dolfinx::common::Timer timer_s("~MPC: Assemble sparsity pattern");
-  pattern.finalize();
-  timer_s.stop();
-
-  // Initialize matrix
-  dolfinx::la::petsc::Matrix A(a.mesh()->comm(), pattern, type);
-
-  return A;
-}
-//-----------------------------------------------------------------------------
-dolfinx::la::petsc::Matrix dolfinx_mpc::create_matrix(
-    const dolfinx::fem::Form<PetscScalar>& a,
-    const std::shared_ptr<
-        dolfinx_mpc::MultiPointConstraint<PetscScalar, double>>
-        mpc,
-    const std::string& type)
-{
-  return dolfinx_mpc::create_matrix(a, mpc, mpc, type);
-}
-//-----------------------------------------------------------------------------
 std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
     MPI_Comm comm, const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
     const bool has_slave, std::int32_t& master_marker)

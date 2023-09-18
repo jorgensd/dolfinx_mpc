@@ -11,9 +11,9 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <functional>
-namespace stdex = std::experimental;
-using mdspan2_t
-    = stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>>;
+using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+    const std::int32_t,
+    MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>;
 
 namespace dolfinx_mpc
 {
@@ -88,6 +88,28 @@ void assemble_vector(
     const dolfinx::fem::Form<std::complex<double>>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc);
+
+/// Assemble a linear form into a vector
+/// @param[in] b The vector to be assembled. It will not be zeroed before
+/// assembly.
+/// @param[in] L The linear forms to assemble into b
+/// @param[in] mpc The multi-point constraint
+void assemble_vector(
+    std::span<float> b, const dolfinx::fem::Form<float>& L,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc);
+
+/// Assemble a linear form into a vector
+/// @param[in] b The vector to be assembled. It will not be zeroed before
+/// assembly.
+/// @param[in] L The linear forms to assemble into b
+/// @param[in] mpc The multi-point constraint
+void assemble_vector(
+    std::span<std::complex<float>> b,
+    const dolfinx::fem::Form<std::complex<float>>& L,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
         mpc);
 
 } // namespace dolfinx_mpc

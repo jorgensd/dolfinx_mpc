@@ -11,9 +11,9 @@
 #include <dolfinx/fem/utils.h>
 #include <iostream>
 
-namespace stdex = std::experimental;
-using mdspan2_t
-    = stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>>;
+using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+    const std::int32_t,
+    MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>;
 
 namespace
 {
@@ -30,12 +30,11 @@ namespace
 /// assembles into a local element matrix for a given entity
 /// @tparam T Scalar type for vector
 /// @tparam e stride Stride for each entity in active_entities
-template <typename T, std::size_t estride>
+template <typename T, std::floating_point U, std::size_t estride>
 void _assemble_entities_impl(
     std::span<T> b, std::span<const std::int32_t> active_entities,
     const dolfinx::fem::DofMap& dofmap,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, double>>&
-        mpc,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
     const std::function<const std::int32_t(std::span<const std::int32_t>)>
         fetch_cells,
     const std::function<void(std::span<T>, std::span<const std::int32_t>,
@@ -93,7 +92,7 @@ void _assemble_vector(
     std::span<T> b, const dolfinx::fem::Form<T>& L,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
 {
-
+  namespace stdex = std::experimental;
   const auto mesh = L.mesh();
   assert(mesh);
 
@@ -109,11 +108,11 @@ void _assemble_vector(
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
 
   // Prepare cell geometry
-  namespace stdex = std::experimental;
-  std::experimental::mdspan<const std::int32_t,
-                            std::experimental::dextents<std::size_t, 2>>
+  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+      const std::int32_t,
+      MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
       x_dofmap = mesh->geometry().dofmap();
-  std::span<const double> x_g = mesh->geometry().x();
+  std::span<const U> x_g = mesh->geometry().x();
 
   // Prepare dof tranformation data
   auto element = L.function_spaces().at(0)->element();
@@ -130,7 +129,7 @@ void _assemble_vector(
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
   const std::size_t num_dofs_g = x_dofmap.extent(1);
-  std::vector<double> coordinate_dofs(3 * num_dofs_g);
+  std::vector<U> coordinate_dofs(3 * num_dofs_g);
 
   if (L.num_integrals(dolfinx::fem::IntegralType::cell) > 0)
   {
@@ -153,7 +152,8 @@ void _assemble_vector(
         auto cell = entity.front();
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
+        auto x_dofs = stdex::submdspan(
+            x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -172,8 +172,8 @@ void _assemble_vector(
       // Assemble over all active cells
       std::span<const std::int32_t> active_cells
           = L.domain(dolfinx::fem::IntegralType::cell, i);
-      _assemble_entities_impl<T, 1>(b, active_cells, *dofmap, mpc, fetch_cell,
-                                    assemble_local_cell_vector);
+      _assemble_entities_impl<T, U, 1>(b, active_cells, *dofmap, mpc,
+                                       fetch_cell, assemble_local_cell_vector);
     }
   }
   // Prepare permutations for exterior and interior facet integrals
@@ -201,7 +201,8 @@ void _assemble_vector(
         // Fetch the coordinates of the cell
         const std::int32_t cell = entity[0];
         const int local_facet = entity[1];
-        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
+        auto x_dofs = stdex::submdspan(
+            x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -220,8 +221,9 @@ void _assemble_vector(
       // Assemble over all active cells
       std::span<const std::int32_t> active_facets
           = L.domain(dolfinx::fem::IntegralType::exterior_facet, i);
-      _assemble_entities_impl<T, 2>(b, active_facets, *dofmap, mpc, fetch_cell,
-                                    assemble_local_exterior_facet_vector);
+      _assemble_entities_impl<T, U, 2>(b, active_facets, *dofmap, mpc,
+                                       fetch_cell,
+                                       assemble_local_exterior_facet_vector);
     }
   }
 
@@ -262,5 +264,23 @@ void dolfinx_mpc::assemble_vector(
         mpc)
 {
   _assemble_vector<std::complex<double>>(b, L, mpc);
+}
+
+void dolfinx_mpc::assemble_vector(
+    std::span<float> b, const dolfinx::fem::Form<float>& L,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc)
+{
+  _assemble_vector<float>(b, L, mpc);
+}
+
+void dolfinx_mpc::assemble_vector(
+    std::span<std::complex<float>> b,
+    const dolfinx::fem::Form<std::complex<float>>& L,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
+        mpc)
+{
+  _assemble_vector<std::complex<float>>(b, L, mpc);
 }
 //-----------------------------------------------------------------------------

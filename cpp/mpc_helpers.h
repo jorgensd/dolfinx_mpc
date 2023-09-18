@@ -209,9 +209,10 @@ dolfinx::fem::FunctionSpace<U> create_extended_functionspace(
   }
 
   // Extract information from the old dofmap to create a new one
-  namespace stdex = std::experimental;
-  stdex::mdspan<const std::int32_t, stdex::dextents<std::size_t, 2>> dofmap_adj
-      = old_dofmap.map();
+  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+      const std::int32_t,
+      MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
+      dofmap_adj = old_dofmap.map();
   // Copy dofmap
   std::vector<std::int32_t> flattened_dofmap;
   flattened_dofmap.reserve(dofmap_adj.extent(0) * dofmap_adj.extent(1));
