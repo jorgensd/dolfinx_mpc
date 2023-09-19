@@ -26,7 +26,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
 
     N = 4
     mesh = create_unit_square(MPI.COMM_WORLD, N, N)
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
     # Fixed Dirichlet BC on the left wall
     def left_wall(x):
@@ -144,7 +144,7 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
     assemble_matrix, assemble_vector = get_assemblers
     N = 10
     mesh = create_unit_square(MPI.COMM_WORLD, N, N)
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
     def top(x):
         return np.isclose(x[1], 1)

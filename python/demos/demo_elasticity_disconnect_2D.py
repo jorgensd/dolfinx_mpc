@@ -10,19 +10,18 @@ from pathlib import Path
 
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, Function, FunctionSpace,
-                         VectorFunctionSpace, dirichletbc,
-                         locate_dofs_geometrical, locate_dofs_topological)
+from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
+                         functionspace, locate_dofs_geometrical,
+                         locate_dofs_topological, FunctionSpaceBase)
 from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
+from dolfinx_mpc.utils import (create_point_to_point_constraint,
+                               rigid_motions_nullspace)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, grad, inner, sym, tr)
-
-from dolfinx_mpc import LinearProblem, MultiPointConstraint
-from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               rigid_motions_nullspace)
 
 # Mesh parameters for creating a mesh consisting of two disjoint rectangles
 right_tag = 1
@@ -63,7 +62,7 @@ tdim = mesh.topology.dim
 fdim = tdim - 1
 
 # Locate cells with different elasticity parameters
-DG0 = FunctionSpace(mesh, ("DG", 0))
+DG0 = functionspace(mesh, ("DG", 0))
 left_dofs = locate_dofs_topological(DG0, tdim, ct.find(left_tag))
 right_dofs = locate_dofs_topological(DG0, tdim, ct.find(right_tag))
 
@@ -108,7 +107,7 @@ bc_fix = dirichletbc(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0]
 bcs = [bc_push, bc_fix]
 
 
-def gather_dof_coordinates(V: FunctionSpace, dofs: np.ndarray):
+def gather_dof_coordinates(V: FunctionSpaceBase, dofs: np.ndarray):
     """
     Distributes the dof coordinates of this subset of dofs to all processors
     """

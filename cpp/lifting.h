@@ -140,7 +140,7 @@ template <typename T, std::floating_point U>
 void apply_lifting(
     std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    const std::span<const T>& x0, double scale,
+    const std::span<const T>& x0, T scale,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
   const std::vector<T> constants = pack_constants(*a);
@@ -183,13 +183,14 @@ void apply_lifting(
 
   // Prepare cell geometry
   namespace stdex = std::experimental;
-  std::experimental::mdspan<const std::int32_t,
-                            std::experimental::dextents<std::size_t, 2>>
+  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+      const std::int32_t,
+      MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
       x_dofmap = mesh->geometry().dofmap();
-  std::span<const double> x_g = mesh->geometry().x();
+  std::span<const U> x_g = mesh->geometry().x();
   const int tdim = mesh->topology()->dim();
   const std::size_t num_dofs_g = x_dofmap.extent(1);
-  std::vector<double> coordinate_dofs(3 * num_dofs_g);
+  std::vector<U> coordinate_dofs(3 * num_dofs_g);
 
   std::span<const std::uint32_t> cell_info;
   if (needs_transformation_data)
@@ -229,7 +230,8 @@ void apply_lifting(
         auto cell = entity.front();
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
+        auto x_dofs = stdex::submdspan(
+            x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -312,7 +314,8 @@ void apply_lifting(
         const int local_facet = entity[1];
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(x_dofmap, cell, stdex::full_extent);
+        auto x_dofs = stdex::submdspan(
+            x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
           std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -498,4 +501,117 @@ void apply_lifting(
     }
   }
 }
+
+/// Modify b such that:
+///
+///   b <- b - scale * K^T (A_j (g_j 0 x0_j))
+///
+/// where j is a block (nest) row index and K^T is the reduction matrix stemming
+/// from the multi point constraint. For non - blocked problems j = 0.
+/// The boundary conditions bcs1 are on the trial spaces V_j.
+/// The forms in [a] must have the same test space as L (from
+/// which b was built), but the trial space may differ. If x0 is not
+/// supplied, then it is treated as 0.
+/// @param[in,out] b The vector to be modified
+/// @param[in] a The bilinear formss, where a[j] is the form that
+/// generates A[j]
+/// @param[in] bcs List of boundary conditions for each block, i.e. bcs1[2]
+/// are the boundary conditions applied to the columns of a[2] / x0[2]
+/// block.
+/// @param[in] x0 The vectors used in the lifitng.
+/// @param[in] scale Scaling to apply
+/// @param[in] mpc The multi point constraints
+void apply_lifting(
+    std::span<float> b,
+    const std::vector<std::shared_ptr<const dolfinx::fem::Form<float>>> a,
+    const std::vector<
+        std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>>&
+        bcs1,
+    const std::vector<std::span<const float>>& x0, float scale,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc)
+{
+  if (!x0.empty() and x0.size() != a.size())
+  {
+    throw std::runtime_error(
+        "Mismatch in size between x0 and bilinear form in assembler.");
+  }
+
+  if (a.size() != bcs1.size())
+  {
+    throw std::runtime_error(
+        "Mismatch in size between a and bcs in assembler.");
+  }
+  for (std::size_t j = 0; j < a.size(); ++j)
+  {
+    if (x0.empty())
+    {
+      impl::apply_lifting<float>(b, a[j], bcs1[j], std::span<const float>(),
+                                 scale, mpc);
+    }
+    else
+    {
+      impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc);
+    }
+  }
+}
+/// Modify b such that:
+///
+///   b <- b - scale * K^T (A_j (g_j 0 x0_j))
+///
+/// where j is a block (nest) row index and K^T is the reduction matrix stemming
+/// from the multi point constraint. For non - blocked problems j = 0.
+/// The boundary conditions bcs1 are on the trial spaces V_j.
+/// The forms in [a] must have the same test space as L (from
+/// which b was built), but the trial space may differ. If x0 is not
+/// supplied, then it is treated as 0.
+/// @param[in,out] b The vector to be modified
+/// @param[in] a The bilinear formss, where a[j] is the form that
+/// generates A[j]
+/// @param[in] bcs List of boundary conditions for each block, i.e. bcs1[2]
+/// are the boundary conditions applied to the columns of a[2] / x0[2]
+/// block.
+/// @param[in] x0 The vectors used in the lifitng.
+/// @param[in] scale Scaling to apply
+/// @param[in] mpc The multi point constraints
+void apply_lifting(
+    std::span<std::complex<float>> b,
+    const std::vector<
+        std::shared_ptr<const dolfinx::fem::Form<std::complex<float>>>>
+        a,
+    const std::vector<std::vector<
+        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>>&
+        bcs1,
+    const std::vector<std::span<const std::complex<float>>>& x0, float scale,
+
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
+        mpc)
+{
+  if (!x0.empty() and x0.size() != a.size())
+  {
+    throw std::runtime_error(
+        "Mismatch in size between x0 and bilinear form in assembler.");
+  }
+
+  if (a.size() != bcs1.size())
+  {
+    throw std::runtime_error(
+        "Mismatch in size between a and bcs in assembler.");
+  }
+  for (std::size_t j = 0; j < a.size(); ++j)
+  {
+    if (x0.empty())
+    {
+      impl::apply_lifting<std::complex<float>>(
+          b, a[j], bcs1[j], std::span<const std::complex<float>>(), scale, mpc);
+    }
+    else
+    {
+      impl::apply_lifting<std::complex<float>>(b, a[j], bcs1[j], x0[j], scale,
+                                               mpc);
+    }
+  }
+}
+
 } // namespace dolfinx_mpc

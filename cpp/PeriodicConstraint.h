@@ -25,8 +25,7 @@ template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
     std::span<std::int32_t> slave_blocks,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    T scale,
+    const std::function<std::vector<U>(std::span<const U>)>& relation, T scale,
     const std::function<const std::int32_t(const std::int32_t&)>& parent_map,
     const dolfinx::fem::FunctionSpace<U>& parent_space)
 {
@@ -74,7 +73,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Tolerance for adding scaled basis values to MPC. Any scaled basis
   // value with lower absolute value than the tolerance is ignored
-  const double tol = 1e-13;
+  const U tol = 1e-13;
 
   auto mesh = V.mesh();
   auto dofmap = V.dofmap();
@@ -100,23 +99,23 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       *V.mesh()->topology(), *V.dofmap(), local_blocks);
 
   // Compute relation(slave_blocks)
-  std::vector<double> mapped_T_b(local_blocks.size() * 3);
+  std::vector<U> mapped_T_b(local_blocks.size() * 3);
   const std::array<std::size_t, 2> T_shape = {local_blocks.size(), 3};
 
   {
-    std::experimental::mdspan<
-        double, std::experimental::extents<
-                    std::size_t, std::experimental::dynamic_extent, 3>>
+    MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+        U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+               std::size_t, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent, 3>>
         mapped_T(mapped_T_b.data(), T_shape);
 
     // Tabulate dof coordinates for each dof
     auto [x, x_shape] = dolfinx_mpc::tabulate_dof_coordinates(
         V, local_blocks, slave_cells, true);
     // Map all slave coordinates using the relation
-    std::vector<double> mapped_x = relation(x);
-    std::experimental::mdspan<
-        double, std::experimental::extents<std::size_t, 3,
-                                           std::experimental::dynamic_extent>>
+    std::vector<U> mapped_x = relation(x);
+    MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+        U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+               std::size_t, 3, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>
         x_(mapped_x.data(), x_shape);
     for (std::size_t i = 0; i < mapped_T.extent(0); ++i)
       for (std::size_t j = 0; j < mapped_T.extent(1); ++j)
@@ -138,10 +137,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   std::vector<std::int32_t> local_cell_collisions
       = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, mapped_T_b, 1e-20);
   dolfinx::common::Timer t0("~~Periodic: Local cell and eval basis");
-  auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions(
+  auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
       V, mapped_T_b, local_cell_collisions);
-  std::experimental::mdspan<const double,
-                            std::experimental::dextents<std::size_t, 3>>
+  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+      const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
       tabulated_basis_values(basis_values.data(), basis_shape);
   t0.stop();
   // Create output arrays
@@ -285,7 +284,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Communicate coordinates of slave blocks
   std::vector<std::int32_t> out_placement(outdegree, 0);
-  std::vector<double> coords_out(disp_out.back() * 3);
+  std::vector<U> coords_out(disp_out.back() * 3);
 
   for (std::size_t i = 0; i < local_cell_collisions.size(); i++)
   {
@@ -316,10 +315,11 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Communciate coordinates with other process
   const std::array<std::size_t, 2> cr_shape = {(std::size_t)disp_in.back(), 3};
-  std::vector<double> coords_recvb(cr_shape.front() * cr_shape.back());
-  std::experimental::mdspan<
-      const double, std::experimental::extents<
-                        std::size_t, std::experimental::dynamic_extent, 3>>
+  std::vector<U> coords_recvb(cr_shape.front() * cr_shape.back());
+  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+      const U,
+      MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+          std::size_t, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent, 3>>
       coords_recv(coords_recvb.data(), cr_shape);
 
   // Take into account that we send three values per slave
@@ -330,11 +330,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   std::for_each(num_recv_slaves.begin(), num_recv_slaves.end(), m_3);
 
   // Communicate coordinates
-  MPI_Neighbor_alltoallv(coords_out.data(), num_out_slaves.data(),
-                         disp_out.data(), dolfinx::MPI::mpi_type<double>(),
-                         coords_recvb.data(), num_recv_slaves.data(),
-                         disp_in.data(), dolfinx::MPI::mpi_type<double>(),
-                         slave_to_master);
+  MPI_Neighbor_alltoallv(
+      coords_out.data(), num_out_slaves.data(), disp_out.data(),
+      dolfinx::MPI::mpi_type<U>(), coords_recvb.data(), num_recv_slaves.data(),
+      disp_in.data(), dolfinx::MPI::mpi_type<U>(), slave_to_master);
 
   // Reset in_displacements to be per block for later usage
   auto d_3 = [](auto& num) { num /= 3; };
@@ -358,10 +357,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   std::vector<std::int32_t> remote_cell_collisions
       = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb, 1e-20);
   auto [remote_basis_valuesb, r_basis_shape]
-      = dolfinx_mpc::evaluate_basis_functions(V, coords_recvb,
-                                              remote_cell_collisions);
-  std::experimental::mdspan<const double,
-                            std::experimental::dextents<std::size_t, 3>>
+      = dolfinx_mpc::evaluate_basis_functions<U>(V, coords_recvb,
+                                                 remote_cell_collisions);
+  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+      const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
       remote_basis_values(remote_basis_valuesb.data(), r_basis_shape);
 
   // Find remote masters and count how many to send to each process
@@ -496,12 +495,12 @@ template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> geometrical_condition(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
     const std::function<std::vector<std::int8_t>(
-        std::experimental::mdspan<
-            const double,
-            std::experimental::extents<std::size_t, 3,
-                                       std::experimental::dynamic_extent>>)>&
+        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+            const U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+                         std::size_t, 3,
+                         MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
         indicator,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
+    const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     T scale, bool collapse)
 {
@@ -564,7 +563,7 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
+    const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     T scale, bool collapse)
 {
@@ -611,8 +610,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     // Identity map
     const auto sub_map = [](const std::int32_t& dof) { return dof; };
 
-    return _create_periodic_condition<T>(*V, std::span(reduced_blocks),
-                                         relation, scale, sub_map, *V);
+    return _create_periodic_condition<T, U>(*V, std::span(reduced_blocks),
+                                            relation, scale, sub_map, *V);
   }
 };
 
@@ -624,35 +623,35 @@ namespace dolfinx_mpc
 mpc_data<double> create_periodic_condition_geometrical(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
     const std::function<std::vector<std::int8_t>(
-        std::experimental::mdspan<
+        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
             const double,
-            std::experimental::extents<std::size_t, 3,
-                                       std::experimental::dynamic_extent>>)>&
-        indicator,
+            MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+                std::size_t, 3,
+                MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>& indicator,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     double scale, bool collapse)
 {
-  return impl::geometrical_condition<double>(V, indicator, relation, bcs, scale,
-                                             collapse);
+  return impl::geometrical_condition<double, double>(V, indicator, relation,
+                                                     bcs, scale, collapse);
 }
 
 mpc_data<std::complex<double>> create_periodic_condition_geometrical(
     const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
     const std::function<std::vector<std::int8_t>(
-        std::experimental::mdspan<
+        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
             const double,
-            std::experimental::extents<std::size_t, 3,
-                                       std::experimental::dynamic_extent>>)>&
-        indicator,
+            MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+                std::size_t, 3,
+                MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>& indicator,
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
     std::complex<double> scale, bool collapse)
 {
-  return impl::geometrical_condition<std::complex<double>>(
+  return impl::geometrical_condition<std::complex<double>, double>(
       V, indicator, relation, bcs, scale, collapse);
 }
 
@@ -665,8 +664,8 @@ mpc_data<double> create_periodic_condition_topological(
         bcs,
     double scale, bool collapse)
 {
-  return impl::topological_condition<double>(V, meshtag, tag, relation, bcs,
-                                             scale, collapse);
+  return impl::topological_condition<double, double>(V, meshtag, tag, relation,
+                                                     bcs, scale, collapse);
 }
 
 mpc_data<std::complex<double>> create_periodic_condition_topological(
@@ -679,7 +678,70 @@ mpc_data<std::complex<double>> create_periodic_condition_topological(
         bcs,
     std::complex<double> scale, bool collapse)
 {
-  return impl::topological_condition<std::complex<double>>(
+  return impl::topological_condition<std::complex<double>, double>(
       V, meshtag, tag, relation, bcs, scale, collapse);
 }
+
+mpc_data<float> create_periodic_condition_geometrical(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
+    const std::function<std::vector<std::int8_t>(
+        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+            const float, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+                             std::size_t, 3,
+                             MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
+        indicator,
+    const std::function<std::vector<float>(std::span<const float>)>& relation,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
+        bcs,
+    float scale, bool collapse)
+{
+  return impl::geometrical_condition<float, float>(V, indicator, relation, bcs,
+                                                   scale, collapse);
+}
+
+mpc_data<std::complex<float>> create_periodic_condition_geometrical(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
+    const std::function<std::vector<std::int8_t>(
+        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+            const float, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+                             std::size_t, 3,
+                             MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
+        indicator,
+    const std::function<std::vector<float>(std::span<const float>)>& relation,
+    const std::vector<
+        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
+        bcs,
+    std::complex<float> scale, bool collapse)
+{
+  return impl::geometrical_condition<std::complex<float>, float>(
+      V, indicator, relation, bcs, scale, collapse);
+}
+
+mpc_data<float> create_periodic_condition_topological(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
+    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
+    const std::int32_t tag,
+    const std::function<std::vector<float>(std::span<const float>)>& relation,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
+        bcs,
+    float scale, bool collapse)
+{
+  return impl::topological_condition<float, float>(V, meshtag, tag, relation,
+                                                   bcs, scale, collapse);
+}
+
+mpc_data<std::complex<float>> create_periodic_condition_topological(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
+    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
+    const std::int32_t tag,
+    const std::function<std::vector<float>(std::span<const float>)>& relation,
+    const std::vector<
+        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
+        bcs,
+    std::complex<float> scale, bool collapse)
+{
+  return impl::topological_condition<std::complex<float>, float>(
+      V, meshtag, tag, relation, bcs, scale, collapse);
+}
+
 } // namespace dolfinx_mpc

@@ -174,7 +174,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     mesh, mt = mesh_data
     fdim = mesh.topology.dim - 1
     # Create functionspaces
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
     # Helper for orienting traction
 
