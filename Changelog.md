@@ -1,7 +1,13 @@
 # Changelog
 
 ## main
-- Change input of `dolfinx_mpc.MultiPointConstraint.homogenize` and `dolfinx_mpc.backsubstitution` to `dolfinx.fem.Function` instead of `PETSc.Vec`.
+- **API**:
+  - Change input of `dolfinx_mpc.MultiPointConstraint.homogenize` and `dolfinx_mpc.backsubstitution` to `dolfinx.fem.Function` instead of `PETSc.Vec`.
+  - Add support for more floating types (`dtype` can now be specified as input for coefficients). In theory this means one could support single precision. Not thoroughly tested.
+    - This resulted in a minor refactoring of the pybindings, meaning that tte class `dolfinx_mpc.cpp.mpc.MultiPointConstraint` is replaced by `dolfinx_mpc.cpp.mpc.MultiPointConstraint_{dtype}`
+- **DOLFINX API-changes**:
+  - Use `dolfinx.fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))` instead of `dolfinx.fem.VectorFunctionSpace(mesh, ("Lagrange", 1))` as the latter is being deprecated.
+  - Use `basix.ufl.element` in favor of `ufl.FiniteElement` as the latter is deprecated in DOLFINx.
 
 ## v0.6.1 (30.01.2023)
   - Fixes for CI

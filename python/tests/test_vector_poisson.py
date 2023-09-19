@@ -29,7 +29,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, Nx, Ny)
 
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
     def boundary(x):
         return np.isclose(x.T, [0, 0, 0]).all(axis=1)

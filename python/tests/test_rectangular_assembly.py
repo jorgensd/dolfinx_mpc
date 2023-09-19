@@ -50,9 +50,9 @@ def test_mixed_element(cell_type, ghost_mode):
     Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
     Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
 
-    V = dolfinx.fem.FunctionSpace(mesh, Ve)
-    Q = dolfinx.fem.FunctionSpace(mesh, Qe)
-    W = dolfinx.fem.FunctionSpace(mesh, Ve * Qe)
+    V = dolfinx.fem.functionspace(mesh, Ve)
+    Q = dolfinx.fem.functionspace(mesh, Qe)
+    W = dolfinx.fem.functionspace(mesh, Ve * Qe)
 
     inlet_velocity = dolfinx.fem.Function(V)
     inlet_velocity.interpolate(

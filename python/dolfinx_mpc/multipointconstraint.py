@@ -4,6 +4,7 @@
 #
 # SPDX-License-Identifier:    MIT
 
+from typing import Union
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import dolfinx.cpp as _cpp
@@ -12,10 +13,36 @@ import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
 from petsc4py import PETSc as _PETSc
-
+from dataclasses import dataclass
 import dolfinx_mpc.cpp
 
 from .dictcondition import create_dictionary_constraint
+
+_mpc_classes = Union[dolfinx_mpc.cpp.mpc.MultiPointConstraint_double, dolfinx_mpc.cpp.mpc.MultiPointConstraint_float,
+                     dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double,
+                     dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float]
+_float_classes = Union[numpy.float32, numpy.float64, numpy.complex128, numpy.complex64]
+_mpc_data_classes = Union[dolfinx_mpc.cpp.mpc.mpc_data_double, dolfinx_mpc.cpp.mpc.mpc_data_float,
+                          dolfinx_mpc.cpp.mpc.mpc_data_complex_double,
+                          dolfinx_mpc.cpp.mpc.mpc_data_complex_float]
+
+
+class MPCData():
+    _cpp_object: _mpc_data_classes
+
+    def __init__(self, slaves: npt.NDArray[numpy.int32],
+                 masters: npt.NDArray[numpy.int64], coeffs: npt.NDArray[_float_classes],
+                 owners: npt.NDArray[numpy.int32], offsets: npt.NDArray[numpy.int32]):
+        if coeffs.dtype.type == numpy.float32:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_float(slaves, masters, coeffs, owners, offsets)
+        elif coeffs.dtype.type == numpy.float64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_double(slaves, masters, coeffs, owners, offsets)
+        elif coeffs.dtype.type == numpy.complex64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_float(slaves, masters, coeffs, owners, offsets)
+        elif coeffs.dtype.type == numpy.complex64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_double(slaves, masters, coeffs, owners, offsets)
+        else:
+            raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
 
 
 class MultiPointConstraint():
@@ -25,6 +52,7 @@ class MultiPointConstraint():
 
     Args:
         V: The function space
+        dtype: The dtype of the underlying functions
     """
     _slaves: npt.NDArray[numpy.int32]
     _masters: npt.NDArray[numpy.int64]
@@ -33,20 +61,22 @@ class MultiPointConstraint():
     _offsets: npt.NDArray[numpy.int32]
     V: _fem.FunctionSpaceBase
     finalized: bool
-    _cpp_object: dolfinx_mpc.cpp.mpc.MultiPointConstraint
+    _cpp_object: _mpc_classes
+    _dtype: _float_classes
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, V: _fem.FunctionSpaceBase):
+    def __init__(self, V: _fem.FunctionSpaceBase, dtype=_PETSc.ScalarType):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
-        self._coeffs = numpy.array([], dtype=_PETSc.ScalarType)
+        self._coeffs = numpy.array([], dtype=dtype)
         self._owners = numpy.array([], dtype=numpy.int32)
         self._offsets = numpy.array([0], dtype=numpy.int32)
         self.V = V
         self.finalized = False
+        self._dtype = dtype
 
     def add_constraint(self, V: _fem.FunctionSpaceBase, slaves: npt.NDArray[numpy.int32],
-                       masters: npt.NDArray[numpy.int64], coeffs: npt.NDArray[_PETSc.ScalarType],
+                       masters: npt.NDArray[numpy.int64], coeffs: npt.NDArray[_float_classes],
                        owners: npt.NDArray[numpy.int32], offsets: npt.NDArray[numpy.int32]):
         """
         Add new constraint given by numpy arrays.
@@ -76,12 +106,18 @@ class MultiPointConstraint():
             self._coeffs = numpy.append(self._coeffs, coeffs)
             self._owners = numpy.append(self._owners, owners)
 
-    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpaceBase, mpc_data: dolfinx_mpc.cpp.mpc.mpc_data):
+    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpaceBase,
+                                     mpc_data: Union[_mpc_data_classes, MPCData]):
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
         """
         self._already_finalized()
-        self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs, mpc_data.owners, mpc_data.offsets)
+        try:
+            self.add_constraint(V, mpc_data.slaves, mpc_data.masters, mpc_data.coeffs,
+                                mpc_data.owners, mpc_data.offsets)
+        except AttributeError:
+            self.add_constraint(V, mpc_data._cpp_object.slaves, mpc_data._cpp_object.masters,
+                                mpc_data._cpp_object.coeffs, mpc_data._cpp_object.owners, mpc_data._cpp_object.offsets)
 
     def finalize(self) -> None:
         """
@@ -92,10 +128,28 @@ class MultiPointConstraint():
         self._already_finalized()
 
         # Initialize C++ object and create slave->cell maps
-        self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint(
-            self.V._cpp_object, self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
+        if self._dtype == numpy.float32:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_float(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
+        elif self._dtype == numpy.float64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_double(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
+        elif self._dtype == numpy.complex64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
+
+        elif self._dtype == numpy.complex64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
+        else:
+            raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
+
         # Replace function space
-        self.V = _fem.functionspace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
+        self.V = _fem.FunctionSpaceBase(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
 
         self.finalized = True
         # Delete variables that are no longer required
@@ -103,7 +157,7 @@ class MultiPointConstraint():
 
     def create_periodic_constraint_topological(self, V: _fem.FunctionSpaceBase, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
+                                               bcs: List[_fem.DirichletBC], scale: _float_classes = 1):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
         :math:`u(x_i) = scale * u(relation(x_i))` for all of :math:`x_i` on marked entities.
@@ -130,7 +184,7 @@ class MultiPointConstraint():
     def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpaceBase,
                                                indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
-                                               bcs: List[_fem.DirichletBC], scale: _PETSc.ScalarType = 1):
+                                               bcs: List[_fem.DirichletBC], scale: _float_classes = 1):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies
         :math:`indicator(x_i)==True`, i.e.
@@ -303,9 +357,9 @@ class MultiPointConstraint():
         return self._cpp_object.slaves
 
     @property
-    def masters(self):
+    def masters(self) -> _cpp.graph.AdjacencyList_int32:
         """
-        Returns a `dolfinx.cpp.graph.AdjacencyList_int32` whose ith node corresponds to
+        Returns an adjacency-list whose ith node corresponds to
         a degree of freedom (local to process), and links the corresponding master dofs (local to process).
 
         Examples:
@@ -319,7 +373,7 @@ class MultiPointConstraint():
         self._not_finalized()
         return self._cpp_object.masters
 
-    def coefficients(self):
+    def coefficients(self) -> npt.NDArray[_float_classes]:
         """
         Returns a vector containing the coefficients for the constraint, and the corresponding offsets
         for the ith degree of freedom.
