@@ -1,10 +1,9 @@
-# Copyright (C) 2020-2021 Jørgen S. Dokken
+# Copyright (C) 2020-2023 Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
 
-from typing import Union
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import dolfinx.cpp as _cpp
@@ -13,7 +12,7 @@ import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
 from petsc4py import PETSc as _PETSc
-from dataclasses import dataclass
+
 import dolfinx_mpc.cpp
 
 from .dictcondition import create_dictionary_constraint
@@ -39,7 +38,7 @@ class MPCData():
             self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_double(slaves, masters, coeffs, owners, offsets)
         elif coeffs.dtype.type == numpy.complex64:
             self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_float(slaves, masters, coeffs, owners, offsets)
-        elif coeffs.dtype.type == numpy.complex64:
+        elif coeffs.dtype.type == numpy.complex128:
             self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_double(slaves, masters, coeffs, owners, offsets)
         else:
             raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
@@ -141,7 +140,7 @@ class MultiPointConstraint():
                 self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
                 self._owners, self._offsets)
 
-        elif self._dtype == numpy.complex64:
+        elif self._dtype == numpy.complex128:
             self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double(
                 self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
                 self._owners, self._offsets)
