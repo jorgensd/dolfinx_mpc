@@ -130,25 +130,25 @@ class MultiPointConstraint():
         self._already_finalized()
         self._coeffs.astype(numpy.dtype(self._dtype))
         # Initialize C++ object and create slave->cell maps
-        # if self._dtype == numpy.float32:
-        #     self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_float(
-        #         self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
-        #         self._owners, self._offsets)
-        # elif self._dtype == numpy.float64:
-        #     self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_double(
-        #         self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
-        #         self._owners, self._offsets)
-        # elif self._dtype == numpy.complex64:
-        #     self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float(
-        #         self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
-        #         self._owners, self._offsets)
+        if self._dtype == numpy.float32:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_float(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
+        elif self._dtype == numpy.float64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_double(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
+        elif self._dtype == numpy.complex64:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
 
-        # elif self._dtype == numpy.complex128:
-        #     self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double(
-        #         self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
-        #         self._owners, self._offsets)
-        # else:
-        #     raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
+        elif self._dtype == numpy.complex128:
+            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double(
+                self.V._cpp_object, self._slaves, self._masters, self._coeffs.astype(self._dtype),
+                self._owners, self._offsets)
+        else:
+            raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
 
         # Replace function space
         self.V = _fem.FunctionSpaceBase(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
