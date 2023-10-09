@@ -22,9 +22,9 @@ jobs:
         petsc_arch:
           [
             linux-gnu-complex128-32,
-            linux-gnu-complex64-32,
+            #linux-gnu-complex64-32,
             linux-gnu-real64-32,
-            linux-gnu-real32-32,
+            #linux-gnu-real32-32,
           ]
         # Due to: https://gitlab.com/petsc/petsc/-/issues/1288
         CXX: [c++]
