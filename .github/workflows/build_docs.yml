@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container: ghcr.io/fenics/dolfinx/dev-env:nightly
+    container: ghcr.io/fenics/dev-env:v0.7.0-mpich
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./docs/_build/html
