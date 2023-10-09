@@ -8,19 +8,20 @@
 # between two cubes.
 
 import dolfinx.fem as fem
-import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import gmshio
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx_mpc
+import dolfinx_mpc.utils
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 theta = np.pi / 5
 
@@ -212,7 +213,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e3)
+    E = default_scalar_type(1.0e3)
     nu = 0
     mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -226,7 +227,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(fem.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * ufl.dx
+    rhs = ufl.inner(fem.Constant(mesh, default_scalar_type((0, 0, 0))), v) * ufl.dx
     bilinear_form = fem.form(a)
 
     linear_form = fem.form(rhs)

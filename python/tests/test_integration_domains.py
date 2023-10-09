@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import compute_midpoints, create_unit_square, meshtags
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
@@ -44,8 +45,8 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     x = ufl.SpatialCoordinate(mesh)
-    c1 = fem.Constant(mesh, PETSc.ScalarType(2))
-    c2 = fem.Constant(mesh, PETSc.ScalarType(10))
+    c1 = fem.Constant(mesh, default_scalar_type(2))
+    c2 = fem.Constant(mesh, default_scalar_type(10))
 
     dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
     a = c1 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(1) +\
@@ -53,7 +54,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
         + 0.01 * ufl.inner(u, v) * dx(1)
 
     rhs = ufl.inner(x[1], v) * dx(1) + \
-        ufl.inner(fem.Constant(mesh, PETSc.ScalarType(1)), v) * dx(2)
+        ufl.inner(fem.Constant(mesh, default_scalar_type(1)), v) * dx(2)
     bilinear_form = fem.form(a)
     linear_form = fem.form(rhs)
 

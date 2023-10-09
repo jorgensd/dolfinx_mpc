@@ -10,19 +10,18 @@
 
 from pathlib import Path
 
+import basix.ufl
 import gmsh
 import numpy as np
-import basix.ufl
 import scipy.sparse.linalg
-from dolfinx import fem, io
+from dolfinx import default_scalar_type, fem, io
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import gmshio
 from mpi4py import MPI
 from numpy.typing import NDArray
 from petsc4py import PETSc
-from ufl import (FacetNormal, Identity, Measure, TestFunctions,
-                 TrialFunctions, div, dot, dx, grad, inner,
-                 outer, sym)
+from ufl import (FacetNormal, Identity, Measure, TestFunctions, TrialFunctions,
+                 div, dot, dx, grad, inner, outer, sym)
 from ufl.core.expr import Expr
 
 import dolfinx_mpc.utils
@@ -162,7 +161,7 @@ def T(u: Expr, p: Expr, mu: Expr):
 # --------------------------Variational problem---------------------------
 # Traditional terms
 mu = 1
-f = fem.Constant(mesh, PETSc.ScalarType((0, 0)))
+f = fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = TrialFunctions(W)
 (v, q) = TestFunctions(W)
 a = (2 * mu * inner(sym_grad(u), sym_grad(v))
@@ -172,7 +171,7 @@ L = inner(f, v) * dx
 
 # No prescribed shear stress
 n = FacetNormal(mesh)
-g_tau = tangential_proj(fem.Constant(mesh, PETSc.ScalarType(((0, 0), (0, 0)))) * n, n)
+g_tau = tangential_proj(fem.Constant(mesh, default_scalar_type(((0, 0), (0, 0)))) * n, n)
 ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
 # Terms due to slip condition
@@ -213,7 +212,7 @@ with Timer("~Stokes: Verification of problem by global matrix reduction"):
     L_org = fem.petsc.assemble_vector(linear_form)
 
     fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     fem.petsc.set_bc(L_org, bcs)
     root = 0
     dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem.A, mpc, root=root)

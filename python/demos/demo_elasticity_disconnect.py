@@ -12,12 +12,11 @@ from pathlib import Path
 import basix.ufl
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, Function,
-                         functionspace, dirichletbc,
+from dolfinx import default_scalar_type
+from dolfinx.fem import (Constant, Function, dirichletbc, functionspace,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, as_vector, grad, inner, sym, tr)
 
@@ -146,16 +145,16 @@ v = TestFunction(V)
 dx = Measure("dx", domain=mesh, subdomain_data=ct)
 a = inner(sigma(u), grad(v)) * dx
 x = SpatialCoordinate(mesh)
-rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
-rhs += inner(Constant(mesh, PETSc.ScalarType((0.01, 0.02, 0))), v) * dx(outer_tag)
-rhs += inner(as_vector(PETSc.ScalarType((0, 0, -9.81e-2))), v) * dx(inner_tag)
+rhs = inner(Constant(mesh, default_scalar_type((0, 0, 0))), v) * dx
+rhs += inner(Constant(mesh, default_scalar_type((0.01, 0.02, 0))), v) * dx(outer_tag)
+rhs += inner(as_vector(default_scalar_type((0, 0, -9.81e-2))), v) * dx(inner_tag)
 
 
 # Create dirichletbc
 owning_processor, bc_dofs = determine_closest_block(V, -np.array([-r2, 0, 0]))
 bc_dofs = [] if bc_dofs is None else bc_dofs
 
-u_fixed = np.array([0, 0, 0], dtype=PETSc.ScalarType)
+u_fixed = np.array([0, 0, 0], dtype=default_scalar_type)
 bc_fixed = dirichletbc(u_fixed, np.asarray(bc_dofs, dtype=np.int32), V)
 bcs = [bc_fixed]
 

@@ -25,7 +25,8 @@ from .numba_setup import initialize_petsc
 ffi, _ = initialize_petsc()
 
 
-def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[_PETSc.Vec] = None) -> _PETSc.Vec:
+def assemble_vector(form: _forms,
+                    constraint: MultiPointConstraint, b: Optional[_PETSc.Vec] = None) -> _PETSc.Vec:  # type: ignore
     """
     Assemble a compiled DOLFINx form into vector b.
 
@@ -88,7 +89,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
     subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
 
-    is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)
+    is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)  # type: ignore
     nptype = "complex128" if is_complex else "float64"
     ufcx_form = form.ufcx_form
     if num_cell_integrals > 0:
@@ -134,17 +135,17 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
 
 
 @numba.njit
-def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
+def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                    kernel: cffi.FFI, active_cells: npt.NDArray[numpy.int32],
                    mesh: Tuple[npt.NDArray[numpy.int32],
                                npt.NDArray[numpy.float64]],
-                   coeffs: npt.NDArray[_PETSc.ScalarType],
-                   constants: npt.NDArray[_PETSc.ScalarType],
+                   coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
+                   constants: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                    permutation_info: npt.NDArray[numpy.uint32],
                    dofmap: npt.NDArray[numpy.int32],
                    block_size: int,
                    num_dofs_per_element: int,
-                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],  # type: ignore
                               npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
                               npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]]):
     """Assemble additional MPC contributions for cell integrals"""
@@ -159,7 +160,7 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
 
     # NOTE: All cells are assumed to be of the same type
     geometry = numpy.zeros((x_dofmap.shape[1], 3))
-    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)
+    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)  # type: ignore
 
     for cell_index in active_cells:
 
@@ -184,18 +185,18 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],
 
 
 @numba.njit
-def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
+def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                                    kernel: cffi.FFI,
                                    facet_info: npt.NDArray[numpy.int32],
                                    mesh: Tuple[npt.NDArray[numpy.int32],
                                                npt.NDArray[numpy.float64]],
-                                   coeffs: npt.NDArray[_PETSc.ScalarType],
-                                   constants: npt.NDArray[_PETSc.ScalarType],
+                                   coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
+                                   constants: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                                    permutation_info: npt.NDArray[numpy.uint32],
                                    dofmap: npt.NDArray[numpy.int32],
                                    block_size: int,
                                    num_dofs_per_element: int,
-                                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+                                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],  # type: ignore
                                               npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
                                               npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]],
                                    num_facets_per_cell: int):
@@ -211,7 +212,7 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
     x_dofmap, x = mesh
 
     geometry = numpy.zeros((x_dofmap.shape[1], 3))
-    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)
+    b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)  # type: ignore
     for i in range(facet_info.shape[0]):
         # Extract cell index (local to process) and facet index (local to cell) for kernel
         cell_index, local_facet = facet_info[i]
@@ -240,10 +241,10 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],
 
 
 @numba.njit(cache=True)
-def modify_mpc_contributions(b: npt.NDArray[_PETSc.ScalarType], cell_index: int,
-                             b_local: npt.NDArray[_PETSc.ScalarType],
-                             b_copy: npt.NDArray[_PETSc.ScalarType],
-                             mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+def modify_mpc_contributions(b: npt.NDArray[_PETSc.ScalarType], cell_index: int,  # type: ignore
+                             b_local: npt.NDArray[_PETSc.ScalarType],  # type: ignore
+                             b_copy: npt.NDArray[_PETSc.ScalarType],  # type: ignore
+                             mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],  # type: ignore
                                         npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
                                         npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]],
                              dofmap: npt.NDArray[numpy.int32],

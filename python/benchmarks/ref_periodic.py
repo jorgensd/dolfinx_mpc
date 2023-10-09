@@ -24,6 +24,7 @@ from typing import Optional
 
 import h5py
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Function, functionspace, dirichletbc, form,
                          locate_dofs_geometrical)
@@ -69,7 +70,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = locate_dofs_geometrical(V, dirichletboundary)
-    bc = dirichletbc(PETSc.ScalarType(0), geometrical_dofs, V)
+    bc = dirichletbc(default_scalar_type(0), geometrical_dofs, V)
     bcs = [bc]
 
     # Define variational problem
@@ -90,15 +91,15 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     A_org.assemble()
     L_org = assemble_vector(linear_form)
     apply_lifting(L_org, [bilinear_form], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(L_org, bcs)
 
     # Create PETSc nullspace
-    nullspace = PETSc.NullSpace().create(constant=True)
-    PETSc.Mat.setNearNullSpace(A_org, nullspace)
+    nullspace = PETSc.NullSpace().create(constant=True)  # type: ignore
+    PETSc.Mat.setNearNullSpace(A_org, nullspace)  # type: ignore
 
     # Set PETSc options
-    opts = PETSc.Options()
+    opts = PETSc.Options()  # type: ignore
     if boomeramg:
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
@@ -121,7 +122,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     # opts["ksp_view"] = None # List progress of solver
 
     # Initialize PETSc solver, set options and operator
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)  # type: ignore
     solver.setFromOptions()
     solver.setOperators(A_org)
 
@@ -131,8 +132,8 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     with Timer("Solve"):
         solver.solve(L_org, u_.vector)
     end = perf_counter()
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,  # type: ignore
+                          mode=PETSc.ScatterMode.FORWARD)  # type: ignore
     if kspview:
         solver.view()
 

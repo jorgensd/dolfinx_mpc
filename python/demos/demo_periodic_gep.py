@@ -103,8 +103,9 @@ def EPS_print_results(EPS: SLEPc.EPS):
                 print0(f" {k.real:2.2e} {pad} {error:1.1e}")
 
 
-def EPS_get_spectrum(EPS: SLEPc.EPS,
-                     mpc: MultiPointConstraint) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:
+def EPS_get_spectrum(
+        EPS: SLEPc.EPS,
+        mpc: MultiPointConstraint) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:  # type: ignore
     """ Retrieve eigenvalues and eigenfunctions from SLEPc EPS object.
         Parameters
         ----------
@@ -137,7 +138,7 @@ def EPS_get_spectrum(EPS: SLEPc.EPS,
     return (eigval, eigvec_r, eigvec_i)
 
 
-def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
+def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,  # type: ignore  #type: ignore
                           problem_type: SLEPc.EPS.ProblemType = SLEPc.EPS.ProblemType.GNHEP,
                           solver: SLEPc.EPS.Type = SLEPc.EPS.Type.KRYLOVSCHUR,
                           nev: int = 10, tol: float = 1e-7, max_it: int = 10,

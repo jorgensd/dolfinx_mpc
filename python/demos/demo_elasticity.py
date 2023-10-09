@@ -8,6 +8,7 @@ from pathlib import Path
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
@@ -31,7 +32,7 @@ def demo_elasticity():
         return np.isclose(x[0], np.finfo(float).eps)
     facets = locate_entities_boundary(mesh, 1, boundaries)
     topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-    bc = fem.dirichletbc(np.array([0, 0], dtype=PETSc.ScalarType), topological_dofs, V)
+    bc = fem.dirichletbc(np.array([0, 0], dtype=default_scalar_type), topological_dofs, V)
     bcs = [bc]
 
     # Define variational problem
@@ -39,7 +40,7 @@ def demo_elasticity():
     v = TestFunction(V)
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e4)
+    E = default_scalar_type(1.0e4)
     nu = 0.0
     mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))

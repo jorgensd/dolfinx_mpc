@@ -19,8 +19,8 @@ def assemble_matrix(form: _fem.Form,
                     constraint: Union[MultiPointConstraint,
                                       Sequence[MultiPointConstraint]],
                     bcs: Optional[Sequence[_fem.DirichletBC]] = None,
-                    diagval: _PETSc.ScalarType = 1,
-                    A: Optional[_PETSc.Mat] = None) -> _PETSc.Mat:
+                    diagval: _PETSc.ScalarType = 1,  # type: ignore
+                    A: Optional[_PETSc.Mat] = None) -> _PETSc.Mat:  # type: ignore
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
     and Dirichlet boundary conditions.
@@ -33,7 +33,7 @@ def assemble_matrix(form: _fem.Form,
         A: PETSc matrix to assemble into
 
     Returns:
-        _PETSc.Mat: The matrix with the assembled bi-linear form
+        _PETSc.Mat: The matrix with the assembled bi-linear form  #type: ignore
     """
     bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
     if not isinstance(constraint, Sequence):
@@ -52,8 +52,8 @@ def assemble_matrix(form: _fem.Form,
 
     # Add one on diagonal for Dirichlet boundary conditions
     if form.function_spaces[0] is form.function_spaces[1]:
-        A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)
-        A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)
+        A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
+        A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0], bcs, diagval)
 
     A.assemble()
@@ -107,17 +107,17 @@ def create_matrix_nest(
             A_[i][j] = cpp.mpc.create_matrix(
                 a[i][j]._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object)
 
-    A = _PETSc.Mat().createNest(
+    A = _PETSc.Mat().createNest(  # type: ignore
         A_, comm=constraints[0].function_space.mesh.comm)
     return A
 
 
 def assemble_matrix_nest(
-        A: _PETSc.Mat,
+        A: _PETSc.Mat,  # type: ignore
         a: Sequence[Sequence[_fem.Form]],
         constraints: Sequence[MultiPointConstraint],
         bcs: Sequence[_fem.DirichletBC] = [],
-        diagval: _PETSc.ScalarType = 1):
+        diagval: _PETSc.ScalarType = 1):  # type: ignore
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
     "nest" with corresponding multi point constraints and Dirichlet boundary

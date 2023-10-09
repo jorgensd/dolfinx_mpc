@@ -29,10 +29,10 @@ def initialize_petsc() -> typing.Tuple[cffi.FFI, typing.Any]:
     petsc_arch = petsc4py.lib.getPathArchPETSc()[1]
 
     # Get PETSc int and scalar types
-    cmplx = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
+    cmplx = True if np.dtype(PETSc.ScalarType).kind == 'c' else False  # type: ignore
 
-    scalar_size = np.dtype(PETSc.ScalarType).itemsize
-    index_size = np.dtype(PETSc.IntType).itemsize
+    scalar_size = np.dtype(PETSc.ScalarType).itemsize  # type: ignore
+    index_size = np.dtype(PETSc.IntType).itemsize  # type: ignore
     if index_size == 8:
         c_int_t = "int64_t"
         ctypes_index = ctypes.c_int64  # type: ignore

@@ -5,18 +5,19 @@
 # SPDX-License-Identifier:    MIT
 
 
-import dolfinx_mpc
-import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import fem
+from dolfinx import default_scalar_type, fem
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import create_unit_square
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
+
+import dolfinx_mpc
+import dolfinx_mpc.utils
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -31,8 +32,8 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    d = fem.Constant(mesh, PETSc.ScalarType(1.5))
-    c = fem.Constant(mesh, PETSc.ScalarType(2))
+    d = fem.Constant(mesh, default_scalar_type(1.5))
+    c = fem.Constant(mesh, default_scalar_type(2))
     x = ufl.SpatialCoordinate(mesh)
     f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     g = fem.Function(V)
@@ -112,8 +113,8 @@ def test_linearproblem(master_point):
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    d = fem.Constant(mesh, PETSc.ScalarType(1.5))
-    c = fem.Constant(mesh, PETSc.ScalarType(2))
+    d = fem.Constant(mesh, default_scalar_type(1.5))
+    c = fem.Constant(mesh, default_scalar_type(2))
     x = ufl.SpatialCoordinate(mesh)
     f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     g = fem.Function(V)

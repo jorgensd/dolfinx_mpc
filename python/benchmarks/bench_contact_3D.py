@@ -12,9 +12,10 @@ from pathlib import Path
 
 import basix.ufl
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
-from dolfinx.fem import (Constant, Function, functionspace, dirichletbc, form,
+from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
                          locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, compute_midpoints, create_mesh,
@@ -214,7 +215,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
         return values
     u_top = Function(V)
     u_top.interpolate(top_v)
-    u_top.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
+    u_top.x.scatter_forward()
 
     top_dofs = locate_dofs_topological(V, fdim, mt.find(3))
     bc_top = dirichletbc(u_top, top_dofs)
@@ -222,7 +223,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e3)
+    E = default_scalar_type(1.0e3)
     nu = 0
     mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -234,7 +235,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     u = TrialFunction(V)
     v = TestFunction(V)
     a = inner(sigma(u), grad(v)) * dx
-    rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
+    rhs = inner(Constant(mesh, default_scalar_type((0, 0, 0))), v) * dx
 
     log_info("Create constraints")
 
@@ -262,12 +263,12 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     with Timer(f"{num_dofs}: Assemble-vector (C++)"):
         b = assemble_vector(linear_form, mpc)
     apply_lifting(b, [bilinear_form], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(b, bcs)
     list_timings(MPI.COMM_WORLD, [TimingType.wall])
 
     # Solve Linear problem
-    opts = PETSc.Options()
+    opts = PETSc.Options()  # type: ignore
     # opts["ksp_rtol"] = 1.0e-8
     opts["pc_type"] = "gamg"
     # opts["pc_gamg_type"] = "agg"
@@ -285,7 +286,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     # Create functionspace and build near nullspace
 
     A.setNearNullSpace(null_space)
-    solver = PETSc.KSP().create(comm)
+    solver = PETSc.KSP().create(comm)  # type: ignore
     solver.setOperators(A)
     solver.setFromOptions()
     uh = Function(mpc.function_space)

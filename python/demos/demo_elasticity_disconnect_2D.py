@@ -10,13 +10,13 @@ from pathlib import Path
 
 import gmsh
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.fem import (Constant, Function, FunctionSpaceBase, dirichletbc,
                          functionspace, locate_dofs_geometrical,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
 from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, grad, inner, sym, tr)
 
@@ -97,13 +97,13 @@ v = TestFunction(V)
 dx = Measure("dx", domain=mesh, subdomain_data=ct)
 a = inner(sigma(u), grad(v)) * dx
 x = SpatialCoordinate(mesh)
-rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx
+rhs = inner(Constant(mesh, default_scalar_type((0, 0))), v) * dx
 
 # Set boundary conditions
-u_push = np.array([0.1, 0], dtype=PETSc.ScalarType)
+u_push = np.array([0.1, 0], dtype=default_scalar_type)
 dofs = locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
 bc_push = dirichletbc(u_push, dofs, V)
-u_fix = np.array([0, 0], dtype=PETSc.ScalarType)
+u_fix = np.array([0, 0], dtype=default_scalar_type)
 bc_fix = dirichletbc(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 2.1)), V)
 bcs = [bc_push, bc_fix]
 

@@ -66,7 +66,7 @@ def gather_constants(constraint, root=0):
     g_consts = MPI.COMM_WORLD.gather(constants[:l_range[1] - l_range[0]], root=root)
     if MPI.COMM_WORLD.rank == root:
         block_size = constraint.function_space().dofmap.index_map_bs
-        global_consts = np.zeros(imap.size_global * block_size, dtype=PETSc.ScalarType)
+        global_consts = np.zeros(imap.size_global * block_size, dtype=constraint.coefficients()[0].dtype)
         for (r, vals) in zip(ranges, g_consts):
             global_consts[r[0]:r[1]] = vals
         return global_consts
@@ -144,7 +144,7 @@ def gather_transformation_matrix(constraint, root=0):
             cols.append(dof - sum(dof > all_slaves))
 
     # Gather K to root
-    K_vals = MPI.COMM_WORLD.gather(np.asarray(K_val, dtype=PETSc.ScalarType), root=root)
+    K_vals = MPI.COMM_WORLD.gather(np.asarray(K_val, dtype=coeffs.dtype), root=root)
     rows_g = MPI.COMM_WORLD.gather(np.asarray(rows, dtype=np.int64), root=root)
     cols_g = MPI.COMM_WORLD.gather(np.asarray(cols, dtype=np.int64), root=root)
 
@@ -153,20 +153,21 @@ def gather_transformation_matrix(constraint, root=0):
         return K_sparse
 
 
-def petsc_to_local_CSR(A: PETSc.Mat, mpc: dolfinx_mpc.MultiPointConstraint):
+def petsc_to_local_CSR(A: PETSc.Mat, mpc: dolfinx_mpc.MultiPointConstraint):  # type: ignore
     """
     Convert a PETSc matrix to a local CSR matrix (scipy) including ghost entries
     """
-    global_indices = np.asarray(mpc.function_space.dofmap.index_map.global_indices(), dtype=PETSc.IntType)
+    global_indices = np.asarray(mpc.function_space.dofmap.index_map.global_indices(),
+                                dtype=PETSc.IntType)  # type: ignore
     sort_index = np.argsort(global_indices)
-    is_A = PETSc.IS().createGeneral(global_indices[sort_index])
+    is_A = PETSc.IS().createGeneral(global_indices[sort_index])  # type: ignore
     A_loc = A.createSubMatrices(is_A)[0]
     ai, aj, av = A_loc.getValuesCSR()
     A_csr = scipy.sparse.csr_matrix((av, aj, ai))
     return A_csr[global_indices[:, None], global_indices]
 
 
-def gather_PETScMatrix(A: PETSc.Mat, root=0) -> scipy.sparse.csr_matrix:
+def gather_PETScMatrix(A: PETSc.Mat, root=0) -> scipy.sparse.csr_matrix:  # type: ignore
     """
     Given a distributed PETSc matrix, gather in on process 'root' in
     a scipy CSR matrix
@@ -184,7 +185,7 @@ def gather_PETScMatrix(A: PETSc.Mat, root=0) -> scipy.sparse.csr_matrix:
             (np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())  # type: ignore
 
 
-def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:
+def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:  # type: ignore
     """
     Gather a PETScVector from different processors on
     process 'root' as an numpy array
@@ -204,7 +205,7 @@ def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-
     assert diff.max() < atol
 
 
-def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
+def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,  # type: ignore
                     mpc: dolfinx_mpc.MultiPointConstraint, root: int = 0):
     """
     Compare an unmodified matrix for the problem with the one assembled with a
@@ -238,7 +239,8 @@ def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,
     timer.stop()
 
 
-def compare_mpc_rhs(b_org: PETSc.Vec, b: PETSc.Vec, constraint: dolfinx_mpc.MultiPointConstraint, root: int = 0):
+def compare_mpc_rhs(b_org: PETSc.Vec, b: PETSc.Vec,  # type: ignore
+                    constraint: dolfinx_mpc.MultiPointConstraint, root: int = 0):
     """
     Compare an unconstrained RHS with an MPC rhs.
     """

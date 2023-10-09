@@ -22,13 +22,13 @@ from typing import Dict, Union
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import VTXWriter
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
 from mpi4py import MPI
 from numpy.typing import NDArray
-from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)
 
@@ -36,7 +36,7 @@ import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem
 
 # Get PETSc int and scalar types
-complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
+complex_mode = True if np.dtype(default_scalar_type).kind == 'c' else False
 
 
 def demo_periodic3D(celltype: CellType):
@@ -57,7 +57,7 @@ def demo_periodic3D(celltype: CellType):
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
     # Create Dirichlet boundary condition
-    zero = PETSc.ScalarType([0, 0, 0])
+    zero = default_scalar_type([0, 0, 0])
     geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
     bc = fem.dirichletbc(zero, geometrical_dofs, V)
     bcs = [bc]
@@ -77,7 +77,7 @@ def demo_periodic3D(celltype: CellType):
         return out_x
     with Timer("~~Periodic: Compute mpc condition"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint_topological(V.sub(0), mt, 2, periodic_relation, bcs, PETSc.ScalarType(1))
+        mpc.create_periodic_constraint_topological(V.sub(0), mt, 2, periodic_relation, bcs, default_scalar_type(1))
         mpc.finalize()
     # Define variational problem
     u = TrialFunction(V)

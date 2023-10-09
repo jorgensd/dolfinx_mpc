@@ -19,8 +19,8 @@ import dolfinx_mpc.cpp
 from .multipointconstraint import MultiPointConstraint
 
 
-def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.DirichletBC]],
-                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: float = 1.0):
+def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.DirichletBC]],  # type: ignore
+                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: float = 1.0):  # type: ignore
     """
     Apply lifting to vector b, i.e.
     :math:`b = b - scale \\cdot K^T (A_j (g_j - x0_j))`
@@ -46,7 +46,7 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.Diri
 
 
 def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
-                    b: Optional[_PETSc.Vec] = None) -> _PETSc.Vec:
+                    b: Optional[_PETSc.Vec] = None) -> _PETSc.Vec:  # type: ignore
     """
     Assemble a linear form into vector `b` with corresponding multi point constraint
 
@@ -73,7 +73,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
 
 def create_vector_nest(
         L: Sequence[_fem.Form],
-        constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:
+        constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
     """
     Create a PETSc vector of type "nest" appropriate for the provided multi
     point constraints
@@ -83,7 +83,7 @@ def create_vector_nest(
         constraints: An ordered list of multi point constraints
 
     Returns:
-        PETSc.Vec: A PETSc vector of type "nest"
+        PETSc.Vec: A PETSc vector of type "nest"  #type: ignore
     """
     assert len(constraints) == len(L)
 
@@ -94,7 +94,7 @@ def create_vector_nest(
 
 
 def assemble_vector_nest(
-        b: _PETSc.Vec,
+        b: _PETSc.Vec,  # type: ignore
         L: Sequence[_fem.Form],
         constraints: Sequence[MultiPointConstraint]):
     """

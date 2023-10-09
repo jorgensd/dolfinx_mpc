@@ -8,7 +8,7 @@ import typing
 
 import dolfinx.fem as fem
 import numpy as np
-from petsc4py import PETSc
+from dolfinx import default_scalar_type
 
 
 def close_to(point: np.typing.NDArray[np.float64]):
@@ -209,5 +209,5 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
         coeffs.extend(ghosted_slaves[slave_index]["coeffs"])  # type: ignore
         offsets.append(len(masters))
     return (np.asarray(slaves, dtype=np.int32), np.asarray(masters, dtype=np.int64),
-            np.asarray(coeffs, dtype=PETSc.ScalarType), np.asarray(owners, dtype=np.int32),
+            np.asarray(coeffs, dtype=default_scalar_type), np.asarray(owners, dtype=np.int32),
             np.asarray(offsets, dtype=np.int32))

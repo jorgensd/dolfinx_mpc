@@ -427,7 +427,7 @@ class MultiPointConstraint():
         self._not_finalized()
         return self.V
 
-    def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:
+    def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:  # type: ignore
         """
         For a Function, impose the multi-point constraint by backsubstiution.
         This function is used after solving the reduced problem to obtain the values
@@ -445,7 +445,7 @@ class MultiPointConstraint():
         except AttributeError:
             with u.localForm() as vector_local:
                 self._cpp_object.backsubstitution(vector_local.array_w)
-            u.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
+            u.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)  # type: ignore
 
     def homogenize(self, u: _fem.Function) -> None:
         """

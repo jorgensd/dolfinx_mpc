@@ -6,17 +6,19 @@
 
 
 import dolfinx.fem as fem
-import dolfinx_mpc
-import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
+
+import dolfinx_mpc
+import dolfinx_mpc.utils
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -51,10 +53,10 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     mt = meshtags(mesh, fdim, top_facets[arg_sort], np.full(len(top_facets), 3, dtype=np.int32))
 
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    g = fem.Constant(mesh, PETSc.ScalarType((0, -9.81e2)))
+    g = fem.Constant(mesh, default_scalar_type((0, -9.81e2)))
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e4)
+    E = default_scalar_type(1.0e4)
     nu = 0.0
     mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -68,7 +70,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(fem.Constant(mesh, PETSc.ScalarType((0, 0))), v) * ufl.dx\
+    rhs = ufl.inner(fem.Constant(mesh, default_scalar_type((0, 0))), v) * ufl.dx\
         + ufl.inner(g, v) * ds
     bilinear_form = fem.form(a)
     linear_form = fem.form(rhs)
@@ -161,8 +163,8 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
     mt = meshtags(mesh, mesh.topology.dim - 1, np.array(indices[sort], dtype=np.intc),
                   np.array(values[sort], dtype=np.intc))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
-    g = fem.Constant(mesh, PETSc.ScalarType((2, 1)))
-    h = fem.Constant(mesh, PETSc.ScalarType((3, 2)))
+    g = fem.Constant(mesh, default_scalar_type((2, 1)))
+    h = fem.Constant(mesh, default_scalar_type((3, 2)))
     # Define variational problem
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)

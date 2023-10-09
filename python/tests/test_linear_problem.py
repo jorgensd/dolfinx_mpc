@@ -5,16 +5,17 @@
 # SPDX-License-Identifier:    MIT
 
 
-import dolfinx_mpc
-import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import fem
+from dolfinx import default_scalar_type, fem
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 from mpi4py import MPI
 from petsc4py import PETSc
+
+import dolfinx_mpc
+import dolfinx_mpc.utils
 
 
 @pytest.mark.parametrize("u_from_mpc", [True, False])
@@ -27,7 +28,7 @@ def test_pipeline(u_from_mpc):
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    d = fem.Constant(mesh, PETSc.ScalarType(0.01))
+    d = fem.Constant(mesh, default_scalar_type(0.01))
     x = ufl.SpatialCoordinate(mesh)
     f = ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx - d * ufl.inner(u, v) * ufl.dx

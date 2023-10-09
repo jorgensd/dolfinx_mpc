@@ -99,14 +99,14 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         b = assemble_vector(linear_form, mpc)
     # Apply boundary conditions
     apply_lifting(b, [bilinear_form], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(b, bcs)
 
     # Create functionspace and function for mpc vector
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    opts = PETSc.Options()
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)  # type: ignore
+    opts = PETSc.Options()  # type: ignore
     if boomeramg:
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
@@ -137,7 +137,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         uh = b.copy()
         uh.set(0)
         solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
         mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
 

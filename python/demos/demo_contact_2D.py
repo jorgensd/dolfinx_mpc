@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 import scipy.sparse.linalg
 from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, functionspace, dirichletbc, form,
                          locate_dofs_geometrical)
@@ -70,22 +71,21 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
 
     # Helper until meshtags can be read in from xdmf
     V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
-
     r_matrix = rotation_matrix([0, 0, 1], theta)
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
-    g = Constant(mesh, PETSc.ScalarType(g_vec[:2]))
+    g = Constant(mesh, default_scalar_type(g_vec[:2]))
 
     def bottom_corner(x):
         return np.isclose(x, [[0], [0], [0]]).all(axis=0)
 
     # Fix bottom corner
-    bc_value = np.array((0,) * mesh.geometry.dim, dtype=PETSc.ScalarType)
+    bc_value = np.array((0,) * mesh.geometry.dim, dtype=default_scalar_type)  # type: ignore
     bottom_dofs = locate_dofs_geometrical(V, bottom_corner)
     bc_bottom = dirichletbc(bc_value, bottom_dofs, V)
     bcs = [bc_bottom]
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e3)
+    E = default_scalar_type(1.0e3)  # type: ignore
     nu = 0
     mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -99,7 +99,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     v = TestFunction(V)
     a = inner(sigma(u), grad(v)) * dx
     ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx + inner(g, v) * ds
+    rhs = inner(Constant(mesh, default_scalar_type((0, 0))), v) * dx + inner(g, v) * ds  # type: ignore
 
     def left_corner(x):
         return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
@@ -166,7 +166,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         A_org.assemble()
         L_org = assemble_vector(form(rhs))
         apply_lifting(L_org, [form(a)], [bcs])
-        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
         set_bc(L_org, bcs)
 
     root = 0

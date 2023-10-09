@@ -18,6 +18,7 @@ from typing import Union
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
@@ -30,7 +31,7 @@ import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 
 # Get PETSc int and scalar types
-complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
+complex_mode = True if np.dtype(default_scalar_type).kind == 'c' else False
 
 # Create mesh and finite element
 NX = 50
@@ -46,7 +47,7 @@ def dirichletboundary(x):
 # Create Dirichlet boundary condition
 facets = locate_entities_boundary(mesh, 1, dirichletboundary)
 topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-zero = np.array([0, 0], dtype=PETSc.ScalarType)
+zero = np.array([0, 0], dtype=default_scalar_type)
 bc = fem.dirichletbc(zero, topological_dofs, V)
 bcs = [bc]
 
@@ -101,7 +102,7 @@ else:
                      }
 
 # Set PETSc options
-opts = PETSc.Options()
+opts = PETSc.Options()  # type: ignore
 opts.prefixPush(solver_prefix)
 if petsc_options is not None:
     for k, v in petsc_options.items():
@@ -134,7 +135,7 @@ A_org.assemble()
 linear_form = fem.form(rhs)
 L_org = fem.petsc.assemble_vector(linear_form)
 fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
-L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
 fem.petsc.set_bc(L_org, bcs)
 solver.setOperators(A_org)
 u_ = fem.Function(V)

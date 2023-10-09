@@ -73,7 +73,7 @@ def test_mixed_element(cell_type, ghost_mode):
     mpc_q = dolfinx_mpc.MultiPointConstraint(Q)
     mpc_q.finalize()
 
-    f = dolfinx.fem.Constant(mesh, PETSc.ScalarType((0, 0)))
+    f = dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type((0, 0)))
     (u, p) = ufl.TrialFunction(V), ufl.TrialFunction(Q)
     (v, q) = ufl.TestFunction(V), ufl.TestFunction(Q)
     a00 = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
@@ -83,7 +83,7 @@ def test_mixed_element(cell_type, ghost_mode):
 
     L0 = ufl.inner(f, v) * ufl.dx
     L1 = ufl.inner(
-        dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)), q) * ufl.dx
+        dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
 
     n = ufl.FacetNormal(mesh)
     g_tau = ufl.as_vector((0.0, 0.0))
@@ -141,7 +141,7 @@ def test_mixed_element(cell_type, ghost_mode):
     mpc_vq.create_slip_constraint(W.sub(0), (mt, 1), n_approx, bcs=bcs)
     mpc_vq.finalize()
 
-    f = dolfinx.fem.Constant(mesh, PETSc.ScalarType((0, 0)))
+    f = dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type((0, 0)))
     (u, p) = ufl.TrialFunctions(W)
     (v, q) = ufl.TestFunctions(W)
     a = (
@@ -151,7 +151,7 @@ def test_mixed_element(cell_type, ghost_mode):
     )
 
     L = ufl.inner(f, v) * ufl.dx + ufl.inner(
-        dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)), q) * ufl.dx
+        dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
 
     # No prescribed shear stress
     n = ufl.FacetNormal(mesh)

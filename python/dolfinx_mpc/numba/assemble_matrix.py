@@ -20,14 +20,14 @@ from petsc4py import PETSc as _PETSc
 from .helpers import _bcs, _forms, extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc, sink
 
-mode = _PETSc.InsertMode.ADD_VALUES
-insert = _PETSc.InsertMode.INSERT_VALUES
+mode = _PETSc.InsertMode.ADD_VALUES  # type: ignore
+insert = _PETSc.InsertMode.INSERT_VALUES  # type: ignore
 ffi, set_values_local = initialize_petsc()
 
 
 def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
-                    bcs: Optional[List[_bcs]] = None, diagval: _PETSc.ScalarType = 1.,
-                    A: Optional[_PETSc.Mat] = None):
+                    bcs: Optional[List[_bcs]] = None, diagval: _PETSc.ScalarType = 1.,  # type: ignore
+                    A: Optional[_PETSc.Mat] = None):  # type: ignore
     """
     Assembles a compiled DOLFINx form with given a multi point constraint and possible
     Dirichlet boundary conditions.
@@ -106,7 +106,7 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     if e0.needs_dof_transformations or e1.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
 
-    is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)
+    is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)  # type: ignore
     nptype = "complex128" if is_complex else "float64"
     ufcx_form = form.ufcx_form
     if num_cell_integrals > 0:
@@ -157,8 +157,8 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     # Add one on diagonal for diriclet bc and slave dofs
     # NOTE: In the future one could use a constant in the dirichletbc
     if form.function_spaces[0] is form.function_spaces[1]:
-        A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)
-        A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)
+        A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
+        A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0], bcs, diagval)
 
     A.assemble()
@@ -167,13 +167,13 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
 
 
 @numba.njit
-def add_diagonal(A: int, dofs: npt.NDArray[numpy.int32], diagval: _PETSc.ScalarType = 1):
+def add_diagonal(A: int, dofs: npt.NDArray[numpy.int32], diagval: _PETSc.ScalarType = 1):  # type: ignore
     """
     Insert value on diagonal of matrix for given dofs.
     """
     ffi_fb = ffi.from_buffer
     dof_list = numpy.zeros(1, dtype=numpy.int32)
-    dof_value = numpy.full(1, diagval, dtype=_PETSc.ScalarType)
+    dof_value = numpy.full(1, diagval, dtype=_PETSc.ScalarType)  # type: ignore
     for dof in dofs:
         dof_list[0] = dof
         ierr_loc = set_values_local(A, 1, ffi_fb(dof_list), 1, ffi_fb(dof_list), ffi_fb(dof_value), mode)
@@ -187,13 +187,13 @@ def assemble_slave_cells(A: int,
                          active_cells: npt.NDArray[numpy.int32],
                          mesh: Tuple[npt.NDArray[numpy.int32],
                                      npt.NDArray[numpy.float64]],
-                         coeffs: npt.NDArray[_PETSc.ScalarType],
-                         constants: npt.NDArray[_PETSc.ScalarType],
+                         coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
+                         constants: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                          permutation_info: npt.NDArray[numpy.uint32],
                          dofmap: npt.NDArray[numpy.int32],
                          block_size: int,
                          num_dofs_per_element: int,
-                         mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+                         mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],  # type: ignore
                                     npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
                                     npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]],
                          is_bc: npt.NDArray[numpy.bool_]):
@@ -213,7 +213,7 @@ def assemble_slave_cells(A: int,
     num_xdofs_per_cell = x_dofmap.shape[1]
     geometry = numpy.zeros((num_xdofs_per_cell, 3))
     A_local = numpy.zeros((block_size * num_dofs_per_element, block_size
-                           * num_dofs_per_element), dtype=_PETSc.ScalarType)
+                           * num_dofs_per_element), dtype=_PETSc.ScalarType)  # type: ignore
     masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
 
     # Loop over all cells
@@ -238,7 +238,7 @@ def assemble_slave_cells(A: int,
                     A_local[j * block_size + k, :] = 0
                     A_local[:, j * block_size + k] = 0
 
-        A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()
+        A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()  # type: ignore
 
         # Find local position of slaves
         slaves = c_to_s[c_to_s_off[cell]: c_to_s_off[cell + 1]]
@@ -263,9 +263,9 @@ def assemble_slave_cells(A: int,
 
 @numba.njit
 def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
-                    Ae: npt.NDArray[_PETSc.ScalarType],
+                    Ae: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                     local_blocks: npt.NDArray[numpy.int32],
-                    mpc_cell: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
+                    mpc_cell: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],  # type: ignore
                                     npt.NDArray[_PETSc.ScalarType], npt.NDArray[numpy.int32],
                                     npt.NDArray[numpy.int8]]):
     """
@@ -287,7 +287,7 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
                 num_flattened_masters += offsets[slave + 1] - offsets[slave]
     # Strip a copy of Ae of all columns and rows belonging to a slave
     Ae_original = numpy.copy(Ae)
-    Ae_stripped = numpy.zeros((block_size * num_dofs, block_size * num_dofs), dtype=_PETSc.ScalarType)
+    Ae_stripped = numpy.zeros((block_size * num_dofs, block_size * num_dofs), dtype=_PETSc.ScalarType)  # type: ignore
     for i in range(num_dofs):
         for b in range(block_size):
             is_slave0 = is_slave[local_blocks[i] * block_size + b]
@@ -299,7 +299,7 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
                                                                                      j * block_size + c]
     flattened_masters = numpy.zeros(num_flattened_masters, dtype=numpy.int32)
     flattened_slaves = numpy.zeros(num_flattened_masters, dtype=numpy.int32)
-    flattened_coeffs = numpy.zeros(num_flattened_masters, dtype=_PETSc.ScalarType)
+    flattened_coeffs = numpy.zeros(num_flattened_masters, dtype=_PETSc.ScalarType)  # type: ignore
     c = 0
     for i, slave in enumerate(slaves):
         local_masters = masters[offsets[slave]: offsets[slave + 1]]
@@ -312,9 +312,9 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
         c += num_masters
     m0 = numpy.zeros(1, dtype=numpy.int32)
     m1 = numpy.zeros(1, dtype=numpy.int32)
-    Am0m1 = numpy.zeros((1, 1), dtype=_PETSc.ScalarType)
-    Arow = numpy.zeros(block_size * num_dofs, dtype=_PETSc.ScalarType)
-    Acol = numpy.zeros(block_size * num_dofs, dtype=_PETSc.ScalarType)
+    Am0m1 = numpy.zeros((1, 1), dtype=_PETSc.ScalarType)  # type: ignore
+    Arow = numpy.zeros(block_size * num_dofs, dtype=_PETSc.ScalarType)  # type: ignore
+    Acol = numpy.zeros(block_size * num_dofs, dtype=_PETSc.ScalarType)  # type: ignore
     mpc_dofs = numpy.zeros(block_size * num_dofs, dtype=numpy.int32)
     ffi_fb = ffi.from_buffer
     for i in range(num_flattened_masters):
@@ -360,14 +360,14 @@ def modify_mpc_cell(A: int, num_dofs: int, block_size: int,
 def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
                                    mesh: Tuple[npt.NDArray[numpy.int32],
                                                npt.NDArray[numpy.float64]],
-                                   coeffs: npt.NDArray[_PETSc.ScalarType],
-                                   consts: npt.NDArray[_PETSc.ScalarType],
+                                   coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
+                                   consts: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                                    perm: npt.NDArray[numpy.uint32],
                                    dofmap: npt.NDArray[numpy.int32],
                                    block_size: int,
                                    num_dofs_per_element: int,
                                    facet_info: npt.NDArray[numpy.int32],
-                                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],
+                                   mpc: Tuple[npt.NDArray[numpy.int32], npt.NDArray[_PETSc.ScalarType],  # type: ignore
                                               npt.NDArray[numpy.int32], npt.NDArray[numpy.int32],
                                               npt.NDArray[numpy.int32], npt.NDArray[numpy.int32]],
                                    is_bc: npt.NDArray[numpy.bool_],
@@ -388,7 +388,7 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
 
     # Numpy data used in facet loop
     A_local = numpy.zeros((num_dofs_per_element * block_size,
-                           num_dofs_per_element * block_size), dtype=_PETSc.ScalarType)
+                           num_dofs_per_element * block_size), dtype=_PETSc.ScalarType)  # type: ignore
     local_dofs = numpy.zeros(block_size * num_dofs_per_element, dtype=numpy.int32)
 
     # Permutation info
@@ -420,7 +420,7 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
                     A_local[j * block_size + k, :] = 0
                     A_local[:, j * block_size + k] = 0
 
-        A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()
+        A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()  # type: ignore
         slaves = c_to_s[c_to_s_off[cell_index]: c_to_s_off[cell_index + 1]]
         mpc_cell = (slaves, masters, coefficients, offsets, is_slave)
         modify_mpc_cell(A, num_dofs_per_element, block_size, A_local, local_blocks, mpc_cell)

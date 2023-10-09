@@ -13,11 +13,13 @@ import dolfinx.geometry as _geometry
 import dolfinx.la as _la
 import dolfinx.log as _log
 import dolfinx.mesh as _mesh
-import dolfinx_mpc.cpp
 import numpy as np
 import ufl
+from dolfinx import default_scalar_type as _dt
 from mpi4py import MPI
 from petsc4py import PETSc
+
+import dolfinx_mpc.cpp
 
 __all__ = ["rotation_matrix", "facet_normal_approximation", "log_info", "rigid_motions_nullspace",
            "determine_closest_block", "create_normal_approximation", "create_point_to_point_constraint"]
@@ -111,8 +113,8 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
     _cpp.fem.petsc.assemble_matrix(A, bilinear_form._cpp_object,
                                    form_consts, form_coeffs, [bc_deac._cpp_object])
     if bilinear_form.function_spaces[0] is bilinear_form.function_spaces[1]:
-        A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)
-        A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)
+        A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
+        A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         _cpp.fem.petsc.insert_diagonal(A, bilinear_form.function_spaces[0], [bc_deac._cpp_object], 1.0)
     A.assemble()
     linear_form = _fem.form(L, jit_options=jit_options,
@@ -120,16 +122,16 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
     b = _fem.petsc.assemble_vector(linear_form)
 
     _fem.petsc.apply_lifting(b, [bilinear_form], [[bc_deac]])
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     _fem.petsc.set_bc(b, [bc_deac])
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(MPI.COMM_WORLD)  # type: ignore
     solver.setType("cg")
     solver.rtol = 1e-8
     solver.setOperators(A)
     solver.solve(b, nh.vector)
-    nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
     timer.stop()
     return nh
 
@@ -192,7 +194,7 @@ def rigid_motions_nullspace(V: _fem.FunctionSpaceBase):
 
     _la.orthonormalize(nullspace_basis)
     assert _la.is_orthonormal(nullspace_basis)
-    return PETSc.NullSpace().create(vectors=nullspace_basis)
+    return PETSc.NullSpace().create(vectors=nullspace_basis)  # type: ignore
 
 
 def determine_closest_block(V, point):
@@ -330,7 +332,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         if vector is None:
             masters = masters_as_glob
             owners = np.full(len(masters), master_proc, dtype=np.int32)
-            coeffs = np.ones(len(masters), dtype=PETSc.ScalarType)
+            coeffs = np.ones(len(masters), dtype=_dt)
             offsets = np.arange(0, len(masters) + 1, dtype=np.int32)
         else:
             for i in range(len(masters_as_glob)):
@@ -391,7 +393,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
             ghost_slaves[i] = local_size * block_size + idx
     slaves = np.asarray(np.append(slaves, ghost_slaves), dtype=np.int32)
     masters = np.asarray(np.append(masters, ghost_masters), dtype=np.int64)
-    coeffs = np.asarray(np.append(coeffs, ghost_coeffs), dtype=np.int32)
+    coeffs = np.asarray(np.append(coeffs, ghost_coeffs), dtype=_dt)
     owners = np.asarray(np.append(owners, ghost_owners), dtype=np.int32)
     offsets = np.asarray(np.append(offsets, ghost_offsets), dtype=np.int32)
     return slaves, masters, coeffs, owners, offsets
