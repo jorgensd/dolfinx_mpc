@@ -79,10 +79,9 @@ jobs:
           cd python
           python3 -m mypy . --exclude=build
 
-      - name: Install h5py (https://github.com/h5py/h5py/issues/2222)
+      - name: Install h5py
         run: |
-          python3 -m pip install mpi4py cython numpy
-          python3 -m pip install --no-cache-dir --no-binary=h5py h5py  --no-build-isolation
+          python3 -m pip install --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
         uses: ./.github/actions/install-dolfinx
