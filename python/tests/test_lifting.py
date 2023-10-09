@@ -29,7 +29,7 @@ def test_lifting(get_assemblers):  # noqa: F811
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 1, 1, CellType.quadrilateral)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)

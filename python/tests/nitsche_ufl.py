@@ -101,7 +101,7 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[dmesh.MeshTags, int, int],
     g_vec = [i for i in range(mesh.geometry.dim)]
     g_vec[mesh.geometry.dim - 1] = gap
 
-    V = _fem.VectorFunctionSpace(mesh, ("CG", 1))
+    V = _fem.functionspace(mesh, ("CG", 1))
     u = _fem.Function(V)
     v = ufl.TestFunction(V)
 

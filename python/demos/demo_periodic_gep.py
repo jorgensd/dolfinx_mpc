@@ -225,7 +225,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     # Create mesh and finite element
     N = 50
     mesh = create_unit_square(comm, N, N)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
     fdim = mesh.topology.dim - 1
 
     bcs = []

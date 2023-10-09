@@ -14,12 +14,18 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/test-env:nightly-mpich
+    container: ghcr.io/fenics/test-env:v0.7.0
 
     strategy:
       matrix:
         build_mode: [Release, Debug]
-        petsc_arch: [real, complex]
+        petsc_arch:
+          [
+            linux-gnu-complex-128-32,
+            linux-gnu-complex-64-32,
+            linux-gnu-real64-32,
+            linux-gnu-real32-32,
+          ]
         # Due to: https://gitlab.com/petsc/petsc/-/issues/1288
         CXX: [c++]
         #, clang++]
@@ -37,7 +43,7 @@ jobs:
       FFCX_BRANCH: "main"
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
-      PETSC_ARCH: "linux-gnu-${{ matrix.petsc_arch }}-32"
+      PETSC_ARCH: "${{ matrix.petsc_arch }}"
       OMPI_ALLOW_RUN_AS_ROOT: 1
       OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
       OMPI_MCA_rmaps_base_oversubscribe: 1
@@ -94,7 +100,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install python/[test]
+        run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install -e python/[test]
 
       - name: Run tests (serial)
         run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/

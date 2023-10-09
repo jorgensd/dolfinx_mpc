@@ -6,24 +6,25 @@
 
 import resource
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 
+import basix.ufl
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
-                         form, locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, functionspace, dirichletbc, form,
+                         locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
-from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
                  as_vector, ds, dx, grad, inner, sym, tr)
 
-from pathlib import Path
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 
 
 def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdmf: bool = False,
@@ -33,9 +34,9 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         N *= 2
     ct = CellType.tetrahedron if tetra else CellType.hexahedron
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
-    # Get number of unknowns on each edge
 
-    V = VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,))
+    V = functionspace(mesh, el)
 
     # Generate Dirichlet BC (Fixed)
     u_bc = Function(V)

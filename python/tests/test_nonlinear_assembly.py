@@ -110,7 +110,7 @@ def test_nonlinear_poisson(poly_order):
     for run_no, N in enumerate(N_vals):
         mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N)
 
-        V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", poly_order))
+        V = dolfinx.fem.functionspace(mesh, ("Lagrange", poly_order))
 
         def boundary(x):
             return np.ones_like(x[0], dtype=np.int8)
@@ -199,7 +199,7 @@ def test_homogenize(tensor_order, poly_order):
     cellname = mesh.ufl_cell().cellname()
     el = basix.ufl.element(basix.ElementFamily.P, cellname, poly_order, shape=shape)
 
-    V = dolfinx.fem.FunctionSpace(mesh, el)
+    V = dolfinx.fem.functionspace(mesh, el)
 
     def periodic_boundary(x):
         return np.isclose(x[0], 0.0)

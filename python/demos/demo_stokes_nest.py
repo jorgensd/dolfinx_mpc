@@ -114,8 +114,8 @@ cellname = mesh.ufl_cell().cellname()
 Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
 Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
 
-V = dolfinx.fem.FunctionSpace(mesh, Ve)
-Q = dolfinx.fem.FunctionSpace(mesh, Qe)
+V = dolfinx.fem.functionspace(mesh, Ve)
+Q = dolfinx.fem.functionspace(mesh, Qe)
 
 
 def inlet_velocity_expression(x):
@@ -279,7 +279,7 @@ with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh) as vtx:
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison
 with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix reduction"):
-    W = dolfinx.fem.FunctionSpace(mesh, ufl.MixedElement([Ve, Qe]))
+    W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
     V, V_to_W = W.sub(0).collapse()
     _, Q_to_W = W.sub(1).collapse()
 

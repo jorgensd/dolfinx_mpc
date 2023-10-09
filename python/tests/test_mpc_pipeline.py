@@ -26,7 +26,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
@@ -107,7 +107,7 @@ def test_linearproblem(master_point):
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)

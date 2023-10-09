@@ -8,25 +8,28 @@
 # between two cubes.
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 
+import basix.ufl
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
-                         form, locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, functionspace, dirichletbc, form,
+                         locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, compute_midpoints, create_mesh,
                           create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
-from dolfinx_mpc.utils import (create_normal_approximation, log_info,
-                               rigid_motions_nullspace, rotation_matrix)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Cell, Identity, Mesh, TestFunction, TrialFunction,
                  VectorElement, dx, grad, inner, sym, tr)
-from pathlib import Path
+
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import (create_normal_approximation, log_info,
+                               rigid_motions_nullspace, rotation_matrix)
+
 comm = MPI.COMM_WORLD
 
 
@@ -182,7 +185,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext:s}"
 
     # Create functionspaces
-    V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim, ))
+    V = functionspace(mesh, el)
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions

@@ -25,7 +25,7 @@ from typing import Optional
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Function, FunctionSpace, dirichletbc, form,
+from dolfinx.fem import (Function, functionspace, dirichletbc, form,
                          locate_dofs_geometrical)
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
@@ -57,7 +57,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
             N *= 2
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
 
-    V = FunctionSpace(mesh, ("CG", degree))
+    V = functionspace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
 

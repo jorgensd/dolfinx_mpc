@@ -20,7 +20,7 @@ import numpy as np
 import scipy.sparse.linalg
 from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, VectorFunctionSpace, dirichletbc, form,
+from dolfinx.fem import (Constant, functionspace, dirichletbc, form,
                          locate_dofs_geometrical)
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
@@ -69,7 +69,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
 
     # Helper until meshtags can be read in from xdmf
-    V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
     r_matrix = rotation_matrix([0, 0, 1], theta)
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])

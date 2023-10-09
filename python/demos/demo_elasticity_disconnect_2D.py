@@ -10,18 +10,19 @@ from pathlib import Path
 
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
+from dolfinx.fem import (Constant, Function, FunctionSpaceBase, dirichletbc,
                          functionspace, locate_dofs_geometrical,
-                         locate_dofs_topological, FunctionSpaceBase)
+                         locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
-from dolfinx_mpc import LinearProblem, MultiPointConstraint
-from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               rigid_motions_nullspace)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, grad, inner, sym, tr)
+
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
+from dolfinx_mpc.utils import (create_point_to_point_constraint,
+                               rigid_motions_nullspace)
 
 # Mesh parameters for creating a mesh consisting of two disjoint rectangles
 right_tag = 1
@@ -57,7 +58,7 @@ MPI.COMM_WORLD.barrier()
 
 with XDMFFile(mesh.comm, "test.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
-V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 tdim = mesh.topology.dim
 fdim = tdim - 1
 

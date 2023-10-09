@@ -12,6 +12,7 @@ from pathlib import Path
 
 import gmsh
 import numpy as np
+import basix.ufl
 import scipy.sparse.linalg
 from dolfinx import fem, io
 from dolfinx.common import Timer, TimingType, list_timings
@@ -19,8 +20,8 @@ from dolfinx.io import gmshio
 from mpi4py import MPI
 from numpy.typing import NDArray
 from petsc4py import PETSc
-from ufl import (FacetNormal, FiniteElement, Identity, Measure, TestFunctions,
-                 TrialFunctions, VectorElement, div, dot, dx, grad, inner,
+from ufl import (FacetNormal, Identity, Measure, TestFunctions,
+                 TrialFunctions, div, dot, dx, grad, inner,
                  outer, sym)
 from ufl.core.expr import Expr
 
@@ -110,10 +111,10 @@ mesh, mt = create_mesh_gmsh(res=0.1)
 
 fdim = mesh.topology.dim - 1
 # Create the function space
-P2 = VectorElement("Lagrange", mesh.ufl_cell(), 2)
-P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
-TH = P2 * P1
-W = fem.FunctionSpace(mesh, TH)
+P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, gdim=mesh.geometry.dim, shape=(mesh.geometry.dim, ))
+P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1)
+TH = basix.ufl.mixed_element([P2, P1])
+W = fem.functionspace(mesh, TH)
 V, V_to_W = W.sub(0).collapse()
 Q, _ = W.sub(1).collapse()
 

@@ -45,12 +45,12 @@ def demo_periodic3D(celltype: CellType):
         # Tet setup
         N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
-        V = fem.VectorFunctionSpace(mesh, ("CG", 1))
+        V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
     else:
         # Hex setup
         N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
-        V = fem.VectorFunctionSpace(mesh, ("CG", 2))
+        V = fem.functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim, )))
 
     def dirichletboundary(x: NDArray[np.float64]) -> NDArray[np.bool_]:
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),

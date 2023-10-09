@@ -8,7 +8,6 @@ import typing
 
 import dolfinx.fem as fem
 import numpy as np
-import numpy.typing
 from petsc4py import PETSc
 
 
@@ -24,7 +23,7 @@ def close_to(point: np.typing.NDArray[np.float64]):
 
 
 @typing.no_type_check
-def create_dictionary_constraint(V: fem.FunctionSpace, slave_master_dict:
+def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
                                  typing.Dict[bytes, typing.Dict[bytes, float]],
                                  subspace_slave: typing.Optional[int] = None,
                                  subspace_master: typing.Optional[int] = None):

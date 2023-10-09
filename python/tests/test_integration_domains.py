@@ -27,7 +27,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     N = 5
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 15, N)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
 
     def left_side(x):
         return x[0] < 0.5

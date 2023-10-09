@@ -28,7 +28,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 3, 5, celltype)
-    V = fem.FunctionSpace(mesh, ("Lagrange", degree))
+    V = fem.functionspace(mesh, ("Lagrange", degree))
 
     # Generate reference vector
     v = ufl.TestFunction(V)

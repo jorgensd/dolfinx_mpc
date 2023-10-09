@@ -12,8 +12,8 @@ from pathlib import Path
 import basix.ufl
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, Function, FunctionSpace,
-                         VectorFunctionSpace, dirichletbc,
+from dolfinx.fem import (Constant, Function,
+                         functionspace, dirichletbc,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from mpi4py import MPI
@@ -107,12 +107,12 @@ gmsh.clear()
 gmsh.finalize()
 MPI.COMM_WORLD.barrier()
 
-V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
 tdim = mesh.topology.dim
 fdim = tdim - 1
 
-DG0 = FunctionSpace(mesh, ("DG", 0))
+DG0 = functionspace(mesh, ("DG", 0))
 outer_dofs = locate_dofs_topological(DG0, tdim, ct.find(outer_tag))
 inner_dofs = locate_dofs_topological(DG0, tdim, ct.find(inner_tag))
 
@@ -197,8 +197,9 @@ if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 
 # Write solution to file
-V_out = FunctionSpace(mesh, basix.ufl.element("Lagrange", mesh.topology.cell_name(),
-                      mesh.geometry.cmaps[0].degree, mesh.geometry.cmaps[0].variant,
+V_out = functionspace(mesh, basix.ufl.element("Lagrange", mesh.topology.cell_name(),
+                      mesh.geometry.cmaps[0].degree,
+                      lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmaps[0].variant),
                       gdim=mesh.geometry.dim, shape=(V.dofmap.bs,)))
 u_out = Function(V_out)
 u_out.interpolate(u_h)

@@ -60,7 +60,6 @@ def initialize_petsc() -> typing.Tuple[cffi.FFI, typing.Any]:
         raise RuntimeError(
             "Cannot translate PETSc scalar type to a C type, complex: {} size: {}."
             .format(complex, scalar_size))
-
     # Load PETSc library via ctypes
     petsc_lib_name = ctypes.util.find_library("petsc")
     if petsc_lib_name is not None:

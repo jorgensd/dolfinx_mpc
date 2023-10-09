@@ -23,7 +23,7 @@ from dolfinx_mpc import LinearProblem, MultiPointConstraint
 def demo_elasticity():
     mesh = create_unit_square(MPI.COMM_WORLD, 10, 10)
 
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
 

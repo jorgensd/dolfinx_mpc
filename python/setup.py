@@ -16,7 +16,7 @@ if sys.version_info < (3, 8):
 
 VERSION = "0.7.0"
 
-REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>0.6.0.dev0"]
+REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>=0.7.0"]
 
 extras = {
     'docs': ['jupyter-book'],

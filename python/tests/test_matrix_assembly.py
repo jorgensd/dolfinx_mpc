@@ -28,7 +28,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 5, 3, celltype)
-    V = fem.FunctionSpace(mesh, ("Lagrange", degree))
+    V = fem.functionspace(mesh, ("Lagrange", degree))
 
     # Test against generated code and general assembler
     u = ufl.TrialFunction(V)
@@ -63,7 +63,7 @@ def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # 
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 1, 8, celltype)
-    V = fem.FunctionSpace(mesh, ("Lagrange", degree))
+    V = fem.functionspace(mesh, ("Lagrange", degree))
 
     # Build master slave map
     s_m_c = {np.array([1, 0], dtype=np.float64).tobytes():

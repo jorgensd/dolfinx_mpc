@@ -58,7 +58,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext}{mesh_ext}"
 
     # Create functionspaces
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
     # Define boundary conditions
 

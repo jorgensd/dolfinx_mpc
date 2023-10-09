@@ -22,7 +22,7 @@ def test_pipeline(u_from_mpc):
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 5, 5)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)

@@ -230,7 +230,7 @@ class MultiPointConstraint():
             .. highlight:: python
             .. code-block:: python
 
-                V = dolfinx.fem.VectorFunctionSpace(mesh, ("CG", 1))
+                V = dolfinx.fem.functionspace(mesh, ("CG", 1))
                 mpc = MultiPointConstraint(V)
                 n = dolfinx.fem.Function(V)
                 mpc.create_slip_constaint(V, (mt, i), n)

@@ -9,11 +9,12 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 from typing import Optional
 
+import basix.ufl
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
-                         form, locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, functionspace, dirichletbc, form,
+                         locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
@@ -36,7 +37,8 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         mesh = refine(mesh, redistribute=True)
 
     fdim = mesh.topology.dim - 1
-    V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    V = functionspace(mesh, el)
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = Function(V)

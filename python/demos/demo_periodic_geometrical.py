@@ -36,7 +36,7 @@ complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
 NX = 50
 NY = 100
 mesh = create_unit_square(MPI.COMM_WORLD, NX, NY)
-V = fem.VectorFunctionSpace(mesh, ("CG", 1))
+V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
 
 def dirichletboundary(x):
