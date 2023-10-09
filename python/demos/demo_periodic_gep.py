@@ -96,7 +96,7 @@ def EPS_print_results(EPS: SLEPc.EPS):
         for i in range(nconv):
             k = EPS.getEigenpair(i, vr, vi)
             error = EPS.computeError(i)
-            if k.imag != 0.0:
+            if not np.isclose(k.imag, 0.0):
                 print0(f" {k.real:2.2e} + {k.imag:2.2e}j {error:1.1e}")
             else:
                 pad = " " * 11
