@@ -85,7 +85,6 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     solver.setType(PETSc.KSP.Type.PREONLY)
     pc = solver.getPC()
     pc.setType(PETSc.PC.Type.LU)
-    pc.setFactorSolverType("superlu_dist")
     solver.setOperators(A)
 
     # Solve
