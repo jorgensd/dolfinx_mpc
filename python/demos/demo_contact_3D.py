@@ -108,13 +108,14 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     linear_form = fem.form(rhs)
 
     mpc = MultiPointConstraint(V)
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
     if noslip:
         with Timer("~~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=5e2 * np.finfo(default_scalar_type).resolution)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=tol)
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=5e2 * np.finfo(default_scalar_type).resolution)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=tol)
 
     with Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()

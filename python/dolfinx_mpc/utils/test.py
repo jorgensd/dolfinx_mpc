@@ -14,6 +14,7 @@ from petsc4py import PETSc
 import scipy.sparse
 import dolfinx_mpc
 import dolfinx.common
+from typing import Any
 
 
 @pytest.fixture
@@ -207,7 +208,7 @@ def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-
 
 def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,  # type: ignore
                     mpc: dolfinx_mpc.MultiPointConstraint, root: int = 0,
-                    atol: float = 1e3 * np.finfo(dolfinx.default_scalar_type).resolution):
+                    atol: np.floating[Any] = 1e3 * np.finfo(dolfinx.default_scalar_type).resolution):
     """
     Compare an unmodified matrix for the problem with the one assembled with a
     multi point constraint.

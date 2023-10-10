@@ -104,17 +104,17 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     a = inner(sigma(u), grad(v)) * dx
     ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
     rhs = inner(Constant(mesh, default_scalar_type((0, 0))), v) * dx + inner(g, v) * ds  # type: ignore
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
 
     def left_corner(x):
-        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0]),
-                          atol=5e2 * np.finfo(default_scalar_type).resolution).all(axis=1)
+        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0]), atol=tol).all(axis=1)
 
     # Create multi point constraint
     mpc = MultiPointConstraint(V)
 
     with Timer("~Contact: Create contact constraint"):
         nh = create_normal_approximation(V, mt, 4)
-        mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=5e2 * np.finfo(default_scalar_type).resolution)
+        mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=tol)
 
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
@@ -128,7 +128,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         mpc.create_slip_constraint(V, (mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
-    tol = 5e2 * np.finfo(default_scalar_type).resolution
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
     petsc_options = {"ksp_rtol": tol, "ksp_atol": tol, "pc_type": "gamg",
                      "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
                      "pc_gamg_threshold": 0.02, "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,

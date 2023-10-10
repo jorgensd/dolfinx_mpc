@@ -236,8 +236,8 @@ with Timer("~Stokes: Verification of problem by global matrix reduction"):
         d = scipy.sparse.linalg.spsolve(KTAK.astype(scipy_dtype), reduced_L.astype(scipy_dtype))
         # Back substitution to full solution vector
         uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
-        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=5e2
-                           * np.finfo(u_mpc.dtype).resolution)
+        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(5e2
+                           * np.finfo(u_mpc.dtype).resolution))
 
 # -------------------- List timings --------------------------
 list_timings(MPI.COMM_WORLD, [TimingType.wall])

@@ -193,7 +193,7 @@ def rigid_motions_nullspace(V: _fem.FunctionSpaceBase):
             basis[5][dofs[1]] = -x2
 
     _la.orthonormalize(nullspace_basis)
-    assert _la.is_orthonormal(nullspace_basis, 500 * np.finfo(_x.x.array.dtype).resolution)
+    assert _la.is_orthonormal(nullspace_basis, float(500 * np.finfo(_x.x.array.dtype).resolution))
     return PETSc.NullSpace().create(vectors=nullspace_basis)  # type: ignore
 
 

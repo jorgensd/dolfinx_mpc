@@ -94,11 +94,11 @@ def demo_periodic3D(celltype: CellType):
     rhs = inner(f, v) * dx
 
     petsc_options: Dict[str, Union[str, float, int]]
-    rtol = 5e2 * np.finfo(default_scalar_type).resolution
+    rtol = float(5e2 * np.finfo(default_scalar_type).resolution)
     if complex_mode or default_scalar_type == np.float32:
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
-        petsc_options = {"ksp_type": "cg", "ksp_rtol": rtol, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
+        petsc_options = {"ksp_type": "cg", "ksp_rtol": str(rtol), "pc_type": "hypre", "pc_hypre_type": "boomeramg",
                          "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
                          "pc_hypre_boomeramg_print_statistics": 1}
 
