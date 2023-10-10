@@ -106,7 +106,8 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     rhs = inner(Constant(mesh, default_scalar_type((0, 0))), v) * dx + inner(g, v) * ds  # type: ignore
 
     def left_corner(x):
-        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0]), atol=5e2 * np.finfo(default_scalar_type).resolution).all(axis=1)
+        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0]),
+                          atol=5e2 * np.finfo(default_scalar_type).resolution).all(axis=1)
 
     # Create multi point constraint
     mpc = MultiPointConstraint(V)
