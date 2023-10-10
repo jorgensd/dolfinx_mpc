@@ -15,13 +15,14 @@ jobs:
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: ghcr.io/fenics/test-env:nightly-mpich
+    container: ghcr.io/fenics/dolfinx/dev-env:v0.7.0
 
     env:
       SONAR_SCANNER_VERSION: 5.0.1.3006 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
-      PETSC_ARCH: linux-gnu-real-32
+      PETSC_ARCH: linux-gnu-real64-32
+
       PETSC_DIR: /usr/local/petsc
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +39,7 @@ jobs:
         with:
           distribution: "zulu"
           java-version: 17
-
+  
       - name: Cache SonarCloud packages
         uses: actions/cache@v3
         with:
@@ -65,7 +66,9 @@ jobs:
 
       - name: Install DOLFINx
         uses: ./.github/actions/install-dolfinx
-
+        with:
+          petsc_arch: ${PETSC_ARCH}
+          
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc
