@@ -38,7 +38,7 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     linear_form = fem.form(rhs)
 
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([1, 0]): {l2b([0, 1]): 0.43,
                            l2b([1, 1]): 0.11},
              l2b([0, 0]): {l2b(master_point): 0.69}}

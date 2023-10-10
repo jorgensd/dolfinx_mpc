@@ -5,18 +5,18 @@
 # SPDX-License-Identifier:    MIT
 
 
-from dolfinx import fem
-import dolfinx_mpc
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_scalar_type
+from dolfinx import default_scalar_type, fem
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import compute_midpoints, create_unit_square, meshtags
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
+
+import dolfinx_mpc
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -51,7 +51,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
     a = c1 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(1) +\
         c2 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(2)\
-        + 0.01 * ufl.inner(u, v) * dx(1)
+        + 0.87 * ufl.inner(u, v) * dx(1)
 
     rhs = ufl.inner(x[1], v) * dx(1) + \
         ufl.inner(fem.Constant(mesh, default_scalar_type(1)), v) * dx(2)
@@ -65,7 +65,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
 
     s_m_c = {}
     for i in range(0, N + 1):
@@ -81,9 +81,11 @@ def test_cell_domains(get_assemblers):  # noqa: F811
         b = assemble_vector(linear_form, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setType(PETSc.KSP.Type.PREONLY)
-    solver.getPC().setType(PETSc.PC.Type.LU)
+    pc = solver.getPC()
+    pc.setType(PETSc.PC.Type.LU)
+    pc.setFactorSolverType("superlu_dist")
     solver.setOperators(A)
 
     # Solve
@@ -95,23 +97,32 @@ def test_cell_domains(get_assemblers):  # noqa: F811
 
     root = 0
     comm = mesh.comm
+    is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
     with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
-        # Gather LHS, RHS and solution on one process
+        # Gather LHS, RHS and solution on one process (work with high precision )
+        scipy_dtype = np.complex128 if is_complex else np.float64
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
-            KTAK = K.T * A_csr * K
-            reduced_L = K.T @ L_np
+            KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+            reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
             # Solve linear system
-            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+            d = scipy.sparse.linalg.spsolve(KTAK.astype(scipy_dtype), reduced_L.astype(scipy_dtype))
             # Back substitution to full solution vector
-            uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
-    uh.vector.destroy()
+            uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
+            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+                               * np.finfo(default_scalar_type).resolution)
+    solver.destroy()
+    b.destroy()
+    del uh
+    A.destroy()
+    pc.destroy()
+    L_org.destroy()
+    A_org.destroy()
     list_timings(comm, [TimingType.wall])

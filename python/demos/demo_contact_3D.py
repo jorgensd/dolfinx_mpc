@@ -8,6 +8,7 @@
 # between two cubes.
 
 
+import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
@@ -47,6 +48,9 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         mesh.topology.create_connectivity(tdim, tdim)
         mesh.topology.create_connectivity(fdim, tdim)
     else:
+        if default_scalar_type == np.float32:
+            warnings.warn("Demo does not run for single float precision due to limited xdmf support")
+            exit(0)
         mesh_3D_dolfin(theta, ct, celltype, res)
         MPI.COMM_WORLD.barrier()
         with XDMFFile(MPI.COMM_WORLD, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
@@ -74,7 +78,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         r_matrix = rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
         # Top boundary has a given deformation normal to the interface
-        g_vec = np.dot(r_matrix, g_vec)
+        g_vec = np.dot(r_matrix, g_vec).astype(default_scalar_type)
 
     top_dofs = fem.locate_dofs_topological(V, fdim, mt.find(3))
     bc_top = fem.dirichletbc(g_vec, top_dofs, V)
@@ -82,10 +86,10 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = default_scalar_type(1.0e3)
+    E = 1.0e3
     nu = 0
-    mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = fem.Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = fem.Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
 
     # Stress computation
     def sigma(v):
@@ -106,11 +110,11 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     mpc = MultiPointConstraint(V)
     if noslip:
         with Timer("~~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=5e2 * np.finfo(default_scalar_type).resolution)
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=5e2 * np.finfo(default_scalar_type).resolution)
 
     with Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()

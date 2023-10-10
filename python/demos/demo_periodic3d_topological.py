@@ -52,7 +52,7 @@ def demo_periodic3D(celltype: CellType):
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
         V = fem.functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim, )))
 
-    def dirichletboundary(x: NDArray[np.float64]) -> NDArray[np.bool_]:
+    def dirichletboundary(x: NDArray[Union[np.float32, np.float64]]) -> NDArray[np.bool_]:
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
@@ -94,14 +94,14 @@ def demo_periodic3D(celltype: CellType):
     rhs = inner(f, v) * dx
 
     petsc_options: Dict[str, Union[str, float, int]]
-    if complex_mode:
-        rtol = 1e-16
+    rtol = 5e2 * np.finfo(default_scalar_type).resolution
+    if complex_mode or default_scalar_type == np.float32:
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
-        rtol = 1e-8
         petsc_options = {"ksp_type": "cg", "ksp_rtol": rtol, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
                          "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
                          "pc_hypre_boomeramg_print_statistics": 1}
+
     problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)
     u_h = problem.solve()
 

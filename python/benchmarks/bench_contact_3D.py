@@ -12,7 +12,7 @@ from pathlib import Path
 
 import basix.ufl
 import numpy as np
-from dolfinx import default_scalar_type
+from dolfinx import default_scalar_type, default_real_type
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
 from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
@@ -30,8 +30,13 @@ from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import (create_normal_approximation, log_info,
                                rigid_motions_nullspace, rotation_matrix)
-
+import warnings
 comm = MPI.COMM_WORLD
+
+if default_scalar_type == np.float32:
+    warnings.warn(
+        "Demo not supported in single precision as reading from XDMF only support double precision meshes")
+    exit(0)
 
 
 def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refinements=0, N0=5):
@@ -86,7 +91,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         cell = Cell(ext, geometric_dimension=points.shape[1])
         domain = Mesh(VectorElement("Lagrange", cell, 1))
         # Rotate mesh
-        points = np.dot(r_matrix, points.T).T
+        points = np.dot(r_matrix, points.T).T.astype(default_real_type)
 
         mesh = create_mesh(MPI.COMM_SELF, cells, points, domain)
         with XDMFFile(MPI.COMM_SELF, tmp_mesh_name, "w") as xdmf:
@@ -95,7 +100,6 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     MPI.COMM_WORLD.barrier()
     with XDMFFile(MPI.COMM_WORLD, tmp_mesh_name, "r") as xdmf:
         mesh = xdmf.read_mesh()
-
     # Refine coarse mesh
     for i in range(num_refinements):
         mesh.topology.create_entities(mesh.topology.dim - 2)

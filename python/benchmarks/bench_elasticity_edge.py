@@ -41,12 +41,10 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
 
     # Generate Dirichlet BC (Fixed)
     u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.array[:] = 0
 
     def boundaries(x):
-        return np.isclose(x[0], np.finfo(float).eps)
+        return np.isclose(x[0], 0, 500 * np.finfo(x.dtype).resolution)
     fdim = mesh.topology.dim - 1
     facets = locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = locate_dofs_topological(V, fdim, facets)
@@ -83,10 +81,10 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     mt = meshtags(mesh, fdim, t_facets[arg_sort], facet_values)
 
     # Elasticity parameters
-    E = default_scalar_type(1.0e4)
+    E = 1.0e4
     nu = 0.1
-    mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
     g = Constant(mesh, default_scalar_type((0, 0, -1e2)))
     x = SpatialCoordinate(mesh)
     f = Constant(mesh, default_scalar_type(1e3)) * as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))

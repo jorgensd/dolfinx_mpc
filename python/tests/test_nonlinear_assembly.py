@@ -116,9 +116,7 @@ def test_nonlinear_poisson(poly_order):
             return np.ones_like(x[0], dtype=np.int8)
 
         u_bc = dolfinx.fem.Function(V)
-        with u_bc.vector.localForm() as u_local:
-            u_local.set(0.0)
-        u_bc.vector.destroy()
+        u_bc.x.array[:] = 0.0
 
         facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, boundary)
         topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
@@ -141,12 +139,12 @@ def test_nonlinear_poisson(poly_order):
         # -- Impose the pi/2 rotational symmetry of the solution as a constraint,
         # -- except at the centre DoF
         def periodic_boundary(x):
-            eps = 1e-10
-            return np.isclose(x[0], 0.5) & (
+            eps = 1000 * np.finfo(x.dtype).resolution
+            return np.isclose(x[0], 0.5, atol=eps) & (
                 (x[1] < 0.5 - eps) | (x[1] > 0.5 + eps))
 
         def periodic_relation(x):
-            out_x = np.zeros(x.shape)
+            out_x = np.zeros_like(x)
             out_x[0] = x[1]
             out_x[1] = x[0]
             out_x[2] = x[2]
@@ -167,6 +165,8 @@ def test_nonlinear_poisson(poly_order):
 
         problem = NonlinearMPCProblem(F, u, mpc, bcs=bcs, J=J)
         solver = NewtonSolverMPC(mesh.comm, problem, mpc)
+        solver.atol = 1e1 * np.finfo(u.x.array.dtype).resolution
+        solver.rtol = 1e1 * np.finfo(u.x.array.dtype).resolution
 
         # Ensure the solver works with nonzero initial guess
         u.interpolate(lambda x: x[0]**2 * x[1]**2)

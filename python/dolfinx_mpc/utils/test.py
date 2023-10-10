@@ -206,7 +206,8 @@ def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-
 
 
 def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,  # type: ignore
-                    mpc: dolfinx_mpc.MultiPointConstraint, root: int = 0):
+                    mpc: dolfinx_mpc.MultiPointConstraint, root: int = 0,
+                    atol: float = 1e3 * np.finfo(dolfinx.default_scalar_type).resolution):
     """
     Compare an unmodified matrix for the problem with the one assembled with a
     multi point constraint.
@@ -217,14 +218,16 @@ def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,  # type: ignore
     comm = mpc.V.mesh.comm
     V = mpc.V
     assert root < comm.size
-
+    is_complex = np.issubdtype(mpc.coefficients()[0].dtype, np.complexfloating)  # type: ignore
+    scipy_dtype = np.complex128 if is_complex else np.float64
     K = gather_transformation_matrix(mpc, root=root)
     A_csr = gather_PETScMatrix(A_org, root=root)
-
     # Get global slaves
     glob_slaves = _gather_slaves_global(mpc)
     A_mpc_csr = gather_PETScMatrix(A_mpc, root=root)
     if MPI.COMM_WORLD.rank == root:
+        K = K.astype(scipy_dtype)
+        A_csr = A_csr.astype(scipy_dtype)
         KTAK = np.conj(K.T) * A_csr * K
 
         # Remove identity rows of MPC matrix
@@ -234,7 +237,7 @@ def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,  # type: ignore
         mpc_without_slaves = A_mpc_csr[cols_except_slaves[:, None], cols_except_slaves]
 
         # Compute difference
-        compare_CSR(KTAK, mpc_without_slaves)
+        compare_CSR(KTAK, mpc_without_slaves, atol=atol)
 
     timer.stop()
 

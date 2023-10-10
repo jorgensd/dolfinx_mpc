@@ -13,6 +13,7 @@
 # added to the to left corner of the top cube.
 
 
+import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
@@ -21,7 +22,7 @@ import scipy.sparse.linalg
 from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, functionspace, dirichletbc, form,
+from dolfinx.fem import (Constant, dirichletbc, form, functionspace,
                          locate_dofs_geometrical)
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
@@ -56,6 +57,9 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         mesh.name = f"mesh_{celltype}_{theta:.2f}_gmsh"
 
     else:
+        if default_scalar_type == np.float32:
+            warnings.warn("Demo does not run for single float precision due to limited xdmf support")
+            exit(0)
         mesh_name = "mesh"
         filename = meshdir / f"mesh_{celltype}_{theta:.2f}.xdmf"
 
@@ -76,7 +80,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     g = Constant(mesh, default_scalar_type(g_vec[:2]))
 
     def bottom_corner(x):
-        return np.isclose(x, [[0], [0], [0]]).all(axis=0)
+        return np.isclose(x, [[0], [0], [0]], atol=5e2 * np.finfo(default_scalar_type).resolution).all(axis=0)
 
     # Fix bottom corner
     bc_value = np.array((0,) * mesh.geometry.dim, dtype=default_scalar_type)  # type: ignore
@@ -85,10 +89,10 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     bcs = [bc_bottom]
 
     # Elasticity parameters
-    E = default_scalar_type(1.0e3)  # type: ignore
+    E = 1.0e3
     nu = 0
-    mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
 
     # Stress computation
     def sigma(v):
@@ -102,14 +106,14 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     rhs = inner(Constant(mesh, default_scalar_type((0, 0))), v) * dx + inner(g, v) * ds  # type: ignore
 
     def left_corner(x):
-        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
+        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0]), atol=5e2 * np.finfo(default_scalar_type).resolution).all(axis=1)
 
     # Create multi point constraint
     mpc = MultiPointConstraint(V)
 
     with Timer("~Contact: Create contact constraint"):
         nh = create_normal_approximation(V, mt, 4)
-        mpc.create_contact_slip_condition(mt, 4, 9, nh)
+        mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=5e2 * np.finfo(default_scalar_type).resolution)
 
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
@@ -123,8 +127,8 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         mpc.create_slip_constraint(V, (mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
-    rtol = 3e-8
-    petsc_options = {"ksp_rtol": 1e-9, "ksp_atol": 1e-9, "pc_type": "gamg",
+    tol = 5e2 * np.finfo(default_scalar_type).resolution
+    petsc_options = {"ksp_rtol": tol, "ksp_atol": tol, "pc_type": "gamg",
                      "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
                      "pc_gamg_threshold": 0.02, "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
                      "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
@@ -186,7 +190,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc, rtol=rtol, atol=rtol)
+            assert np.allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
     L_org.destroy()
 
 

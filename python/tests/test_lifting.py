@@ -67,7 +67,7 @@ def test_lifting(get_assemblers):  # noqa: F811
     # Create multipoint constraint
 
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([0, 0]): {l2b([0, 1]): 1}}
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)

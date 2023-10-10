@@ -40,10 +40,10 @@ def demo_elasticity():
     v = TestFunction(V)
 
     # Elasticity parameters
-    E = default_scalar_type(1.0e4)
+    E = 1.0e4
     nu = 0.0
-    mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = fem.Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = fem.Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
 
     # Stress computation
     def sigma(v):
@@ -59,7 +59,7 @@ def demo_elasticity():
 
     # Create MPC
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.9}}
     mpc = MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, 1, 1)
@@ -118,7 +118,7 @@ def demo_elasticity():
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            assert np.allclose(uh_numpy, u_mpc, atol=500 * np.finfo(u_mpc.dtype).resolution)
 
     # Print out master-slave connectivity for the first slave
     master_owner = None

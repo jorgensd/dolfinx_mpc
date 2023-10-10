@@ -14,7 +14,6 @@
 
 from pathlib import Path
 from typing import Union
-
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
@@ -93,7 +92,7 @@ solver_prefix = "dolfinx_mpc_solve_{}".format(id(solver))
 solver.setOptionsPrefix(solver_prefix)
 
 petsc_options: dict[str, Union[str, int, float]]
-if complex_mode:
+if complex_mode or default_scalar_type == np.float32:
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:
     petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
@@ -166,6 +165,6 @@ with Timer("~Demo: Verification"):
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = K @ d
-        assert np.allclose(uh_numpy, u_mpc)
+        assert np.allclose(uh_numpy, u_mpc, atol=np.finfo(u_mpc.dtype).resolution)
 list_timings(MPI.COMM_WORLD, [TimingType.wall])
 L_org.destroy()

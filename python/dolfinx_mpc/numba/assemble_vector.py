@@ -7,6 +7,7 @@
 from typing import Optional, Tuple
 
 import cffi
+import dolfinx
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import dolfinx.la as _la
@@ -89,8 +90,16 @@ def assemble_vector(form: _forms,
     subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.cell)
     num_cell_integrals = len(subdomain_ids)
 
-    is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)  # type: ignore
-    nptype = "complex128" if is_complex else "float64"
+    if _PETSc.ScalarType == numpy.float32:  # type: ignore
+        nptype = "float32"
+    elif _PETSc.ScalarType == numpy.float64:  # type: ignore
+        nptype = "float64"
+    elif _PETSc.ScalarType == numpy.complex64:  # type: ignore
+        nptype = "complex64"
+    elif _PETSc.ScalarType == numpy.complex128:  # type: ignore
+        nptype = "complex128"
+    else:
+        raise RuntimeError(f"Unsupported scalar type {_PETSc.ScalarType}.")  # type: ignore
     ufcx_form = form.ufcx_form
     if num_cell_integrals > 0:
         V.mesh.topology.create_entity_permutations()
@@ -138,7 +147,7 @@ def assemble_vector(form: _forms,
 def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                    kernel: cffi.FFI, active_cells: npt.NDArray[numpy.int32],
                    mesh: Tuple[npt.NDArray[numpy.int32],
-                               npt.NDArray[numpy.float64]],
+                               npt.NDArray[dolfinx.default_real_type]],
                    coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                    constants: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                    permutation_info: npt.NDArray[numpy.uint32],
@@ -159,7 +168,7 @@ def assemble_cells(b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     x_dofmap, x = mesh
 
     # NOTE: All cells are assumed to be of the same type
-    geometry = numpy.zeros((x_dofmap.shape[1], 3))
+    geometry = numpy.zeros((x_dofmap.shape[1], 3), dtype=dolfinx.default_real_type)
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)  # type: ignore
 
     for cell_index in active_cells:
@@ -211,7 +220,7 @@ def assemble_exterior_slave_facets(b: npt.NDArray[_PETSc.ScalarType],  # type: i
     # Unpack mesh data
     x_dofmap, x = mesh
 
-    geometry = numpy.zeros((x_dofmap.shape[1], 3))
+    geometry = numpy.zeros((x_dofmap.shape[1], 3), dtype=x.dtype)
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)  # type: ignore
     for i in range(facet_info.shape[0]):
         # Extract cell index (local to process) and facet index (local to cell) for kernel

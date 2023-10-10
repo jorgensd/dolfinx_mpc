@@ -299,9 +299,9 @@ class MultiPointConstraint():
             .. highlight:: python
             .. code-block:: python
 
-                    {numpy.array([d0, d1], dtype=numpy.float64).tobytes():
-                        {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
-                        numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
+                    {numpy.array([d0, d1], dtype=mesh.geometry.x.dtype).tobytes():
+                        {numpy.array([e0, e1], dtype=mesh.geometry.x.dtype).tobytes(): alpha,
+                        numpy.array([f0, f1], dtype=mesh.geometry.x.dtype).tobytes(): beta}}
         """
         slaves, masters, coeffs, owners, offsets = create_dictionary_constraint(
             self.V, slave_master_dict, subspace_slave, subspace_master)

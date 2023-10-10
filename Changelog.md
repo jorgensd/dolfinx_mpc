@@ -4,7 +4,7 @@
 
 - **API**:
   - Change input of `dolfinx_mpc.MultiPointConstraint.homogenize` and `dolfinx_mpc.backsubstitution` to `dolfinx.fem.Function` instead of `PETSc.Vec`.
-  - Add support for more floating types (`dtype` can now be specified as input for coefficients). In theory this means one could support single precision. Not thoroughly tested.
+  - **New feature**: Add support for more floating types (float32, float64, complex64, complex128). The floating type of a MPC is related to the mesh geometry.
     - This resulted in a minor refactoring of the pybindings, meaning that tte class `dolfinx_mpc.cpp.mpc.MultiPointConstraint` is replaced by `dolfinx_mpc.cpp.mpc.MultiPointConstraint_{dtype}`
   - Casting scalar-type with `dolfinx.default_scalar_type` instead of `PETSc.ScalarType`
   - Remove usage of `VectorFunctionSpace`. Use blocked basix element instead.

@@ -119,7 +119,7 @@ def gather_dof_coordinates(V: FunctionSpaceBase, dofs: np.ndarray):
     glob_num_nodes = MPI.COMM_WORLD.allreduce(num_nodes, op=MPI.SUM)
     recvbuf = None
     if MPI.COMM_WORLD.rank == 0:
-        recvbuf = np.zeros(3 * glob_num_nodes, dtype=np.float64)
+        recvbuf = np.zeros(3 * glob_num_nodes, dtype=V.mesh.geometry.x.dtype)
     sendbuf = coords.reshape(-1)
     sendcounts = np.array(MPI.COMM_WORLD.gather(len(sendbuf), 0))
     MPI.COMM_WORLD.Gatherv(sendbuf, (recvbuf, sendcounts), root=0)

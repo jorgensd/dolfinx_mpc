@@ -147,7 +147,7 @@ a = inner(sigma(u), grad(v)) * dx
 x = SpatialCoordinate(mesh)
 rhs = inner(Constant(mesh, default_scalar_type((0, 0, 0))), v) * dx
 rhs += inner(Constant(mesh, default_scalar_type((0.01, 0.02, 0))), v) * dx(outer_tag)
-rhs += inner(as_vector(default_scalar_type((0, 0, -9.81e-2))), v) * dx(inner_tag)
+rhs += inner(as_vector((0, 0, -9.81e-2)), v) * dx(inner_tag)
 
 
 # Create dirichletbc
@@ -175,7 +175,8 @@ mpc.finalize()
 # Create nullspace
 null_space = rigid_motions_nullspace(mpc.function_space)
 
-petsc_options = {"ksp_rtol": 1.0e-8, "pc_type": "gamg", "pc_gamg_type": "agg",
+ksp_rtol = 5e2 * np.finfo(default_scalar_type).resolution
+petsc_options = {"ksp_rtol": ksp_rtol, "pc_type": "gamg", "pc_gamg_type": "agg",
                  "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
                  "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
                  "mg_levels_esteig_ksp_type": "cg", "matptap_via": "scalable",

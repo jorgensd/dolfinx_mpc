@@ -31,9 +31,9 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # Inlet velocity Dirichlet BC
     bc_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0))
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0, atol=500 * np.finfo(x.dtype).resolution))
     other_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0))
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0, atol=500 * np.finfo(x.dtype).resolution))
     arg_sort = np.argsort(other_facets)
     mt = dolfinx.mesh.meshtags(mesh, mesh.topology.dim - 1,
                                other_facets[arg_sort], np.full_like(other_facets, 1))
@@ -52,7 +52,7 @@ def test_mixed_element(cell_type, ghost_mode):
 
     V = dolfinx.fem.functionspace(mesh, Ve)
     Q = dolfinx.fem.functionspace(mesh, Qe)
-    W = dolfinx.fem.functionspace(mesh, Ve * Qe)
+    W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
 
     inlet_velocity = dolfinx.fem.Function(V)
     inlet_velocity.interpolate(

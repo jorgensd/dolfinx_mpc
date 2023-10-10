@@ -85,7 +85,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
     # Create MPC
     with Timer("~Elasticity: Init constraint"):
         def l2b(li):
-            return np.array(li, dtype=np.float64).tobytes()
+            return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
         s_m_c = {l2b([1, 0, 0]): {l2b([1, 0, 1]): 0.5}}
         mpc = MultiPointConstraint(V)
         mpc.create_general_constraint(s_m_c, 2, 2)

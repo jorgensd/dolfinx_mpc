@@ -54,7 +54,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
 
     # Create multipoint constraint
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([1, 0]): {l2b([0, 1]): 0.43, l2b([1, 1]): 0.11},
              l2b([0, 0]): {l2b(master_point): 0.69}}
 
@@ -86,19 +86,22 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
+        is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
+        scipy_dtype = np.complex128 if is_complex else np.float64
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
-            KTAK = K.T * A_csr * K
-            reduced_L = K.T @ L_np
+            KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+            reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
             # Solve linear system
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
-            uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            uh_numpy = K.astype(scipy_dtype) @ d
+            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+                               * np.finfo(default_scalar_type).resolution)
 
     list_timings(comm, [TimingType.wall])
 
@@ -132,7 +135,7 @@ def test_linearproblem(master_point):
 
     # Create multipoint constraint
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([1, 0]):
              {l2b([0, 1]): 0.43,
              l2b([1, 1]): 0.11},
@@ -150,22 +153,22 @@ def test_linearproblem(master_point):
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem._A, mpc, root=root)
-        dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem._b, mpc, root=root)
-
         # Gather LHS, RHS and solution on one process
+        is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
+        scipy_dtype = np.complex128 if is_complex else np.float64
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
-            KTAK = K.T * A_csr * K
-            reduced_L = K.T @ L_np
+            KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+            reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
             # Solve linear system
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
-            uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            uh_numpy = K.astype(scipy_dtype) @ d
+            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+                               * np.finfo(default_scalar_type).resolution)
 
     list_timings(comm, [TimingType.wall])

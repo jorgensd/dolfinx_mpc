@@ -12,6 +12,7 @@ import dolfinx.fem as _fem
 import numba
 import numpy
 import numpy.typing as npt
+import dolfinx
 from dolfinx.common import Timer
 from dolfinx_mpc.assemble_matrix import create_sparsity_pattern
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
@@ -106,8 +107,17 @@ def assemble_matrix(form: _forms, constraint: MultiPointConstraint,
     if e0.needs_dof_transformations or e1.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
 
-    is_complex = numpy.issubdtype(_PETSc.ScalarType, numpy.complexfloating)  # type: ignore
-    nptype = "complex128" if is_complex else "float64"
+    if _PETSc.ScalarType == numpy.float32:  # type: ignore
+        nptype = "float32"
+    elif _PETSc.ScalarType == numpy.float64:  # type: ignore
+        nptype = "float64"
+    elif _PETSc.ScalarType == numpy.complex64:  # type: ignore
+        nptype = "complex64"
+    elif _PETSc.ScalarType == numpy.complex128:  # type: ignore
+        nptype = "complex128"
+    else:
+        raise RuntimeError(f"Unsupported scalar type {_PETSc.ScalarType}.")  # type: ignore
+
     ufcx_form = form.ufcx_form
     if num_cell_integrals > 0:
         # NOTE: This depends on enum ordering in ufcx.h
@@ -186,7 +196,7 @@ def assemble_slave_cells(A: int,
                          kernel: cffi.FFI,
                          active_cells: npt.NDArray[numpy.int32],
                          mesh: Tuple[npt.NDArray[numpy.int32],
-                                     npt.NDArray[numpy.float64]],
+                                     npt.NDArray[dolfinx.default_real_type]],
                          coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                          constants: npt.NDArray[_PETSc.ScalarType],  # type: ignore
                          permutation_info: npt.NDArray[numpy.uint32],
@@ -211,7 +221,7 @@ def assemble_slave_cells(A: int,
 
     # NOTE: All cells are assumed to be of the same type
     num_xdofs_per_cell = x_dofmap.shape[1]
-    geometry = numpy.zeros((num_xdofs_per_cell, 3))
+    geometry = numpy.zeros((num_xdofs_per_cell, 3), dtype=dolfinx.default_real_type)
     A_local = numpy.zeros((block_size * num_dofs_per_element, block_size
                            * num_dofs_per_element), dtype=_PETSc.ScalarType)  # type: ignore
     masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
@@ -384,7 +394,7 @@ def assemble_exterior_slave_facets(A: int, kernel: cffi.FFI,
     facet_perm = numpy.zeros(1, dtype=numpy.uint8)
 
     # NOTE: All cells are assumed to be of the same type
-    geometry = numpy.zeros((x_dofmap.shape[1], 3))
+    geometry = numpy.zeros((x_dofmap.shape[1], 3), dtype=x.dtype)
 
     # Numpy data used in facet loop
     A_local = numpy.zeros((num_dofs_per_element * block_size,

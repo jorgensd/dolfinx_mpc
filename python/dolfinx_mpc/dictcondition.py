@@ -6,12 +6,14 @@
 
 import typing
 
+import dolfinx
 import dolfinx.fem as fem
 import numpy as np
 from dolfinx import default_scalar_type
 
 
-def close_to(point: np.typing.NDArray[np.float64]):
+def close_to(point: np.typing.NDArray[typing.Union[np.float64, np.float32]],
+             atol=1000 * np.finfo(dolfinx.default_real_type).resolution):
     """
     Convenience function for locating a point [x,y,z]
     within an array x [[x0,...,xN],[y0,...,yN], [z0,...,zN]].
@@ -19,7 +21,7 @@ def close_to(point: np.typing.NDArray[np.float64]):
     Args:
         point: The point should be padded to 3D
     """
-    return lambda x: np.isclose(x, point).all(axis=0)
+    return lambda x: np.isclose(x, point, atol=atol).all(axis=0)
 
 
 @typing.no_type_check
@@ -45,11 +47,10 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
         .. highlight:: python
         .. code-block:: python
 
-            {np.array([d0, d1], dtype=numpy.float64).tobytes():
-                {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
-                numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
+            {np.array([d0, d1], dtype=mesh.geometry.x.dtype).tobytes():
+                {numpy.array([e0, e1], dtype=mesh.geometry.x.dtype).tobytes(): alpha,
+                numpy.array([f0, f1], dtype=mesh.geometry.x.dtype).tobytes(): beta}}
     """
-    dfloat = np.float64
     comm = V.mesh.comm
     bs = V.dofmap.index_map_bs
     local_size = V.dofmap.index_map.size_local * bs
@@ -59,6 +60,7 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
     non_local_entities = {}
     slaves_local = {}
     slaves_ghost = {}
+    dfloat = V.mesh.geometry.x.dtype
     slave_point_nd = np.zeros((3, 1), dtype=dfloat)
     for i, slave_point in enumerate(slave_master_dict.keys()):
         num_masters = len(list(slave_master_dict[slave_point].keys()))
@@ -81,14 +83,14 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
             if slave_dofs[0] < local_size:
                 slaves_local[i] = slave_dofs[0]
                 owned_entities[i] = {"masters": np.full(num_masters, -1, dtype=np.int64),
-                                     "coeffs": np.full(num_masters, -1, dtype=np.float64),
+                                     "coeffs": np.full(num_masters, -1, dtype=dolfinx.default_scalar_type),
                                      "owners": np.full(num_masters, -1, dtype=np.int32),
                                      "master_count": 0, "local_index": []}
                 slave_status = 1
             else:
                 slaves_ghost[i] = slave_dofs[0]
                 ghosted_entities[i] = {"masters": np.full(num_masters, -1, dtype=np.int64),
-                                       "coeffs": np.full(num_masters, -1, dtype=np.float64),
+                                       "coeffs": np.full(num_masters, -1, dtype=dolfinx.default_scalar_type),
                                        "owners": np.full(num_masters, -1, dtype=np.int32),
                                        "master_count": 0, "local_index": []}
                 slave_status = 0

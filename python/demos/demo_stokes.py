@@ -9,6 +9,7 @@
 # The demos solves the Stokes problem
 
 from pathlib import Path
+from typing import Union
 
 import basix.ufl
 import gmsh
@@ -118,9 +119,12 @@ V, V_to_W = W.sub(0).collapse()
 Q, _ = W.sub(1).collapse()
 
 
-def inlet_velocity_expression(x: NDArray[np.float64]) -> NDArray[np.bool_]:
+def inlet_velocity_expression(x: NDArray[Union[np.float32, np.float64]]) -> NDArray[Union[np.float32,
+                                                                                          np.float64,
+                                                                                          np.complex64,
+                                                                                          np.complex128]]:
     return np.stack((np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2)),
-                     5 * x[1] * np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2))))
+                     5 * x[1] * np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2)))).astype(default_scalar_type)
 
 
 # ----------------------Defining boundary conditions----------------------
@@ -223,15 +227,17 @@ with Timer("~Stokes: Verification of problem by global matrix reduction"):
     K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
     u_mpc = dolfinx_mpc.utils.gather_PETScVector(U.vector, root=root)
-
+    is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
+    scipy_dtype = np.complex128 if is_complex else np.float64
     if MPI.COMM_WORLD.rank == root:
-        KTAK = K.T * A_csr * K
-        reduced_L = K.T @ L_np
+        KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+        reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
         # Solve linear system
-        d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+        d = scipy.sparse.linalg.spsolve(KTAK.astype(scipy_dtype), reduced_L.astype(scipy_dtype))
         # Back substitution to full solution vector
-        uh_numpy = K @ d
-        assert np.allclose(uh_numpy, u_mpc)
+        uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
+        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=5e2
+                           * np.finfo(u_mpc.dtype).resolution)
 
 # -------------------- List timings --------------------------
 list_timings(MPI.COMM_WORLD, [TimingType.wall])
