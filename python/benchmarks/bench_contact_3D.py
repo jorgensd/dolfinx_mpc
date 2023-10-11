@@ -33,7 +33,7 @@ from dolfinx_mpc.utils import (create_normal_approximation, log_info,
 import warnings
 comm = MPI.COMM_WORLD
 
-if default_scalar_type == np.float32:
+if default_real_type == np.float32:
     warnings.warn(
         "Demo not supported in single precision as reading from XDMF only support double precision meshes")
     exit(0)

@@ -16,7 +16,7 @@ import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
 from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import CellType
@@ -48,7 +48,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         mesh.topology.create_connectivity(tdim, tdim)
         mesh.topology.create_connectivity(fdim, tdim)
     else:
-        if default_scalar_type == np.float32:
+        if default_real_type == np.float32:
             warnings.warn("Demo does not run for single float precision due to limited xdmf support")
             exit(0)
         mesh_3D_dolfin(theta, ct, celltype, res)

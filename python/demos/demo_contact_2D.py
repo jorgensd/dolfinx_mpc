@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import scipy.sparse.linalg
 from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
-from dolfinx import default_scalar_type
+from dolfinx import default_scalar_type, default_real_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, dirichletbc, form, functionspace,
                          locate_dofs_geometrical)
@@ -57,7 +57,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         mesh.name = f"mesh_{celltype}_{theta:.2f}_gmsh"
 
     else:
-        if default_scalar_type == np.float32:
+        if default_real_type == np.float32:
             warnings.warn("Demo does not run for single float precision due to limited xdmf support")
             exit(0)
         mesh_name = "mesh"
