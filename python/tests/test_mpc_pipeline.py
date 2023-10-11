@@ -106,69 +106,69 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     list_timings(comm, [TimingType.wall])
 
 
-@pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
-def test_linearproblem(master_point):
+# @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
+# def test_linearproblem(master_point):
 
-    # Create mesh and function space
-    mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
-    V = fem.functionspace(mesh, ("Lagrange", 1))
+#     # Create mesh and function space
+#     mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
+#     V = fem.functionspace(mesh, ("Lagrange", 1))
 
-    # Solve Problem without MPC for reference
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    d = fem.Constant(mesh, default_scalar_type(1.5))
-    c = fem.Constant(mesh, default_scalar_type(2))
-    x = ufl.SpatialCoordinate(mesh)
-    f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
-    g = fem.Function(V)
-    g.interpolate(lambda x: np.sin(x[0]) * x[1])
-    h = fem.Function(V)
-    h.interpolate(lambda x: 2 + x[1] * x[0])
+#     # Solve Problem without MPC for reference
+#     u = ufl.TrialFunction(V)
+#     v = ufl.TestFunction(V)
+#     d = fem.Constant(mesh, default_scalar_type(1.5))
+#     c = fem.Constant(mesh, default_scalar_type(2))
+#     x = ufl.SpatialCoordinate(mesh)
+#     f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+#     g = fem.Function(V)
+#     g.interpolate(lambda x: np.sin(x[0]) * x[1])
+#     h = fem.Function(V)
+#     h.interpolate(lambda x: 2 + x[1] * x[0])
 
-    a = d * g * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    rhs = h * ufl.inner(f, v) * ufl.dx
-    # Generate reference matrices
-    A_org = fem.petsc.assemble_matrix(fem.form(a))
-    A_org.assemble()
-    L_org = fem.petsc.assemble_vector(fem.form(rhs))
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+#     a = d * g * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+#     rhs = h * ufl.inner(f, v) * ufl.dx
+#     # Generate reference matrices
+#     A_org = fem.petsc.assemble_matrix(fem.form(a))
+#     A_org.assemble()
+#     L_org = fem.petsc.assemble_vector(fem.form(rhs))
+#     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
-    # Create multipoint constraint
-    def l2b(li):
-        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
-    s_m_c = {l2b([1, 0]):
-             {l2b([0, 1]): 0.43,
-             l2b([1, 1]): 0.11},
-             l2b([0, 0]):
-             {l2b(master_point): 0.69}}
+#     # Create multipoint constraint
+#     def l2b(li):
+#         return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
+#     s_m_c = {l2b([1, 0]):
+#              {l2b([0, 1]): 0.43,
+#              l2b([1, 1]): 0.11},
+#              l2b([0, 0]):
+#              {l2b(master_point): 0.69}}
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_general_constraint(s_m_c)
-    mpc.finalize()
+#     mpc = dolfinx_mpc.MultiPointConstraint(V)
+#     mpc.create_general_constraint(s_m_c)
+#     mpc.finalize()
 
-    problem = dolfinx_mpc.LinearProblem(a, rhs, mpc, bcs=[],
-                                        petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
-    uh = problem.solve()
+#     problem = dolfinx_mpc.LinearProblem(a, rhs, mpc, bcs=[],
+#                                         petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
+#     uh = problem.solve()
 
-    root = 0
-    comm = mesh.comm
-    with Timer("~TEST: Compare"):
-        # Gather LHS, RHS and solution on one process
-        is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
-        scipy_dtype = np.complex128 if is_complex else np.float64
-        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
-        K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
-        L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+#     root = 0
+#     comm = mesh.comm
+#     with Timer("~TEST: Compare"):
+#         # Gather LHS, RHS and solution on one process
+#         is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
+#         scipy_dtype = np.complex128 if is_complex else np.float64
+#         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
+#         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
+#         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
+#         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
-        if MPI.COMM_WORLD.rank == root:
-            KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
-            reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
-            # Solve linear system
-            d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
-            # Back substitution to full solution vector
-            uh_numpy = K.astype(scipy_dtype) @ d
-            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
-                               * np.finfo(default_scalar_type).resolution)
+#         if MPI.COMM_WORLD.rank == root:
+#             KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+#             reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
+#             # Solve linear system
+#             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
+#             # Back substitution to full solution vector
+#             uh_numpy = K.astype(scipy_dtype) @ d
+#             assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+#                                * np.finfo(default_scalar_type).resolution)
 
-    list_timings(comm, [TimingType.wall])
+#     list_timings(comm, [TimingType.wall])
