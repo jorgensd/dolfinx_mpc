@@ -84,7 +84,10 @@ def test_pipeline(u_from_mpc):
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d
-            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc,
+                               rtol=500
+                               * np.finfo(default_scalar_type).resolution,
+                               atol=500
                                * np.finfo(default_scalar_type).resolution)
 
     else:
