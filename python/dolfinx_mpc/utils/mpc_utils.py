@@ -216,9 +216,9 @@ def determine_closest_block(V, point):
     midpoint_tree = _geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest
-
+    point = np.reshape(point, (1, 3)).astype(V.mesh.geometry.x.dtype)
     closest_cell = _geometry.compute_closest_entity(
-        bb_tree, midpoint_tree, V.mesh, np.reshape(point, (1, 3)))[0]
+        bb_tree, midpoint_tree, V.mesh, point)[0]
 
     # Set distance high if cell is not owned
     if cell_imap.size_local < closest_cell or closest_cell == -1:

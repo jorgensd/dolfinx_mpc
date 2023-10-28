@@ -32,6 +32,7 @@ from typing import List, Tuple
 
 import dolfinx.fem as fem
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 from mpi4py import MPI
@@ -322,11 +323,13 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     # which is far from the region of interest.
     diagval_A = 1e2
     diagval_B = 1e-2
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
+
     A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
     B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
     EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,
                                 solver=SLEPc.EPS.Type.KRYLOVSCHUR,
-                                nev=Nev, tol=1e-7, max_it=10,
+                                nev=Nev, tol=tol, max_it=10,
                                 target=1.5, shift=1.5, comm=comm)
     (eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
     # update slave DoF

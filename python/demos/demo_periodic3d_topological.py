@@ -94,11 +94,11 @@ def demo_periodic3D(celltype: CellType):
     rhs = inner(f, v) * dx
 
     petsc_options: Dict[str, Union[str, float, int]]
-    rtol = float(5e2 * np.finfo(default_scalar_type).resolution)
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
     if complex_mode or default_scalar_type == np.float32:
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
-        petsc_options = {"ksp_type": "cg", "ksp_rtol": str(rtol), "pc_type": "hypre", "pc_hypre_type": "boomeramg",
+        petsc_options = {"ksp_type": "cg", "ksp_rtol": str(tol), "pc_type": "hypre", "pc_hypre_type": "boomeramg",
                          "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
                          "pc_hypre_boomeramg_print_statistics": 1}
 
@@ -152,7 +152,7 @@ def demo_periodic3D(celltype: CellType):
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc, rtol=rtol)
+            assert np.allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
 
 
 if __name__ == "__main__":
