@@ -18,6 +18,7 @@ import gmsh
 import numpy as np
 import scipy.sparse.linalg
 import ufl
+from dolfinx import default_scalar_type
 from dolfinx.io import gmshio
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -114,8 +115,8 @@ cellname = mesh.ufl_cell().cellname()
 Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
 Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
 
-V = dolfinx.fem.FunctionSpace(mesh, Ve)
-Q = dolfinx.fem.FunctionSpace(mesh, Qe)
+V = dolfinx.fem.functionspace(mesh, Ve)
+Q = dolfinx.fem.functionspace(mesh, Qe)
 
 
 def inlet_velocity_expression(x):
@@ -164,7 +165,7 @@ def T(u: Expr, p: Expr, mu: Expr):
 # --------------------------Variational problem---------------------------
 # Traditional terms
 mu = 1
-f = dolfinx.fem.Constant(mesh, PETSc.ScalarType((0, 0)))
+f = dolfinx.fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = ufl.TrialFunction(V), ufl.TrialFunction(Q)
 (v, q) = ufl.TestFunction(V), ufl.TestFunction(Q)
 a00 = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
@@ -173,12 +174,12 @@ a10 = - ufl.inner(ufl.div(u), q) * ufl.dx
 a11 = None
 
 L0 = ufl.inner(f, v) * ufl.dx
-L1 = ufl.inner(dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)), q) * ufl.dx
+L1 = ufl.inner(dolfinx.fem.Constant(mesh, default_scalar_type(0.0)), q) * ufl.dx
 
 # No prescribed shear stress
 n = ufl.FacetNormal(mesh)
 g_tau = tangential_proj(dolfinx.fem.Constant(
-    mesh, PETSc.ScalarType(((0, 0), (0, 0)))) * n, n)
+    mesh, default_scalar_type(((0, 0), (0, 0)))) * n, n)
 ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
 # Terms due to slip condition
@@ -204,7 +205,7 @@ with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
 # Set Dirichlet boundary condition values in the RHS
 dolfinx.fem.petsc.apply_lifting_nest(b, a, bcs)
 for b_sub in b.getNestSubVecs():
-    b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+    b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
 
 # bcs0 = dolfinx.cpp.fem.bcs_rows(
 #     dolfinx.fem.assemble._create_cpp_form(L), bcs)
@@ -213,19 +214,19 @@ dolfinx.fem.petsc.set_bc_nest(b, bcs0)
 
 # Preconditioner
 P11 = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(p * q * ufl.dx))
-P = PETSc.Mat().createNest([[A.getNestSubMatrix(0, 0), None], [None, P11]])
+P = PETSc.Mat().createNest([[A.getNestSubMatrix(0, 0), None], [None, P11]])  # type: ignore
 P.assemble()
 
 # ---------------------- Solve variational problem -----------------------
-ksp = PETSc.KSP().create(mesh.comm)
+ksp = PETSc.KSP().create(mesh.comm)  # type: ignore
 ksp.setOperators(A, P)
 ksp.setMonitor(
-    lambda ctx, it, r: PETSc.Sys.Print(
+    lambda ctx, it, r: PETSc.Sys.Print(  # type: ignore
         f"Iteration: {it:>4d}, |r| = {r:.3e}"))
 ksp.setType("minres")
 ksp.setTolerances(rtol=1e-8)
 ksp.getPC().setType("fieldsplit")
-ksp.getPC().setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE)
+ksp.getPC().setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE)  # type: ignore
 
 nested_IS = P.getNestISs()
 ksp.getPC().setFieldSplitIS(
@@ -244,8 +245,8 @@ Uh = b.copy()
 ksp.solve(b, Uh)
 
 for Uh_sub in Uh.getNestSubVecs():
-    Uh_sub.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                       mode=PETSc.ScatterMode.FORWARD)
+    Uh_sub.ghostUpdate(addv=PETSc.InsertMode.INSERT,  # type: ignore
+                       mode=PETSc.ScatterMode.FORWARD)  # type: ignore
 # ----------------------------- Put NestVec into DOLFINx Function - ---------
 uh = dolfinx.fem.Function(mpc.function_space)
 uh.vector.setArray(Uh.getNestSubVecs()[0].array)
@@ -274,12 +275,12 @@ with dolfinx.io.XDMFFile(
     outfile.write_function(uh)
     outfile.write_function(ph)
 
-with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh) as vtx:
+with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh, engine="BP4") as vtx:
     vtx.write(0.0)
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison
 with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix reduction"):
-    W = dolfinx.fem.FunctionSpace(mesh, ufl.MixedElement([Ve, Qe]))
+    W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
     V, V_to_W = W.sub(0).collapse()
     _, Q_to_W = W.sub(1).collapse()
 
@@ -324,7 +325,7 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     L_org = dolfinx.fem.petsc.assemble_vector(Lf)
 
     dolfinx.fem.petsc.apply_lifting(L_org, [af], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     dolfinx.fem.petsc.set_bc(L_org, bcs)
     root = 0
 

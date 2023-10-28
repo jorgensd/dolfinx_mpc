@@ -230,7 +230,7 @@ class MultiPointConstraint():
             .. highlight:: python
             .. code-block:: python
 
-                V = dolfinx.fem.VectorFunctionSpace(mesh, ("CG", 1))
+                V = dolfinx.fem.functionspace(mesh, ("CG", 1))
                 mpc = MultiPointConstraint(V)
                 n = dolfinx.fem.Function(V)
                 mpc.create_slip_constaint(V, (mt, i), n)
@@ -299,9 +299,9 @@ class MultiPointConstraint():
             .. highlight:: python
             .. code-block:: python
 
-                    {numpy.array([d0, d1], dtype=numpy.float64).tobytes():
-                        {numpy.array([e0, e1], dtype=numpy.float64).tobytes(): alpha,
-                        numpy.array([f0, f1], dtype=numpy.float64).tobytes(): beta}}
+                    {numpy.array([d0, d1], dtype=mesh.geometry.x.dtype).tobytes():
+                        {numpy.array([e0, e1], dtype=mesh.geometry.x.dtype).tobytes(): alpha,
+                        numpy.array([f0, f1], dtype=mesh.geometry.x.dtype).tobytes(): beta}}
         """
         slaves, masters, coeffs, owners, offsets = create_dictionary_constraint(
             self.V, slave_master_dict, subspace_slave, subspace_master)
@@ -427,7 +427,7 @@ class MultiPointConstraint():
         self._not_finalized()
         return self.V
 
-    def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:
+    def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:  # type: ignore
         """
         For a Function, impose the multi-point constraint by backsubstiution.
         This function is used after solving the reduced problem to obtain the values
@@ -445,7 +445,7 @@ class MultiPointConstraint():
         except AttributeError:
             with u.localForm() as vector_local:
                 self._cpp_object.backsubstitution(vector_local.array_w)
-            u.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)
+            u.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)  # type: ignore
 
     def homogenize(self, u: _fem.Function) -> None:
         """

@@ -13,23 +13,25 @@
 
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 
 import h5py
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Function, FunctionSpace, dirichletbc, form,
+from dolfinx.fem import (Function, dirichletbc, form, functionspace,
                          locate_dofs_geometrical, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
+from mpi4py import MPI
+from petsc4py import PETSc
+from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
+                 inner, pi, sin)
+
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import log_info
-from mpi4py import MPI
-from petsc4py import PETSc
-from pathlib import Path
-from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
-                 inner, pi, sin)
 
 
 def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
@@ -43,7 +45,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
         N *= 2
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
 
-    V = FunctionSpace(mesh, ("CG", degree))
+    V = functionspace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
 
@@ -53,7 +55,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = locate_dofs_geometrical(V, dirichletboundary)
-    bc = dirichletbc(PETSc.ScalarType(0), geometrical_dofs, V)
+    bc = dirichletbc(default_scalar_type(0), geometrical_dofs, V)
     bcs = [bc]
 
     def PeriodicBoundary(x):
@@ -134,7 +136,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
 
     # Solve linear problem
     log_info(f"Run {r_lvl}: Solving")
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     with Timer("~Periodic: Solve") as timer:
         # Create solver, set operator and options
         PETSc.Mat.setNearNullSpace(A, nullspace)
@@ -179,7 +181,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
         results = Path("results").absolute()
         results.mkdir(exist_ok=True)
         fname = results / f"bench_periodic3d_{r_lvl}_{ext}.xdmf"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
+        with XDMFFile(mesh.comm, fname, "w") as out_xdmf:
             out_xdmf.write_mesh(mesh)
             out_xdmf.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 

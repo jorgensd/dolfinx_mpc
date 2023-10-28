@@ -26,7 +26,7 @@ class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
                          form_compiler_options=form_compiler_options,
                          jit_options=jit_options)
 
-    def F(self, x: PETSc.Vec, F: PETSc.Vec):
+    def F(self, x: PETSc.Vec, F: PETSc.Vec):  # type: ignore
         with F.localForm() as F_local:
             F_local.set(0.0)
         dolfinx_mpc.assemble_vector(self._L, self.mpc, b=F)
@@ -34,10 +34,10 @@ class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
         # Apply boundary condition
         dolfinx_mpc.apply_lifting(F, [self._a], bcs=[self.bcs],
                                   constraint=self.mpc, x0=[x], scale=-1.0)
-        F.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+        F.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
         dolfinx.fem.petsc.set_bc(F, self.bcs, x, -1.0)
 
-    def J(self, x: PETSc.Vec, A: PETSc.Mat):
+    def J(self, x: PETSc.Vec, A: PETSc.Mat):  # type: ignore
         A.zeroEntries()
         dolfinx_mpc.assemble_matrix(self._a, self.mpc, bcs=self.bcs, A=A)
         A.assemble()
@@ -65,17 +65,17 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
         self.set_update(self.update)
 
     def update(self, solver: dolfinx.nls.petsc.NewtonSolver,
-               dx: PETSc.Vec, x: PETSc.Vec):
+               dx: PETSc.Vec, x: PETSc.Vec):  # type: ignore
         # We need to use a vector created on the MPC's space to update ghosts
         self.u_mpc.vector.array = x.array_r
         self.u_mpc.vector.axpy(-1.0, dx)
-        self.u_mpc.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                                      mode=PETSc.ScatterMode.FORWARD)
+        self.u_mpc.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,  # type: ignore
+                                      mode=PETSc.ScatterMode.FORWARD)  # type: ignore
         self.mpc.homogenize(self.u_mpc)
         self.mpc.backsubstitution(self.u_mpc)
         x.array = self.u_mpc.vector.array_r
-        x.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                      mode=PETSc.ScatterMode.FORWARD)
+        x.ghostUpdate(addv=PETSc.InsertMode.INSERT,  # type: ignore
+                      mode=PETSc.ScatterMode.FORWARD)  # type: ignore
 
     def solve(self, u: dolfinx.fem.Function):
         """Solve non-linear problem into function u. Returns the number
@@ -85,17 +85,17 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
         return n, converged
 
     @property
-    def A(self) -> PETSc.Mat:
+    def A(self) -> PETSc.Mat:  # type: ignore
         """Jacobian matrix"""
         return self._A
 
     @property
-    def b(self) -> PETSc.Vec:
+    def b(self) -> PETSc.Vec:  # type: ignore
         """Residual vector"""
         return self._b
 
 
-@pytest.mark.skipif(np.issubdtype(PETSc.ScalarType, np.complexfloating),
+@pytest.mark.skipif(np.issubdtype(dolfinx.default_scalar_type, np.complexfloating),
                     reason="This test does not work in complex mode.")
 @pytest.mark.parametrize("poly_order", [1, 2, 3])
 def test_nonlinear_poisson(poly_order):
@@ -110,19 +110,17 @@ def test_nonlinear_poisson(poly_order):
     for run_no, N in enumerate(N_vals):
         mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N)
 
-        V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", poly_order))
+        V = dolfinx.fem.functionspace(mesh, ("Lagrange", poly_order))
 
         def boundary(x):
             return np.ones_like(x[0], dtype=np.int8)
 
         u_bc = dolfinx.fem.Function(V)
-        with u_bc.vector.localForm() as u_local:
-            u_local.set(0.0)
-        u_bc.vector.destroy()
+        u_bc.x.array[:] = 0.0
 
         facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, boundary)
         topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
-        zero = np.array(0, dtype=PETSc.ScalarType)
+        zero = np.array(0, dtype=dolfinx.default_scalar_type)
         bc = dolfinx.fem.dirichletbc(zero, topological_dofs, V)
         bcs = [bc]
 
@@ -141,12 +139,12 @@ def test_nonlinear_poisson(poly_order):
         # -- Impose the pi/2 rotational symmetry of the solution as a constraint,
         # -- except at the centre DoF
         def periodic_boundary(x):
-            eps = 1e-10
-            return np.isclose(x[0], 0.5) & (
+            eps = 1000 * np.finfo(x.dtype).resolution
+            return np.isclose(x[0], 0.5, atol=eps) & (
                 (x[1] < 0.5 - eps) | (x[1] > 0.5 + eps))
 
         def periodic_relation(x):
-            out_x = np.zeros(x.shape)
+            out_x = np.zeros_like(x)
             out_x[0] = x[1]
             out_x[1] = x[0]
             out_x[2] = x[2]
@@ -167,6 +165,8 @@ def test_nonlinear_poisson(poly_order):
 
         problem = NonlinearMPCProblem(F, u, mpc, bcs=bcs, J=J)
         solver = NewtonSolverMPC(mesh.comm, problem, mpc)
+        solver.atol = 1e1 * np.finfo(u.x.array.dtype).resolution
+        solver.rtol = 1e1 * np.finfo(u.x.array.dtype).resolution
 
         # Ensure the solver works with nonzero initial guess
         u.interpolate(lambda x: x[0]**2 * x[1]**2)
@@ -199,7 +199,7 @@ def test_homogenize(tensor_order, poly_order):
     cellname = mesh.ufl_cell().cellname()
     el = basix.ufl.element(basix.ElementFamily.P, cellname, poly_order, shape=shape)
 
-    V = dolfinx.fem.FunctionSpace(mesh, el)
+    V = dolfinx.fem.functionspace(mesh, el)
 
     def periodic_boundary(x):
         return np.isclose(x[0], 0.0)

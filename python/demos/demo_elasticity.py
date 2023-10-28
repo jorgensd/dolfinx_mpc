@@ -8,6 +8,7 @@ from pathlib import Path
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
@@ -23,7 +24,7 @@ from dolfinx_mpc import LinearProblem, MultiPointConstraint
 def demo_elasticity():
     mesh = create_unit_square(MPI.COMM_WORLD, 10, 10)
 
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
 
@@ -31,7 +32,7 @@ def demo_elasticity():
         return np.isclose(x[0], np.finfo(float).eps)
     facets = locate_entities_boundary(mesh, 1, boundaries)
     topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-    bc = fem.dirichletbc(np.array([0, 0], dtype=PETSc.ScalarType), topological_dofs, V)
+    bc = fem.dirichletbc(np.array([0, 0], dtype=default_scalar_type), topological_dofs, V)
     bcs = [bc]
 
     # Define variational problem
@@ -39,10 +40,10 @@ def demo_elasticity():
     v = TestFunction(V)
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e4)
+    E = 1.0e4
     nu = 0.0
-    mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = fem.Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = fem.Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
 
     # Stress computation
     def sigma(v):
@@ -58,7 +59,7 @@ def demo_elasticity():
 
     # Create MPC
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.9}}
     mpc = MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, 1, 1)
@@ -72,7 +73,7 @@ def demo_elasticity():
     outdir = Path("results")
     outdir.mkdir(exist_ok=True, parents=True)
 
-    with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity.xdmf", "w") as outfile:
+    with XDMFFile(mesh.comm, outdir / "demo_elasticity.xdmf", "w") as outfile:
         outfile.write_mesh(mesh)
         outfile.write_function(u_h)
 
@@ -86,7 +87,7 @@ def demo_elasticity():
     fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.petsc.set_bc(L_org, bcs)
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A_org)
@@ -95,7 +96,7 @@ def demo_elasticity():
     u_.x.scatter_forward()
     u_.name = "u_unconstrained"
 
-    with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity.xdmf", "a") as outfile:
+    with XDMFFile(mesh.comm, outdir / "demo_elasticity.xdmf", "a") as outfile:
         outfile.write_function(u_)
         outfile.close()
 
@@ -117,7 +118,7 @@ def demo_elasticity():
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            assert np.allclose(uh_numpy, u_mpc, atol=500 * np.finfo(u_mpc.dtype).resolution)
 
     # Print out master-slave connectivity for the first slave
     master_owner = None

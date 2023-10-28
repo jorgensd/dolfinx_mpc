@@ -8,26 +8,35 @@
 # between two cubes.
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 
+import basix.ufl
 import numpy as np
+from dolfinx import default_scalar_type, default_real_type
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
-                         form, locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
+                         locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, compute_midpoints, create_mesh,
                           create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
-from dolfinx_mpc.utils import (create_normal_approximation, log_info,
-                               rigid_motions_nullspace, rotation_matrix)
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Cell, Identity, Mesh, TestFunction, TrialFunction,
                  VectorElement, dx, grad, inner, sym, tr)
-from pathlib import Path
+
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import (create_normal_approximation, log_info,
+                               rigid_motions_nullspace, rotation_matrix)
+import warnings
 comm = MPI.COMM_WORLD
+
+if default_real_type == np.float32:
+    warnings.warn(
+        "Demo not supported in single precision as reading from XDMF only support double precision meshes")
+    exit(0)
 
 
 def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refinements=0, N0=5):
@@ -82,7 +91,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         cell = Cell(ext, geometric_dimension=points.shape[1])
         domain = Mesh(VectorElement("Lagrange", cell, 1))
         # Rotate mesh
-        points = np.dot(r_matrix, points.T).T
+        points = np.dot(r_matrix, points.T).T.astype(default_real_type)
 
         mesh = create_mesh(MPI.COMM_SELF, cells, points, domain)
         with XDMFFile(MPI.COMM_SELF, tmp_mesh_name, "w") as xdmf:
@@ -91,7 +100,6 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     MPI.COMM_WORLD.barrier()
     with XDMFFile(MPI.COMM_WORLD, tmp_mesh_name, "r") as xdmf:
         mesh = xdmf.read_mesh()
-
     # Refine coarse mesh
     for i in range(num_refinements):
         mesh.topology.create_entities(mesh.topology.dim - 2)
@@ -156,7 +164,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     mesh_dir.mkdir(exist_ok=True)
     fname = mesh_dir / f"mesh_{ext}_{theta:.2f}.xdmf"
 
-    with XDMFFile(MPI.COMM_WORLD, fname, "w") as o_f:
+    with XDMFFile(mesh.comm, fname, "w") as o_f:
         o_f.write_mesh(mesh)
         o_f.write_meshtags(ct, x=mesh.geometry)
         o_f.write_meshtags(mt, x=mesh.geometry)
@@ -182,7 +190,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext:s}"
 
     # Create functionspaces
-    V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim, ))
+    V = functionspace(mesh, el)
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
@@ -210,7 +219,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
         return values
     u_top = Function(V)
     u_top.interpolate(top_v)
-    u_top.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT_VALUES, mode=PETSc.ScatterMode.FORWARD)
+    u_top.x.scatter_forward()
 
     top_dofs = locate_dofs_topological(V, fdim, mt.find(3))
     bc_top = dirichletbc(u_top, top_dofs)
@@ -218,7 +227,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e3)
+    E = default_scalar_type(1.0e3)
     nu = 0
     mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
@@ -230,7 +239,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     u = TrialFunction(V)
     v = TestFunction(V)
     a = inner(sigma(u), grad(v)) * dx
-    rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
+    rhs = inner(Constant(mesh, default_scalar_type((0, 0, 0))), v) * dx
 
     log_info("Create constraints")
 
@@ -258,12 +267,12 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     with Timer(f"{num_dofs}: Assemble-vector (C++)"):
         b = assemble_vector(linear_form, mpc)
     apply_lifting(b, [bilinear_form], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(b, bcs)
     list_timings(MPI.COMM_WORLD, [TimingType.wall])
 
     # Solve Linear problem
-    opts = PETSc.Options()
+    opts = PETSc.Options()  # type: ignore
     # opts["ksp_rtol"] = 1.0e-8
     opts["pc_type"] = "gamg"
     # opts["pc_gamg_type"] = "agg"
@@ -281,7 +290,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     # Create functionspace and build near nullspace
 
     A.setNearNullSpace(null_space)
-    solver = PETSc.KSP().create(comm)
+    solver = PETSc.KSP().create(comm)  # type: ignore
     solver.setOperators(A)
     solver.setFromOptions()
     uh = Function(mpc.function_space)

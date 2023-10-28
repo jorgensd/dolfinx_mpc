@@ -22,13 +22,13 @@ from typing import Dict, Union
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import VTXWriter
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
 from mpi4py import MPI
 from numpy.typing import NDArray
-from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)
 
@@ -36,7 +36,7 @@ import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem
 
 # Get PETSc int and scalar types
-complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
+complex_mode = True if np.dtype(default_scalar_type).kind == 'c' else False
 
 
 def demo_periodic3D(celltype: CellType):
@@ -45,19 +45,19 @@ def demo_periodic3D(celltype: CellType):
         # Tet setup
         N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
-        V = fem.VectorFunctionSpace(mesh, ("CG", 1))
+        V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
     else:
         # Hex setup
         N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
-        V = fem.VectorFunctionSpace(mesh, ("CG", 2))
+        V = fem.functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim, )))
 
-    def dirichletboundary(x: NDArray[np.float64]) -> NDArray[np.bool_]:
+    def dirichletboundary(x: NDArray[Union[np.float32, np.float64]]) -> NDArray[np.bool_]:
         return np.logical_or(np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
                              np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)))
 
     # Create Dirichlet boundary condition
-    zero = PETSc.ScalarType([0, 0, 0])
+    zero = default_scalar_type([0, 0, 0])
     geometrical_dofs = fem.locate_dofs_geometrical(V, dirichletboundary)
     bc = fem.dirichletbc(zero, geometrical_dofs, V)
     bcs = [bc]
@@ -77,7 +77,7 @@ def demo_periodic3D(celltype: CellType):
         return out_x
     with Timer("~~Periodic: Compute mpc condition"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint_topological(V.sub(0), mt, 2, periodic_relation, bcs, PETSc.ScalarType(1))
+        mpc.create_periodic_constraint_topological(V.sub(0), mt, 2, periodic_relation, bcs, default_scalar_type(1))
         mpc.finalize()
     # Define variational problem
     u = TrialFunction(V)
@@ -94,14 +94,14 @@ def demo_periodic3D(celltype: CellType):
     rhs = inner(f, v) * dx
 
     petsc_options: Dict[str, Union[str, float, int]]
-    if complex_mode:
-        rtol = 1e-16
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
+    if complex_mode or default_scalar_type == np.float32:
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
-        rtol = 1e-8
-        petsc_options = {"ksp_type": "cg", "ksp_rtol": rtol, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
+        petsc_options = {"ksp_type": "cg", "ksp_rtol": str(tol), "pc_type": "hypre", "pc_hypre_type": "boomeramg",
                          "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
                          "pc_hypre_boomeramg_print_statistics": 1}
+
     problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)
     u_h = problem.solve()
 
@@ -130,7 +130,7 @@ def demo_periodic3D(celltype: CellType):
     outdir = Path("results")
     outdir.mkdir(exist_ok=True, parents=True)
     fname = outdir / f"demo_periodic3d_{ext}.bp"
-    out_periodic = VTXWriter(MPI.COMM_WORLD, fname, u_out)
+    out_periodic = VTXWriter(mesh.comm, fname, u_out, engine="BP4")
     out_periodic.write(0)
     out_periodic.close()
 
@@ -152,7 +152,7 @@ def demo_periodic3D(celltype: CellType):
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc, rtol=rtol)
+            assert np.allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
 
 
 if __name__ == "__main__":

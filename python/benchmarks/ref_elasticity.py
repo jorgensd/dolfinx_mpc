@@ -10,11 +10,13 @@ from pathlib import Path
 from time import perf_counter
 from typing import Optional
 
+import basix.ufl
 import h5py
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
-                         form, locate_dofs_topological)
+from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
+                         locate_dofs_topological)
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
 from dolfinx.io import XDMFFile
@@ -47,7 +49,8 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
         # set_log_level(LogLevel.ERROR)
     N = degree * N
     fdim = mesh.topology.dim - 1
-    V = VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    V = functionspace(mesh, el)
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = Function(V)
@@ -71,13 +74,13 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
     mt = meshtags(mesh, fdim, t_facets[arg_sort], facet_values[arg_sort])
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e4)
+    E = default_scalar_type(1.0e4)
     nu = 0.1
     mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
     lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
-    g = Constant(mesh, PETSc.ScalarType((0, 0, -1e2)))
+    g = Constant(mesh, default_scalar_type((0, 0, -1e2)))
     x = SpatialCoordinate(mesh)
-    f = Constant(mesh, PETSc.ScalarType(1e4)) * \
+    f = Constant(mesh, default_scalar_type(1e4)) * \
         as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
 
     # Stress computation
@@ -104,9 +107,9 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
     linear_form = form(rhs)
     L_org = assemble_vector(linear_form)
     apply_lifting(L_org, [bilinear_form], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(L_org, bcs)
-    opts = PETSc.Options()
+    opts = PETSc.Options()  # type: ignore
     if boomeramg:
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
@@ -132,7 +135,7 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
     # opts["ksp_view"] = None # List progress of solver
 
     # Create solver, set operator and options
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
     solver.setFromOptions()
     solver.setOperators(A_org)
 
@@ -174,7 +177,7 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
         outdir.mkdir(exist_ok=True, parents=True)
 
         fname = outdir / "ref_elasticity_{0:d}.xdmf".format(r_lvl)
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
+        with XDMFFile(mesh.comm, fname, "w") as out_xdmf:
             out_xdmf.write_mesh(mesh)
             out_xdmf.write_function(u_, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
 

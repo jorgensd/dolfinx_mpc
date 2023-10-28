@@ -8,19 +8,20 @@
 # between two cubes.
 
 import dolfinx.fem as fem
-import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import gmshio
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx_mpc
+import dolfinx_mpc.utils
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 theta = np.pi / 5
 
@@ -212,10 +213,10 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e3)
+    E = 1.0e3
     nu = 0
-    mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = fem.Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = fem.Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
 
     # Stress computation
     def sigma(v):
@@ -226,7 +227,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
     a = ufl.inner(sigma(u), ufl.grad(v)) * ufl.dx
-    rhs = ufl.inner(fem.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * ufl.dx
+    rhs = ufl.inner(fem.Constant(mesh, default_scalar_type((0, 0, 0))), v) * ufl.dx
     bilinear_form = fem.form(a)
 
     linear_form = fem.form(rhs)
@@ -241,11 +242,11 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     if nonslip:
         with Timer("~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=500 * np.finfo(default_scalar_type).resolution)
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=500 * np.finfo(default_scalar_type).resolution)
 
     mpc.finalize()
 
@@ -297,7 +298,8 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            atol = 1000 * np.finfo(default_scalar_type).resolution
+            assert np.allclose(uh_numpy, u_mpc, atol=atol)
     L_org.destroy()
 
     list_timings(comm, [TimingType.wall])

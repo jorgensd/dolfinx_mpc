@@ -14,10 +14,10 @@
 
 from pathlib import Path
 from typing import Union
-
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
@@ -30,13 +30,13 @@ import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 
 # Get PETSc int and scalar types
-complex_mode = True if np.dtype(PETSc.ScalarType).kind == 'c' else False
+complex_mode = True if np.dtype(default_scalar_type).kind == 'c' else False
 
 # Create mesh and finite element
 NX = 50
 NY = 100
 mesh = create_unit_square(MPI.COMM_WORLD, NX, NY)
-V = fem.VectorFunctionSpace(mesh, ("CG", 1))
+V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
 
 def dirichletboundary(x):
@@ -46,7 +46,7 @@ def dirichletboundary(x):
 # Create Dirichlet boundary condition
 facets = locate_entities_boundary(mesh, 1, dirichletboundary)
 topological_dofs = fem.locate_dofs_topological(V, 1, facets)
-zero = np.array([0, 0], dtype=PETSc.ScalarType)
+zero = np.array([0, 0], dtype=default_scalar_type)
 bc = fem.dirichletbc(zero, topological_dofs, V)
 bcs = [bc]
 
@@ -92,7 +92,7 @@ solver_prefix = "dolfinx_mpc_solve_{}".format(id(solver))
 solver.setOptionsPrefix(solver_prefix)
 
 petsc_options: dict[str, Union[str, int, float]]
-if complex_mode:
+if complex_mode or default_scalar_type == np.float32:
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:
     petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
@@ -101,7 +101,7 @@ else:
                      }
 
 # Set PETSc options
-opts = PETSc.Options()
+opts = PETSc.Options()  # type: ignore
 opts.prefixPush(solver_prefix)
 if petsc_options is not None:
     for k, v in petsc_options.items():
@@ -121,7 +121,7 @@ outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
 
 uh.name = "u_mpc"
-outfile = XDMFFile(MPI.COMM_WORLD, outdir / "demo_periodic_geometrical.xdmf", "w")
+outfile = XDMFFile(mesh.comm, outdir / "demo_periodic_geometrical.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(uh)
 
@@ -134,7 +134,7 @@ A_org.assemble()
 linear_form = fem.form(rhs)
 L_org = fem.petsc.assemble_vector(linear_form)
 fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
-L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
 fem.petsc.set_bc(L_org, bcs)
 solver.setOperators(A_org)
 u_ = fem.Function(V)
@@ -165,6 +165,6 @@ with Timer("~Demo: Verification"):
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = K @ d
-        assert np.allclose(uh_numpy, u_mpc)
+        assert np.allclose(uh_numpy, u_mpc, atol=float(np.finfo(u_mpc.dtype).resolution))
 list_timings(MPI.COMM_WORLD, [TimingType.wall])
 L_org.destroy()

@@ -13,14 +13,16 @@
 # added to the to left corner of the top cube.
 
 
+import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
 import numpy as np
 import scipy.sparse.linalg
 from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
+from dolfinx import default_scalar_type, default_real_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, VectorFunctionSpace, dirichletbc, form,
+from dolfinx.fem import (Constant, dirichletbc, form, functionspace,
                          locate_dofs_geometrical)
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
@@ -55,6 +57,9 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         mesh.name = f"mesh_{celltype}_{theta:.2f}_gmsh"
 
     else:
+        if default_real_type == np.float32:
+            warnings.warn("Demo does not run for single float precision due to limited xdmf support")
+            exit(0)
         mesh_name = "mesh"
         filename = meshdir / f"mesh_{celltype}_{theta:.2f}.xdmf"
 
@@ -69,26 +74,25 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
 
     # Helper until meshtags can be read in from xdmf
-    V = VectorFunctionSpace(mesh, ("Lagrange", 1))
-
+    V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
     r_matrix = rotation_matrix([0, 0, 1], theta)
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
-    g = Constant(mesh, PETSc.ScalarType(g_vec[:2]))
+    g = Constant(mesh, default_scalar_type(g_vec[:2]))
 
     def bottom_corner(x):
-        return np.isclose(x, [[0], [0], [0]]).all(axis=0)
+        return np.isclose(x, [[0], [0], [0]], atol=5e2 * np.finfo(default_scalar_type).resolution).all(axis=0)
 
     # Fix bottom corner
-    bc_value = np.array((0,) * mesh.geometry.dim, dtype=PETSc.ScalarType)
+    bc_value = np.array((0,) * mesh.geometry.dim, dtype=default_scalar_type)  # type: ignore
     bottom_dofs = locate_dofs_geometrical(V, bottom_corner)
     bc_bottom = dirichletbc(bc_value, bottom_dofs, V)
     bcs = [bc_bottom]
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e3)
+    E = 1.0e3
     nu = 0
-    mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
 
     # Stress computation
     def sigma(v):
@@ -99,17 +103,18 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
     v = TestFunction(V)
     a = inner(sigma(u), grad(v)) * dx
     ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx + inner(g, v) * ds
+    rhs = inner(Constant(mesh, default_scalar_type((0, 0))), v) * dx + inner(g, v) * ds  # type: ignore
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
 
     def left_corner(x):
-        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0])).all(axis=1)
+        return np.isclose(x.T, np.dot(r_matrix, [0, 2, 0]), atol=tol).all(axis=1)
 
     # Create multi point constraint
     mpc = MultiPointConstraint(V)
 
     with Timer("~Contact: Create contact constraint"):
         nh = create_normal_approximation(V, mt, 4)
-        mpc.create_contact_slip_condition(mt, 4, 9, nh)
+        mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=tol)
 
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
@@ -123,8 +128,8 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         mpc.create_slip_constraint(V, (mtv, 6), tangent, bcs=bcs)
 
     mpc.finalize()
-    rtol = 3e-8
-    petsc_options = {"ksp_rtol": 1e-9, "ksp_atol": 1e-9, "pc_type": "gamg",
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
+    petsc_options = {"ksp_rtol": tol, "ksp_atol": tol, "pc_type": "gamg",
                      "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
                      "pc_gamg_threshold": 0.02, "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
                      "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
@@ -166,7 +171,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
         A_org.assemble()
         L_org = assemble_vector(form(rhs))
         apply_lifting(L_org, [form(a)], [bcs])
-        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
         set_bc(L_org, bcs)
 
     root = 0
@@ -186,7 +191,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc, rtol=rtol, atol=rtol)
+            assert np.allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
     L_org.destroy()
 
 

@@ -24,8 +24,9 @@ from typing import Optional
 
 import h5py
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Function, FunctionSpace, dirichletbc, form,
+from dolfinx.fem import (Function, functionspace, dirichletbc, form,
                          locate_dofs_geometrical)
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
@@ -57,7 +58,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
             N *= 2
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
 
-    V = FunctionSpace(mesh, ("CG", degree))
+    V = functionspace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
 
@@ -69,7 +70,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = locate_dofs_geometrical(V, dirichletboundary)
-    bc = dirichletbc(PETSc.ScalarType(0), geometrical_dofs, V)
+    bc = dirichletbc(default_scalar_type(0), geometrical_dofs, V)
     bcs = [bc]
 
     # Define variational problem
@@ -90,15 +91,15 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     A_org.assemble()
     L_org = assemble_vector(linear_form)
     apply_lifting(L_org, [bilinear_form], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(L_org, bcs)
 
     # Create PETSc nullspace
-    nullspace = PETSc.NullSpace().create(constant=True)
-    PETSc.Mat.setNearNullSpace(A_org, nullspace)
+    nullspace = PETSc.NullSpace().create(constant=True)  # type: ignore
+    PETSc.Mat.setNearNullSpace(A_org, nullspace)  # type: ignore
 
     # Set PETSc options
-    opts = PETSc.Options()
+    opts = PETSc.Options()  # type: ignore
     if boomeramg:
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
@@ -121,7 +122,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     # opts["ksp_view"] = None # List progress of solver
 
     # Initialize PETSc solver, set options and operator
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
     solver.setFromOptions()
     solver.setOperators(A_org)
 
@@ -131,8 +132,8 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     with Timer("Solve"):
         solver.solve(L_org, u_.vector)
     end = perf_counter()
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,
-                          mode=PETSc.ScatterMode.FORWARD)
+    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,  # type: ignore
+                          mode=PETSc.ScatterMode.FORWARD)  # type: ignore
     if kspview:
         solver.view()
 
@@ -157,7 +158,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
         fname = outdir / "reference_periodic_{0:d}_{1:s}.xdmf".format(
             r_lvl, ext)
         u_.name = "u_" + ext + "_unconstrained"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_periodic:
+        with XDMFFile(mesh.comm, fname, "w") as out_periodic:
             out_periodic.write_mesh(mesh)
             out_periodic.write_function(u_, 0.0,
                                         "Xdmf/Domain/"

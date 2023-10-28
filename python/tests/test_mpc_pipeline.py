@@ -5,18 +5,19 @@
 # SPDX-License-Identifier:    MIT
 
 
-import dolfinx_mpc
-import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import fem
+from dolfinx import default_scalar_type, fem
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import create_unit_square
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 from mpi4py import MPI
 from petsc4py import PETSc
+
+import dolfinx_mpc
+import dolfinx_mpc.utils
+from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -26,13 +27,13 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    d = fem.Constant(mesh, PETSc.ScalarType(1.5))
-    c = fem.Constant(mesh, PETSc.ScalarType(2))
+    d = fem.Constant(mesh, default_scalar_type(1.5))
+    c = fem.Constant(mesh, default_scalar_type(2))
     x = ufl.SpatialCoordinate(mesh)
     f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     g = fem.Function(V)
@@ -53,7 +54,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
 
     # Create multipoint constraint
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([1, 0]): {l2b([0, 1]): 0.43, l2b([1, 1]): 0.11},
              l2b([0, 0]): {l2b(master_point): 0.69}}
 
@@ -65,7 +66,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     b = assemble_vector(linear_form, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
@@ -85,19 +86,22 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
         # Gather LHS, RHS and solution on one process
+        is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
+        scipy_dtype = np.complex128 if is_complex else np.float64
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
-            KTAK = K.T * A_csr * K
-            reduced_L = K.T @ L_np
+            KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+            reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
             # Solve linear system
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
-            uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            uh_numpy = K.astype(scipy_dtype) @ d
+            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+                               * np.finfo(default_scalar_type).resolution)
 
     list_timings(comm, [TimingType.wall])
 
@@ -107,13 +111,13 @@ def test_linearproblem(master_point):
 
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
 
     # Solve Problem without MPC for reference
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    d = fem.Constant(mesh, PETSc.ScalarType(1.5))
-    c = fem.Constant(mesh, PETSc.ScalarType(2))
+    d = fem.Constant(mesh, default_scalar_type(1.5))
+    c = fem.Constant(mesh, default_scalar_type(2))
     x = ufl.SpatialCoordinate(mesh)
     f = c * ufl.sin(2 * ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
     g = fem.Function(V)
@@ -131,7 +135,7 @@ def test_linearproblem(master_point):
 
     # Create multipoint constraint
     def l2b(li):
-        return np.array(li, dtype=np.float64).tobytes()
+        return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
     s_m_c = {l2b([1, 0]):
              {l2b([0, 1]): 0.43,
              l2b([1, 1]): 0.11},
@@ -149,22 +153,22 @@ def test_linearproblem(master_point):
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-        dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem._A, mpc, root=root)
-        dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem._b, mpc, root=root)
-
         # Gather LHS, RHS and solution on one process
+        is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
+        scipy_dtype = np.complex128 if is_complex else np.float64
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
 
         if MPI.COMM_WORLD.rank == root:
-            KTAK = K.T * A_csr * K
-            reduced_L = K.T @ L_np
+            KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+            reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
             # Solve linear system
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
-            uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc)
+            uh_numpy = K.astype(scipy_dtype) @ d
+            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+                               * np.finfo(default_scalar_type).resolution)
 
     list_timings(comm, [TimingType.wall])

@@ -10,18 +10,19 @@ from pathlib import Path
 
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
+from dolfinx import default_scalar_type
+from dolfinx.fem import (Constant, Function, FunctionSpaceBase, dirichletbc,
                          functionspace, locate_dofs_geometrical,
-                         locate_dofs_topological, FunctionSpaceBase)
+                         locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
+from mpi4py import MPI
+from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
+                 TrialFunction, grad, inner, sym, tr)
+
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (create_point_to_point_constraint,
                                rigid_motions_nullspace)
-from mpi4py import MPI
-from petsc4py import PETSc
-from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
-                 TrialFunction, grad, inner, sym, tr)
 
 # Mesh parameters for creating a mesh consisting of two disjoint rectangles
 right_tag = 1
@@ -57,7 +58,7 @@ MPI.COMM_WORLD.barrier()
 
 with XDMFFile(mesh.comm, "test.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
-V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 tdim = mesh.topology.dim
 fdim = tdim - 1
 
@@ -96,13 +97,13 @@ v = TestFunction(V)
 dx = Measure("dx", domain=mesh, subdomain_data=ct)
 a = inner(sigma(u), grad(v)) * dx
 x = SpatialCoordinate(mesh)
-rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0))), v) * dx
+rhs = inner(Constant(mesh, default_scalar_type((0, 0))), v) * dx
 
 # Set boundary conditions
-u_push = np.array([0.1, 0], dtype=PETSc.ScalarType)
+u_push = np.array([0.1, 0], dtype=default_scalar_type)
 dofs = locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
 bc_push = dirichletbc(u_push, dofs, V)
-u_fix = np.array([0, 0], dtype=PETSc.ScalarType)
+u_fix = np.array([0, 0], dtype=default_scalar_type)
 bc_fix = dirichletbc(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 2.1)), V)
 bcs = [bc_push, bc_fix]
 
@@ -118,7 +119,7 @@ def gather_dof_coordinates(V: FunctionSpaceBase, dofs: np.ndarray):
     glob_num_nodes = MPI.COMM_WORLD.allreduce(num_nodes, op=MPI.SUM)
     recvbuf = None
     if MPI.COMM_WORLD.rank == 0:
-        recvbuf = np.zeros(3 * glob_num_nodes, dtype=np.float64)
+        recvbuf = np.zeros(3 * glob_num_nodes, dtype=V.mesh.geometry.x.dtype)
     sendbuf = coords.reshape(-1)
     sendcounts = np.array(MPI.COMM_WORLD.gather(len(sendbuf), 0))
     MPI.COMM_WORLD.Gatherv(sendbuf, (recvbuf, sendcounts), root=0)
@@ -187,6 +188,6 @@ if MPI.COMM_WORLD.rank == 0:
 u_h.name = "u"
 outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
-with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
+with XDMFFile(mesh.comm, outdir / "demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_function(u_h)

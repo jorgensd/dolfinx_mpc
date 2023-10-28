@@ -101,7 +101,7 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[dmesh.MeshTags, int, int],
     g_vec = [i for i in range(mesh.geometry.dim)]
     g_vec[mesh.geometry.dim - 1] = gap
 
-    V = _fem.VectorFunctionSpace(mesh, ("CG", 1))
+    V = _fem.functionspace(mesh, ("CG", 1))
     u = _fem.Function(V)
     v = ufl.TestFunction(V)
 
@@ -110,7 +110,7 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[dmesh.MeshTags, int, int],
     ds = ufl.Measure("ds", domain=mesh, metadata=metadata,
                      subdomain_data=facet_marker)
     a = ufl.inner(sigma(u), epsilon(v)) * dx
-    zero = np.asarray([0, ] * mesh.geometry.dim, dtype=_PETSc.ScalarType)
+    zero = np.asarray([0, ] * mesh.geometry.dim, dtype=_PETSc.ScalarType)  # type: ignore
     L = ufl.inner(_fem.Constant(mesh, zero), v) * dx
 
     # Derivation of one sided Nitsche with gap function
@@ -179,7 +179,7 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[dmesh.MeshTags, int, int],
     # xdmf.write_mesh(mesh)
     # xdmf.close()
 
-    solver = _nls.petsc.NewtonSolver(mesh.comm, problem)
+    solver = _nls.petsc.NewtonSolver(mesh.comm, problem)  # type: ignore
     null_space = rigid_motions_nullspace(V)
     solver.A.setNearNullSpace(null_space)
 
@@ -201,11 +201,11 @@ def nitsche_ufl(mesh: dmesh.Mesh, mesh_data: Tuple[dmesh.MeshTags, int, int],
 
     # Define solver and options
     ksp = solver.krylov_solver
-    opts = _PETSc.Options()
-    option_prefix = ksp.getOptionsPrefix()
+    opts = _PETSc.Options()  # type: ignore
+    option_prefix = ksp.getOptionsPrefix()  # type: ignore
 
     # Set PETSc options
-    opts = _PETSc.Options()
+    opts = _PETSc.Options()  # type: ignore
     opts.prefixPush(option_prefix)
     for k, v in petsc_options.items():
         opts[k] = v

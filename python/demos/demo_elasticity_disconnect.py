@@ -12,12 +12,11 @@ from pathlib import Path
 import basix.ufl
 import gmsh
 import numpy as np
-from dolfinx.fem import (Constant, Function, FunctionSpace,
-                         VectorFunctionSpace, dirichletbc,
+from dolfinx import default_scalar_type
+from dolfinx.fem import (Constant, Function, dirichletbc, functionspace,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, as_vector, grad, inner, sym, tr)
 
@@ -107,12 +106,12 @@ gmsh.clear()
 gmsh.finalize()
 MPI.COMM_WORLD.barrier()
 
-V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
 tdim = mesh.topology.dim
 fdim = tdim - 1
 
-DG0 = FunctionSpace(mesh, ("DG", 0))
+DG0 = functionspace(mesh, ("DG", 0))
 outer_dofs = locate_dofs_topological(DG0, tdim, ct.find(outer_tag))
 inner_dofs = locate_dofs_topological(DG0, tdim, ct.find(inner_tag))
 
@@ -146,16 +145,16 @@ v = TestFunction(V)
 dx = Measure("dx", domain=mesh, subdomain_data=ct)
 a = inner(sigma(u), grad(v)) * dx
 x = SpatialCoordinate(mesh)
-rhs = inner(Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
-rhs += inner(Constant(mesh, PETSc.ScalarType((0.01, 0.02, 0))), v) * dx(outer_tag)
-rhs += inner(as_vector(PETSc.ScalarType((0, 0, -9.81e-2))), v) * dx(inner_tag)
+rhs = inner(Constant(mesh, default_scalar_type((0, 0, 0))), v) * dx
+rhs += inner(Constant(mesh, default_scalar_type((0.01, 0.02, 0))), v) * dx(outer_tag)
+rhs += inner(as_vector((0, 0, -9.81e-2)), v) * dx(inner_tag)
 
 
 # Create dirichletbc
 owning_processor, bc_dofs = determine_closest_block(V, -np.array([-r2, 0, 0]))
 bc_dofs = [] if bc_dofs is None else bc_dofs
 
-u_fixed = np.array([0, 0, 0], dtype=PETSc.ScalarType)
+u_fixed = np.array([0, 0, 0], dtype=default_scalar_type)
 bc_fixed = dirichletbc(u_fixed, np.asarray(bc_dofs, dtype=np.int32), V)
 bcs = [bc_fixed]
 
@@ -176,7 +175,8 @@ mpc.finalize()
 # Create nullspace
 null_space = rigid_motions_nullspace(mpc.function_space)
 
-petsc_options = {"ksp_rtol": 1.0e-8, "pc_type": "gamg", "pc_gamg_type": "agg",
+ksp_rtol = 5e2 * np.finfo(default_scalar_type).resolution
+petsc_options = {"ksp_rtol": ksp_rtol, "pc_type": "gamg", "pc_gamg_type": "agg",
                  "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
                  "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
                  "mg_levels_esteig_ksp_type": "cg", "matptap_via": "scalable",
@@ -197,14 +197,15 @@ if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 
 # Write solution to file
-V_out = FunctionSpace(mesh, basix.ufl.element("Lagrange", mesh.topology.cell_name(),
-                      mesh.geometry.cmaps[0].degree, mesh.geometry.cmaps[0].variant,
+V_out = functionspace(mesh, basix.ufl.element("Lagrange", mesh.topology.cell_name(),
+                      mesh.geometry.cmaps[0].degree,
+                      lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmaps[0].variant),
                       gdim=mesh.geometry.dim, shape=(V.dofmap.bs,)))
 u_out = Function(V_out)
 u_out.interpolate(u_h)
 u_out.name = "uh"
 out_path = Path("results")
 out_path.mkdir(exist_ok=True, parents=True)
-with XDMFFile(MPI.COMM_WORLD, out_path / "demo_elasticity_disconnect.xdmf", "w") as xdmf:
+with XDMFFile(mesh.comm, out_path / "demo_elasticity_disconnect.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_function(u_out)

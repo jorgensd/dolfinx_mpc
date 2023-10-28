@@ -36,7 +36,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             .. code-block:: python
 
                 u = dolfinx.fem.Function(mpc.function_space)
-        petsc_options: Parameters that is passed to the linear algebra backend PETSc.
+        petsc_options: Parameters that is passed to the linear algebra backend PETSc.  #type: ignore
             For available choices for the 'petsc_options' kwarg, see the PETSc-documentation
             https://www.mcs.anl.gov/petsc/documentation/index.html.
         form_compiler_options: Parameters used in FFCx compilation of this form. Run `ffcx --help` at
@@ -59,10 +59,10 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
     _a: _fem.Form
     _L: _fem.Form
     _mpc: MultiPointConstraint
-    _A: PETSc.Mat
-    _b: PETSc.Vec
-    _solver: PETSc.KSP
-    _x: PETSc.Vec
+    _A: PETSc.Mat  # type: ignore
+    _b: PETSc.Vec  # type: ignore
+    _solver: PETSc.KSP  # type: ignore
+    _x: PETSc.Vec  # type: ignore
     bcs: typing.List[_fem.DirichletBC]
     __slots__ = tuple(__annotations__)
 
@@ -101,7 +101,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                                           self._mpc.function_space.dofmap.index_map_bs)
         self.bcs = [] if bcs is None else bcs
 
-        self._solver = PETSc.KSP().create(self.u.function_space.mesh.comm)
+        self._solver = PETSc.KSP().create(self.u.function_space.mesh.comm)  # type: ignore
         self._solver.setOperators(self._A)
 
         # Give PETSc solver options a unique prefix
@@ -109,7 +109,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         self._solver.setOptionsPrefix(solver_prefix)
 
         # Set PETSc options
-        opts = PETSc.Options()
+        opts = PETSc.Options()  # type: ignore
         opts.prefixPush(solver_prefix)
         if petsc_options is not None:
             for k, v in petsc_options.items():
@@ -136,7 +136,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
 
         # Apply boundary conditions to the rhs
         apply_lifting(self._b, [self._a], [self.bcs], self._mpc)
-        self._b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+        self._b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
         _fem.petsc.set_bc(self._b, self.bcs)
 
         # Solve linear system and update ghost values in the solution

@@ -32,6 +32,7 @@ from typing import List, Tuple
 
 import dolfinx.fem as fem
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 from mpi4py import MPI
@@ -96,15 +97,16 @@ def EPS_print_results(EPS: SLEPc.EPS):
         for i in range(nconv):
             k = EPS.getEigenpair(i, vr, vi)
             error = EPS.computeError(i)
-            if k.imag != 0.0:
+            if not np.isclose(k.imag, 0.0):
                 print0(f" {k.real:2.2e} + {k.imag:2.2e}j {error:1.1e}")
             else:
                 pad = " " * 11
                 print0(f" {k.real:2.2e} {pad} {error:1.1e}")
 
 
-def EPS_get_spectrum(EPS: SLEPc.EPS,
-                     mpc: MultiPointConstraint) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:
+def EPS_get_spectrum(
+        EPS: SLEPc.EPS,
+        mpc: MultiPointConstraint) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:  # type: ignore
     """ Retrieve eigenvalues and eigenfunctions from SLEPc EPS object.
         Parameters
         ----------
@@ -137,7 +139,7 @@ def EPS_get_spectrum(EPS: SLEPc.EPS,
     return (eigval, eigvec_r, eigvec_i)
 
 
-def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,
+def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,  # type: ignore  #type: ignore
                           problem_type: SLEPc.EPS.ProblemType = SLEPc.EPS.ProblemType.GNHEP,
                           solver: SLEPc.EPS.Type = SLEPc.EPS.Type.KRYLOVSCHUR,
                           nev: int = 10, tol: float = 1e-7, max_it: int = 10,
@@ -225,7 +227,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     # Create mesh and finite element
     N = 50
     mesh = create_unit_square(comm, N, N)
-    V = fem.FunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1))
     fdim = mesh.topology.dim - 1
 
     bcs = []
@@ -321,11 +323,13 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     # which is far from the region of interest.
     diagval_A = 1e2
     diagval_B = 1e-2
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
+
     A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
     B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
     EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,
                                 solver=SLEPc.EPS.Type.KRYLOVSCHUR,
-                                nev=Nev, tol=1e-7, max_it=10,
+                                nev=Nev, tol=tol, max_it=10,
                                 target=1.5, shift=1.5, comm=comm)
     (eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
     # update slave DoF

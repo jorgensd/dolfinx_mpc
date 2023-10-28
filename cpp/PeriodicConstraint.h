@@ -73,7 +73,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Tolerance for adding scaled basis values to MPC. Any scaled basis
   // value with lower absolute value than the tolerance is ignored
-  const U tol = 1e-13;
+  const U tol = 500 * std::numeric_limits<U>::epsilon();
 
   auto mesh = V.mesh();
   auto dofmap = V.dofmap();
@@ -355,7 +355,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   num_masters_per_slave_remote.reserve(bs * coords_recvb.size() / 3);
 
   std::vector<std::int32_t> remote_cell_collisions
-      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb, 1e-20);
+      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb, tol);
   auto [remote_basis_valuesb, r_basis_shape]
       = dolfinx_mpc::evaluate_basis_functions<U>(V, coords_recvb,
                                                  remote_cell_collisions);

@@ -25,7 +25,7 @@ inputs:
   petsc_arch:  # id of input
     description: 'PETSc Arch'
     required: false
-    default: 'linux-gnu-real-32'
+    default: 'linux-gnu-real64-32'
 
 runs:
   using: composite
@@ -33,14 +33,14 @@ runs:
 
   steps:
     - name: Get Basix
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         path: ./basix
         repository: FEniCS/basix
         ref: ${{ inputs.basix }}
 
     - name: Get DOLFINx
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         path: ./dolfinx
         repository: FEniCS/dolfinx

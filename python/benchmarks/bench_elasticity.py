@@ -9,11 +9,12 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 from typing import Optional
 
+import basix.ufl
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
-                         form, locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, functionspace, dirichletbc, form,
+                         locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
@@ -36,7 +37,8 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         mesh = refine(mesh, redistribute=True)
 
     fdim = mesh.topology.dim - 1
-    V = VectorFunctionSpace(mesh, ("Lagrange", 1))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    V = functionspace(mesh, el)
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = Function(V)
@@ -83,7 +85,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
     # Create MPC
     with Timer("~Elasticity: Init constraint"):
         def l2b(li):
-            return np.array(li, dtype=np.float64).tobytes()
+            return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
         s_m_c = {l2b([1, 0, 0]): {l2b([1, 0, 1]): 0.5}}
         mpc = MultiPointConstraint(V)
         mpc.create_general_constraint(s_m_c, 2, 2)
@@ -97,14 +99,14 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         b = assemble_vector(linear_form, mpc)
     # Apply boundary conditions
     apply_lifting(b, [bilinear_form], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(b, bcs)
 
     # Create functionspace and function for mpc vector
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    opts = PETSc.Options()
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
+    opts = PETSc.Options()  # type: ignore
     if boomeramg:
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
@@ -135,7 +137,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         uh = b.copy()
         uh.set(0)
         solver.solve(b, uh)
-        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
         mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
 
@@ -165,7 +167,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         outdir = Path("results")
         outdir.mkdir(exist_ok=True, parents=True)
         fname = outdir / f"bench_elasticity_{r_lvl}.xdmf"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
+        with XDMFFile(mesh.comm, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)
 

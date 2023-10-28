@@ -31,9 +31,9 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # Inlet velocity Dirichlet BC
     bc_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0))
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0, atol=500 * np.finfo(x.dtype).resolution))
     other_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0))
+        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0, atol=500 * np.finfo(x.dtype).resolution))
     arg_sort = np.argsort(other_facets)
     mt = dolfinx.mesh.meshtags(mesh, mesh.topology.dim - 1,
                                other_facets[arg_sort], np.full_like(other_facets, 1))
@@ -52,7 +52,7 @@ def test_mixed_element(cell_type, ghost_mode):
 
     V = dolfinx.fem.functionspace(mesh, Ve)
     Q = dolfinx.fem.functionspace(mesh, Qe)
-    W = dolfinx.fem.functionspace(mesh, Ve * Qe)
+    W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
 
     inlet_velocity = dolfinx.fem.Function(V)
     inlet_velocity.interpolate(
@@ -73,7 +73,7 @@ def test_mixed_element(cell_type, ghost_mode):
     mpc_q = dolfinx_mpc.MultiPointConstraint(Q)
     mpc_q.finalize()
 
-    f = dolfinx.fem.Constant(mesh, PETSc.ScalarType((0, 0)))
+    f = dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type((0, 0)))
     (u, p) = ufl.TrialFunction(V), ufl.TrialFunction(Q)
     (v, q) = ufl.TestFunction(V), ufl.TestFunction(Q)
     a00 = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
@@ -83,7 +83,7 @@ def test_mixed_element(cell_type, ghost_mode):
 
     L0 = ufl.inner(f, v) * ufl.dx
     L1 = ufl.inner(
-        dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)), q) * ufl.dx
+        dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
 
     n = ufl.FacetNormal(mesh)
     g_tau = ufl.as_vector((0.0, 0.0))
@@ -141,7 +141,7 @@ def test_mixed_element(cell_type, ghost_mode):
     mpc_vq.create_slip_constraint(W.sub(0), (mt, 1), n_approx, bcs=bcs)
     mpc_vq.finalize()
 
-    f = dolfinx.fem.Constant(mesh, PETSc.ScalarType((0, 0)))
+    f = dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type((0, 0)))
     (u, p) = ufl.TrialFunctions(W)
     (v, q) = ufl.TestFunctions(W)
     a = (
@@ -151,7 +151,7 @@ def test_mixed_element(cell_type, ghost_mode):
     )
 
     L = ufl.inner(f, v) * ufl.dx + ufl.inner(
-        dolfinx.fem.Constant(mesh, PETSc.ScalarType(0.0)), q) * ufl.dx
+        dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
 
     # No prescribed shear stress
     n = ufl.FacetNormal(mesh)

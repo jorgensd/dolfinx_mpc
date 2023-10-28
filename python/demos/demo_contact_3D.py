@@ -8,6 +8,7 @@
 # between two cubes.
 
 
+import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
 from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import CellType
@@ -46,6 +48,9 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         mesh.topology.create_connectivity(tdim, tdim)
         mesh.topology.create_connectivity(fdim, tdim)
     else:
+        if default_real_type == np.float32:
+            warnings.warn("Demo does not run for single float precision due to limited xdmf support")
+            exit(0)
         mesh_3D_dolfin(theta, ct, celltype, res)
         MPI.COMM_WORLD.barrier()
         with XDMFFile(MPI.COMM_WORLD, f"meshes/mesh_{celltype}_{theta:.2f}.xdmf", "r") as xdmf:
@@ -58,22 +63,22 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext}{mesh_ext}"
 
     # Create functionspaces
-    V = fem.VectorFunctionSpace(mesh, ("Lagrange", 1))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
 
     # Define boundary conditions
 
     # Bottom boundary is fixed in all directions
     bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))
-    u_bc = np.array((0, ) * mesh.geometry.dim, dtype=PETSc.ScalarType)
+    u_bc = np.array((0, ) * mesh.geometry.dim, dtype=default_scalar_type)
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs, V)
 
-    g_vec = np.array([0, 0, -4.25e-1], dtype=PETSc.ScalarType)
+    g_vec = np.array([0, 0, -4.25e-1], dtype=default_scalar_type)
     if not noslip:
         # Helper for orienting traction
         r_matrix = rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
         # Top boundary has a given deformation normal to the interface
-        g_vec = np.dot(r_matrix, g_vec)
+        g_vec = np.dot(r_matrix, g_vec).astype(default_scalar_type)
 
     top_dofs = fem.locate_dofs_topological(V, fdim, mt.find(3))
     bc_top = fem.dirichletbc(g_vec, top_dofs, V)
@@ -81,10 +86,10 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     bcs = [bc_bottom, bc_top]
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e3)
+    E = 1.0e3
     nu = 0
-    mu = fem.Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = fem.Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = fem.Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = fem.Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
 
     # Stress computation
     def sigma(v):
@@ -95,21 +100,22 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     v = TestFunction(V)
     a = inner(sigma(u), grad(v)) * dx
     # NOTE: Traction deactivated until we have a way of fixing nullspace
-    # g = fem.Constant(mesh, PETSc.ScalarType(g_vec))
+    # g = fem.Constant(mesh, default_scalar_type(g_vec))
     # ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=3)
-    rhs = inner(fem.Constant(mesh, PETSc.ScalarType((0, 0, 0))), v) * dx
+    rhs = inner(fem.Constant(mesh, default_scalar_type((0, 0, 0))), v) * dx
     # + inner(g, v) * ds
     bilinear_form = fem.form(a)
     linear_form = fem.form(rhs)
 
     mpc = MultiPointConstraint(V)
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
     if noslip:
         with Timer("~~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=tol)
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=tol)
 
     with Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()
@@ -123,11 +129,11 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         b = assemble_vector(linear_form, mpc)
 
     apply_lifting(b, [bilinear_form], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     fem.petsc.set_bc(b, bcs)
 
     # Solve Linear problem
-    opts = PETSc.Options()
+    opts = PETSc.Options()  # type: ignore
     opts["ksp_rtol"] = 1.0e-8
     opts["pc_type"] = "gamg"
     opts["pc_gamg_type"] = "agg"
@@ -144,7 +150,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
 
     # Create functionspace and build near nullspace
     A.setNearNullSpace(null_space)
-    solver = PETSc.KSP().create(mesh.comm)
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
     solver.setOperators(A)
     solver.setFromOptions()
 
@@ -190,7 +196,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
         A_org.assemble()
         L_org = fem.petsc.assemble_vector(linear_form)
         fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
-        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
         fem.petsc.set_bc(L_org, bcs)
 
     root = 0

@@ -6,24 +6,26 @@
 
 import resource
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 
+import basix.ufl
 import h5py
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, VectorFunctionSpace, dirichletbc,
-                         form, locate_dofs_topological, set_bc)
+from dolfinx.fem import (Constant, Function, functionspace, dirichletbc, form,
+                         locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
-from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 from mpi4py import MPI
 from petsc4py import PETSc
 from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
                  as_vector, ds, dx, grad, inner, sym, tr)
 
-from pathlib import Path
+from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
+                         assemble_vector)
+from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 
 
 def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdmf: bool = False,
@@ -33,18 +35,16 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         N *= 2
     ct = CellType.tetrahedron if tetra else CellType.hexahedron
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
-    # Get number of unknowns on each edge
 
-    V = VectorFunctionSpace(mesh, ("Lagrange", int(degree)))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,))
+    V = functionspace(mesh, el)
 
     # Generate Dirichlet BC (Fixed)
     u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
-        u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.array[:] = 0
 
     def boundaries(x):
-        return np.isclose(x[0], np.finfo(float).eps)
+        return np.isclose(x[0], 0, 500 * np.finfo(x.dtype).resolution)
     fdim = mesh.topology.dim - 1
     facets = locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = locate_dofs_topological(V, fdim, facets)
@@ -68,7 +68,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
 
         mpc = MultiPointConstraint(V)
         mpc.create_periodic_constraint_topological(V, periodic_mt, 2, periodic_relation, bcs,
-                                                   scale=PETSc.ScalarType(0.5))
+                                                   scale=default_scalar_type(0.5))
         mpc.finalize()
 
     # Create traction meshtag
@@ -81,13 +81,13 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     mt = meshtags(mesh, fdim, t_facets[arg_sort], facet_values)
 
     # Elasticity parameters
-    E = PETSc.ScalarType(1.0e4)
+    E = 1.0e4
     nu = 0.1
-    mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
-    g = Constant(mesh, PETSc.ScalarType((0, 0, -1e2)))
+    mu = Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
+    g = Constant(mesh, default_scalar_type((0, 0, -1e2)))
     x = SpatialCoordinate(mesh)
-    f = Constant(mesh, PETSc.ScalarType(1e3)) * as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
+    f = Constant(mesh, default_scalar_type(1e3)) * as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
 
     # Stress computation
     def epsilon(v):
@@ -117,10 +117,10 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
 
     # Apply boundary conditions
     apply_lifting(b, [bilinear_form], [bcs], mpc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+    b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(b, bcs)
 
-    opts = PETSc.Options()
+    opts = PETSc.Options()  # type: ignore
     if boomeramg:
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
@@ -145,8 +145,8 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     # opts["ksp_view"] = None # List progress of solver
 
     # Setup PETSc solver
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
-    solver.setFromOptions()
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
+    solver.setFromOptions()  # type: ignore
 
     if info:
         log_info(f"Run {r_lvl}: Solving")
@@ -186,7 +186,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         results = Path("results").absolute()
         results.mkdir(exist_ok=True)
         fname = results / f"bench_elasticity_edge_{r_lvl}.xdmf"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
+        with XDMFFile(mesh.comm, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)
 
