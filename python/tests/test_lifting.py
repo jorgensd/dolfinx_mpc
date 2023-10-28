@@ -81,7 +81,7 @@ def test_lifting(get_assemblers):  # noqa: F811
 
     fem.petsc.set_bc(b, bcs)
 
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)

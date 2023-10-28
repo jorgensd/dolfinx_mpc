@@ -170,6 +170,7 @@ bcs = [bc1]
 
 # +
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
+# -
 
 # Next, we can create the multipoint-constraint, enforcing that $\mathbf{u}\cdot\mathbf{n}=0$,
 # except where we have already enforced a Dirichlet boundary condition

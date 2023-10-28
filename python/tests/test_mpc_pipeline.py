@@ -66,7 +66,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     b = assemble_vector(linear_form, mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
 
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A)
