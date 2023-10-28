@@ -145,7 +145,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     # opts["ksp_view"] = None # List progress of solver
 
     # Setup PETSc solver
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)  # type: ignore
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
     solver.setFromOptions()  # type: ignore
 
     if info:
@@ -186,7 +186,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         results = Path("results").absolute()
         results.mkdir(exist_ok=True)
         fname = results / f"bench_elasticity_edge_{r_lvl}.xdmf"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
+        with XDMFFile(mesh.comm, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)
 

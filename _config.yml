@@ -5,11 +5,10 @@ title: "DOLFINx-MPC: An extension to DOLFINx for multi point constraints"
 author: Jørgen S. Dokken
 copyright: "2022"
 
-# Force re-execution of notebooks on each build.
-# See https://jupyterbook.org/content/execute.html
 execute:
-  execute_notebooks: force
+  execute_notebooks: cache
 
+only_build_toc_files: true
 
 # Information about where the book exists on the web
 repository:
@@ -24,6 +23,7 @@ launch_buttons:
 html:
   use_issues_button: true
   use_repository_button: true
+  
 
 parse:
   myst_enable_extensions:
@@ -37,5 +37,10 @@ sphinx:
   - 'sphinx.ext.napoleon'
   - 'sphinx.ext.viewcode'
 
+  config:
 
+     nb_custom_formats:
+        .py:
+            - jupytext.reads
+            - fmt: py
 

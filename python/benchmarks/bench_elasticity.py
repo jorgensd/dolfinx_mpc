@@ -105,7 +105,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
     # Create functionspace and function for mpc vector
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)  # type: ignore
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
     opts = PETSc.Options()  # type: ignore
     if boomeramg:
         opts["ksp_type"] = "cg"
@@ -167,7 +167,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         outdir = Path("results")
         outdir.mkdir(exist_ok=True, parents=True)
         fname = outdir / f"bench_elasticity_{r_lvl}.xdmf"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as outfile:
+        with XDMFFile(mesh.comm, fname, "w") as outfile:
             outfile.write_mesh(mesh)
             outfile.write_function(u_h)
 

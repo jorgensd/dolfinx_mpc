@@ -73,7 +73,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     linear_form = fem.form(rhs)
 
     # Setup LU solver
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
 

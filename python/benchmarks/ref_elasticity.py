@@ -135,7 +135,7 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
     # opts["ksp_view"] = None # List progress of solver
 
     # Create solver, set operator and options
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)  # type: ignore
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
     solver.setFromOptions()
     solver.setOperators(A_org)
 
@@ -177,7 +177,7 @@ def ref_elasticity(tetra: bool = True, r_lvl: int = 0, out_hdf5: Optional[h5py.F
         outdir.mkdir(exist_ok=True, parents=True)
 
         fname = outdir / "ref_elasticity_{0:d}.xdmf".format(r_lvl)
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
+        with XDMFFile(mesh.comm, fname, "w") as out_xdmf:
             out_xdmf.write_mesh(mesh)
             out_xdmf.write_function(u_, 0.0, "Xdmf/Domain/Grid[@Name='{0:s}'][1]".format(mesh.name))
 

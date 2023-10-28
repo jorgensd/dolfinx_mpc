@@ -122,7 +122,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     # opts["ksp_view"] = None # List progress of solver
 
     # Initialize PETSc solver, set options and operator
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)  # type: ignore
+    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
     solver.setFromOptions()
     solver.setOperators(A_org)
 
@@ -158,7 +158,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
         fname = outdir / "reference_periodic_{0:d}_{1:s}.xdmf".format(
             r_lvl, ext)
         u_.name = "u_" + ext + "_unconstrained"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_periodic:
+        with XDMFFile(mesh.comm, fname, "w") as out_periodic:
             out_periodic.write_mesh(mesh)
             out_periodic.write_function(u_, 0.0,
                                         "Xdmf/Domain/"

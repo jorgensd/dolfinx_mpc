@@ -188,6 +188,6 @@ if MPI.COMM_WORLD.rank == 0:
 u_h.name = "u"
 outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
-with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
+with XDMFFile(mesh.comm, outdir / "demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_function(u_h)

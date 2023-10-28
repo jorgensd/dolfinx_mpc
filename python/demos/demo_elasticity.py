@@ -73,7 +73,7 @@ def demo_elasticity():
     outdir = Path("results")
     outdir.mkdir(exist_ok=True, parents=True)
 
-    with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity.xdmf", "w") as outfile:
+    with XDMFFile(mesh.comm, outdir / "demo_elasticity.xdmf", "w") as outfile:
         outfile.write_mesh(mesh)
         outfile.write_function(u_h)
 
@@ -87,7 +87,7 @@ def demo_elasticity():
     fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
     L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     fem.petsc.set_bc(L_org, bcs)
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     solver.setType(PETSc.KSP.Type.PREONLY)
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A_org)
@@ -96,7 +96,7 @@ def demo_elasticity():
     u_.x.scatter_forward()
     u_.name = "u_unconstrained"
 
-    with XDMFFile(MPI.COMM_WORLD, outdir / "demo_elasticity.xdmf", "a") as outfile:
+    with XDMFFile(mesh.comm, outdir / "demo_elasticity.xdmf", "a") as outfile:
         outfile.write_function(u_)
         outfile.close()
 

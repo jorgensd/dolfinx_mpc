@@ -275,7 +275,7 @@ with dolfinx.io.XDMFFile(
     outfile.write_function(uh)
     outfile.write_function(ph)
 
-with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh) as vtx:
+with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh, engine="BP4") as vtx:
     vtx.write(0.0)
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison

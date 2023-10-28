@@ -55,7 +55,7 @@ jobs:
       HDF5_DIR: "/usr/local/"
       MPC_BUILD_MODE: ${{ matrix.build_mode }}
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
-      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib"
+      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib:${GITHUB_WORKSPACE}/dolfinx_mpc/python/demos"
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
@@ -100,6 +100,7 @@ jobs:
 
       - name: Install DOLFINx-MPC (Python)
         run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install -e python/[test]
+        
 
       - name: Run tests (serial)
         run: python3 -m coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -vs

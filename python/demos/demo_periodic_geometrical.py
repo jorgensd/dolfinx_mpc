@@ -121,7 +121,7 @@ outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
 
 uh.name = "u_mpc"
-outfile = XDMFFile(MPI.COMM_WORLD, outdir / "demo_periodic_geometrical.xdmf", "w")
+outfile = XDMFFile(mesh.comm, outdir / "demo_periodic_geometrical.xdmf", "w")
 outfile.write_mesh(mesh)
 outfile.write_function(uh)
 

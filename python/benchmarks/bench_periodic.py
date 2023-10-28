@@ -136,7 +136,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
 
     # Solve linear problem
     log_info(f"Run {r_lvl}: Solving")
-    solver = PETSc.KSP().create(MPI.COMM_WORLD)
+    solver = PETSc.KSP().create(mesh.comm)
     with Timer("~Periodic: Solve") as timer:
         # Create solver, set operator and options
         PETSc.Mat.setNearNullSpace(A, nullspace)
@@ -181,7 +181,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None,
         results = Path("results").absolute()
         results.mkdir(exist_ok=True)
         fname = results / f"bench_periodic3d_{r_lvl}_{ext}.xdmf"
-        with XDMFFile(MPI.COMM_WORLD, fname, "w") as out_xdmf:
+        with XDMFFile(mesh.comm, fname, "w") as out_xdmf:
             out_xdmf.write_mesh(mesh)
             out_xdmf.write_function(u_h, 0.0, f"Xdmf/Domain/Grid[@Name='{mesh.name}'][1]")
 

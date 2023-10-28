@@ -206,6 +206,6 @@ u_out.interpolate(u_h)
 u_out.name = "uh"
 out_path = Path("results")
 out_path.mkdir(exist_ok=True, parents=True)
-with XDMFFile(MPI.COMM_WORLD, out_path / "demo_elasticity_disconnect.xdmf", "w") as xdmf:
+with XDMFFile(mesh.comm, out_path / "demo_elasticity_disconnect.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_function(u_out)

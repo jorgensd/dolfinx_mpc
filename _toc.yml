@@ -1,0 +1,12 @@
+format: jb-book
+root: index
+
+parts:
+  - caption: "Demos"
+    chapters:
+    - file: "python/demos/demo_stokes.py"
+  - caption: "Python API"
+    chapters:
+    - file: "docs/api"
+    - file: "docs/utils"
+    - file: "docs/numba"

@@ -130,7 +130,7 @@ def demo_periodic3D(celltype: CellType):
     outdir = Path("results")
     outdir.mkdir(exist_ok=True, parents=True)
     fname = outdir / f"demo_periodic3d_{ext}.bp"
-    out_periodic = VTXWriter(MPI.COMM_WORLD, fname, u_out)
+    out_periodic = VTXWriter(mesh.comm, fname, u_out, engine="BP4")
     out_periodic.write(0)
     out_periodic.close()
 

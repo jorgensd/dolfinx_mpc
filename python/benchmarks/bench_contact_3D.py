@@ -164,7 +164,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     mesh_dir.mkdir(exist_ok=True)
     fname = mesh_dir / f"mesh_{ext}_{theta:.2f}.xdmf"
 
-    with XDMFFile(MPI.COMM_WORLD, fname, "w") as o_f:
+    with XDMFFile(mesh.comm, fname, "w") as o_f:
         o_f.write_mesh(mesh)
         o_f.write_meshtags(ct, x=mesh.geometry)
         o_f.write_meshtags(mt, x=mesh.geometry)

@@ -1,22 +1,23 @@
-# Copyright (C) 2022 Jørgen S. Dokken
+# # Stokes flow with slip conditions
+# **Author** Jørgen S. Dokken
 #
-# This file is part of DOLFINX_MPC
-#
-# SPDX-License-Identifier:    MIT
+# **License** MIT
 #
 # This demo illustrates how to apply a slip condition on an
 # interface not aligned with the coordiante axis.
-# The demos solves the Stokes problem
 
+# We start by the various modules required for this demo
+
+# +
 from pathlib import Path
 from typing import Union
 
 import basix.ufl
+import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import scipy.sparse.linalg
-from dolfinx import default_scalar_type, fem, io
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx import common, default_scalar_type, fem, io
 from dolfinx.io import gmshio
 from mpi4py import MPI
 from numpy.typing import NDArray
@@ -25,8 +26,14 @@ from ufl import (FacetNormal, Identity, Measure, TestFunctions, TrialFunctions,
                  div, dot, dx, grad, inner, outer, sym)
 from ufl.core.expr import Expr
 
-import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
+# -
+# ## Mesh generation
+#
+# Next we create the computational domain, a channel titled with respect to the coordinate axis.
+# We use GMSH and the DOLFINx GMSH-IO to convert the GMSH model into a DOLFINx mesh
+
+# +
 
 
 def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
@@ -106,17 +113,30 @@ def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np
     return mesh, ft
 
 
-# ------------------- Mesh and function space creation ------------------------
 mesh, mt = create_mesh_gmsh(res=0.1)
-
 fdim = mesh.topology.dim - 1
-# Create the function space
+
+# The next step is the create the function spaces for the fluid velocit and pressure.
+# We will use a mixed-formulation, and we use `basix.ufl` to create the Taylor-Hood finite element pair
+
 P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, gdim=mesh.geometry.dim, shape=(mesh.geometry.dim, ))
 P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1)
 TH = basix.ufl.mixed_element([P2, P1])
 W = fem.functionspace(mesh, TH)
-V, V_to_W = W.sub(0).collapse()
+# -
+
+# ## Boundary conditions
+# Next we want to prescribe an inflow condition on a set of facets, those marked by 3 in GMSH
+# To do so, we start by creating a function in the **collapsed** subspace of V, and create the
+# expression of choice for the boundary condition.
+# We use a Python-function for this, that takes in an array of shape `(num_points, 3)` and
+# returns the function values as an `(num_points, 2)` array.
+# Note that we therefore can use vectorized Numpy operations to compute the inlet values for a sequence of points
+# with a single function call
+
+V, _ = W.sub(0).collapse()
 Q, _ = W.sub(1).collapse()
+inlet_velocity = fem.Function(V)
 
 
 def inlet_velocity_expression(x: NDArray[Union[np.float32, np.float64]]) -> NDArray[Union[np.float32,
@@ -127,23 +147,45 @@ def inlet_velocity_expression(x: NDArray[Union[np.float32, np.float64]]) -> NDAr
                      5 * x[1] * np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2)))).astype(default_scalar_type)
 
 
-# ----------------------Defining boundary conditions----------------------
-# Inlet velocity Dirichlet BC
-inlet_velocity = fem.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
 inlet_velocity.x.scatter_forward()
+
+# Next, we have to create the Dirichlet boundary condition. As the function is in the collapsed space,
+# we send in the un-collapsed space and the collapsed space to locate dofs topological to find the
+# appropriate dofs and the mapping from `V` to `W0`.
+
+# +
 W0 = W.sub(0)
 dofs = fem.locate_dofs_topological((W0, V), 1, mt.find(3))
 bc1 = fem.dirichletbc(inlet_velocity, dofs, W0)
-
-# Collect Dirichlet boundary conditions
 bcs = [bc1]
-# Slip conditions for walls
+# -
+
+# Next, we want to create the slip conditions at the side walls of the channel.
+# To do so, we compute an approximation of the normal at all the degrees of freedom that
+# are associated with the facets marked with `1`, either by being on one of the vertices of a
+# facet marked with `1`, or on the facet itself (for instance at a midpoint).
+# If a dof is associated with a vertex that is connected to mutliple facets marked with `1`,
+# we define the normal as the average between the normals at the vertex viewed from each facet.
+
+# +
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
-with Timer("~Stokes: Create slip constraint"):
+
+# Next, we can create the multipoint-constraint, enforcing that $\mathbf{u}\cdot\mathbf{n}=0$,
+# except where we have already enforced a Dirichlet boundary condition
+
+# +
+with common.Timer("~Stokes: Create slip constraint"):
     mpc = MultiPointConstraint(W)
     mpc.create_slip_constraint(W.sub(0), (mt, 1), n, bcs=bcs)
 mpc.finalize()
+# -
+
+# ## Variational formulation
+# We start by creating some convenience functions, including the tangential projection of a vector,
+# the symmetric gradient and traction.
+
+# +
 
 
 def tangential_proj(u: Expr, n: Expr):
@@ -161,10 +203,14 @@ def sym_grad(u: Expr):
 def T(u: Expr, p: Expr, mu: Expr):
     return 2 * mu * sym_grad(u) - p * Identity(u.ufl_shape[0])
 
+# -
 
-# --------------------------Variational problem---------------------------
-# Traditional terms
-mu = 1
+
+# Next, we define the classical terms of the bilinear form `a` and linear form `L`.
+# We note that we use the symmetric formulation after integration by parts.
+
+# +
+mu = fem.Constant(mesh, default_scalar_type(1.))
 f = fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = TrialFunctions(W)
 (v, q) = TestFunctions(W)
@@ -172,39 +218,55 @@ a = (2 * mu * inner(sym_grad(u), sym_grad(v))
      - inner(p, div(v))
      - inner(div(u), q)) * dx
 L = inner(f, v) * dx
+# -
 
-# No prescribed shear stress
+# We could prescibe some shear stress at the slip boundaries. However, in this demo, we set it to `0`,
+# but include it in the variational formulation. We add the appropriate terms due to the slip condition,
+# as explained in https://arxiv.org/pdf/2001.10639.pdf
+
+# +
 n = FacetNormal(mesh)
 g_tau = tangential_proj(fem.Constant(mesh, default_scalar_type(((0, 0), (0, 0)))) * n, n)
 ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
-# Terms due to slip condition
-# Explained in for instance: https://arxiv.org/pdf/2001.10639.pdf
 a -= inner(outer(n, n) * dot(T(u, p, mu), n), v) * ds
 L += inner(g_tau, v) * ds
+# -
 
-# Solve linear problem
+# ## Solve the variational problem
+# We use the MUMPS solver provided through the DOLFINX_MPC PETSc interface to solve the variational problem
+
+# +
 petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_solver_type": "mumps"}
 problem = LinearProblem(a, L, mpc, bcs=bcs, petsc_options=petsc_options)
 U = problem.solve()
+# -
 
-# ------------------------------ Output ----------------------------------
+# ## Visualization
+# We store the solution to the `VTX` file format, which can be opend with the
+# `ADIOS2VTXReader` in Paraview
+
+# +
 u = U.sub(0).collapse()
 p = U.sub(1).collapse()
 u.name = "u"
 p.name = "p"
 
-outdir = Path("results")
+outdir = Path("results").absolute()
 outdir.mkdir(exist_ok=True, parents=True)
 
-with io.VTXWriter(mesh.comm, outdir / "demo_stokes_u.bp", u) as vtx:
+with io.VTXWriter(mesh.comm, outdir / "demo_stokes_u.bp", u, engine="BP4") as vtx:
     vtx.write(0.0)
-with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", p) as vtx:
+with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", p, engine="BP4") as vtx:
     vtx.write(0.0)
+# -
 
-# -------------------- Verification --------------------------------
-# Transfer data from the MPC problem to numpy arrays for comparison
-with Timer("~Stokes: Verification of problem by global matrix reduction"):
+# ## Verification
+# We verify that the MPC implementation is correct by creating the global reduction matrix
+# and performing global matrix-matrix-matrix multiplication using numpy
+
+# +
+with common.Timer("~Stokes: Verification of problem by global matrix reduction"):
 
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
@@ -238,6 +300,9 @@ with Timer("~Stokes: Verification of problem by global matrix reduction"):
         uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
         assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(5e2
                            * np.finfo(u_mpc.dtype).resolution))
+# -
 
-# -------------------- List timings --------------------------
-list_timings(MPI.COMM_WORLD, [TimingType.wall])
+# ## Timings
+# Finally, we list the execution time of various operations used in the demo
+
+common.list_timings(MPI.COMM_WORLD, [common.TimingType.wall])
