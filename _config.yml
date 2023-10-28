@@ -38,9 +38,10 @@ sphinx:
   - 'sphinx.ext.viewcode'
 
   config:
-
-     nb_custom_formats:
-        .py:
-            - jupytext.reads
-            - fmt: py
+    html_theme_options:
+      navigation_with_keys: false
+    nb_custom_formats:
+      .py:
+        - jupytext.reads
+        - fmt: py
 
