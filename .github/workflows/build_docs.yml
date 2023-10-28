@@ -21,6 +21,11 @@ jobs:
 
     - name: Install DOLFINx
       uses: ./.github/actions/install-dolfinx
+      with:
+        dolfinx: v0.7.1
+        ufl: 2023.2.0
+        ffcx: v0.7.0
+        basix: v0.7.0
 
     - name: Install DOLFINx-MPC (C++)
       run: |
