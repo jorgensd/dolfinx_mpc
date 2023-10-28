@@ -126,7 +126,7 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
     _fem.petsc.set_bc(b, [bc_deac])
 
     # Solve Linear problem
-    solver = PETSc.KSP().create(mesh.comm)  # type: ignore
+    solver = PETSc.KSP().create(V.mesh.comm)  # type: ignore
     solver.setType("cg")
     solver.rtol = 1e-8
     solver.setOperators(A)
