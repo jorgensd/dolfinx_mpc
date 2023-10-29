@@ -149,7 +149,7 @@ def log_info(message):
         _log.set_log_level(old_level)
 
 
-def rigid_motions_nullspace(V: _fem.FunctionSpaceBase):
+def rigid_motions_nullspace(V: _fem.FunctionSpace):
     """
     Function to build nullspace for 2D/3D elasticity.
 
@@ -399,7 +399,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     return slaves, masters, coeffs, owners, offsets
 
 
-def create_normal_approximation(V: _fem.FunctionSpaceBase, mt: _cpp.mesh.MeshTags_int32, value: int):
+def create_normal_approximation(V: _fem.FunctionSpace, mt: _cpp.mesh.MeshTags_int32, value: int):
     """
     Creates a normal approximation for the dofs in the closure of the attached entities.
     Where a dof is attached to entities facets, an average is computed

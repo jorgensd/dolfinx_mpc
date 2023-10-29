@@ -11,7 +11,7 @@ from pathlib import Path
 import gmsh
 import numpy as np
 from dolfinx import default_scalar_type
-from dolfinx.fem import (Constant, Function, FunctionSpaceBase, dirichletbc,
+from dolfinx.fem import (Constant, Function, FunctionSpace, dirichletbc,
                          functionspace, locate_dofs_geometrical,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
@@ -108,7 +108,7 @@ bc_fix = dirichletbc(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0]
 bcs = [bc_push, bc_fix]
 
 
-def gather_dof_coordinates(V: FunctionSpaceBase, dofs: np.ndarray):
+def gather_dof_coordinates(V: FunctionSpace, dofs: np.ndarray):
     """
     Distributes the dof coordinates of this subset of dofs to all processors
     """

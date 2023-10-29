@@ -61,13 +61,13 @@ class MultiPointConstraint():
     _coeffs: _float_array_types
     _owners: npt.NDArray[numpy.int32]
     _offsets: npt.NDArray[numpy.int32]
-    V: _fem.FunctionSpaceBase
+    V: _fem.FunctionSpace
     finalized: bool
     _cpp_object: _mpc_classes
     _dtype: _float_classes
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, V: _fem.FunctionSpaceBase, dtype: _float_classes = default_scalar_type):
+    def __init__(self, V: _fem.FunctionSpace, dtype: _float_classes = default_scalar_type):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=dtype)
@@ -77,7 +77,7 @@ class MultiPointConstraint():
         self.finalized = False
         self._dtype = dtype
 
-    def add_constraint(self, V: _fem.FunctionSpaceBase, slaves: npt.NDArray[numpy.int32],
+    def add_constraint(self, V: _fem.FunctionSpace, slaves: npt.NDArray[numpy.int32],
                        masters: npt.NDArray[numpy.int64], coeffs: _float_array_types,
                        owners: npt.NDArray[numpy.int32], offsets: npt.NDArray[numpy.int32]):
         """
@@ -108,7 +108,7 @@ class MultiPointConstraint():
             self._coeffs = numpy.append(self._coeffs, coeffs)
             self._owners = numpy.append(self._owners, owners)
 
-    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpaceBase,
+    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace,
                                      mpc_data: Union[_mpc_data_classes, MPCData]):
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
@@ -151,13 +151,13 @@ class MultiPointConstraint():
             raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
 
         # Replace function space
-        self.V = _fem.FunctionSpaceBase(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
+        self.V = _fem.FunctionSpace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
 
         self.finalized = True
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
-    def create_periodic_constraint_topological(self, V: _fem.FunctionSpaceBase, meshtag: _mesh.MeshTags, tag: int,
+    def create_periodic_constraint_topological(self, V: _fem.FunctionSpace, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBC],
                                                scale: _float_classes = default_scalar_type(1.)):
@@ -184,7 +184,7 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpaceBase,
+    def create_periodic_constraint_geometrical(self, V: _fem.FunctionSpace,
                                                indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBC],
@@ -213,7 +213,7 @@ class MultiPointConstraint():
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
-    def create_slip_constraint(self, space: _fem.FunctionSpaceBase, facet_marker: Tuple[_mesh.MeshTags, int],
+    def create_slip_constraint(self, space: _fem.FunctionSpace, facet_marker: Tuple[_mesh.MeshTags, int],
                                v: _fem.Function, bcs: List[_fem.DirichletBC] = []):
         """
         Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
