@@ -90,7 +90,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         # Concatenate points and cells
         points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
         cells = np.vstack([cells0, cells1])
-        domain = Mesh(element("Lagrange", 1, shape=(points.shape[1],), gdim=points.shape[1]))
+        domain = Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],), gdim=points.shape[1]))
         # Rotate mesh
         points = np.dot(r_matrix, points.T).T.astype(default_real_type)
 
