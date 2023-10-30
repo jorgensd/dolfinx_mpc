@@ -10,10 +10,11 @@
 # This file is part of DOLFINX_MPCX.
 #
 # SPDX-License-Identifier:    MIT
-
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Union
+
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg

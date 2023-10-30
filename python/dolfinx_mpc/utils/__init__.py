@@ -6,6 +6,7 @@
 """Helper functions for tests in Dolfinx mpc"""
 
 # flake8: noqa
+from __future__ import annotations
 
 from .test import (compare_CSR, compare_mpc_lhs, compare_mpc_rhs,
                    gather_constants, gather_PETScMatrix, gather_PETScVector,

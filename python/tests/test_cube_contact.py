@@ -6,6 +6,7 @@
 #
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
+from __future__ import annotations
 
 import dolfinx.fem as fem
 import gmsh

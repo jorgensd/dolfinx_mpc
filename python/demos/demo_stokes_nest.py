@@ -9,6 +9,7 @@
 # The demos solves the Stokes problem using the nest functionality to
 # avoid using mixed function spaces. The demo also illustrates how to use
 #  block preconditioners with PETSc
+from __future__ import annotations
 
 from pathlib import Path
 

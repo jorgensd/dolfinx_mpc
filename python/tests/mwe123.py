@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 from dolfinx import default_scalar_type
 from dolfinx import fem

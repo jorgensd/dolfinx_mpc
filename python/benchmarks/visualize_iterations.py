@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator, LogLocator, NullFormatter
 import matplotlib.transforms as mtransforms

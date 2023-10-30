@@ -1,6 +1,7 @@
 # Copyright (C) 2021 Jørgen S. Dokken and Sarah Roggendorf
 #
 # SPDX-License-Identifier:    MIT
+from __future__ import annotations
 
 from typing import Dict, Tuple
 

@@ -3,6 +3,7 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
+from __future__ import annotations
 
 import ctypes
 import ctypes.util

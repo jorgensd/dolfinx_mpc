@@ -6,7 +6,7 @@
 """Numba extension for dolfinx_mpc"""
 
 # flake8: noqa
-
+from __future__ import annotations
 
 try:
     import numba
