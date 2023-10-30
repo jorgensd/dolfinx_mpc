@@ -43,10 +43,10 @@ The C++ library can be found under [libdolfinx_mpc](https://anaconda.org/conda-f
 
 ## Docker
 
-Version 0.6.1.post1 is available as an docker image at [Github Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc)
+Version 0.7.0 is available as an docker image at [Github Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc)
 and can be ran using
 ```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared ghcr.io/jorgensd/dolfinx_mpc:v0.6.1.post1
+docker run -ti -v $(pwd):/root/shared -w /root/shared ghcr.io/jorgensd/dolfinx_mpc:v0.7.0
 ```
 To change to complex mode run `source dolfinx-complex-mode`.
 Similarly, to change back to real mode, call `source dolfinx-real-mode`.

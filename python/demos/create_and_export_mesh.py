@@ -5,13 +5,13 @@ import dolfinx.common as _common
 import dolfinx.cpp as _cpp
 import dolfinx.io as _io
 import dolfinx.mesh as _mesh
+import dolfinx_mpc.utils as _utils
 import gmsh
 import numpy as np
 import ufl
+from basix.ufl import element
 from dolfinx.io import gmshio
 from mpi4py import MPI
-
-import dolfinx_mpc.utils as _utils
 
 
 def gmsh_3D_stacked(celltype: str, theta: float, res: float = 0.1,
@@ -390,8 +390,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
-        cell = ufl.Cell(celltype, geometric_dimension=points.shape[1])
-        domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
+        domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],), gdim=points.shape[1]))
         mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
@@ -511,8 +510,7 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
-        cell = ufl.Cell(ext, geometric_dimension=points.shape[1])
-        domain = ufl.Mesh(ufl.VectorElement("Lagrange", cell, 1))
+        domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],), gdim=points.shape[1]))
         mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1

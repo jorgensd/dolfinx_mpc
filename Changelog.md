@@ -1,5 +1,10 @@
 # Changelog
 
+## Main
+ - **DOLFINx API-changes**
+   - `dolfinx.fem.FunctionSpaceBase` replaced by `dolfinx.fem.FunctionSpace`
+   - `ufl.FiniteElement` and `ufl.VectorElement` is replaced by `basix.ufl.element`
+
 ## v0.7.0
 
 - **API**:
