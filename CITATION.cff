@@ -5,5 +5,5 @@ authors:
     given-names: Jørgen Schartum
     orcid: https://orcid.org/0000-0001-6489-8858
 title: "DOLFINx-MPC"
-version: 0.5.0
-date-released: 2022-08-12
+version: 0.7.0.post0
+date-released: 2023-10-30
