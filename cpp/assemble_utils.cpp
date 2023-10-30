@@ -5,6 +5,7 @@
 // SPDX-License-Identifier:    MIT
 
 #include "assemble_utils.h"
+#include <algorithm>
 #include <assert.h>
 std::vector<std::int32_t> dolfinx_mpc::compute_local_slave_index(
     std::span<const std::int32_t> slaves, const std::uint32_t num_dofs,
