@@ -1,4 +1,4 @@
-FROM ghcr.io/fenics/dolfinx/dolfinx:main
+FROM ghcr.io/fenics/dolfinx/dolfinx:nightly
 
 WORKDIR /tmp
 
