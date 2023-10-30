@@ -6,7 +6,7 @@
 #
 # Multi point constraint problem for linear elasticity with slip conditions
 # between two cubes.
-
+from __future__ import annotations
 
 import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser

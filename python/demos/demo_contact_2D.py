@@ -11,7 +11,7 @@
 # A slip condition is implemented at the interface of the cube.
 # Additional constraints to avoid tangential movement is
 # added to the to left corner of the top cube.
-
+from __future__ import annotations
 
 import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser

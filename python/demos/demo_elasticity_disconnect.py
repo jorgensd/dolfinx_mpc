@@ -5,7 +5,7 @@
 # SPDX-License-Identifier:    MIT
 #
 # Create constraint between two bodies that are not in contact
-
+from __future__ import annotations
 
 from pathlib import Path
 

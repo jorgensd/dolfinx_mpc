@@ -6,6 +6,7 @@
 """Main module for DOLFINX_MPC"""
 
 # flake8: noqa
+from __future__ import annotations
 
 import dolfinx_mpc.cpp
 

@@ -1,4 +1,3 @@
-
 # This demo program solves Poisson's equation
 #
 #     - div grad u(x, y) = f(x, y)
@@ -15,6 +14,7 @@
 # This file is part of DOLFINX_MPCX.
 #
 # SPDX-License-Identifier:    MIT
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, Union
