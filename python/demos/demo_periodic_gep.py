@@ -26,6 +26,7 @@
 # where A and B are real symmetric positive definite matrices. The generalized
 # eigenvalue problem is solved using SLEPc and the computed eigenvalues are
 # compared to the exact ones.
+from __future__ import annotations
 
 from pathlib import Path
 from typing import List, Tuple

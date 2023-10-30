@@ -4,6 +4,7 @@
 # This file is part of DOLFINx MPC
 #
 # SPDX-License-Identifier:    MIT
+from __future__ import annotations
 
 import typing
 

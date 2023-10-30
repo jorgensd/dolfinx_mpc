@@ -3,6 +3,7 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
+from __future__ import annotations
 
 __all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_mpc_lhs", "compare_mpc_rhs",
            "gather_transformation_matrix", "compare_CSR"]
