@@ -12,7 +12,7 @@ import dolfinx.la as _la
 import dolfinx.nls.petsc
 import numpy as np
 import pytest
-import ufl
+# import ufl
 from mpi4py import MPI
 from petsc4py import PETSc
 
