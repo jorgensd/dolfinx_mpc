@@ -884,7 +884,7 @@ template <typename T, std::floating_point U>
 mpc_data<T> create_contact_inelastic_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
-    std::int32_t master_marker, const double eps2 = 1e-20)
+    std::int32_t master_marker, const U eps2 = 1e-20)
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
 

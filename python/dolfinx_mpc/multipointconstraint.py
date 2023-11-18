@@ -327,6 +327,8 @@ class MultiPointConstraint():
             normal: The function used in the dot-product of the constraint
             eps2: The tolerance for the squared distance between cells to be considered as a collision
         """
+        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+            eps2 = eps2.item()  # type: ignore
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
             self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, normal._cpp_object, eps2)
         self.add_constraint_from_mpc_data(self.V, mpc_data)
@@ -345,6 +347,8 @@ class MultiPointConstraint():
             master_marker: The marker of the master facets
             eps2: The tolerance for the squared distance between cells to be considered as a collision
         """
+        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+            eps2 = eps2.item()  # type: ignore
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
             self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, eps2)
         self.add_constraint_from_mpc_data(self.V, mpc_data)

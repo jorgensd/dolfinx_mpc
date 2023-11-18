@@ -1,8 +1,8 @@
-// // Copyright (C) 2020 Jørgen S. Dokken
-// //
-// // This file is part of DOLFINX-MPC
-// //
-// // SPDX-License-Identifier:    MIT
+// Copyright (C) 2020 Jørgen S. Dokken
+//
+// This file is part of DOLFINX-MPC
+//
+// SPDX-License-Identifier:    MIT
 
 #include <array.h>
 #include <caster_petsc.h>
@@ -144,10 +144,10 @@ void declare_functions(nb::module_& m)
         &dolfinx_mpc::create_contact_inelastic_condition<T, U>);
   m.def(
       "create_periodic_constraint_geometrical",
-      [](const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-         std::function<nb::ndarray<bool, nb::ndim<1>, nb::c_contig>(
+      [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
+         const std::function<nb::ndarray<bool, nb::ndim<1>, nb::c_contig>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& indicator,
-         std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
+         const std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
@@ -185,11 +185,10 @@ void declare_functions(nb::module_& m)
       nb::arg("collapse").noconvert());
   m.def(
       "create_periodic_constraint_topological",
-      [](const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
-         const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>>&
-             meshtags,
+      [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
+         std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>>& meshtags,
          const int dim,
-         std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
+         const std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
@@ -299,9 +298,9 @@ void declare_petsc_functions(nb::module_& m)
       [](nb::ndarray<T, nb::ndim<1>, nb::c_contig> b,
          std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
          const std::vector<std::vector<
-             std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>>& bcs1,
+             std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>>>& bcs1,
          const std::vector<nb::ndarray<const T, nb::ndim<1>, nb::c_contig>>& x0,
-         U scale,
+         T scale,
          std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
       {
         std::vector<std::span<const T>> _x0;
