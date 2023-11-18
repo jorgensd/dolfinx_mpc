@@ -99,7 +99,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install -e python/[test]
+        run: python3 -m pip -v install --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test]
         
 
       - name: Run tests (serial)
