@@ -142,11 +142,10 @@ void declare_functions(nb::module_& m)
   m.def("create_slip_condition", &dolfinx_mpc::create_slip_condition<T, U>);
   m.def("create_contact_inelastic_condition",
         &dolfinx_mpc::create_contact_inelastic_condition<T, U>);
-
   m.def(
       "create_periodic_constraint_geometrical",
       [](const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-         const std::function<nb::ndarray<bool>(
+         const std::function<nb::ndarray<bool, nb::ndim<1>, nb::c_contig>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& indicator,
          const std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
@@ -182,8 +181,8 @@ void declare_functions(nb::module_& m)
         return dolfinx_mpc::create_periodic_condition_geometrical(
             V, _indicator, _relation, bcs, scale, collapse);
       },
-      "V"_a, "indicator"_a, "relation"_a, "bcs"_a, "scall"_a, "collapse"_a);
-
+      "V"_a, "indicator"_a, "relation"_a, "bcs"_a, nb::arg("scale").noconvert(),
+      nb::arg("collapse").noconvert());
   m.def(
       "create_periodic_constraint_topological",
       [](const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
@@ -207,8 +206,8 @@ void declare_functions(nb::module_& m)
         return dolfinx_mpc::create_periodic_condition_topological(
             V, meshtags, dim, _relation, bcs, scale, collapse);
       },
-      "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a, "scall"_a,
-      "collapse"_a);
+      "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a,
+      nb::arg("scale").noconvert(), nb::arg("collapse").noconvert());
 }
 
 template <typename T, std::floating_point U>
