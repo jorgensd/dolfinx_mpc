@@ -61,5 +61,5 @@ To install the `dolfinx_mpc`-library run the following code from this directory:
 ```bash
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -B build-dir cpp/
 ninja -j3 install -C build-dir
-python3 -m pip install python/. --upgrade
+python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation ./python -U
 ```

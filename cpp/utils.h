@@ -1150,7 +1150,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       = element->basix_element().template map_fn<xu_t, xU_t, xJ_t, xK_t>();
 
   auto apply_dof_transformation
-      = element->template get_dof_transformation_function<U>();
+      = element->template get_pre_dof_transformation_function<U>();
 
   mdspan3_t full_basis(output_basis.data(), reference_shape);
   for (std::size_t p = 0; p < cells.size(); ++p)
@@ -1276,7 +1276,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   }
 
   const auto apply_dof_transformation
-      = element->template get_dof_transformation_function<U>();
+      = element->template get_pre_dof_transformation_function<U>();
 
   const std::array<std::size_t, 4> bsize
       = cmaps[0].tabulate_shape(0, X_shape[0]);

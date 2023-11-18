@@ -63,17 +63,16 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
                std::size_t, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent, 3>>
         normals,
-    std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
+    const dolfinx::fem::FunctionSpace<U>& V,
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
         tabulated_basis_values)
 {
   const double tol = 1e-6;
-  auto mesh = V->mesh();
-  const std::int32_t block_size = V->dofmap()->index_map_bs();
-  std::shared_ptr<const dolfinx::common::IndexMap> imap
-      = V->dofmap()->index_map;
-  const int bs = V->dofmap()->index_map_bs();
+  auto mesh = V.mesh();
+  const std::int32_t block_size = V.dofmap()->index_map_bs();
+  std::shared_ptr<const dolfinx::common::IndexMap> imap = V.dofmap()->index_map;
+  const int bs = V.dofmap()->index_map_bs();
   const std::int32_t size_local = imap->size_local();
   MPI_Comm comm = mesh->comm();
   int rank = -1;
@@ -89,7 +88,7 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
   {
     if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      auto cell_blocks = V->dofmap()->cell_dofs(cell);
+      auto cell_blocks = V.dofmap()->cell_dofs(cell);
       for (std::size_t j = 0; j < cell_blocks.size(); ++j)
       {
         for (int b = 0; b < bs; b++)
@@ -124,7 +123,7 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
   {
     if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
     {
-      auto cell_blocks = V->dofmap()->cell_dofs(cell);
+      auto cell_blocks = V.dofmap()->cell_dofs(cell);
       global_blocks.resize(cell_blocks.size());
       imap->local_to_global(cell_blocks, global_blocks);
       // Compute coefficients for each master
@@ -169,7 +168,7 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
 /// tagged with the marker
 template <std::floating_point U>
 std::vector<std::int32_t>
-locate_slave_dofs(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
+locate_slave_dofs(const dolfinx::fem::FunctionSpace<U>& V,
                   const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
                   std::int32_t slave_marker)
 {
@@ -184,13 +183,12 @@ locate_slave_dofs(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
   // Find all dofs on slave facets
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyzgeometry
-  auto [V0, map] = V->sub({0})->collapse();
+  auto [V0, map] = V.sub({0})->collapse();
 
   std::array<std::vector<std::int32_t>, 2> slave_dofs
       = dolfinx::fem::locate_dofs_topological(
-          *V->mesh()->topology_mutable(),
-          {*V->sub({0})->dofmap(), *V0.dofmap()}, edim,
-          std::span(slave_facets));
+          *V.mesh()->topology_mutable(), {*V.sub({0})->dofmap(), *V0.dofmap()},
+          edim, std::span(slave_facets));
   return slave_dofs[0];
 }
 
@@ -347,27 +345,27 @@ namespace dolfinx_mpc
 /// collision
 template <typename T, std::floating_point U>
 mpc_data<T> create_contact_slip_condition(
-    std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
+    const dolfinx::fem::FunctionSpace<U>& V,
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
     std::int32_t slave_marker, std::int32_t master_marker,
-    std::shared_ptr<dolfinx::fem::Function<T, U>> nh, const U eps2 = 1e-20)
+    const dolfinx::fem::Function<T, U>& nh, const U eps2 = 1e-20)
 {
 
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
-  std::shared_ptr<const mesh::Mesh<U>> mesh = V->mesh();
+  std::shared_ptr<const mesh::Mesh<U>> mesh = V.mesh();
   MPI_Comm comm = mesh->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
-      = V->dofmap()->index_map;
+      = V.dofmap()->index_map;
   assert(mesh->topology() == meshtags.topology());
   const int tdim = mesh->topology()->dim();
   const int gdim = mesh->geometry().dim();
   const int fdim = tdim - 1;
-  const int block_size = V->dofmap()->index_map_bs();
-  std::int32_t size_local = V->dofmap()->index_map->size_local();
+  const int block_size = V.dofmap()->index_map_bs();
+  std::int32_t size_local = V.dofmap()->index_map->size_local();
 
   mesh->topology_mutable()->create_connectivity(fdim, tdim);
   mesh->topology_mutable()->create_connectivity(tdim, tdim);
@@ -408,7 +406,7 @@ mpc_data<T> create_contact_slip_condition(
   // Note that this function casts the normal array from being potentially
   // complex to real valued
   std::vector<std::int32_t> dofs(block_size);
-  std::span<const T> normal_array = nh->x()->array();
+  std::span<const T> normal_array = nh.x()->array();
   const auto largest_normal_component
       = [&dofs, block_size, &normal_array, gdim](const std::int32_t block,
                                                  std::span<U, 3> normal)
@@ -449,19 +447,19 @@ mpc_data<T> create_contact_slip_condition(
 
   // Create map from slave dof blocks to a cell containing them
   std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
-      *mesh->topology(), *V->dofmap(), local_slave_blocks);
+      *mesh->topology(), *V.dofmap(), local_slave_blocks);
   std::vector<U> slave_coordinates;
   std::array<std::size_t, 2> coord_shape;
   {
     std::tie(slave_coordinates, coord_shape)
-        = dolfinx_mpc::tabulate_dof_coordinates<U>(*V, local_slave_blocks,
+        = dolfinx_mpc::tabulate_dof_coordinates<U>(V, local_slave_blocks,
                                                    slave_cells);
     std::vector<std::int32_t> local_cell_collisions
         = dolfinx_mpc::find_local_collisions<U>(*mesh, bb_tree,
                                                 slave_coordinates, eps2);
 
     auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        *V, slave_coordinates, local_cell_collisions);
+        V, slave_coordinates, local_cell_collisions);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -582,7 +580,7 @@ mpc_data<T> create_contact_slip_condition(
         = dolfinx_mpc::find_local_collisions<U>(*mesh, bb_tree, recv_coords,
                                                 eps2);
     auto [recv_basis_values, shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        *V, recv_coords, remote_cell_collisions);
+        V, recv_coords, remote_cell_collisions);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
         basis_span(recv_basis_values.data(), shape[0], shape[1]);
@@ -884,30 +882,30 @@ mpc_data<T> create_contact_slip_condition(
 /// collision
 template <typename T, std::floating_point U>
 mpc_data<T> create_contact_inelastic_condition(
-    std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
+    const dolfinx::fem::FunctionSpace<U>& V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker, const double eps2 = 1e-20)
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
 
-  MPI_Comm comm = V->mesh()->comm();
+  MPI_Comm comm = V.mesh()->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
 
   // Extract some const information from function-space
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
-      = V->dofmap()->index_map;
-  const int tdim = V->mesh()->topology()->dim();
+      = V.dofmap()->index_map;
+  const int tdim = V.mesh()->topology()->dim();
   const int fdim = tdim - 1;
-  const int block_size = V->dofmap()->index_map_bs();
-  std::int32_t size_local = V->dofmap()->index_map->size_local();
+  const int block_size = V.dofmap()->index_map_bs();
+  std::int32_t size_local = V.dofmap()->index_map->size_local();
 
   // Create entity permutations needed in evaluate_basis_functions
-  V->mesh()->topology_mutable()->create_entity_permutations();
+  V.mesh()->topology_mutable()->create_entity_permutations();
   // Create connectivities needed for evaluate_basis_functions and
   // select_colliding cells
-  V->mesh()->topology_mutable()->create_connectivity(fdim, tdim);
-  V->mesh()->topology_mutable()->create_connectivity(tdim, tdim);
+  V.mesh()->topology_mutable()->create_connectivity(fdim, tdim);
+  V.mesh()->topology_mutable()->create_connectivity(tdim, tdim);
 
   std::vector<std::int32_t> slave_blocks
       = impl::locate_slave_dofs<U>(V, meshtags, slave_marker);
@@ -962,19 +960,19 @@ mpc_data<T> create_contact_inelastic_condition(
   }
 
   // Create boundingboxtree for master surface
-  auto facet_to_cell = V->mesh()->topology()->connectivity(fdim, tdim);
+  auto facet_to_cell = V.mesh()->topology()->connectivity(fdim, tdim);
   assert(facet_to_cell);
   dolfinx::geometry::BoundingBoxTree<U> bb_tree = impl::create_boundingbox_tree(
-      *V->mesh(), meshtags, master_marker, std::sqrt(eps2));
+      *V.mesh(), meshtags, master_marker, std::sqrt(eps2));
 
   // Tabulate slave block coordinates and find colliding cells
   std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
-      *V->mesh()->topology(), *V->dofmap(), local_blocks);
+      *V.mesh()->topology(), *V.dofmap(), local_blocks);
   std::vector<U> slave_coordinates;
   {
     std::array<std::size_t, 2> c_shape;
     std::tie(slave_coordinates, c_shape)
-        = dolfinx_mpc::tabulate_dof_coordinates<U>(*V, local_blocks,
+        = dolfinx_mpc::tabulate_dof_coordinates<U>(V, local_blocks,
                                                    slave_cells);
   }
 
@@ -987,10 +985,10 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<size_t> collision_to_local;
   {
     std::vector<std::int32_t> colliding_cells
-        = dolfinx_mpc::find_local_collisions<U>(*V->mesh(), bb_tree,
+        = dolfinx_mpc::find_local_collisions<U>(*V.mesh(), bb_tree,
                                                 slave_coordinates, eps2);
     auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        *V, slave_coordinates, colliding_cells);
+        V, slave_coordinates, colliding_cells);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -1003,7 +1001,7 @@ mpc_data<T> create_contact_inelastic_condition(
     {
       if (const auto& cell = colliding_cells[i]; cell != -1)
       {
-        auto cell_blocks = V->dofmap()->cell_dofs(cell);
+        auto cell_blocks = V.dofmap()->cell_dofs(cell);
         l_master.reserve(cell_blocks.size());
         coeff.reserve(cell_blocks.size());
         assert(l_master.empty());
@@ -1172,10 +1170,10 @@ mpc_data<T> create_contact_inelastic_condition(
       collision_block_offsets(indegree);
   {
     std::vector<std::int32_t> remote_cell_collisions
-        = dolfinx_mpc::find_local_collisions<U>(*V->mesh(), bb_tree,
-                                                recv_coords, eps2);
+        = dolfinx_mpc::find_local_collisions<U>(*V.mesh(), bb_tree, recv_coords,
+                                                eps2);
     auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        *V, recv_coords, remote_cell_collisions);
+        V, recv_coords, remote_cell_collisions);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -1196,7 +1194,7 @@ mpc_data<T> create_contact_inelastic_condition(
             = std::vector<std::int32_t>(tdim, 0);
         if (const auto& cell = remote_cell_collisions[j]; cell != -1)
         {
-          auto cell_blocks = V->dofmap()->cell_dofs(cell);
+          auto cell_blocks = V.dofmap()->cell_dofs(cell);
           r_master.reserve(cell_blocks.size());
           r_coeff.reserve(cell_blocks.size());
           assert(r_master.empty());

@@ -117,7 +117,7 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
             if len(master_dofs) == 1:
                 master_block = master_dofs[0] // bs
                 master_rem = master_dofs % bs
-                glob_master = index_map.local_to_global([master_block])[0]
+                glob_master = index_map.local_to_global(np.asarray([master_block], dtype=np.int32))[0]
                 if slave_status == -1:
                     if i in non_local_entities.keys():
                         non_local_entities[i]["masters"].append(glob_master * bs + master_rem)

@@ -561,11 +561,11 @@ void assemble_matrix_impl(
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
       apply_dof_transformation
-      = element0->template get_dof_transformation_function<T>();
+      = element0->template get_pre_dof_transformation_function<T>();
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
       apply_dof_transformation_to_transpose
-      = element1->template get_dof_transformation_to_transpose_function<T>();
+      = element1->template get_post_dof_transformation_function<T>();
 
   const bool needs_transformation_data
       = element0->needs_dof_transformations()
