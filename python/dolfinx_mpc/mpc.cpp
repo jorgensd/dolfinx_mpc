@@ -145,9 +145,9 @@ void declare_functions(nb::module_& m)
   m.def(
       "create_periodic_constraint_geometrical",
       [](const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-         const std::function<nb::ndarray<bool, nb::ndim<1>, nb::c_contig>(
+         std::function<nb::ndarray<bool, nb::ndim<1>, nb::c_contig>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& indicator,
-         const std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
+         std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
@@ -189,7 +189,7 @@ void declare_functions(nb::module_& m)
          const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>>&
              meshtags,
          const int dim,
-         const std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
+         std::function<nb::ndarray<U, nb::ndim<2>, nb::numpy>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
