@@ -14,7 +14,7 @@ import dolfinx.la as _la
 import ufl
 from dolfinx.common import Timer
 from petsc4py import PETSc as _PETSc
-
+import numpy
 import dolfinx_mpc.cpp
 
 from .multipointconstraint import MultiPointConstraint
@@ -34,6 +34,8 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.Diri
         x0: List of vectors
         scale: Scaling for lifting
     """
+    if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+        scale = scale.item()
     t = Timer("~MPC: Apply lifting (C++)")
     with contextlib.ExitStack() as stack:
         x0 = [stack.enter_context(x.localForm()) for x in x0]

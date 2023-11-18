@@ -300,7 +300,7 @@ void declare_petsc_functions(nb::module_& m)
          std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
          const std::vector<std::vector<
              std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>>& bcs1,
-         const std::vector<nb::ndarray<T, nb::ndim<1>, nb::c_contig>>& x0,
+         const std::vector<nb::ndarray<const T, nb::ndim<1>, nb::c_contig>>& x0,
          U scale,
          std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
       {

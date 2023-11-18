@@ -175,6 +175,8 @@ class MultiPointConstraint():
             scale: Float for scaling bc
         """
         bcs_ = [bc._cpp_object for bc in bcs]
+        if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+            scale = scale.item()
         if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
                 self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, False)
@@ -203,6 +205,8 @@ class MultiPointConstraint():
                  (Periodic constraints will be ignored for these dofs)
             scale: Float for scaling bc
         """
+        if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+            scale = scale.item()
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         if (V is self.V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
