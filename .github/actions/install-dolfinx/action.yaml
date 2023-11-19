@@ -70,4 +70,4 @@ runs:
 
     - name: Build Python interface (dolfinx)
       shell: bash -el {0}
-      run: PETSC_DIR=${{ inputs.petsc_dir }} PETSC_ARCH=${{ inputs.petsc_arch }} BUILD_TYPE="Release" python3 -m pip -v install ./dolfinx/python/
+      run: PETSC_DIR=${{ inputs.petsc_dir }} PETSC_ARCH=${{ inputs.petsc_arch }} python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./dolfinx/python
