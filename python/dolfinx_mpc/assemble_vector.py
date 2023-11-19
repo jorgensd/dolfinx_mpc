@@ -21,7 +21,7 @@ from .multipointconstraint import MultiPointConstraint, _float_classes
 
 
 def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.DirichletBC]],  # type: ignore
-                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [],
+                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [],  # type: ignore
                   scale: _float_classes = default_scalar_type(1.0)):  # type: ignore
     """
     Apply lifting to vector b, i.e.
@@ -36,7 +36,7 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.Diri
         scale: Scaling for lifting
     """
     if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
-        scale = scale.item()
+        scale = scale.item()  # type: ignore
     t = Timer("~MPC: Apply lifting (C++)")
     with contextlib.ExitStack() as stack:
         x0 = [stack.enter_context(x.localForm()) for x in x0]
