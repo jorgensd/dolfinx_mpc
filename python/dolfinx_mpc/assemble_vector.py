@@ -16,12 +16,12 @@ from dolfinx.common import Timer
 from petsc4py import PETSc as _PETSc
 import numpy
 import dolfinx_mpc.cpp
-
-from .multipointconstraint import MultiPointConstraint
+from dolfinx import default_scalar_type
+from .multipointconstraint import MultiPointConstraint, _float_classes
 
 
 def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.DirichletBC]],  # type: ignore
-                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: float = 1.0):  # type: ignore
+                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: _float_classes = default_scalar_type(1.0)):  # type: ignore
     """
     Apply lifting to vector b, i.e.
     :math:`b = b - scale \\cdot K^T (A_j (g_j - x0_j))`
