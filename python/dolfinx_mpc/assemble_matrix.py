@@ -75,13 +75,13 @@ def create_sparsity_pattern(form: _fem.Form,
     if isinstance(mpc, list):
         assert len(mpc) == 2
         for mpc_ in mpc:
-            mpc_._not_finalized()
+            mpc_._not_finalized()  # type: ignore
             return cpp.mpc.create_sparsity_pattern(form._cpp_object, mpc[0]._cpp_object,
                                                    mpc[1]._cpp_object)
     else:
-        mpc._not_finalized()
-        return cpp.mpc.create_sparsity_pattern(form._cpp_object, mpc._cpp_object,
-                                               mpc._cpp_object)
+        mpc._not_finalized()  # type: ignore
+        return cpp.mpc.create_sparsity_pattern(form._cpp_object, mpc._cpp_object,  # type: ignore
+                                               mpc._cpp_object)  # type: ignore
 
 
 def create_matrix_nest(
