@@ -69,7 +69,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)
-        dolfinx_mpc.cpp.mpc.assemble_vector(b_local, form._cpp_object,
+        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object,
                                             constraint._cpp_object)
     t.stop()
     return b
