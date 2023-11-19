@@ -470,7 +470,8 @@ void apply_lifting(
         a,
     const std::vector<std::vector<std::shared_ptr<
         const dolfinx::fem::DirichletBC<std::complex<double>>>>>& bcs1,
-    const std::vector<std::span<const std::complex<double>>>& x0, double scale,
+    const std::vector<std::span<const std::complex<double>>>& x0,
+    std::complex<double> scale,
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
@@ -583,7 +584,8 @@ void apply_lifting(
     const std::vector<std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>>&
         bcs1,
-    const std::vector<std::span<const std::complex<float>>>& x0, float scale,
+    const std::vector<std::span<const std::complex<float>>>& x0,
+    std::complex<float> scale,
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
