@@ -35,7 +35,7 @@ class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
 
         # Apply boundary condition
         dolfinx_mpc.apply_lifting(F, [self._a], bcs=[self.bcs],
-                                  constraint=self.mpc, x0=[x], scale=-1.0)
+                                  constraint=self.mpc, x0=[x], scale=dolfinx.default_scalar_type(-1.0))
         F.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
         dolfinx.fem.petsc.set_bc(F, self.bcs, x, -1.0)
 
