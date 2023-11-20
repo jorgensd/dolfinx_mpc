@@ -65,6 +65,7 @@ fdim = tdim - 1
 
 # Locate cells with different elasticity parameters
 DG0 = functionspace(mesh, ("DG", 0))
+mesh.topology.create_connectivity(tdim, tdim)
 left_dofs = locate_dofs_topological(DG0, tdim, ct.find(left_tag))
 right_dofs = locate_dofs_topological(DG0, tdim, ct.find(right_tag))
 

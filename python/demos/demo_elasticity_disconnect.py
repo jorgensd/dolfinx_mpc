@@ -112,6 +112,7 @@ tdim = mesh.topology.dim
 fdim = tdim - 1
 
 DG0 = functionspace(mesh, ("DG", 0))
+mesh.topology.create_connectivity(tdim, tdim)
 outer_dofs = locate_dofs_topological(DG0, tdim, ct.find(outer_tag))
 inner_dofs = locate_dofs_topological(DG0, tdim, ct.find(inner_tag))
 
