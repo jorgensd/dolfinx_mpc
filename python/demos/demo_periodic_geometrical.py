@@ -168,6 +168,6 @@ with Timer("~Demo: Verification"):
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
-        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=tol)
+        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(tol))
 list_timings(MPI.COMM_WORLD, [TimingType.wall])
 L_org.destroy()
