@@ -128,7 +128,8 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     num_cells = mesh.topology.index_map(tdim).size_local
 
     # Find top and bottom interface facets
-    cell_midpoints = compute_midpoints(mesh, tdim, range(num_cells))
+    cells = np.arange(num_cells, dtype=np.int32)
+    cell_midpoints = compute_midpoints(mesh, tdim, cells)
     top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
     for facet in i_facets:
         i_cells = facet_to_cell.links(facet)
@@ -140,8 +141,6 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
             bottom_interface.append(facet)
 
     # Create cell tags
-    num_cells = mesh.topology.index_map(tdim).size_local
-    cell_midpoints = compute_midpoints(mesh, tdim, range(num_cells))
     top_cube_marker = 2
     indices = []
     values = []
