@@ -532,6 +532,11 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
   {
     std::vector<std::int32_t> slave_blocks
         = dolfinx::fem::locate_dofs_geometrical(*V, indicator);
+    std::stringstream cc;
+    for (auto b : slave_blocks)
+      cc << b << " ";
+    cc << "\n";
+    std::cout << cc.str();
     reduced_blocks.reserve(slave_blocks.size());
     // Remove blocks in Dirichlet bcs
     std::vector<std::int8_t> bc_marker
@@ -568,7 +573,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     T scale, bool collapse)
 {
   std::vector<std::int32_t> entities = meshtag->find(tag);
-
+  V->mesh()->topology_mutable()->create_connectivity(
+      meshtag->dim(), V->mesh()->topology()->dim());
   if (collapse)
   {
     // Locate dofs in sub and parent space
