@@ -113,14 +113,11 @@ def test_nonlinear_poisson(poly_order):
         mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N)
 
         V = dolfinx.fem.functionspace(mesh, ("Lagrange", poly_order))
-
-        def boundary(x):
-            return np.ones_like(x[0], dtype=np.int8)
-
         u_bc = dolfinx.fem.Function(V)
         u_bc.x.array[:] = 0.0
 
-        facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, boundary)
+        mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
+        facets = dolfinx.mesh.exterior_facet_indices(mesh.topology)
         topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
         zero = np.array(0, dtype=dolfinx.default_scalar_type)
         bc = dolfinx.fem.dirichletbc(zero, topological_dofs, V)
