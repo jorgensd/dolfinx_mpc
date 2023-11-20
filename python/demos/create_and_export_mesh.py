@@ -384,11 +384,11 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
         cells0 = _cpp.mesh.entities_to_geometry(
-            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
         cells1 = _cpp.mesh.entities_to_geometry(
-            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
+            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
@@ -504,11 +504,11 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
         cells0 = _cpp.mesh.entities_to_geometry(
-            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32).reshape((-1, 1)), False)
+            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
         cells1 = _cpp.mesh.entities_to_geometry(
-            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32).reshape((-1, 1)), False)
+            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])

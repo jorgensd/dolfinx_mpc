@@ -119,7 +119,8 @@ void _assemble_vector(
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
-      dof_transform = element->template get_dof_transformation_function<T>();
+      dof_transform
+      = element->template get_pre_dof_transformation_function<T>();
   const bool needs_transformation_data
       = element->needs_dof_transformations() or L.needs_facet_permutations();
   std::span<const std::uint32_t> cell_info;

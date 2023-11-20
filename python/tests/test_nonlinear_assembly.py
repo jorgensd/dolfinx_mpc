@@ -35,7 +35,7 @@ class NonlinearMPCProblem(dolfinx.fem.petsc.NonlinearProblem):
 
         # Apply boundary condition
         dolfinx_mpc.apply_lifting(F, [self._a], bcs=[self.bcs],
-                                  constraint=self.mpc, x0=[x], scale=-1.0)
+                                  constraint=self.mpc, x0=[x], scale=dolfinx.default_scalar_type(-1.0))
         F.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
         dolfinx.fem.petsc.set_bc(F, self.bcs, x, -1.0)
 
@@ -113,14 +113,11 @@ def test_nonlinear_poisson(poly_order):
         mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N)
 
         V = dolfinx.fem.functionspace(mesh, ("Lagrange", poly_order))
-
-        def boundary(x):
-            return np.ones_like(x[0], dtype=np.int8)
-
         u_bc = dolfinx.fem.Function(V)
         u_bc.x.array[:] = 0.0
 
-        facets = dolfinx.mesh.locate_entities_boundary(mesh, 1, boundary)
+        mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
+        facets = dolfinx.mesh.exterior_facet_indices(mesh.topology)
         topological_dofs = dolfinx.fem.locate_dofs_topological(V, 1, facets)
         zero = np.array(0, dtype=dolfinx.default_scalar_type)
         bc = dolfinx.fem.dirichletbc(zero, topological_dofs, V)
@@ -173,7 +170,6 @@ def test_nonlinear_poisson(poly_order):
         # Ensure the solver works with nonzero initial guess
         u.interpolate(lambda x: x[0]**2 * x[1]**2)
         solver.solve(u)
-
         l2_error_local = dolfinx.fem.assemble_scalar(
             dolfinx.fem.form((u - u_soln) ** 2 * ufl.dx))
         l2_error_global = mesh.comm.allreduce(l2_error_local, op=MPI.SUM)

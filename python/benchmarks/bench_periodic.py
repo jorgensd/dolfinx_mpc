@@ -20,7 +20,8 @@ import numpy as np
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Function, dirichletbc, form, functionspace,
-                         locate_dofs_geometrical, set_bc)
+                         locate_dofs_geometrical)
+from dolfinx.fem.petsc import set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)

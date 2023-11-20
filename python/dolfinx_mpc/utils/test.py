@@ -49,7 +49,8 @@ def _gather_slaves_global(constraint):
     if num_local_slaves > 0:
         slave_blocks = _slaves[:num_local_slaves] // block_size
         slave_rems = _slaves[:num_local_slaves] % block_size
-        glob_slaves = imap.local_to_global(slave_blocks) * block_size + slave_rems
+        glob_slaves = np.asarray(
+            imap.local_to_global(slave_blocks), dtype=np.int64) * block_size + slave_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
 
@@ -105,7 +106,8 @@ def gather_transformation_matrix(constraint, root=0):
     if num_local_slaves > 0:
         local_blocks = slaves // block_size
         local_rems = slaves % block_size
-        glob_slaves = imap.local_to_global(local_blocks) * block_size + local_rems
+        glob_slaves = np.asarray(imap.local_to_global(local_blocks),
+                                 dtype=np.int64) * block_size + local_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
     all_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
@@ -119,8 +121,9 @@ def gather_transformation_matrix(constraint, root=0):
 
     # Add local contributions to K from local slaves
     for slave, global_slave in zip(slaves, glob_slaves):
-        masters_index = (imap.local_to_global(master_blocks[offsets[slave]: offsets[slave + 1]])
-                         * block_size + master_rems[offsets[slave]: offsets[slave + 1]])
+        masters_index = (np.asarray(imap.local_to_global(
+            master_blocks[offsets[slave]: offsets[slave + 1]]), dtype=np.int64)
+            * block_size + master_rems[offsets[slave]: offsets[slave + 1]])
         coeffs_index = coeffs[offsets[slave]: offsets[slave + 1]]
         # If we have a simply equality constraint (dirichletbc)
         if len(masters_index) > 0:

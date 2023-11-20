@@ -56,7 +56,7 @@ def test_pipeline(u_from_mpc):
     mt = meshtags(mesh, mesh.topology.dim - 1, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, [], 1)
+    mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, [], 1.)
     mpc.finalize()
 
     if u_from_mpc:

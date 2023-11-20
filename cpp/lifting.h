@@ -203,12 +203,13 @@ void apply_lifting(
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
-      dof_transform = element0->template get_dof_transformation_function<T>();
+      dof_transform
+      = element0->template get_pre_dof_transformation_function<T>();
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
       dof_transform_to_transpose
-      = element1->template get_dof_transformation_to_transpose_function<T>();
+      = element1->template get_post_dof_transformation_function<T>();
 
   // Loop over cell integrals and lift bc
   if (a->num_integrals(dolfinx::fem::IntegralType::cell) > 0)
@@ -469,7 +470,8 @@ void apply_lifting(
         a,
     const std::vector<std::vector<std::shared_ptr<
         const dolfinx::fem::DirichletBC<std::complex<double>>>>>& bcs1,
-    const std::vector<std::span<const std::complex<double>>>& x0, double scale,
+    const std::vector<std::span<const std::complex<double>>>& x0,
+    std::complex<double> scale,
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
@@ -582,7 +584,8 @@ void apply_lifting(
     const std::vector<std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>>&
         bcs1,
-    const std::vector<std::span<const std::complex<float>>>& x0, float scale,
+    const std::vector<std::span<const std::complex<float>>>& x0,
+    std::complex<float> scale,
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&

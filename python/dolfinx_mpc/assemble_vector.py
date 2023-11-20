@@ -14,14 +14,15 @@ import dolfinx.la as _la
 import ufl
 from dolfinx.common import Timer
 from petsc4py import PETSc as _PETSc
-
+import numpy
 import dolfinx_mpc.cpp
-
-from .multipointconstraint import MultiPointConstraint
+from dolfinx import default_scalar_type
+from .multipointconstraint import MultiPointConstraint, _float_classes
 
 
 def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.DirichletBC]],  # type: ignore
-                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [], scale: float = 1.0):  # type: ignore
+                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [],  # type: ignore
+                  scale: _float_classes = default_scalar_type(1.0)):  # type: ignore
     """
     Apply lifting to vector b, i.e.
     :math:`b = b - scale \\cdot K^T (A_j (g_j - x0_j))`
@@ -34,6 +35,8 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.Diri
         x0: List of vectors
         scale: Scaling for lifting
     """
+    if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+        scale = scale.item()  # type: ignore
     t = Timer("~MPC: Apply lifting (C++)")
     with contextlib.ExitStack() as stack:
         x0 = [stack.enter_context(x.localForm()) for x in x0]
@@ -66,7 +69,7 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)
-        dolfinx_mpc.cpp.mpc.assemble_vector(b_local, form._cpp_object,
+        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object,
                                             constraint._cpp_object)
     t.stop()
     return b

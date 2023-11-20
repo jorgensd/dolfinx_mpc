@@ -135,7 +135,8 @@ def demo_elasticity():
         master_owner = mpc._cpp_object.owners.links(slave)[0]
         _masters = mpc.masters
         master = _masters.links(slave)[0]
-        glob_master = mpc.function_space.dofmap.index_map.local_to_global([master // bs])[0]
+        glob_master = mpc.function_space.dofmap.index_map.local_to_global(
+            np.array([master // bs], dtype=np.int32))[0]
         coeffs, offs = mpc.coefficients()
         master_data = [glob_master * bs + master % bs,
                        coeffs[offs[slave]:offs[slave + 1]][0]]

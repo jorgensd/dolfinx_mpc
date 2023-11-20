@@ -299,7 +299,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         slave_index = np.argmax(np.abs(vector))
     if is_slave_proc:
         assert len(slave_block) == 1
-        slave_block_g = imap.local_to_global(slave_block)[0]
+        slave_block_g = imap.local_to_global(np.asarray(slave_block, dtype=np.int32))[0]
         if vector is None:
             slaves = np.arange(slave_block[0] * block_size, slave_block[0]
                                * block_size + block_size, dtype=np.int32)
@@ -319,7 +319,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     global_masters = None
     if is_master_proc:
         assert len(master_block) == 1
-        master_block_g = imap.local_to_global(master_block)[0]
+        master_block_g = imap.local_to_global(np.asarray(master_block, dtype=np.int32))[0]
         masters_as_glob = np.arange(master_block_g * block_size,
                                     master_block_g * block_size + block_size, dtype=np.int64)
     else:

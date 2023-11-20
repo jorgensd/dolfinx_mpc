@@ -129,13 +129,13 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Create bounding-box tree over owned cells
   std::vector<std::int32_t> r(num_cells_local);
   std::iota(r.begin(), r.end(), 0);
-  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, r, 1e-15);
+  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, r, tol);
   auto process_tree = tree.create_global_tree(mesh->comm());
   auto colliding_bbox_processes
       = dolfinx::geometry::compute_collisions<U>(process_tree, mapped_T_b);
 
   std::vector<std::int32_t> local_cell_collisions
-      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, mapped_T_b, 1e-20);
+      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, mapped_T_b, tol);
   dolfinx::common::Timer t0("~~Periodic: Local cell and eval basis");
   auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
       V, mapped_T_b, local_cell_collisions);
@@ -532,6 +532,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
   {
     std::vector<std::int32_t> slave_blocks
         = dolfinx::fem::locate_dofs_geometrical(*V, indicator);
+
     reduced_blocks.reserve(slave_blocks.size());
     // Remove blocks in Dirichlet bcs
     std::vector<std::int8_t> bc_marker
@@ -568,7 +569,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     T scale, bool collapse)
 {
   std::vector<std::int32_t> entities = meshtag->find(tag);
-
+  V->mesh()->topology_mutable()->create_connectivity(
+      meshtag->dim(), V->mesh()->topology()->dim());
   if (collapse)
   {
     // Locate dofs in sub and parent space

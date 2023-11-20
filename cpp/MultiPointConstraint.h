@@ -34,11 +34,11 @@ public:
   /// @param[in] offsets Offsets for masters
   /// @tparam The floating type of the mesh
   MultiPointConstraint(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-                       const std::vector<std::int32_t>& slaves,
-                       const std::vector<std::int64_t>& masters,
-                       const std::vector<T>& coeffs,
-                       const std::vector<std::int32_t>& owners,
-                       const std::vector<std::int32_t>& offsets)
+                       std::span<const std::int32_t> slaves,
+                       std::span<const std::int64_t> masters,
+                       std::span<const T> coeffs,
+                       std::span<const std::int32_t> owners,
+                       std::span<const std::int32_t> offsets)
       : _slaves(), _is_slave(), _cell_to_slaves_map(), _num_local_slaves(),
         _master_map(), _coeff_map(), _owner_map(), _mpc_constants(), _V()
   {
@@ -64,7 +64,7 @@ public:
     _is_slave = std::move(_slave_data);
 
     // Create a map for cells owned by the process to the slaves
-    _cell_to_slaves_map = create_cell_to_dofs_map(V, slaves);
+    _cell_to_slaves_map = create_cell_to_dofs_map(*V, slaves);
 
     // Create adjacency list with all local dofs, where the slave dofs maps to
     // its masters
@@ -117,11 +117,11 @@ public:
 
     // Create new function space with extended index map
     _V = std::make_shared<const dolfinx::fem::FunctionSpace<U>>(
-        create_extended_functionspace(V, _master_data, _owner_data));
+        create_extended_functionspace(*V, _master_data, _owner_data));
 
     // Map global masters to local index in extended function space
     std::vector<std::int32_t> masters_local
-        = map_dofs_global_to_local<U>(_V, _master_data);
+        = map_dofs_global_to_local<U>(*_V, _master_data);
     _master_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
         masters_local, masters_offsets);
   }
