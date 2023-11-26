@@ -71,7 +71,7 @@ class MultiPointConstraint():
     def __init__(self, V: _fem.FunctionSpace, dtype: _float_classes = default_scalar_type):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
-        self._coeffs = numpy.array([], dtype=dtype)
+        self._coeffs = numpy.array([], dtype=dtype)  # type: ignore
         self._owners = numpy.array([], dtype=numpy.int32)
         self._offsets = numpy.array([0], dtype=numpy.int32)
         self.V = V
