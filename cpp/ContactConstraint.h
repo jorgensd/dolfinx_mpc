@@ -183,12 +183,13 @@ locate_slave_dofs(const dolfinx::fem::FunctionSpace<U>& V,
   // Find all dofs on slave facets
   // NOTE: Assumption that we are only working with vector spaces, which is
   // ordered as xyz,xyzgeometry
-  auto [V0, map] = V.sub({0})->collapse();
-
+  auto V_sub = V.sub({0});
+  auto [V0, map] = V_sub.collapse();
+  auto sub_dofmap = V_sub.dofmap();
   std::array<std::vector<std::int32_t>, 2> slave_dofs
-      = dolfinx::fem::locate_dofs_topological(
-          *V.mesh()->topology_mutable(), {*V.sub({0})->dofmap(), *V0.dofmap()},
-          edim, std::span(slave_facets));
+      = dolfinx::fem::locate_dofs_topological(*V.mesh()->topology_mutable(),
+                                              {*sub_dofmap, *V0.dofmap()}, edim,
+                                              std::span(slave_facets));
   return slave_dofs[0];
 }
 
