@@ -14,21 +14,23 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Union
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix.ufl
-import dolfinx_mpc.utils
 import gmsh
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx import common, default_scalar_type, fem, io
 from dolfinx.io import gmshio
-from mpi4py import MPI
 from numpy.typing import NDArray
-from petsc4py import PETSc
 from ufl import (FacetNormal, Identity, Measure, TestFunctions, TrialFunctions,
                  div, dot, dx, grad, inner, outer, sym)
 from ufl.core.expr import Expr
 
+import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
+
 # -
 # ## Mesh generation
 #

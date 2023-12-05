@@ -12,6 +12,9 @@ import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix.ufl
 import numpy as np
 from basix.ufl import element
@@ -24,15 +27,13 @@ from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, compute_midpoints, create_mesh,
                           create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
-from dolfinx_mpc.utils import (create_normal_approximation, log_info,
-                               rigid_motions_nullspace, rotation_matrix)
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Identity, Mesh, TestFunction, TrialFunction, dx, grad, inner,
                  sym, tr)
 
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
+from dolfinx_mpc.utils import (create_normal_approximation, log_info,
+                               rigid_motions_nullspace, rotation_matrix)
 
 comm = MPI.COMM_WORLD
 

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
+from petsc4py import PETSc as _PETSc
+
 import cffi
 import dolfinx
 import dolfinx.cpp as _cpp
@@ -17,7 +19,6 @@ import numba
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
-from petsc4py import PETSc as _PETSc
 
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 

@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import typing
 
+from petsc4py import PETSc
+
 import dolfinx.fem.petsc
 import ufl
 from dolfinx import cpp as _cpp
 from dolfinx import fem as _fem
 from dolfinx import la as _la
-from petsc4py import PETSc
 
 from .assemble_matrix import assemble_matrix, create_sparsity_pattern
 from .assemble_vector import apply_lifting, assemble_vector

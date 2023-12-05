@@ -8,14 +8,17 @@ from __future__ import annotations
 __all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_mpc_lhs", "compare_mpc_rhs",
            "gather_transformation_matrix", "compare_CSR"]
 
-import pytest
-import numpy as np
+from typing import Any
+
 from mpi4py import MPI
 from petsc4py import PETSc
-import scipy.sparse
-import dolfinx_mpc
+
 import dolfinx.common
-from typing import Any
+import numpy as np
+import pytest
+import scipy.sparse
+
+import dolfinx_mpc
 
 
 @pytest.fixture

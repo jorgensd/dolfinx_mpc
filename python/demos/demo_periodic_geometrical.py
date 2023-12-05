@@ -15,6 +15,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Union
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
@@ -22,8 +25,6 @@ from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)
 

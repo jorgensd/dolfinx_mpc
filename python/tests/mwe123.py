@@ -1,10 +1,13 @@
 from __future__ import annotations
-from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
-from dolfinx import default_scalar_type
-from dolfinx import fem
-import dolfinx_mpc
+
 from mpi4py import MPI
+
 import numpy as np
+from dolfinx import default_scalar_type, fem
+from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
+
+import dolfinx_mpc
+
 mesh = create_unit_square(MPI.COMM_WORLD, 1, 1)
 V = fem.functionspace(mesh, ("Lagrange", 1))
 

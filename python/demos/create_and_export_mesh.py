@@ -3,17 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple, Union
 
+from mpi4py import MPI
+
 import dolfinx.common as _common
 import dolfinx.cpp as _cpp
 import dolfinx.io as _io
 import dolfinx.mesh as _mesh
-import dolfinx_mpc.utils as _utils
 import gmsh
 import numpy as np
 import ufl
 from basix.ufl import element
 from dolfinx.io import gmshio
-from mpi4py import MPI
+
+import dolfinx_mpc.utils as _utils
 
 
 def gmsh_3D_stacked(celltype: str, theta: float, res: float = 0.1,

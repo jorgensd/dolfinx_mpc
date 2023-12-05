@@ -10,17 +10,18 @@ from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 from typing import Optional
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix.ufl
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, functionspace, dirichletbc, form,
+from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
                          locate_dofs_topological, set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Identity, TestFunction, TrialFunction, ds, dx, grad, inner,
                  sym, tr)
 

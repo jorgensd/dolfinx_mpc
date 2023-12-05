@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix
 import dolfinx.io
 import gmsh
@@ -21,8 +24,6 @@ import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type
 from dolfinx.io import gmshio
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl.core.expr import Expr
 
 import dolfinx_mpc
