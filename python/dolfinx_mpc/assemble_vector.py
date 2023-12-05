@@ -8,15 +8,18 @@ from __future__ import annotations
 import contextlib
 from typing import List, Optional, Sequence
 
+from petsc4py import PETSc as _PETSc
+
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import dolfinx.la as _la
-import ufl
-from dolfinx.common import Timer
-from petsc4py import PETSc as _PETSc
 import numpy
-import dolfinx_mpc.cpp
+import ufl
 from dolfinx import default_scalar_type
+from dolfinx.common import Timer
+
+import dolfinx_mpc.cpp
+
 from .multipointconstraint import MultiPointConstraint, _float_classes
 
 

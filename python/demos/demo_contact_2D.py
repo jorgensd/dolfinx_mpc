@@ -17,10 +17,12 @@ import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import numpy as np
 import scipy.sparse.linalg
-from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
-from dolfinx import default_scalar_type, default_real_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (Constant, dirichletbc, form, functionspace,
                          locate_dofs_geometrical)
@@ -29,11 +31,10 @@ from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, set_log_level
 from dolfinx.mesh import locate_entities_boundary, meshtags
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Identity, Measure, TestFunction, TrialFunction, dx, grad,
                  inner, sym, tr)
 
+from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
                                create_normal_approximation,

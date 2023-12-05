@@ -9,16 +9,17 @@ import ctypes
 import ctypes.util
 import importlib
 import os
+import typing
 
+import petsc4py.lib
+from mpi4py import MPI
+from petsc4py import PETSc
+from petsc4py import get_config as PETSc_get_config
+
+import cffi
 import numba
 import numba.core.typing.cffi_utils as cffi_support
 import numpy as np
-import typing
-import cffi
-import petsc4py.lib
-from mpi4py import MPI
-from petsc4py import get_config as PETSc_get_config
-from petsc4py import PETSc
 
 
 def initialize_petsc() -> typing.Tuple[cffi.FFI, typing.Any]:

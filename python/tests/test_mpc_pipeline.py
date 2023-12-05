@@ -5,6 +5,9 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import numpy as np
 import pytest
 import scipy.sparse.linalg
@@ -12,8 +15,6 @@ import ufl
 from dolfinx import default_scalar_type, fem
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import create_unit_square
-from mpi4py import MPI
-from petsc4py import PETSc
 
 import dolfinx_mpc
 import dolfinx_mpc.utils

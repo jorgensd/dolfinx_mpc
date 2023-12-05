@@ -8,6 +8,9 @@
 # between two cubes.
 from __future__ import annotations
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import dolfinx.fem as fem
 import gmsh
 import numpy as np
@@ -17,8 +20,6 @@ import ufl
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import gmshio
-from mpi4py import MPI
-from petsc4py import PETSc
 
 import dolfinx_mpc
 import dolfinx_mpc.utils

@@ -7,17 +7,19 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
+from petsc4py import PETSc as _PETSc
+
 import cffi
+import dolfinx
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import numba
 import numpy
 import numpy.typing as npt
-import dolfinx
 from dolfinx.common import Timer
+
 from dolfinx_mpc.assemble_matrix import create_sparsity_pattern
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
-from petsc4py import PETSc as _PETSc
 
 from .helpers import _bcs, _forms, extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc, sink

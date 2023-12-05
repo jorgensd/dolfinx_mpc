@@ -12,18 +12,19 @@ import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
-from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import CellType
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
+from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
 from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,

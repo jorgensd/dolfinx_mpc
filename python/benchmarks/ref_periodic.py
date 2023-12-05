@@ -21,19 +21,20 @@ from pathlib import Path
 from time import perf_counter
 from typing import Optional
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import h5py
 import numpy as np
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Function, functionspace, dirichletbc, form,
+from dolfinx.fem import (Function, dirichletbc, form, functionspace,
                          locate_dofs_geometrical)
 from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
                                set_bc)
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
 from dolfinx.mesh import CellType, create_unit_cube, refine
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 

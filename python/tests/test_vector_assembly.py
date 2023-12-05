@@ -5,17 +5,19 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import dolfinx.fem as fem
-import dolfinx_mpc
-import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import ufl
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import CellType, create_unit_square
+
+import dolfinx_mpc
+import dolfinx_mpc.utils
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
-from mpi4py import MPI
-from petsc4py import PETSc
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)

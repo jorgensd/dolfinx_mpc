@@ -5,6 +5,9 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix
 import dolfinx
 import dolfinx.fem.petsc
@@ -13,8 +16,6 @@ import dolfinx.nls.petsc
 import numpy as np
 import pytest
 import ufl
-from mpi4py import MPI
-from petsc4py import PETSc
 
 import dolfinx_mpc
 
