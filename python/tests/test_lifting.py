@@ -5,18 +5,20 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
-from dolfinx import fem
-import dolfinx_mpc
-import dolfinx_mpc.utils
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import numpy as np
 import pytest
 import scipy.sparse.linalg
 import ufl
+from dolfinx import fem
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.mesh import CellType, create_unit_square
+
+import dolfinx_mpc
+import dolfinx_mpc.utils
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
-from mpi4py import MPI
-from petsc4py import PETSc
 
 
 @pytest.mark.skipif(MPI.COMM_WORLD.size > 1,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Res 0.1 31776, 0.05 234546, 0.025 1801086, 0.02 3488856, 0.0175 5147961,0.015 7960200
 dofs = [31776, 234546, 1801086, 3488856, 5147961, 7960200]

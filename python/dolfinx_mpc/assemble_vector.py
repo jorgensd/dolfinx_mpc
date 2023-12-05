@@ -8,12 +8,13 @@ from __future__ import annotations
 import contextlib
 from typing import List, Optional, Sequence
 
+from petsc4py import PETSc as _PETSc
+
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import dolfinx.la as _la
 import ufl
 from dolfinx.common import Timer
-from petsc4py import PETSc as _PETSc
 
 import dolfinx_mpc.cpp
 

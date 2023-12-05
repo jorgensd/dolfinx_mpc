@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mpi4py import MPI
+
 import gmsh
 import numpy as np
 from dolfinx import default_scalar_type
@@ -17,7 +19,6 @@ from dolfinx.fem import (Constant, Function, FunctionSpaceBase, dirichletbc,
                          locate_dofs_topological)
 from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
-from mpi4py import MPI
 from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
                  TrialFunction, grad, inner, sym, tr)
 

@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from typing import Optional, Sequence, Union
 
+from petsc4py import PETSc as _PETSc
+
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
-from petsc4py import PETSc as _PETSc
 
 from dolfinx_mpc import cpp
 

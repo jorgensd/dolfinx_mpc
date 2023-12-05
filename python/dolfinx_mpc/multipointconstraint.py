@@ -7,13 +7,14 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
+from petsc4py import PETSc as _PETSc
+
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
 from dolfinx import default_scalar_type
-from petsc4py import PETSc as _PETSc
 
 import dolfinx_mpc.cpp
 

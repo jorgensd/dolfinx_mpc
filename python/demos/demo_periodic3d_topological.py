@@ -19,6 +19,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Union
 
+from mpi4py import MPI
+
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
@@ -27,7 +29,6 @@ from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import VTXWriter
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
-from mpi4py import MPI
 from numpy.typing import NDArray
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)

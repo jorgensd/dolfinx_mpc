@@ -5,18 +5,19 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix
 import dolfinx
 import dolfinx.fem
 import dolfinx.mesh
-import dolfinx_mpc.utils
 import numpy as np
 import pytest
 import ufl
-from mpi4py import MPI
-from petsc4py import PETSc
 
 import dolfinx_mpc
+import dolfinx_mpc.utils
 
 
 @pytest.mark.parametrize("cell_type",

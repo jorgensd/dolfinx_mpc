@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Dict, Tuple
 
+from petsc4py import PETSc as _PETSc
+
 import numpy as np
 import ufl
 from dolfinx import common as _common
@@ -14,7 +16,6 @@ from dolfinx import mesh as dmesh
 from dolfinx import nls as _nls
 from dolfinx_contact.helpers import (R_minus, epsilon, lame_parameters,
                                      rigid_motions_nullspace, sigma_func)
-from petsc4py import PETSc as _PETSc
 
 __all__ = ["nitsche_ufl"]
 

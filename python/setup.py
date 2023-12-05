@@ -1,11 +1,11 @@
 import os
-import shlex
 import platform
 import re
+import shlex
 import subprocess
 import sys
-from itertools import chain
 from distutils.version import LooseVersion
+from itertools import chain
 
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext

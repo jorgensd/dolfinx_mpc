@@ -15,6 +15,9 @@ from __future__ import annotations
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import h5py
 import numpy as np
 from dolfinx import default_scalar_type
@@ -24,8 +27,6 @@ from dolfinx.fem import (Function, dirichletbc, form, functionspace,
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags)
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
                  inner, pi, sin)
 

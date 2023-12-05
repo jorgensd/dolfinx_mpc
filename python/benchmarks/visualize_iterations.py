@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator, LogLocator, NullFormatter
-import matplotlib.transforms as mtransforms
-import h5py
-import mpi4py
 import argparse
 import sys
+
+import mpi4py
+
+import h5py
+import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 import numpy as np
+from matplotlib.ticker import LogLocator, MaxNLocator, NullFormatter
 
 
 def visualize_elasticity():

@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple, Union
 
+from mpi4py import MPI
+
 import dolfinx.common as _common
 import dolfinx.cpp as _cpp
 import dolfinx.io as _io
@@ -11,7 +13,6 @@ import gmsh
 import numpy as np
 import ufl
 from dolfinx.io import gmshio
-from mpi4py import MPI
 
 import dolfinx_mpc.utils as _utils
 

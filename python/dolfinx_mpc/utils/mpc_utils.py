@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import dolfinx.common as _common
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
@@ -17,8 +20,6 @@ import dolfinx.mesh as _mesh
 import numpy as np
 import ufl
 from dolfinx import default_scalar_type as _dt
-from mpi4py import MPI
-from petsc4py import PETSc
 
 import dolfinx_mpc.cpp
 

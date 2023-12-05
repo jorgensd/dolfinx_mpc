@@ -8,12 +8,16 @@
 # between two cubes.
 from __future__ import annotations
 
+import warnings
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix.ufl
 import numpy as np
-from dolfinx import default_scalar_type, default_real_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
 from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
@@ -22,8 +26,6 @@ from dolfinx.io import XDMFFile
 from dolfinx.mesh import (CellType, compute_midpoints, create_mesh,
                           create_unit_cube, locate_entities_boundary, meshtags,
                           refine)
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Cell, Identity, Mesh, TestFunction, TrialFunction,
                  VectorElement, dx, grad, inner, sym, tr)
 
@@ -31,7 +33,7 @@ from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
                          assemble_vector)
 from dolfinx_mpc.utils import (create_normal_approximation, log_info,
                                rigid_motions_nullspace, rotation_matrix)
-import warnings
+
 comm = MPI.COMM_WORLD
 
 if default_real_type == np.float32:

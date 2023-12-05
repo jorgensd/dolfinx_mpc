@@ -11,6 +11,9 @@ from pathlib import Path
 from time import perf_counter
 from typing import Optional
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import basix.ufl
 import h5py
 import numpy as np
@@ -24,8 +27,6 @@ from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
 from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
                           meshtags, refine)
-from mpi4py import MPI
-from petsc4py import PETSc
 from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
                  as_vector, ds, dx, grad, inner, sym, tr)
 

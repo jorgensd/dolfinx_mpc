@@ -31,13 +31,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Tuple
 
+from mpi4py import MPI
+from petsc4py import PETSc
+
 import dolfinx.fem as fem
 import numpy as np
 from dolfinx import default_scalar_type
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
-from mpi4py import MPI
-from petsc4py import PETSc
 from slepc4py import SLEPc
 from ufl import TestFunction, TrialFunction, dx, grad, inner
 
