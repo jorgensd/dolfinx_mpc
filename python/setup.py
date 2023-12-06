@@ -14,7 +14,7 @@ if sys.version_info < (3, 8):
     print("Python 3.8 or higher required, please upgrade.")
     sys.exit(1)
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 
 REQUIREMENTS = ["numpy>=1.21", "fenics-dolfinx>=0.7.0"]
 

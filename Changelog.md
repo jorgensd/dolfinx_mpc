@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.1
+
+- Fix compatibility with Python 3.8
+- Build fixes
+- Ensure import order of mpi, petsc4py, relevant in some environments
+
 ## v0.7.0
 
 - **API**:
