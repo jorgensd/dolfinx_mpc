@@ -182,16 +182,27 @@ locate_slave_dofs(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
       slave_facets.push_back(meshtags.indices()[i]);
 
   // Find all dofs on slave facets
-  // NOTE: Assumption that we are only working with vector spaces, which is
-  // ordered as xyz,xyzgeometry
-  auto [V0, map] = V->sub({0})->collapse();
-
-  std::array<std::vector<std::int32_t>, 2> slave_dofs
-      = dolfinx::fem::locate_dofs_topological(
-          *V->mesh()->topology_mutable(),
-          {*V->sub({0})->dofmap(), *V0.dofmap()}, edim,
-          std::span(slave_facets));
-  return slave_dofs[0];
+  if (V->element()->num_sub_elements() == 0)
+  {
+    std::vector<std::int32_t> slave_dofs
+        = dolfinx::fem::locate_dofs_topological(*V->mesh()->topology_mutable(),
+                                                *V->dofmap(), edim,
+                                                std::span(slave_facets));
+    return slave_dofs;
+  }
+  else
+  {
+    // NOTE: Assumption that we are only working with vector spaces, which is
+    // ordered as xyz,xyz geometry
+    auto V_sub = V->sub({0});
+    auto [V0, map] = V_sub->collapse();
+    auto sub_dofmap = V_sub->dofmap();
+    std::array<std::vector<std::int32_t>, 2> slave_dofs
+        = dolfinx::fem::locate_dofs_topological(*V->mesh()->topology_mutable(),
+                                                {*sub_dofmap, *V0.dofmap()},
+                                                edim, std::span(slave_facets));
+    return slave_dofs[0];
+  }
 }
 
 /// Compute contributions to slip MPC from slave facet side, i.e. dot(u,
@@ -1032,7 +1043,7 @@ mpc_data<T> create_contact_inelastic_condition(
           imap->local_to_global(l_master, master_block_global);
 
           // Insert local contributions in each block
-          for (int j = 0; j < tdim; ++j)
+          for (int j = 0; j < block_size; ++j)
           {
             const std::int32_t local_slave = local_blocks[i] * block_size + j;
             for (std::size_t k = 0; k < num_masters; k++)
@@ -1087,13 +1098,13 @@ mpc_data<T> create_contact_inelastic_condition(
     // Flatten the maps to 1D arrays (assuming all slaves are local
     // slaves)
     std::vector<std::int32_t> slaves;
-    slaves.reserve(tdim * local_blocks.size());
+    slaves.reserve(block_size * local_blocks.size());
     std::for_each(
         local_blocks.begin(), local_blocks.end(),
         [block_size, tdim, &masters_out, &local_masters, &coeffs_out,
          &local_coeffs, &offsets_out, &slaves](const std::int32_t block)
         {
-          for (std::int32_t j = 0; j < tdim; ++j)
+          for (std::int32_t j = 0; j < block_size; ++j)
           {
             const std::int32_t slave = block * block_size + j;
             slaves.push_back(slave);

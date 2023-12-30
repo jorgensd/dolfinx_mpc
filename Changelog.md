@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.2
+- **New feature**: Add support for "scalar" inelastic contact conditions. This is a special case where you want to create a periodic constraint between two sets of facets, which might or might not align.
+
+## v0.7.1
+  - Patch for Python 3.8
+  - Fix import order of `mpi4py`, `petsc4py`, `dolfinx` and `dolfinx_mpc`
+
 ## v0.7.0
 
 - **API**:
