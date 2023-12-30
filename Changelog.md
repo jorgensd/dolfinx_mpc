@@ -1,6 +1,7 @@
 # Changelog
 
 ## Main
+- **New feature**: Add support for "scalar" inelastic contact conditions. This is a special case where you want to create a periodic constraint between two sets of facets, which might or might not align.
  - **API**
   - Various shared pointers in C++ interface is changed to const references
   - Multipoint-constraint now accept `std::span` instead of vectors
