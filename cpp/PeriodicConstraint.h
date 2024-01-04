@@ -82,7 +82,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   const int size_local = imap->size_local();
 
   /// Compute which rank (relative to neighbourhood) to send each ghost to
-  const std::vector<int>& ghost_owners = imap->owners();
+  std::span<const int> ghost_owners = imap->owners();
 
   // Only work with local blocks
   std::vector<std::int32_t> local_blocks;

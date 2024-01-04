@@ -171,10 +171,10 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
     V.dofmap()->index_map->global_to_local(global_blocks, local_blocks);
 
     // Check which local masters that are not on the process already
-    std::vector<std::int64_t> new_ghosts;
-    new_ghosts.reserve(num_dofs);
-    std::vector<std::int32_t> new_owners;
-    new_owners.reserve(num_dofs);
+    std::vector<std::int64_t> additional_ghosts;
+    additional_ghosts.reserve(num_dofs);
+    std::vector<std::int32_t> additional_owners;
+    additional_owners.reserve(num_dofs);
     for (std::size_t i = 0; i < num_dofs; i++)
     {
       // Check if master block already has a local index and
@@ -182,30 +182,36 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
       // when we have multiple masters from the same block
 
       if ((local_blocks[i] == -1)
-          and (std::find(new_ghosts.begin(), new_ghosts.end(), global_blocks[i])
-               == new_ghosts.end()))
+          and (std::find(additional_ghosts.begin(), additional_ghosts.end(),
+                         global_blocks[i])
+               == additional_ghosts.end()))
       {
-        new_ghosts.push_back(global_blocks[i]);
-        new_owners.push_back(owners[i]);
+        additional_ghosts.push_back(global_blocks[i]);
+        additional_owners.push_back(owners[i]);
       }
     }
 
     // Append new ghosts (and corresponding rank) at the end of the old set of
     // ghosts originating from the old index map
-    std::vector<int> ghost_owners = old_index_map->owners();
+    std::span<const int> ghost_owners = old_index_map->owners();
 
-    std::vector<std::int64_t> ghosts = old_index_map->ghosts();
+    std::span<const std::int64_t> ghosts = old_index_map->ghosts();
     const std::int32_t num_ghosts = ghosts.size();
-    ghosts.resize(num_ghosts + new_ghosts.size());
-    ghost_owners.resize(num_ghosts + new_ghosts.size());
-    for (std::size_t i = 0; i < new_ghosts.size(); i++)
-    {
-      ghosts[num_ghosts + i] = new_ghosts[i];
-      ghost_owners[num_ghosts + i] = new_owners[i];
-    }
+    assert(ghost_owners.size() == ghosts.size());
+
+    std::vector<std::int64_t> all_ghosts(num_ghosts + additional_ghosts.size());
+    std::copy(ghosts.begin(), ghosts.end(), all_ghosts.begin());
+    std::copy(additional_ghosts.cbegin(), additional_ghosts.cend(),
+              all_ghosts.begin() + num_ghosts);
+
+    std::vector<int> all_owners(all_ghosts.size());
+    std::copy(ghost_owners.begin(), ghost_owners.end(), all_owners.begin());
+    std::copy(additional_owners.cbegin(), additional_owners.cend(),
+              all_owners.begin() + num_ghosts);
+
     // Create new indexmap with ghosts for master blocks added
     new_index_map = std::make_shared<dolfinx::common::IndexMap>(
-        comm, old_index_map->size_local(), ghosts, ghost_owners);
+        comm, old_index_map->size_local(), all_ghosts, all_owners);
   }
 
   // Extract information from the old dofmap to create a new one

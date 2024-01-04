@@ -708,7 +708,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
 
     std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
-        = imap->create_submap(blocks);
+        = dolfinx::common::create_sub_index_map(*imap, blocks);
     slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
         std::move(compressed_map.first));
 
@@ -727,8 +727,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 
   // Get communicator for owner->ghost
   MPI_Comm local_to_ghost = create_owner_to_ghost_comm(*slave_to_ghost);
-  const std::vector<std::int32_t>& src_ranks_ghosts = slave_to_ghost->src();
-  const std::vector<std::int32_t>& dest_ranks_ghosts = slave_to_ghost->dest();
+  std::span src_ranks_ghosts = slave_to_ghost->src();
+  std::span dest_ranks_ghosts = slave_to_ghost->dest();
 
   // Compute number of outgoing slaves and masters for each process
   dolfinx::graph::AdjacencyList<int> shared_indices

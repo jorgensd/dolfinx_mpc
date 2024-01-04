@@ -112,7 +112,7 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
   std::vector<std::int64_t> masters_other_side(masters_offsets.back());
   std::vector<T> coefficients_other_side(masters_offsets.back());
   std::vector<std::int32_t> owners_other_side(masters_offsets.back());
-  const std::vector<int>& ghost_owners = imap->owners();
+  std::span<const int> ghost_owners = imap->owners();
 
   // Temporary array holding global indices
   std::vector<std::int64_t> global_blocks;
@@ -956,7 +956,7 @@ mpc_data<T> create_contact_inelastic_condition(
       = create_owner_to_ghost_comm(local_blocks, ghost_blocks, imap);
 
   /// Compute which rank (relative to neighbourhood) to send each ghost to
-  const std::vector<int>& ghost_owners = imap->owners();
+  std::span<const int> ghost_owners = imap->owners();
 
   // Create new index-map where there are only ghosts for slaves
   std::shared_ptr<const dolfinx::common::IndexMap> slave_index_map;
