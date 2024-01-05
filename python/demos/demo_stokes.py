@@ -243,7 +243,7 @@ L += inner(g_tau, v) * ds
 # We use the MUMPS solver provided through the DOLFINX_MPC PETSc interface to solve the variational problem
 
 # +
-petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_solver_type": "mumps"}
+petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
 problem = LinearProblem(a, L, mpc, bcs=bcs, petsc_options=petsc_options)
 U = problem.solve()
 # -
