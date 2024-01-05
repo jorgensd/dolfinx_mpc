@@ -384,21 +384,18 @@ mpc_data<T> create_contact_slip_condition(
 
   // Find all slave dofs and split them into locally owned and ghosted blocks
   std::vector<std::int32_t> local_slave_blocks;
-  std::vector<std::int32_t> ghost_slave_blocks;
   {
     std::vector<std::int32_t> slave_dofs
         = impl::locate_slave_dofs<U>(V, meshtags, slave_marker);
 
     local_slave_blocks.reserve(slave_dofs.size());
     std::for_each(slave_dofs.begin(), slave_dofs.end(),
-                  [&local_slave_blocks, &ghost_slave_blocks, bs = block_size,
+                  [&local_slave_blocks, bs = block_size,
                    sl = size_local](const std::int32_t dof)
                   {
                     std::div_t div = std::div(dof, bs);
                     if (div.quot < sl)
                       local_slave_blocks.push_back(div.quot);
-                    else
-                      ghost_slave_blocks.push_back(div.quot);
                   });
   }
 
@@ -851,7 +848,7 @@ mpc_data<T> create_contact_slip_condition(
   // Distribute ghost data
   dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
       local_slaves, local_masters, local_coeffs, local_owners,
-      num_masters_per_slave, imap, block_size);
+      num_masters_per_slave, *imap, block_size);
 
   // Add ghost data to existing arrays
   const std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;

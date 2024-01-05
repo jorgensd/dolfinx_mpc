@@ -54,9 +54,8 @@ public:
           * (dofmap.index_map->size_local() + dofmap.index_map->num_ghosts());
     std::vector<std::int8_t> _slave_data(num_dofs_local, 0);
     _mpc_constants = std::vector<T>(num_dofs_local, 0);
-    for (std::size_t i = 0; i < slaves.size(); i++)
+    for (auto dof : slaves)
     {
-      const std::int32_t dof = slaves[i];
       _slave_data[dof] = 1;
       // FIXME: Add input vector for this data
       _mpc_constants[dof] = 1;

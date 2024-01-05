@@ -8,6 +8,7 @@
 
 #include "MultiPointConstraint.h"
 #include "mpi_utils.h"
+#include <dolfinx/common/Scatterer.h>
 #include <dolfinx/common/sort.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
@@ -684,11 +685,10 @@ void append_master_data(recv_data<T> in_data,
 /// @returns Data structure holding the received slave->master data
 template <typename T>
 dolfinx_mpc::mpc_data<T> distribute_ghost_data(
-    const std::vector<std::int32_t>& slaves,
-    const std::vector<std::int64_t>& masters, const std::vector<T>& coeffs,
-    const std::vector<std::int32_t>& owners,
-    const std::vector<std::int32_t>& num_masters_per_slave,
-    std::shared_ptr<const dolfinx::common::IndexMap> imap, const int bs)
+    std::span<const std::int32_t> slaves, std::span<const std::int64_t> masters,
+    std::span<const T> coeffs, std::span<const std::int32_t> owners,
+    std::span<const std::int32_t> num_masters_per_slave,
+    const dolfinx::common::IndexMap& imap, const int bs)
 {
   std::shared_ptr<const dolfinx::common::IndexMap> slave_to_ghost;
   std::vector<int> parent_to_sub;
@@ -700,15 +700,37 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 
   // Create new index map for each slave block
   {
+    // Fill in owned blocks
     std::vector<std::int32_t> blocks;
     blocks.reserve(slaves.size());
-    std::transform(slaves.cbegin(), slaves.cend(), std::back_inserter(blocks),
+    std::transform(slaves.begin(), slaves.end(), std::back_inserter(blocks),
                    [bs](auto& dof) { return dof / bs; });
+
+    // Propagate local slave information to ghost processes
+    std::vector<std::int8_t> indicator(imap.size_local(), 0);
+    std::for_each(blocks.begin(), blocks.end(),
+                  [&indicator](auto& block) { indicator[block] = 1; });
+    dolfinx::common::Scatterer ghost_scatterer(imap, 1);
+    std::vector<std::int8_t> recieve_indicator(imap.num_ghosts());
+    ghost_scatterer.scatter_fwd(std::span<const std::int8_t>(indicator),
+                                std::span<std::int8_t>(recieve_indicator));
+
+    // Insert ghosts blocks with constraints into blocks
+    for (std::size_t i = 0; i < imap.num_ghosts(); ++i)
+    {
+      if (recieve_indicator[i] == 1)
+      {
+        blocks.push_back(imap.size_local() + i);
+      }
+    }
+
+    // Sort and delete duplicates
     std::sort(blocks.begin(), blocks.end());
     blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
 
+    // Create submap
     std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
-        = dolfinx::common::create_sub_index_map(*imap, blocks);
+        = dolfinx::common::create_sub_index_map(imap, blocks, false);
     slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
         std::move(compressed_map.first));
 
@@ -832,7 +854,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       blocks[i] = pos.quot;
       rems[i] = pos.rem;
     }
-    imap->local_to_global(blocks, slaves_out);
+    imap.local_to_global(blocks, slaves_out);
     std::transform(slaves_out.cbegin(), slaves_out.cend(), rems.cbegin(),
                    slaves_out.begin(),
                    [bs](auto dof, auto rem) { return dof * bs + rem; });
@@ -885,7 +907,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                   recv_block.push_back(dof / bs);
                 });
   std::vector<std::int32_t> recv_local(recv_slaves.size());
-  imap->global_to_local(recv_block, recv_local);
+  imap.global_to_local(recv_block, recv_local);
   for (std::size_t i = 0; i < recv_local.size(); i++)
     recv_local[i] = recv_local[i] * bs + recv_rem[i];
 

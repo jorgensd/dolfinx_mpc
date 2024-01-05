@@ -447,7 +447,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Distribute ghost data
   dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
       slaves, masters, coeffs, owners, num_masters_per_slave,
-      parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
+      *parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
 
   // Add ghost data to existing arrays
   std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
