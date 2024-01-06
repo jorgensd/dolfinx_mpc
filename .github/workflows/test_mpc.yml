@@ -37,7 +37,7 @@ jobs:
         #   - CC: clang
         #     CXX: c++
     env:
-      DOLFINX_BRANCH: "dokken/fix-imap-global-to-local"
+      DOLFINX_BRANCH: "main"
       BASIX_BRANCH: "main"
       UFL_BRANCH: "main"
       FFCX_BRANCH: "main"

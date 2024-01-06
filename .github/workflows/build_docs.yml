@@ -22,7 +22,7 @@ jobs:
     - name: Install DOLFINx
       uses: ./.github/actions/install-dolfinx
       with:
-        dolfinx: dokken/fix-imap-global-to-local 
+        dolfinx: main
         ufl: main
         ffcx: main
         basix: main

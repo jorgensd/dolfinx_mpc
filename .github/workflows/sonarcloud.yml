@@ -68,7 +68,7 @@ jobs:
         uses: ./.github/actions/install-dolfinx
         with:
           petsc_arch: ${PETSC_ARCH}
-          dolfinx: dokken/fix-imap-global-to-local
+          dolfinx: main
           
       - name: Run build-wrapper
         run: |
