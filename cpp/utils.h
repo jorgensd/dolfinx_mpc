@@ -10,6 +10,7 @@
 #include "mpi_utils.h"
 #include <dolfinx/common/Scatterer.h>
 #include <dolfinx/common/sort.h>
+#include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/Function.h>
@@ -990,13 +991,8 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
       x_dofmap = mesh->geometry().dofmap();
 
-  auto cmaps = mesh->geometry().cmaps();
-  if (cmaps.size() > 1)
-  {
-    throw std::runtime_error(
-        "Multiple coordinate maps in evaluate basis functions");
-  }
-  const std::size_t num_dofs_g = cmaps[0].dim();
+  const dolfinx::fem::CoordinateElement<U>& cmap = mesh->geometry().cmap();
+  const std::size_t num_dofs_g = cmap.dim();
   std::span<const U> x_g = mesh->geometry().x();
 
   // Get element
@@ -1053,17 +1049,17 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
 
   // Evaluate geometry basis at point (0, 0, 0) on the reference cell.
   // Used in affine case.
-  std::array<std::size_t, 4> phi0_shape = cmaps[0].tabulate_shape(1, 1);
+  std::array<std::size_t, 4> phi0_shape = cmap.tabulate_shape(1, 1);
   std::vector<U> phi0_b(
       std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi0(phi0_b.data(), phi0_shape);
-  cmaps[0].tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
+  cmap.tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
   auto dphi0 = stdex::submdspan(phi0, std::pair(1, tdim + 1), 0,
                                 MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
   // Data structure for evaluating geometry basis at specific points.
   // Used in non-affine case.
-  std::array<std::size_t, 4> phi_shape = cmaps[0].tabulate_shape(1, 1);
+  std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
   std::vector<U> phi_b(
       std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi(phi_b.data(), phi_shape);
@@ -1118,7 +1114,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
         Xp(Xpb.data(), 1, tdim);
 
     // Compute reference coordinates X, and J, detJ and K
-    if (cmaps[0].is_affine())
+    if (cmap.is_affine())
     {
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi0, coord_dofs,
                                                            _J);
@@ -1134,10 +1130,10 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     else
     {
       // Pull-back physical point xp to reference coordinate Xp
-      cmaps[0].pull_back_nonaffine(Xp, xp, coord_dofs,
-                                   500 * std::numeric_limits<U>::epsilon(), 15);
+      cmap.pull_back_nonaffine(Xp, xp, coord_dofs,
+                               500 * std::numeric_limits<U>::epsilon(), 15);
 
-      cmaps[0].tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
+      cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
                                                            _J);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
@@ -1255,12 +1251,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   auto [X_b, X_shape] = element->interpolation_points();
 
   // Get coordinate map
-  auto cmaps = mesh->geometry().cmaps();
-  if (cmaps.size() > 1)
-  {
-    throw std::runtime_error(
-        "Multiple coordinate maps in evaluate tabulate dof coordinates");
-  }
+  const dolfinx::fem::CoordinateElement<U>& cmap = mesh->geometry().cmap();
 
   // Prepare cell geometry
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -1300,11 +1291,10 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   const auto apply_dof_transformation
       = element->template get_pre_dof_transformation_function<U>();
 
-  const std::array<std::size_t, 4> bsize
-      = cmaps[0].tabulate_shape(0, X_shape[0]);
+  const std::array<std::size_t, 4> bsize = cmap.tabulate_shape(0, X_shape[0]);
   std::vector<U> phi_b(
       std::reduce(bsize.begin(), bsize.end(), 1, std::multiplies{}));
-  cmaps[0].tabulate(0, X_b, X_shape, phi_b);
+  cmap.tabulate(0, X_b, X_shape, phi_b);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 4>>
       phi_full(phi_b.data(), bsize);
