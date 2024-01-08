@@ -23,7 +23,6 @@ from .dictcondition import create_dictionary_constraint
 _mpc_classes = Union[dolfinx_mpc.cpp.mpc.MultiPointConstraint_double, dolfinx_mpc.cpp.mpc.MultiPointConstraint_float,
                      dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double,
                      dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float]
-_float_classes = Union[numpy.float32, numpy.float64, numpy.complex128, numpy.complex64]
 _float_array_types = Union[npt.NDArray[numpy.float32], npt.NDArray[numpy.float64], npt.NDArray[numpy.complex64],
                            npt.NDArray[numpy.complex128]]
 _mpc_data_classes = Union[dolfinx_mpc.cpp.mpc.mpc_data_double, dolfinx_mpc.cpp.mpc.mpc_data_float,
@@ -66,10 +65,10 @@ class MultiPointConstraint():
     V: _fem.FunctionSpaceBase
     finalized: bool
     _cpp_object: _mpc_classes
-    _dtype: _float_classes
+    _dtype: numpy.floating
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, V: _fem.FunctionSpaceBase, dtype: _float_classes = default_scalar_type):
+    def __init__(self, V: _fem.FunctionSpaceBase, dtype: numpy.floating = default_scalar_type):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=dtype)
@@ -162,7 +161,7 @@ class MultiPointConstraint():
     def create_periodic_constraint_topological(self, V: _fem.FunctionSpaceBase, meshtag: _mesh.MeshTags, tag: int,
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBC],
-                                               scale: _float_classes = default_scalar_type(1.)):
+                                               scale: numpy.floating = default_scalar_type(1.)):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
         :math:`u(x_i) = scale * u(relation(x_i))` for all of :math:`x_i` on marked entities.
@@ -190,7 +189,7 @@ class MultiPointConstraint():
                                                indicator: Callable[[numpy.ndarray], numpy.ndarray],
                                                relation: Callable[[numpy.ndarray], numpy.ndarray],
                                                bcs: List[_fem.DirichletBC],
-                                               scale: _float_classes = default_scalar_type(1.)):
+                                               scale: numpy.floating = default_scalar_type(1.)):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies
         :math:`indicator(x_i)==True`, i.e.
