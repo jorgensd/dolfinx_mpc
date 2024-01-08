@@ -68,6 +68,7 @@ jobs:
         uses: ./.github/actions/install-dolfinx
         with:
           petsc_arch: ${PETSC_ARCH}
+          dolfinx: main
           
       - name: Run build-wrapper
         run: |

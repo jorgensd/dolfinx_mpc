@@ -112,7 +112,7 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
   std::vector<std::int64_t> masters_other_side(masters_offsets.back());
   std::vector<T> coefficients_other_side(masters_offsets.back());
   std::vector<std::int32_t> owners_other_side(masters_offsets.back());
-  const std::vector<int>& ghost_owners = imap->owners();
+  std::span<const int> ghost_owners = imap->owners();
 
   // Temporary array holding global indices
   std::vector<std::int64_t> global_blocks;
@@ -384,21 +384,18 @@ mpc_data<T> create_contact_slip_condition(
 
   // Find all slave dofs and split them into locally owned and ghosted blocks
   std::vector<std::int32_t> local_slave_blocks;
-  std::vector<std::int32_t> ghost_slave_blocks;
   {
     std::vector<std::int32_t> slave_dofs
         = impl::locate_slave_dofs<U>(V, meshtags, slave_marker);
 
     local_slave_blocks.reserve(slave_dofs.size());
     std::for_each(slave_dofs.begin(), slave_dofs.end(),
-                  [&local_slave_blocks, &ghost_slave_blocks, bs = block_size,
+                  [&local_slave_blocks, bs = block_size,
                    sl = size_local](const std::int32_t dof)
                   {
                     std::div_t div = std::div(dof, bs);
                     if (div.quot < sl)
                       local_slave_blocks.push_back(div.quot);
-                    else
-                      ghost_slave_blocks.push_back(div.quot);
                   });
   }
 
@@ -851,7 +848,7 @@ mpc_data<T> create_contact_slip_condition(
   // Distribute ghost data
   dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
       local_slaves, local_masters, local_coeffs, local_owners,
-      num_masters_per_slave, imap, block_size);
+      num_masters_per_slave, *imap, block_size);
 
   // Add ghost data to existing arrays
   const std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
@@ -956,7 +953,7 @@ mpc_data<T> create_contact_inelastic_condition(
       = create_owner_to_ghost_comm(local_blocks, ghost_blocks, imap);
 
   /// Compute which rank (relative to neighbourhood) to send each ghost to
-  const std::vector<int>& ghost_owners = imap->owners();
+  std::span<const int> ghost_owners = imap->owners();
 
   // Create new index-map where there are only ghosts for slaves
   std::shared_ptr<const dolfinx::common::IndexMap> slave_index_map;

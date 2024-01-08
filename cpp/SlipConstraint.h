@@ -45,7 +45,7 @@ mpc_data<T> create_slip_condition(
 
   // Info from parent space
   auto W_imap = space->dofmap()->index_map;
-  const std::vector<int>& W_ghost_owners = W_imap->owners();
+  std::span<const int> W_ghost_owners = W_imap->owners();
 
   const int W_bs = space->dofmap()->index_map_bs();
   const int W_local_size = W_imap->size_local();

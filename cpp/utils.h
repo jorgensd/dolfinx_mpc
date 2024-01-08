@@ -8,7 +8,9 @@
 
 #include "MultiPointConstraint.h"
 #include "mpi_utils.h"
+#include <dolfinx/common/Scatterer.h>
 #include <dolfinx/common/sort.h>
+#include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
 #include <dolfinx/fem/Function.h>
@@ -684,11 +686,10 @@ void append_master_data(recv_data<T> in_data,
 /// @returns Data structure holding the received slave->master data
 template <typename T>
 dolfinx_mpc::mpc_data<T> distribute_ghost_data(
-    const std::vector<std::int32_t>& slaves,
-    const std::vector<std::int64_t>& masters, const std::vector<T>& coeffs,
-    const std::vector<std::int32_t>& owners,
-    const std::vector<std::int32_t>& num_masters_per_slave,
-    std::shared_ptr<const dolfinx::common::IndexMap> imap, const int bs)
+    std::span<const std::int32_t> slaves, std::span<const std::int64_t> masters,
+    std::span<const T> coeffs, std::span<const std::int32_t> owners,
+    std::span<const std::int32_t> num_masters_per_slave,
+    const dolfinx::common::IndexMap& imap, const int bs)
 {
   std::shared_ptr<const dolfinx::common::IndexMap> slave_to_ghost;
   std::vector<int> parent_to_sub;
@@ -700,15 +701,37 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 
   // Create new index map for each slave block
   {
+    // Fill in owned blocks
     std::vector<std::int32_t> blocks;
     blocks.reserve(slaves.size());
-    std::transform(slaves.cbegin(), slaves.cend(), std::back_inserter(blocks),
+    std::transform(slaves.begin(), slaves.end(), std::back_inserter(blocks),
                    [bs](auto& dof) { return dof / bs; });
+
+    // Propagate local slave information to ghost processes
+    std::vector<std::int8_t> indicator(imap.size_local(), 0);
+    std::for_each(blocks.begin(), blocks.end(),
+                  [&indicator](auto& block) { indicator[block] = 1; });
+    dolfinx::common::Scatterer ghost_scatterer(imap, 1);
+    std::vector<std::int8_t> recieve_indicator(imap.num_ghosts());
+    ghost_scatterer.scatter_fwd(std::span<const std::int8_t>(indicator),
+                                std::span<std::int8_t>(recieve_indicator));
+
+    // Insert ghosts blocks with constraints into blocks
+    for (std::size_t i = 0; i < imap.num_ghosts(); ++i)
+    {
+      if (recieve_indicator[i] == 1)
+      {
+        blocks.push_back(imap.size_local() + i);
+      }
+    }
+
+    // Sort and delete duplicates
     std::sort(blocks.begin(), blocks.end());
     blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
 
+    // Create submap
     std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
-        = imap->create_submap(blocks);
+        = dolfinx::common::create_sub_index_map(imap, blocks, false);
     slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
         std::move(compressed_map.first));
 
@@ -727,8 +750,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 
   // Get communicator for owner->ghost
   MPI_Comm local_to_ghost = create_owner_to_ghost_comm(*slave_to_ghost);
-  const std::vector<std::int32_t>& src_ranks_ghosts = slave_to_ghost->src();
-  const std::vector<std::int32_t>& dest_ranks_ghosts = slave_to_ghost->dest();
+  std::span src_ranks_ghosts = slave_to_ghost->src();
+  std::span dest_ranks_ghosts = slave_to_ghost->dest();
 
   // Compute number of outgoing slaves and masters for each process
   dolfinx::graph::AdjacencyList<int> shared_indices
@@ -832,7 +855,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       blocks[i] = pos.quot;
       rems[i] = pos.rem;
     }
-    imap->local_to_global(blocks, slaves_out);
+    imap.local_to_global(blocks, slaves_out);
     std::transform(slaves_out.cbegin(), slaves_out.cend(), rems.cbegin(),
                    slaves_out.begin(),
                    [bs](auto dof, auto rem) { return dof * bs + rem; });
@@ -885,7 +908,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                   recv_block.push_back(dof / bs);
                 });
   std::vector<std::int32_t> recv_local(recv_slaves.size());
-  imap->global_to_local(recv_block, recv_local);
+  imap.global_to_local(recv_block, recv_local);
   for (std::size_t i = 0; i < recv_local.size(); i++)
     recv_local[i] = recv_local[i] * bs + recv_rem[i];
 
@@ -968,13 +991,8 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
       x_dofmap = mesh->geometry().dofmap();
 
-  auto cmaps = mesh->geometry().cmaps();
-  if (cmaps.size() > 1)
-  {
-    throw std::runtime_error(
-        "Multiple coordinate maps in evaluate basis functions");
-  }
-  const std::size_t num_dofs_g = cmaps[0].dim();
+  const dolfinx::fem::CoordinateElement<U>& cmap = mesh->geometry().cmap();
+  const std::size_t num_dofs_g = cmap.dim();
   std::span<const U> x_g = mesh->geometry().x();
 
   // Get element
@@ -1031,17 +1049,17 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
 
   // Evaluate geometry basis at point (0, 0, 0) on the reference cell.
   // Used in affine case.
-  std::array<std::size_t, 4> phi0_shape = cmaps[0].tabulate_shape(1, 1);
+  std::array<std::size_t, 4> phi0_shape = cmap.tabulate_shape(1, 1);
   std::vector<U> phi0_b(
       std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi0(phi0_b.data(), phi0_shape);
-  cmaps[0].tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
+  cmap.tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
   auto dphi0 = stdex::submdspan(phi0, std::pair(1, tdim + 1), 0,
                                 MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
   // Data structure for evaluating geometry basis at specific points.
   // Used in non-affine case.
-  std::array<std::size_t, 4> phi_shape = cmaps[0].tabulate_shape(1, 1);
+  std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
   std::vector<U> phi_b(
       std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi(phi_b.data(), phi_shape);
@@ -1096,7 +1114,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
         Xp(Xpb.data(), 1, tdim);
 
     // Compute reference coordinates X, and J, detJ and K
-    if (cmaps[0].is_affine())
+    if (cmap.is_affine())
     {
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi0, coord_dofs,
                                                            _J);
@@ -1112,10 +1130,10 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     else
     {
       // Pull-back physical point xp to reference coordinate Xp
-      cmaps[0].pull_back_nonaffine(Xp, xp, coord_dofs,
-                                   500 * std::numeric_limits<U>::epsilon(), 15);
+      cmap.pull_back_nonaffine(Xp, xp, coord_dofs,
+                               500 * std::numeric_limits<U>::epsilon(), 15);
 
-      cmaps[0].tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
+      cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
                                                            _J);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
@@ -1233,12 +1251,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   auto [X_b, X_shape] = element->interpolation_points();
 
   // Get coordinate map
-  auto cmaps = mesh->geometry().cmaps();
-  if (cmaps.size() > 1)
-  {
-    throw std::runtime_error(
-        "Multiple coordinate maps in evaluate tabulate dof coordinates");
-  }
+  const dolfinx::fem::CoordinateElement<U>& cmap = mesh->geometry().cmap();
 
   // Prepare cell geometry
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -1278,11 +1291,10 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   const auto apply_dof_transformation
       = element->template get_pre_dof_transformation_function<U>();
 
-  const std::array<std::size_t, 4> bsize
-      = cmaps[0].tabulate_shape(0, X_shape[0]);
+  const std::array<std::size_t, 4> bsize = cmap.tabulate_shape(0, X_shape[0]);
   std::vector<U> phi_b(
       std::reduce(bsize.begin(), bsize.end(), 1, std::multiplies{}));
-  cmaps[0].tabulate(0, X_b, X_shape, phi_b);
+  cmap.tabulate(0, X_b, X_shape, phi_b);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 4>>
       phi_full(phi_b.data(), bsize);

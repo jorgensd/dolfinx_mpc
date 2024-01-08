@@ -82,7 +82,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   const int size_local = imap->size_local();
 
   /// Compute which rank (relative to neighbourhood) to send each ghost to
-  const std::vector<int>& ghost_owners = imap->owners();
+  std::span<const int> ghost_owners = imap->owners();
 
   // Only work with local blocks
   std::vector<std::int32_t> local_blocks;
@@ -447,7 +447,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Distribute ghost data
   dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
       slaves, masters, coeffs, owners, num_masters_per_slave,
-      parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
+      *parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
 
   // Add ghost data to existing arrays
   std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;

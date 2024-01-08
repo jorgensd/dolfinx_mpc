@@ -11,8 +11,8 @@ dolfinx_mpc::create_owner_to_ghost_comm(const dolfinx::common::IndexMap& map)
 {
   // Get source (owner of ghosts) and destination (processes that
   // ghost an owned index) ranks
-  const std::vector<int>& src_ranks = map.src();
-  const std::vector<int>& dest_ranks = map.dest();
+  std::span<const int> src_ranks = map.src();
+  std::span<const int> dest_ranks = map.dest();
 
   // Check that src and dest ranks are unique and sorted
   assert(std::is_sorted(src_ranks.begin(), src_ranks.end()));
