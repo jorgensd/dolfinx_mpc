@@ -4,7 +4,7 @@
 //
 // SPDX-License-Identifier:    MIT
 
-#include <array.h>
+#include <array>
 #include <caster_petsc.h>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DirichletBC.h>
