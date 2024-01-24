@@ -9,6 +9,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import numpy as np
+import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
@@ -117,7 +118,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
             d = scipy.sparse.linalg.spsolve(KTAK.astype(scipy_dtype), reduced_L.astype(scipy_dtype))
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
-            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+            nt.assert_allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
                                * np.finfo(default_scalar_type).resolution)
     solver.destroy()
     b.destroy()

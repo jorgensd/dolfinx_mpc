@@ -9,6 +9,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import numpy as np
+import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
@@ -85,7 +86,7 @@ def test_pipeline(u_from_mpc):
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d
-            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc,
+            nt.assert_allclose(uh_numpy.astype(u_mpc.dtype), u_mpc,
                                rtol=500
                                * np.finfo(default_scalar_type).resolution,
                                atol=500

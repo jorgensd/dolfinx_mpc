@@ -10,6 +10,7 @@ from petsc4py import PETSc
 
 import dolfinx.fem as fem
 import numpy as np
+import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
@@ -121,7 +122,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d
-            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
+            nt.assert_allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
                                * np.finfo(default_scalar_type).resolution)
 
     b.destroy()
