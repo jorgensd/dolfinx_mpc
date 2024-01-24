@@ -9,6 +9,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import numpy as np
+import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
@@ -115,6 +116,6 @@ def test_lifting(get_assemblers):  # noqa: F811
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vecto
             uh_numpy = K @ (d)  # + constants)
-            assert np.allclose(uh_numpy, u_mpc)
+            nt.assert_allclose(uh_numpy, u_mpc)
 
     list_timings(comm, [TimingType.wall])

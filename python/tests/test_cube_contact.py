@@ -14,6 +14,7 @@ from petsc4py import PETSc
 import dolfinx.fem as fem
 import gmsh
 import numpy as np
+import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
@@ -301,7 +302,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             # Back substitution to full solution vector
             uh_numpy = K @ d
             atol = 1000 * np.finfo(default_scalar_type).resolution
-            assert np.allclose(uh_numpy, u_mpc, atol=atol)
+            nt.assert_allclose(uh_numpy, u_mpc, atol=atol)
     L_org.destroy()
 
     list_timings(comm, [TimingType.wall])
