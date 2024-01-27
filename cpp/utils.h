@@ -1131,7 +1131,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     {
       // Pull-back physical point xp to reference coordinate Xp
       cmap.pull_back_nonaffine(Xp, xp, coord_dofs,
-                               500 * std::numeric_limits<U>::epsilon(), 15);
+                               5000 * std::numeric_limits<U>::epsilon(), 15);
 
       cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
