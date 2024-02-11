@@ -201,8 +201,7 @@ if MPI.COMM_WORLD.rank == 0:
 # Write solution to file
 V_out = functionspace(mesh, basix.ufl.element("Lagrange", mesh.topology.cell_name(),
                       mesh.geometry.cmap.degree,
-                      lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmap.variant),
-                      gdim=mesh.geometry.dim, shape=(V.dofmap.bs,)))
+                      lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmap.variant), shape=(V.dofmap.bs,)))
 u_out = Function(V_out)
 u_out.interpolate(u_h)
 u_out.name = "uh"

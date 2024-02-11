@@ -123,8 +123,8 @@ fdim = mesh.topology.dim - 1
 # The next step is the create the function spaces for the fluid velocit and pressure.
 # We will use a mixed-formulation, and we use `basix.ufl` to create the Taylor-Hood finite element pair
 
-P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, gdim=mesh.geometry.dim, shape=(mesh.geometry.dim, ))
-P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, gdim=mesh.geometry.dim)
+P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim, ))
+P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1)
 
 TH = basix.ufl.mixed_element([P2, P1])
 W = fem.functionspace(mesh, TH)
