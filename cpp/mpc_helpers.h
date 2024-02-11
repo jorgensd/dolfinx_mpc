@@ -233,7 +233,10 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
       old_dofmap.element_dof_layout(), new_index_map, old_dofmap.bs(),
       std::move(flattened_dofmap), old_dofmap.bs());
 
-  return dolfinx::fem::FunctionSpace(V.mesh(), element, new_dofmap);
+  return dolfinx::fem::FunctionSpace(
+      V.mesh(), element, new_dofmap,
+      dolfinx::fem::compute_value_shape(element, V.mesh()->topology()->dim(),
+                                        V.mesh()->geometry().dim()));
 }
 
 } // namespace dolfinx_mpc

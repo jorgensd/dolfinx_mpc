@@ -1018,7 +1018,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
 
   assert(basis_shape[2]
          == std::size_t(element->space_dimension() / bs_element));
-  assert(basis_shape[3] == std::size_t(element->value_size() / bs_element));
+  assert(basis_shape[3] == std::size_t(V.value_size() / bs_element));
   std::array<std::size_t, 3> reference_shape
       = {basis_shape[1], basis_shape[2], basis_shape[3]};
   std::vector<U> output_basis(std::reduce(
