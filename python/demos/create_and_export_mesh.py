@@ -394,7 +394,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
-        domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],), gdim=points.shape[1]))
+        domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],)))
         mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
@@ -514,7 +514,7 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
-        domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],), gdim=points.shape[1]))
+        domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],)))
         mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
