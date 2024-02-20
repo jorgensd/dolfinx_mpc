@@ -35,13 +35,13 @@ jobs:
           apt-get install unzip
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: "zulu"
           java-version: 17
 
       - name: Cache SonarCloud packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
@@ -65,7 +65,7 @@ jobs:
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
 
       - name: Install DOLFINx
-        uses: ./jorgensd/actions/install-dolfinx@v0.2.0
+        uses: jorgensd/actions/install-dolfinx@v0.2.0
         with:
           petsc_arch: ${PETSC_ARCH}
           dolfinx: main
