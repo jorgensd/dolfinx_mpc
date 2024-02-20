@@ -39,7 +39,7 @@ jobs:
         with:
           distribution: "zulu"
           java-version: 17
-  
+
       - name: Cache SonarCloud packages
         uses: actions/cache@v3
         with:
@@ -65,11 +65,11 @@ jobs:
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
 
       - name: Install DOLFINx
-        uses: ./.github/actions/install-dolfinx
+        uses: ./jorgensd/actions/install-dolfinx@v0.2.0
         with:
           petsc_arch: ${PETSC_ARCH}
           dolfinx: main
-          
+
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc
