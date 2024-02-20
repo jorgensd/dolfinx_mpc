@@ -17,33 +17,32 @@ jobs:
       PETSC_ARCH: "linux-gnu-real64-32"
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install DOLFINx
-      uses: ./.github/actions/install-dolfinx
-      with:
-        dolfinx: main
-        ufl: main
-        ffcx: main
-        basix: main
-        petsc_arch: ${PETSC_ARCH}
+      - name: Install DOLFINx
+        uses: jorgensd/actions/install-dolfinx@v0.2.0
+        with:
+          dolfinx: main
+          ufl: main
+          ffcx: main
+          basix: main
+          petsc_arch: ${PETSC_ARCH}
 
+      - name: Install DOLFINx-MPC (C++)
+        run: |
+          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -S cpp/
+          cmake --build build-dir --parallel 3
+          cmake --install build-dir
 
-    - name: Install DOLFINx-MPC (C++)
-      run: |
-        cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -S cpp/
-        cmake --build build-dir --parallel 3
-        cmake --install build-dir
+      - name: Install DOLFINx-MPC (Python)
+        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python/[docs]
 
-    - name: Install DOLFINx-MPC (Python)
-      run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python/[docs]
+      - name: Build docs
+        run: jupyter book build .
 
-    - name: Build docs
-      run: jupyter book build .
-
-    - name: Upload documentation as artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: documentation
-        path: ${{ env.PUBLISH_DIR }}
-        if-no-files-found: error
+      - name: Upload documentation as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: ${{ env.PUBLISH_DIR }}
+          if-no-files-found: error
