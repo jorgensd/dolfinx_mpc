@@ -20,30 +20,29 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 
 
-@pytest.mark.parametrize("cell_type",
-                         (dolfinx.cpp.mesh.CellType.triangle,
-                          dolfinx.cpp.mesh.CellType.quadrilateral))
-@pytest.mark.parametrize("ghost_mode",
-                         (dolfinx.cpp.mesh.GhostMode.none,
-                          dolfinx.cpp.mesh.GhostMode.shared_facet))
+@pytest.mark.parametrize("cell_type", (dolfinx.cpp.mesh.CellType.triangle, dolfinx.cpp.mesh.CellType.quadrilateral))
+@pytest.mark.parametrize("ghost_mode", (dolfinx.cpp.mesh.GhostMode.none, dolfinx.cpp.mesh.GhostMode.shared_facet))
 def test_mixed_element(cell_type, ghost_mode):
     N = 4
-    mesh = dolfinx.mesh.create_unit_square(
-        MPI.COMM_WORLD, N, N, cell_type=cell_type, ghost_mode=ghost_mode)
+    mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N, cell_type=cell_type, ghost_mode=ghost_mode)
 
     # Inlet velocity Dirichlet BC
     bc_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 0.0, atol=500 * np.finfo(x.dtype).resolution))
+        mesh,
+        mesh.topology.dim - 1,
+        lambda x: np.isclose(x[0], 0.0, atol=500 * np.finfo(x.dtype).resolution),
+    )
     other_facets = dolfinx.mesh.locate_entities_boundary(
-        mesh, mesh.topology.dim - 1, lambda x: np.isclose(x[0], 1.0, atol=500 * np.finfo(x.dtype).resolution))
+        mesh,
+        mesh.topology.dim - 1,
+        lambda x: np.isclose(x[0], 1.0, atol=500 * np.finfo(x.dtype).resolution),
+    )
     arg_sort = np.argsort(other_facets)
-    mt = dolfinx.mesh.meshtags(mesh, mesh.topology.dim - 1,
-                               other_facets[arg_sort], np.full_like(other_facets, 1))
+    mt = dolfinx.mesh.meshtags(mesh, mesh.topology.dim - 1, other_facets[arg_sort], np.full_like(other_facets, 1))
 
     # Rotate the mesh to induce more interesting slip BCs
     th = np.pi / 4.0
-    rot = np.array([[np.cos(th), -np.sin(th)],
-                    [np.sin(th), np.cos(th)]])
+    rot = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
     gdim = mesh.geometry.dim
     mesh.geometry.x[:, :gdim] = (rot @ mesh.geometry.x[:, :gdim].T).T
 
@@ -57,8 +56,7 @@ def test_mixed_element(cell_type, ghost_mode):
     W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
 
     inlet_velocity = dolfinx.fem.Function(V)
-    inlet_velocity.interpolate(
-        lambda x: np.zeros((mesh.geometry.dim, x[0].shape[0]), dtype=np.double))
+    inlet_velocity.interpolate(lambda x: np.zeros((mesh.geometry.dim, x[0].shape[0]), dtype=np.double))
     inlet_velocity.x.scatter_forward()
 
     # -- Nested assembly
@@ -79,25 +77,22 @@ def test_mixed_element(cell_type, ghost_mode):
     (u, p) = ufl.TrialFunction(V), ufl.TrialFunction(Q)
     (v, q) = ufl.TestFunction(V), ufl.TestFunction(Q)
     a00 = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    a01 = - ufl.inner(p, ufl.div(v)) * ufl.dx
-    a10 = - ufl.inner(ufl.div(u), q) * ufl.dx
+    a01 = -ufl.inner(p, ufl.div(v)) * ufl.dx
+    a10 = -ufl.inner(ufl.div(u), q) * ufl.dx
     a11 = None
 
     L0 = ufl.inner(f, v) * ufl.dx
-    L1 = ufl.inner(
-        dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
+    L1 = ufl.inner(dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
 
     n = ufl.FacetNormal(mesh)
     g_tau = ufl.as_vector((0.0, 0.0))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
     a00 -= ufl.inner(ufl.outer(n, n) * ufl.dot(ufl.grad(u), n), v) * ds
-    a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(
-        - p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
+    a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(-p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
     L0 += ufl.inner(g_tau, v) * ds
 
-    a_nest = dolfinx.fem.form(((a00, a01),
-                               (a10, a11)))
+    a_nest = dolfinx.fem.form(((a00, a01), (a10, a11)))
     L_nest = dolfinx.fem.form((L0, L1))
 
     # Assemble MPC nest matrix
@@ -115,11 +110,9 @@ def test_mixed_element(cell_type, ghost_mode):
     dolfinx.fem.petsc.apply_lifting_nest(b_nest, a_nest, bcs)
 
     for b_sub in b_nest.getNestSubVecs():
-        b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD,
-                          mode=PETSc.ScatterMode.REVERSE)
+        b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
-    bcs0 = dolfinx.fem.bcs_by_block(
-        dolfinx.fem.extract_function_spaces(L_nest), bcs)
+    bcs0 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(L_nest), bcs)
     dolfinx.fem.petsc.set_bc_nest(b_nest, bcs0)
 
     # Original dolfinx rhs
@@ -127,8 +120,7 @@ def test_mixed_element(cell_type, ghost_mode):
     dolfinx.fem.petsc.apply_lifting_nest(b_org_nest, a_nest, bcs)
 
     for b_sub in b_org_nest.getNestSubVecs():
-        b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD,
-                          mode=PETSc.ScatterMode.REVERSE)
+        b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.petsc.set_bc_nest(b_org_nest, bcs0)
 
     # -- Monolithic assembly
@@ -152,8 +144,7 @@ def test_mixed_element(cell_type, ghost_mode):
         - ufl.inner(ufl.div(u), q) * ufl.dx
     )
 
-    L = ufl.inner(f, v) * ufl.dx + ufl.inner(
-        dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
+    L = ufl.inner(f, v) * ufl.dx + ufl.inner(dolfinx.fem.Constant(mesh, dolfinx.default_scalar_type(0.0)), q) * ufl.dx
 
     # No prescribed shear stress
     n = ufl.FacetNormal(mesh)
@@ -163,8 +154,7 @@ def test_mixed_element(cell_type, ghost_mode):
     # Terms due to slip condition
     # Explained in for instance: https://arxiv.org/pdf/2001.10639.pdf
     a -= ufl.inner(ufl.outer(n, n) * ufl.dot(ufl.grad(u), n), v) * ds
-    a -= ufl.inner(ufl.outer(n, n) * ufl.dot(
-        - p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
+    a -= ufl.inner(ufl.outer(n, n) * ufl.dot(-p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
     L += ufl.inner(g_tau, v) * ds
 
     a, L = dolfinx.fem.form(a), dolfinx.fem.form(L)
@@ -190,9 +180,8 @@ def test_mixed_element(cell_type, ghost_mode):
     def nest_matrix_norm(A):
         assert A.getType() == "nest"
         nrows, ncols = A.getNestSize()
-        sub_A = [A.getNestSubMatrix(row, col)
-                 for row in range(nrows) for col in range(ncols)]
-        return sum(map(lambda A_: A_.norm()**2 if A_ else 0.0, sub_A))**0.5
+        sub_A = [A.getNestSubMatrix(row, col) for row in range(nrows) for col in range(ncols)]
+        return sum(map(lambda A_: A_.norm() ** 2 if A_ else 0.0, sub_A)) ** 0.5
 
     # -- Ensure monolithic and nest matrices are the same
     assert np.isclose(nest_matrix_norm(A_nest), A.norm())

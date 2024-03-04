@@ -57,8 +57,11 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     # Create multipoint constraint
     def l2b(li):
         return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
-    s_m_c = {l2b([1, 0]): {l2b([0, 1]): 0.43, l2b([1, 1]): 0.11},
-             l2b([0, 0]): {l2b(master_point): 0.69}}
+
+    s_m_c = {
+        l2b([1, 0]): {l2b([0, 1]): 0.43, l2b([1, 1]): 0.11},
+        l2b([0, 0]): {l2b(master_point): 0.69},
+    }
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
@@ -83,7 +86,6 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
@@ -102,15 +104,17 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d
-            nt.assert_allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
-                               * np.finfo(default_scalar_type).resolution)
+            nt.assert_allclose(
+                uh_numpy.astype(u_mpc.dtype),
+                u_mpc,
+                rtol=500 * np.finfo(default_scalar_type).resolution,
+            )
 
     list_timings(comm, [TimingType.wall])
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 def test_linearproblem(master_point):
-
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 3, 5)
     V = fem.functionspace(mesh, ("Lagrange", 1))
@@ -138,18 +142,17 @@ def test_linearproblem(master_point):
     # Create multipoint constraint
     def l2b(li):
         return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
-    s_m_c = {l2b([1, 0]):
-             {l2b([0, 1]): 0.43,
-             l2b([1, 1]): 0.11},
-             l2b([0, 0]):
-             {l2b(master_point): 0.69}}
+
+    s_m_c = {
+        l2b([1, 0]): {l2b([0, 1]): 0.43, l2b([1, 1]): 0.11},
+        l2b([0, 0]): {l2b(master_point): 0.69},
+    }
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()
 
-    problem = dolfinx_mpc.LinearProblem(a, rhs, mpc, bcs=[],
-                                        petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
+    problem = dolfinx_mpc.LinearProblem(a, rhs, mpc, bcs=[], petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
     uh = problem.solve()
 
     root = 0
@@ -170,7 +173,10 @@ def test_linearproblem(master_point):
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d
-            nt.assert_allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
-                               * np.finfo(default_scalar_type).resolution)
+            nt.assert_allclose(
+                uh_numpy.astype(u_mpc.dtype),
+                u_mpc,
+                rtol=500 * np.finfo(default_scalar_type).resolution,
+            )
 
     list_timings(comm, [TimingType.wall])

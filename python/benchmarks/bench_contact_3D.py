@@ -21,25 +21,41 @@ from basix.ufl import element
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
-from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
-                         locate_dofs_topological, set_bc)
+from dolfinx.fem import (
+    Constant,
+    Function,
+    dirichletbc,
+    form,
+    functionspace,
+    locate_dofs_topological,
+    set_bc,
+)
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import (CellType, compute_midpoints, create_mesh,
-                          create_unit_cube, locate_entities_boundary, meshtags,
-                          refine)
-from ufl import (Identity, Mesh, TestFunction, TrialFunction, dx, grad, inner,
-                 sym, tr)
+from dolfinx.mesh import (
+    CellType,
+    compute_midpoints,
+    create_mesh,
+    create_unit_cube,
+    locate_entities_boundary,
+    meshtags,
+    refine,
+)
+from ufl import Identity, Mesh, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
-from dolfinx_mpc.utils import (create_normal_approximation, log_info,
-                               rigid_motions_nullspace, rotation_matrix)
+from dolfinx_mpc import MultiPointConstraint, apply_lifting, assemble_matrix, assemble_vector
+from dolfinx_mpc.utils import (
+    create_normal_approximation,
+    log_info,
+    rigid_motions_nullspace,
+    rotation_matrix,
+)
 
 comm = MPI.COMM_WORLD
 
 if default_real_type == np.float32:
     warnings.warn(
-        "Demo not supported in single precision as reading from XDMF only support double precision meshes")
+        "Demo not supported in single precision as reading from XDMF only support" + "double precision meshes"
+    )
     exit(0)
 
 
@@ -69,6 +85,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         n = np.cross(v1, v2)
         D = -(n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2])
         return lambda x: n[0] * x[0] + n[1] * x[1] + D > -n[2] * x[2]
+
     tmp_mesh_name = Path("tmp_mesh.xdmf").absolute()
     tmp_mesh_name.parent.mkdir(exist_ok=True)
     r_matrix = rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
@@ -81,12 +98,10 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
-        cells0 = entities_to_geometry(mesh0._cpp_object, tdim0,
-                                      np.arange(num_cells0, dtype=np.int32), False)
+        cells0 = entities_to_geometry(mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
-        cells1 = entities_to_geometry(mesh1._cpp_object, tdim1,
-                                      np.arange(num_cells1, dtype=np.int32), False)
+        cells1 = entities_to_geometry(mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         # Concatenate points and cells
@@ -152,8 +167,12 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
     ct = meshtags(mesh, tdim, np.array(indices, dtype=np.intc), np.array(values, dtype=np.intc))
 
     # Create meshtags for facet data
-    markers = {3: top_facets, 4: bottom_interface, 9: top_interface,
-               5: bottom_facets}  # , 6: left_facets, 7: right_facets}
+    markers = {
+        3: top_facets,
+        4: bottom_interface,
+        9: top_interface,
+        5: bottom_facets,
+    }  # , 6: left_facets, 7: right_facets}
     indices = np.array([], dtype=np.intc)
     values = np.array([], dtype=np.intc)
     for key in markers.keys():
@@ -192,7 +211,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext:s}"
 
     # Create functionspaces
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim, ))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
     V = functionspace(mesh, el)
 
     # Define boundary conditions
@@ -219,6 +238,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
         values[1] = g_vec[1]
         values[2] = g_vec[2]
         return values
+
     u_top = Function(V)
     u_top.interpolate(top_v)
     u_top.x.scatter_forward()
@@ -236,7 +256,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v)))
+        return 2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v))
+
     # Define variational problem
     u = TrialFunction(V)
     v = TestFunction(V)
@@ -325,8 +346,15 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
             print(f"#Dofs: {num_dofs}", file=results_file)
             print(f"#Slaves: {num_slaves}", file=results_file)
             print(f"#Iterations: {it}", file=results_file)
-        operations = ["Solve", "Assemble-matrix (C++)", "MPC-init", "Contact-constraint", "FacetNormal",
-                      "Assemble-vector (C++)", "Backsubstitution"]
+        operations = [
+            "Solve",
+            "Assemble-matrix (C++)",
+            "MPC-init",
+            "Contact-constraint",
+            "FacetNormal",
+            "Assemble-vector (C++)",
+            "Backsubstitution",
+        ]
         if comm.rank == 0:
             print("Operation  #Calls Avg Min Max", file=results_file)
         for op in operations:
@@ -343,18 +371,26 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--theta", default=np.pi / 3, type=np.float64,
-                        dest="theta", help="Rotation angle around axis [1, 1, 0]")
-    parser.add_argument("--ref", default=0, type=np.int32,
-                        dest="ref", help="Numer of mesh refinements")
-    parser.add_argument("--N0", default=3, type=np.int32,
-                        dest="N0", help="Initial mesh resolution")
+    parser.add_argument(
+        "--theta",
+        default=np.pi / 3,
+        type=np.float64,
+        dest="theta",
+        help="Rotation angle around axis [1, 1, 0]",
+    )
+    parser.add_argument("--ref", default=0, type=np.int32, dest="ref", help="Numer of mesh refinements")
+    parser.add_argument("--N0", default=3, type=np.int32, dest="N0", help="Initial mesh resolution")
 
     hex = parser.add_mutually_exclusive_group(required=False)
-    hex.add_argument('--hex', dest='hex', action='store_true', help="Use hexahedron mesh", default=False)
+    hex.add_argument("--hex", dest="hex", action="store_true", help="Use hexahedron mesh", default=False)
     slip = parser.add_mutually_exclusive_group(required=False)
-    slip.add_argument('--no-slip', dest='noslip', action='store_true',
-                      help="Use no-slip constraint", default=False)
+    slip.add_argument(
+        "--no-slip",
+        dest="noslip",
+        action="store_true",
+        help="Use no-slip constraint",
+        default=False,
+    )
 
     args = parser.parse_args()
     ct = CellType.hexahedron if args.hex else CellType.tetrahedron
@@ -363,4 +399,11 @@ if __name__ == "__main__":
     demo_stacked_cubes(theta=args.theta, ct=ct, num_refinements=0, N0=3, noslip=args.noslip, timings=False)
 
     # Run benchmark
-    demo_stacked_cubes(theta=args.theta, ct=ct, num_refinements=args.ref, N0=args.N0, noslip=args.noslip, timings=True)
+    demo_stacked_cubes(
+        theta=args.theta,
+        ct=ct,
+        num_refinements=args.ref,
+        N0=args.N0,
+        noslip=args.noslip,
+        timings=True,
+    )

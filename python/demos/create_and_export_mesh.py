@@ -18,33 +18,64 @@ from dolfinx.io import gmshio
 import dolfinx_mpc.utils as _utils
 
 
-def gmsh_3D_stacked(celltype: str, theta: float, res: float = 0.1,
-                    verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
+def gmsh_3D_stacked(
+    celltype: str, theta: float, res: float = 0.1, verbose: bool = False
+) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     if celltype == "tetrahedron":
-        mesh, ft = generate_tet_boxes(0, 0, 0, 1, 1, 1, 2, res,
-                                      facet_markers=[[11, 5, 12, 13, 4, 14],
-                                                     [21, 9, 22, 23, 3, 24]],
-                                      volume_markers=[1, 2], verbose=verbose)
+        mesh, ft = generate_tet_boxes(
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            2,
+            res,
+            facet_markers=[[11, 5, 12, 13, 4, 14], [21, 9, 22, 23, 3, 24]],
+            volume_markers=[1, 2],
+            verbose=verbose,
+        )
     else:
-        mesh, ft = generate_hex_boxes(0, 0, 0, 1, 1, 1, 2, res,
-                                      facet_markers=[[11, 5, 12, 13, 4, 14],
-                                                     [21, 9, 22, 23, 3, 24]],
-                                      volume_markers=[1, 2], verbose=verbose)
+        mesh, ft = generate_hex_boxes(
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            2,
+            res,
+            facet_markers=[[11, 5, 12, 13, 4, 14], [21, 9, 22, 23, 3, 24]],
+            volume_markers=[1, 2],
+            verbose=verbose,
+        )
 
     r_matrix = _utils.rotation_matrix([1, 1, 0], -theta)
     mesh.geometry.x[:] = np.dot(r_matrix, mesh.geometry.x.T).T
     return mesh, ft
 
 
-def tag_cube_model(model: gmsh.model, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float,
-                   z2: float, facet_markers: Sequence[Sequence[int]], volume_markers: Sequence[int]):
+def tag_cube_model(
+    model: gmsh.model,
+    x0: float,
+    y0: float,
+    z0: float,
+    x1: float,
+    y1: float,
+    z1: float,
+    z2: float,
+    facet_markers: Sequence[Sequence[int]],
+    volume_markers: Sequence[int],
+):
     """
     Helper function to tag a cube and its faces
     """
     # Create entity -> marker map (to be used after rotation)
     volumes = model.getEntities(3)
-    volume_entities: Dict[str, List[int]] = {"Top": [-1, volume_markers[1]],
-                                             "Bottom": [-1, volume_markers[0]]}
+    volume_entities: Dict[str, List[int]] = {
+        "Top": [-1, volume_markers[1]],
+        "Bottom": [-1, volume_markers[0]],
+    }
     for i, volume in enumerate(volumes):
         com = model.occ.getCenterOfMass(volume[0], np.abs(volume[1]))
         if np.isclose(com[2], (z1 - z0) / 2):
@@ -55,14 +86,15 @@ def tag_cube_model(model: gmsh.model, x0: float, y0: float, z0: float, x1: float
             volume_entities["Top"][0] = volume[1]
 
     surfaces = ["Top", "Bottom", "Left", "Right", "Front", "Back"]
-    entities: Dict[str, Dict[str, List[List[int]]]] = {"Bottom": {key: [[], []] for key in surfaces},
-                                                       "Top": {key: [[], []] for key in surfaces}}
+    entities: Dict[str, Dict[str, List[List[int]]]] = {
+        "Bottom": {key: [[], []] for key in surfaces},
+        "Top": {key: [[], []] for key in surfaces},
+    }
 
     # Identitfy entities for each surface of top and bottom cube
 
     # Physical markers for bottom cube
-    bottom_surfaces = model.getBoundary([volumes[bottom_index]],
-                                        oriented=False, recursive=False)
+    bottom_surfaces = model.getBoundary([volumes[bottom_index]], oriented=False, recursive=False)
     for entity in bottom_surfaces:
         com = model.occ.getCenterOfMass(entity[0], entity[1])
         if np.allclose(com, [(x1 - x0) / 2, y1, (z1 - z0) / 2]):
@@ -84,8 +116,7 @@ def tag_cube_model(model: gmsh.model, x0: float, y0: float, z0: float, x1: float
             entities["Bottom"]["Front"][0].append(entity[1])
             entities["Bottom"]["Front"][1] = [facet_markers[0][5]]
     # Physical markers for top
-    top_surfaces = model.getBoundary([volumes[top_index]],
-                                     oriented=False, recursive=False)
+    top_surfaces = model.getBoundary([volumes[top_index]], oriented=False, recursive=False)
     for entity in top_surfaces:
         com = model.occ.getCenterOfMass(entity[0], entity[1])
         if np.allclose(com, [(x1 - x0) / 2, y1, (z2 - z1) / 2 + z1]):
@@ -111,22 +142,28 @@ def tag_cube_model(model: gmsh.model, x0: float, y0: float, z0: float, x1: float
     model.occ.synchronize()
 
     for volume in volume_entities.keys():
-        model.addPhysicalGroup(3, [volume_entities[volume][0]],
-                               tag=volume_entities[volume][1])
+        model.addPhysicalGroup(3, [volume_entities[volume][0]], tag=volume_entities[volume][1])
         model.setPhysicalName(3, volume_entities[volume][0], volume)
 
     for box in entities.keys():
         for surface in entities[box].keys():
-            model.addPhysicalGroup(2, entities[box][surface][0],
-                                   tag=entities[box][surface][1][0])
-            model.setPhysicalName(2, entities[box][surface][1][0], box
-                                  + ":" + surface)
+            model.addPhysicalGroup(2, entities[box][surface][0], tag=entities[box][surface][1][0])
+            model.setPhysicalName(2, entities[box][surface][1][0], box + ":" + surface)
 
 
-def generate_tet_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float,
-                       z2: float, res: float, facet_markers: Sequence[Sequence[int]],
-                       volume_markers: Sequence[int],
-                       verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
+def generate_tet_boxes(
+    x0: float,
+    y0: float,
+    z0: float,
+    x1: float,
+    y1: float,
+    z1: float,
+    z2: float,
+    res: float,
+    facet_markers: Sequence[Sequence[int]],
+    volume_markers: Sequence[int],
+    verbose: bool = False,
+) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
@@ -177,9 +214,19 @@ def generate_tet_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1
     return mesh, ft
 
 
-def generate_hex_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, z2: float, res: float,
-                       facet_markers: Sequence[Sequence[int]], volume_markers: Sequence[int],
-                       verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
+def generate_hex_boxes(
+    x0: float,
+    y0: float,
+    z0: float,
+    x1: float,
+    y1: float,
+    z1: float,
+    z2: float,
+    res: float,
+    facet_markers: Sequence[Sequence[int]],
+    volume_markers: Sequence[int],
+    verbose: bool = False,
+) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
     [x0,y0,z1] x [x1,y1,z2] with different resolution in each box.
@@ -198,10 +245,8 @@ def generate_hex_boxes(x0: float, y0: float, z0: float, x1: float, y1: float, z1
         top = gmsh.model.occ.addRectangle(x0, y0, z2, x1 - x0, y1 - y0)
 
         # Set mesh size at point
-        gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0,
-                               numElements=[int(1 / (2 * res))], recombine=True)
-        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12,
-                               numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0, numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12, numElements=[int(1 / (2 * res))], recombine=True)
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
@@ -247,8 +292,12 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple
         else:
             recombine = False
 
-        points = [gmsh.model.occ.addPoint(x0, y0, z0), gmsh.model.occ.addPoint(x1, y0, z0),
-                  gmsh.model.occ.addPoint(x0, y2, z0), gmsh.model.occ.addPoint(x1, y2, z0)]
+        points = [
+            gmsh.model.occ.addPoint(x0, y0, z0),
+            gmsh.model.occ.addPoint(x1, y0, z0),
+            gmsh.model.occ.addPoint(x0, y2, z0),
+            gmsh.model.occ.addPoint(x1, y2, z0),
+        ]
         bottom = gmsh.model.occ.addLine(points[0], points[1])
         top = gmsh.model.occ.addLine(points[2], points[3])
         gmsh.model.occ.extrude([(1, bottom)], 0, y1 - y0, 0, numElements=[int(1 / (res))], recombine=recombine)
@@ -268,8 +317,10 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple
                 top_index = i
                 volume_entities["Top"][0] = volume[1]
         surfaces = ["Top", "Bottom", "Left", "Right"]
-        entities: Dict[str, Dict[str, List[List[int]]]] = {"Bottom": {key: [[], []] for key in surfaces},
-                                                           "Top": {key: [[], []] for key in surfaces}}
+        entities: Dict[str, Dict[str, List[List[int]]]] = {
+            "Bottom": {key: [[], []] for key in surfaces},
+            "Top": {key: [[], []] for key in surfaces},
+        }
         # Identitfy entities for each surface of top and bottom cube
         # Bottom cube: Top, Right, Bottom, Left
         # Top cube : Top, Right, Bottom, Left
@@ -346,6 +397,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
     Create two 2D cubes stacked on top of each other,
     and the corresponding mesh markers using dolfin built-in meshes
     """
+
     def find_line_function(p0, p1):
         """
         Find line y=ax+b for each of the lines in the mesh
@@ -380,17 +432,15 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
         r_matrix = _utils.rotation_matrix([0, 0, 1], theta)
         points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
         points = np.dot(r_matrix, points.T)
-        points = points[: 2, :].T
+        points = points[:2, :].T
 
         # Transform topology info into geometry info
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
-        cells0 = _cpp.mesh.entities_to_geometry(
-            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
+        cells0 = _cpp.mesh.entities_to_geometry(mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
-        cells1 = _cpp.mesh.entities_to_geometry(
-            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
+        cells1 = _cpp.mesh.entities_to_geometry(mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
@@ -443,8 +493,14 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
         ct = _mesh.meshtags(mesh, tdim, np.array(cell_indices, dtype=np.intc), np.array(cell_values, dtype=np.intc))
 
         # Create meshtags for facet data
-        markers: Dict[int, np.ndarray] = {3: top_facets, 4: np.hstack(bottom_interface), 9: np.hstack(top_interface),
-                                          5: bottom_facets, 6: left_facets, 7: right_facets}
+        markers: Dict[int, np.ndarray] = {
+            3: top_facets,
+            4: np.hstack(bottom_interface),
+            9: np.hstack(top_interface),
+            5: bottom_facets,
+            6: left_facets,
+            7: right_facets,
+        }
         all_indices = []
         all_values = []
 
@@ -463,8 +519,13 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
     MPI.COMM_WORLD.barrier()
 
 
-def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahedron,
-                   ext: str = "tetrahedron", res: float = 0.1, outdir: Union[str, Path] = Path("meshes")):
+def mesh_3D_dolfin(
+    theta: float = 0,
+    ct: _mesh.CellType = _mesh.CellType.tetrahedron,
+    ext: str = "tetrahedron",
+    res: float = 0.1,
+    outdir: Union[str, Path] = Path("meshes"),
+):
     timer = _common.Timer("~~Contact: Create mesh")
 
     def find_plane_function(p0, p1, p2):
@@ -505,12 +566,10 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         # Transform topology info into geometry info
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
-        cells0 = _cpp.mesh.entities_to_geometry(
-            mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
+        cells0 = _cpp.mesh.entities_to_geometry(mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
-        cells1 = _cpp.mesh.entities_to_geometry(
-            mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
+        cells1 = _cpp.mesh.entities_to_geometry(mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
         cells = np.vstack([cells0, cells1])
@@ -534,8 +593,7 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         # right_side = find_line_function(top_points[:, 1], top_points[:, 2])
         # right_facets = _mesh.locate_entities_boundary(
         #     mesh, fdim, right_side)
-        if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1],
-                                               [0, 1, 1], [1, 1, 1]]).T)
+        if_points = np.dot(r_matrix, np.array([[0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]).T)
 
         interface = find_plane_function(if_points[:, 0], if_points[:, 1], if_points[:, 2])
         i_facets = _mesh.locate_entities_boundary(mesh, fdim, interface)
@@ -567,8 +625,12 @@ def mesh_3D_dolfin(theta: float = 0, ct: _mesh.CellType = _mesh.CellType.tetrahe
         ct = _mesh.meshtags(mesh, tdim, np.array(indices, dtype=np.int32), np.array(values, dtype=np.int32))
 
         # Create meshtags for facet data
-        markers: Dict[int, np.ndarray] = {3: top_facets, 4: np.hstack(bottom_interface), 9: np.hstack(top_interface),
-                                          5: bottom_facets}  # , 6: left_facets, 7: right_facets}
+        markers: Dict[int, np.ndarray] = {
+            3: top_facets,
+            4: np.hstack(bottom_interface),
+            9: np.hstack(top_interface),
+            5: bottom_facets,
+        }  # , 6: left_facets, 7: right_facets}
         all_indices = []
         all_values = []
 

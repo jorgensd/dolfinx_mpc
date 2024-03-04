@@ -182,7 +182,7 @@ void apply_lifting(
   auto mesh = a->function_spaces()[0]->mesh();
 
   // Prepare cell geometry
-  namespace stdex = std::experimental;
+
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -231,7 +231,7 @@ void apply_lifting(
         auto cell = entity.front();
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(
+        auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
@@ -315,7 +315,7 @@ void apply_lifting(
         const int local_facet = entity[1];
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(
+        auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {

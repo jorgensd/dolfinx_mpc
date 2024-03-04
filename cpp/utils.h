@@ -282,13 +282,16 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     throw std::runtime_error(
         "Cannot create sparsity pattern. Form is not a bilinear.");
   }
-
   // Get dof maps and mesh
   std::array<std::reference_wrapper<const dolfinx::fem::DofMap>, 2> dofmaps{
       *a.function_spaces().at(0)->dofmap(),
       *a.function_spaces().at(1)->dofmap()};
   std::shared_ptr mesh = a.mesh();
   assert(mesh);
+  std::shared_ptr mesh0 = a.function_spaces().at(0)->mesh();
+  assert(mesh0);
+  std::shared_ptr mesh1 = a.function_spaces().at(1)->mesh();
+  assert(mesh1);
 
   const std::set<dolfinx::fem::IntegralType> types = a.integral_types();
   if (types.find(dolfinx::fem::IntegralType::interior_facet) != types.end()
@@ -300,6 +303,16 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     mesh->topology_mutable()->create_connectivity(tdim - 1, tdim);
   }
 
+  auto extract_cells = [](std::span<const std::int32_t> facets)
+  {
+    assert(facets.size() % 2 == 0);
+    std::vector<std::int32_t> cells;
+    cells.reserve(facets.size() / 2);
+    for (std::size_t i = 0; i < facets.size(); i += 2)
+      cells.push_back(facets[i]);
+    return cells;
+  };
+
   for (auto type : types)
   {
     std::vector<int> ids = a.integral_ids(type);
@@ -308,33 +321,29 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     case dolfinx::fem::IntegralType::cell:
       for (int id : ids)
       {
-        std::span<const std::int32_t> cells = a.domain(type, id);
-        dolfinx::fem::sparsitybuild::cells(pattern, cells,
-                                           {{dofmaps[0], dofmaps[1]}});
+        dolfinx::fem::sparsitybuild::cells(
+            pattern, {a.domain(type, id, *mesh0), a.domain(type, id, *mesh1)},
+            {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
       for (int id : ids)
       {
-        std::span<const std::int32_t> facets = a.domain(type, id);
-        std::vector<std::int32_t> f;
-        f.reserve(facets.size() / 2);
-        for (std::size_t i = 0; i < facets.size(); i += 4)
-          f.insert(f.end(), {facets[i], facets[i + 2]});
         dolfinx::fem::sparsitybuild::interior_facets(
-            pattern, f, {{dofmaps[0], dofmaps[1]}});
+            pattern,
+            {extract_cells(a.domain(type, id, *mesh0)),
+             extract_cells(a.domain(type, id, *mesh1))},
+            {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
       for (int id : ids)
       {
-        std::span<const std::int32_t> facets = a.domain(type, id);
-        std::vector<std::int32_t> cells;
-        cells.reserve(facets.size() / 2);
-        for (std::size_t i = 0; i < facets.size(); i += 2)
-          cells.push_back(facets[i]);
-        dolfinx::fem::sparsitybuild::cells(pattern, cells,
-                                           {{dofmaps[0], dofmaps[1]}});
+        dolfinx::fem::sparsitybuild::cells(
+            pattern,
+            {extract_cells(a.domain(type, id, *mesh0)),
+             extract_cells(a.domain(type, id, *mesh1))},
+            {{dofmaps[0], dofmaps[1]}});
       }
       break;
     default:
@@ -985,7 +994,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   auto map = mesh->topology()->index_map(tdim);
 
   // Get geometry data
-  namespace stdex = std::experimental;
+
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -1054,8 +1063,9 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi0(phi0_b.data(), phi0_shape);
   cmap.tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
-  auto dphi0 = stdex::submdspan(phi0, std::pair(1, tdim + 1), 0,
-                                MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
+  auto dphi0 = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+      phi0, std::pair(1, tdim + 1), 0,
+      MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
   // Data structure for evaluating geometry basis at specific points.
   // Used in non-affine case.
@@ -1063,8 +1073,9 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   std::vector<U> phi_b(
       std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{}));
   cmdspan4_t phi(phi_b.data(), phi_shape);
-  auto dphi = stdex::submdspan(phi, std::pair(1, tdim + 1), 0,
-                               MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
+  auto dphi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+      phi, std::pair(1, tdim + 1), 0,
+      MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
   // Reference coordinates for each point
   std::vector<U> Xb(num_points * tdim);
@@ -1088,8 +1099,8 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       continue;
 
     // Get cell geometry (coordinate dofs)
-    auto x_dofs = stdex::submdspan(x_dofmap, cell_index,
-                                   MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        x_dofmap, cell_index, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < num_dofs_g; ++i)
     {
       const int pos = 3 * x_dofs[i];
@@ -1100,12 +1111,12 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     for (std::size_t j = 0; j < gdim; ++j)
       xp(0, j) = x[3 * p + j];
 
-    auto _J
-        = stdex::submdspan(J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-                           MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _K
-        = stdex::submdspan(K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-                           MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
 
     std::array<U, 3> Xpb = {0, 0, 0};
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -1184,15 +1195,15 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     apply_dof_transformation(basis_valuesb, cell_info, cell_index,
                              (int)reference_value_size);
 
-    auto _U = stdex::submdspan(full_basis, p,
-                               MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-                               MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _J
-        = stdex::submdspan(J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-                           MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _K
-        = stdex::submdspan(K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-                           MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto _U = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        full_basis, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     push_forward_fn(_U, basis_values, _J, detJ[p], _K);
   }
   return {output_basis, reference_shape};
@@ -1262,7 +1273,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   const std::size_t num_dofs_g = x_dofmap.extent(1);
 
   // Array to hold coordinates to return
-  namespace stdex = std::experimental;
+
   std::array<std::size_t, 2> coord_shape = {dofs.size(), 3};
   if (transposed)
     coord_shape = {3, dofs.size()};
@@ -1298,9 +1309,9 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 4>>
       phi_full(phi_b.data(), bsize);
-  auto phi = stdex::submdspan(phi_full, 0,
-                              MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-                              MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
+  auto phi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+      phi_full, 0, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+      MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
   // Create insertion function
   std::function<void(std::size_t, std::size_t, std::ptrdiff_t)> inserter;
@@ -1320,8 +1331,8 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   for (std::size_t c = 0; c < cells.size(); ++c)
   {
     // Fetch the coordinates of the cell
-    auto x_dofs = stdex::submdspan(x_dofmap, cells[c],
-                                   MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        x_dofmap, cells[c], MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < num_dofs_g; ++i)
     {
       const int pos = 3 * x_dofs[i];

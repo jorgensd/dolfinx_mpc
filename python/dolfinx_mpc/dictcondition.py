@@ -13,8 +13,10 @@ import numpy as np
 from dolfinx import default_scalar_type
 
 
-def close_to(point: np.typing.NDArray[typing.Union[np.float64, np.float32]],
-             atol=1000 * np.finfo(dolfinx.default_real_type).resolution):
+def close_to(
+    point: np.typing.NDArray[typing.Union[np.float64, np.float32]],
+    atol=1000 * np.finfo(dolfinx.default_real_type).resolution,
+):
     """
     Convenience function for locating a point [x,y,z]
     within an array x [[x0,...,xN],[y0,...,yN], [z0,...,zN]].
@@ -26,10 +28,12 @@ def close_to(point: np.typing.NDArray[typing.Union[np.float64, np.float32]],
 
 
 @typing.no_type_check
-def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
-                                 typing.Dict[bytes, typing.Dict[bytes, float]],
-                                 subspace_slave: typing.Optional[int] = None,
-                                 subspace_master: typing.Optional[int] = None):
+def create_dictionary_constraint(
+    V: fem.functionspace,
+    slave_master_dict: typing.Dict[bytes, typing.Dict[bytes, float]],
+    subspace_slave: typing.Optional[int] = None,
+    subspace_master: typing.Optional[int] = None,
+):
     """
     Returns a multi point constraint for a given function space
     and dictionary constraint.
@@ -71,46 +75,51 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
         sp = np.frombuffer(slave_point, dtype=dfloat)
         for j, coord in enumerate(sp):
             slave_point_nd[j] = coord
-        slave_point_nd[len(sp):] = 0
+        slave_point_nd[len(sp) :] = 0
 
         if subspace_slave is None:
             slave_dofs = fem.locate_dofs_geometrical(V, close_to(slave_point_nd))
         else:
             Vsub = V.sub(subspace_slave).collapse()[0]
-            slave_dofs = fem.locate_dofs_geometrical(
-                (V.sub(subspace_slave), Vsub), close_to(slave_point_nd))[0]
+            slave_dofs = fem.locate_dofs_geometrical((V.sub(subspace_slave), Vsub), close_to(slave_point_nd))[0]
         if len(slave_dofs) == 1:
             # Decide if slave is ghost or not
             if slave_dofs[0] < local_size:
                 slaves_local[i] = slave_dofs[0]
-                owned_entities[i] = {"masters": np.full(num_masters, -1, dtype=np.int64),
-                                     "coeffs": np.full(num_masters, -1, dtype=dolfinx.default_scalar_type),
-                                     "owners": np.full(num_masters, -1, dtype=np.int32),
-                                     "master_count": 0, "local_index": []}
+                owned_entities[i] = {
+                    "masters": np.full(num_masters, -1, dtype=np.int64),
+                    "coeffs": np.full(num_masters, -1, dtype=dolfinx.default_scalar_type),
+                    "owners": np.full(num_masters, -1, dtype=np.int32),
+                    "master_count": 0,
+                    "local_index": [],
+                }
                 slave_status = 1
             else:
                 slaves_ghost[i] = slave_dofs[0]
-                ghosted_entities[i] = {"masters": np.full(num_masters, -1, dtype=np.int64),
-                                       "coeffs": np.full(num_masters, -1, dtype=dolfinx.default_scalar_type),
-                                       "owners": np.full(num_masters, -1, dtype=np.int32),
-                                       "master_count": 0, "local_index": []}
+                ghosted_entities[i] = {
+                    "masters": np.full(num_masters, -1, dtype=np.int64),
+                    "coeffs": np.full(num_masters, -1, dtype=dolfinx.default_scalar_type),
+                    "owners": np.full(num_masters, -1, dtype=np.int32),
+                    "master_count": 0,
+                    "local_index": [],
+                }
                 slave_status = 0
         elif len(slave_dofs) > 1:
-            raise RuntimeError("Multiple slaves found at same point. "
-                               + "You should use sub-space locators.")
+            raise RuntimeError("Multiple slaves found at same point. " + "You should use sub-space locators.")
         # Wrap as list to ensure order later
         master_points = list(slave_master_dict[slave_point].keys())
         master_points_nd = np.zeros((3, len(master_points)), dtype=dfloat)
-        for (j, master_point) in enumerate(master_points):
+        for j, master_point in enumerate(master_points):
             # Wrap bytes as numpy array
             for k, coord in enumerate(np.frombuffer(master_point, dtype=dfloat)):
                 master_points_nd[k, j] = coord
             if subspace_master is None:
-                master_dofs = fem.locate_dofs_geometrical(V, close_to(master_points_nd[:, j:j + 1]))
+                master_dofs = fem.locate_dofs_geometrical(V, close_to(master_points_nd[:, j : j + 1]))
             else:
                 Vsub = V.sub(subspace_master).collapse()[0]
-                master_dofs = fem.locate_dofs_geometrical((V.sub(subspace_master), Vsub),
-                                                          close_to(master_points_nd[:, j:j + 1]))[0]
+                master_dofs = fem.locate_dofs_geometrical(
+                    (V.sub(subspace_master), Vsub), close_to(master_points_nd[:, j : j + 1])
+                )[0]
 
             # Only add masters owned by this processor
             master_dofs = master_dofs[master_dofs < local_size]
@@ -122,12 +131,15 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
                     if i in non_local_entities.keys():
                         non_local_entities[i]["masters"].append(glob_master * bs + master_rem)
                         non_local_entities[i]["coeffs"].append(slave_master_dict[slave_point][master_point])
-                        non_local_entities[i]["owners"].append(comm.rank),
+                        (non_local_entities[i]["owners"].append(comm.rank),)
                         non_local_entities[i]["local_index"].append(j)
                     else:
-                        non_local_entities[i] = {"masters": [glob_master * bs + master_rem],
-                                                 "coeffs": [slave_master_dict[slave_point][master_point]],
-                                                 "owners": [comm.rank], "local_index": [j]}
+                        non_local_entities[i] = {
+                            "masters": [glob_master * bs + master_rem],
+                            "coeffs": [slave_master_dict[slave_point][master_point]],
+                            "owners": [comm.rank],
+                            "local_index": [j],
+                        }
                 elif slave_status == 0:
                     ghosted_entities[i]["masters"][j] = glob_master * bs + master_rem
                     ghosted_entities[i]["owners"][j] = comm.rank
@@ -211,6 +223,10 @@ def create_dictionary_constraint(V: fem.functionspace, slave_master_dict:
         owners.extend(ghosted_slaves[slave_index]["owners"])  # type: ignore
         coeffs.extend(ghosted_slaves[slave_index]["coeffs"])  # type: ignore
         offsets.append(len(masters))
-    return (np.asarray(slaves, dtype=np.int32), np.asarray(masters, dtype=np.int64),
-            np.asarray(coeffs, dtype=default_scalar_type), np.asarray(owners, dtype=np.int32),
-            np.asarray(offsets, dtype=np.int32))
+    return (
+        np.asarray(slaves, dtype=np.int32),
+        np.asarray(masters, dtype=np.int64),
+        np.asarray(coeffs, dtype=default_scalar_type),
+        np.asarray(owners, dtype=np.int32),
+        np.asarray(offsets, dtype=np.int32),
+    )

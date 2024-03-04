@@ -52,12 +52,13 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     c2 = fem.Constant(mesh, default_scalar_type(10))
 
     dx = ufl.Measure("dx", domain=mesh, subdomain_data=ct)
-    a = c1 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(1) +\
-        c2 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(2)\
+    a = (
+        c1 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(1)
+        + c2 * ufl.inner(ufl.grad(u), ufl.grad(v)) * dx(2)
         + 0.87 * ufl.inner(u, v) * dx(1)
+    )
 
-    rhs = ufl.inner(x[1], v) * dx(1) + \
-        ufl.inner(fem.Constant(mesh, default_scalar_type(1)), v) * dx(2)
+    rhs = ufl.inner(x[1], v) * dx(1) + ufl.inner(fem.Constant(mesh, default_scalar_type(1)), v) * dx(2)
     bilinear_form = fem.form(a)
     linear_form = fem.form(rhs)
 
@@ -118,8 +119,11 @@ def test_cell_domains(get_assemblers):  # noqa: F811
             d = scipy.sparse.linalg.spsolve(KTAK.astype(scipy_dtype), reduced_L.astype(scipy_dtype))
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
-            nt.assert_allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
-                               * np.finfo(default_scalar_type).resolution)
+            nt.assert_allclose(
+                uh_numpy.astype(u_mpc.dtype),
+                u_mpc,
+                rtol=500 * np.finfo(default_scalar_type).resolution,
+            )
     solver.destroy()
     b.destroy()
     del uh

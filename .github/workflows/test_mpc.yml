@@ -70,10 +70,12 @@ jobs:
       - name: upgrade pip
         run: python3 -m pip install --upgrade setuptools pip
 
-      - name: Flake8 code
-        run: flake8 python/
+      - name: Check formatting
+        run: |
+          ruff check
+          ruff format
 
-      - name: Mypy check
+      - name: Check typing
         run: |
           python3 -m pip install mypy
           cd python

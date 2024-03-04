@@ -25,17 +25,29 @@ from dolfinx.mesh import CellType
 from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
 from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
-from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
-                               create_normal_approximation, gather_PETScMatrix,
-                               gather_PETScVector,
-                               gather_transformation_matrix, log_info,
-                               rigid_motions_nullspace, rotation_matrix)
+from dolfinx_mpc import MultiPointConstraint, apply_lifting, assemble_matrix, assemble_vector
+from dolfinx_mpc.utils import (
+    compare_mpc_lhs,
+    compare_mpc_rhs,
+    create_normal_approximation,
+    gather_PETScMatrix,
+    gather_PETScVector,
+    gather_transformation_matrix,
+    log_info,
+    rigid_motions_nullspace,
+    rotation_matrix,
+)
 
 
-def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: CellType = CellType.tetrahedron,
-                       compare: bool = True, res: float = 0.1, noslip: bool = False):
+def demo_stacked_cubes(
+    outfile: XDMFFile,
+    theta: float,
+    gmsh: bool = False,
+    ct: CellType = CellType.tetrahedron,
+    compare: bool = True,
+    res: float = 0.1,
+    noslip: bool = False,
+):
     celltype = "hexahedron" if ct == CellType.hexahedron else "tetrahedron"
     type_ext = "no_slip" if noslip else "slip"
     mesh_ext = "_gmsh_" if gmsh else "_"
@@ -64,13 +76,13 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext}{mesh_ext}"
 
     # Create functionspaces
-    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
     # Define boundary conditions
 
     # Bottom boundary is fixed in all directions
     bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))
-    u_bc = np.array((0, ) * mesh.geometry.dim, dtype=default_scalar_type)
+    u_bc = np.array((0,) * mesh.geometry.dim, dtype=default_scalar_type)
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs, V)
 
     g_vec = np.array([0, 0, -4.25e-1], dtype=default_scalar_type)
@@ -94,7 +106,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v)))
+        return 2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v))
 
     # Define variational problem
     u = TrialFunction(V)
@@ -229,23 +241,41 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = False, ct: 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--res", default=0.1, type=np.float64, dest="res", help="Resolution of Mesh")
-    parser.add_argument("--theta", default=np.pi / 3, type=np.float64, dest="theta",
-                        help="Rotation angle around axis [1, 1, 0]")
+    parser.add_argument(
+        "--theta",
+        default=np.pi / 3,
+        type=np.float64,
+        dest="theta",
+        help="Rotation angle around axis [1, 1, 0]",
+    )
     hex = parser.add_mutually_exclusive_group(required=False)
-    hex.add_argument('--hex', dest='hex', action='store_true',
-                     help="Use hexahedron mesh", default=False)
+    hex.add_argument("--hex", dest="hex", action="store_true", help="Use hexahedron mesh", default=False)
     slip = parser.add_mutually_exclusive_group(required=False)
-    slip.add_argument('--no-slip', dest='noslip', action='store_true',
-                      help="Use no-slip constraint", default=False)
+    slip.add_argument(
+        "--no-slip",
+        dest="noslip",
+        action="store_true",
+        help="Use no-slip constraint",
+        default=False,
+    )
     gmsh = parser.add_mutually_exclusive_group(required=False)
-    gmsh.add_argument('--gmsh', dest='gmsh', action='store_true',
-                      help="Gmsh mesh instead of built-in grid", default=False)
+    gmsh.add_argument(
+        "--gmsh",
+        dest="gmsh",
+        action="store_true",
+        help="Gmsh mesh instead of built-in grid",
+        default=False,
+    )
     comp = parser.add_mutually_exclusive_group(required=False)
-    comp.add_argument('--compare', dest='compare', action='store_true',
-                      help="Compare with global solution", default=False)
+    comp.add_argument(
+        "--compare",
+        dest="compare",
+        action="store_true",
+        help="Compare with global solution",
+        default=False,
+    )
     time = parser.add_mutually_exclusive_group(required=False)
-    time.add_argument('--timing', dest='timing', action='store_true',
-                      help="List timings", default=False)
+    time.add_argument("--timing", dest="timing", action="store_true", help="List timings", default=False)
 
     args = parser.parse_args()
     outdir = Path("results")
@@ -254,8 +284,15 @@ if __name__ == "__main__":
 
     ct = CellType.hexahedron if args.hex else CellType.tetrahedron
 
-    demo_stacked_cubes(outfile, theta=args.theta, gmsh=args.gmsh, ct=ct,
-                       compare=args.compare, res=args.res, noslip=args.noslip)
+    demo_stacked_cubes(
+        outfile,
+        theta=args.theta,
+        gmsh=args.gmsh,
+        ct=ct,
+        compare=args.compare,
+        res=args.res,
+        noslip=args.noslip,
+    )
 
     outfile.close()
 

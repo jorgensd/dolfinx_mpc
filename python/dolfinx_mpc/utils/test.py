@@ -5,8 +5,14 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
-__all__ = ["gather_PETScVector", "gather_PETScMatrix", "compare_mpc_lhs", "compare_mpc_rhs",
-           "gather_transformation_matrix", "compare_CSR"]
+__all__ = [
+    "gather_PETScVector",
+    "gather_PETScMatrix",
+    "compare_mpc_lhs",
+    "compare_mpc_rhs",
+    "gather_transformation_matrix",
+    "compare_CSR",
+]
 
 from typing import Any
 
@@ -30,15 +36,16 @@ def get_assemblers(request):
         try:
             import numba  # noqa: F401
         except ModuleNotFoundError:
-            pytest.skip('Numba not installed')
+            pytest.skip("Numba not installed")
         from dolfinx_mpc.numba import assemble_matrix, assemble_vector
+
         return (assemble_matrix, assemble_vector)
     elif request.param == "C++":
         from dolfinx_mpc import assemble_matrix, assemble_vector
+
         return (assemble_matrix, assemble_vector)
     else:
-        raise RuntimeError(f"Undefined assembler type: {request.param}.\n"
-                           + "Options are 'numba' or 'C++'")
+        raise RuntimeError(f"Undefined assembler type: {request.param}.\n" + "Options are 'numba' or 'C++'")
 
 
 def _gather_slaves_global(constraint):
@@ -52,8 +59,7 @@ def _gather_slaves_global(constraint):
     if num_local_slaves > 0:
         slave_blocks = _slaves[:num_local_slaves] // block_size
         slave_rems = _slaves[:num_local_slaves] % block_size
-        glob_slaves = np.asarray(
-            imap.local_to_global(slave_blocks), dtype=np.int64) * block_size + slave_rems
+        glob_slaves = np.asarray(imap.local_to_global(slave_blocks), dtype=np.int64) * block_size + slave_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
 
@@ -69,12 +75,12 @@ def gather_constants(constraint, root=0):
     constants = constraint._cpp_object.constants
     l_range = imap.local_range
     ranges = MPI.COMM_WORLD.gather(np.asarray(l_range, dtype=np.int64), root=root)
-    g_consts = MPI.COMM_WORLD.gather(constants[:l_range[1] - l_range[0]], root=root)
+    g_consts = MPI.COMM_WORLD.gather(constants[: l_range[1] - l_range[0]], root=root)
     if MPI.COMM_WORLD.rank == root:
         block_size = constraint.function_space().dofmap.index_map_bs
         global_consts = np.zeros(imap.size_global * block_size, dtype=constraint.coefficients()[0].dtype)
-        for (r, vals) in zip(ranges, g_consts):
-            global_consts[r[0]:r[1]] = vals
+        for r, vals in zip(ranges, g_consts):
+            global_consts[r[0] : r[1]] = vals
         return global_consts
     else:
         return
@@ -109,8 +115,7 @@ def gather_transformation_matrix(constraint, root=0):
     if num_local_slaves > 0:
         local_blocks = slaves // block_size
         local_rems = slaves % block_size
-        glob_slaves = np.asarray(imap.local_to_global(local_blocks),
-                                 dtype=np.int64) * block_size + local_rems
+        glob_slaves = np.asarray(imap.local_to_global(local_blocks), dtype=np.int64) * block_size + local_rems
     else:
         glob_slaves = np.array([], dtype=np.int64)
     all_slaves = np.hstack(MPI.COMM_WORLD.allgather(glob_slaves))
@@ -124,10 +129,15 @@ def gather_transformation_matrix(constraint, root=0):
 
     # Add local contributions to K from local slaves
     for slave, global_slave in zip(slaves, glob_slaves):
-        masters_index = (np.asarray(imap.local_to_global(
-            master_blocks[offsets[slave]: offsets[slave + 1]]), dtype=np.int64)
-            * block_size + master_rems[offsets[slave]: offsets[slave + 1]])
-        coeffs_index = coeffs[offsets[slave]: offsets[slave + 1]]
+        masters_index = (
+            np.asarray(
+                imap.local_to_global(master_blocks[offsets[slave] : offsets[slave + 1]]),
+                dtype=np.int64,
+            )
+            * block_size
+            + master_rems[offsets[slave] : offsets[slave + 1]]
+        )
+        coeffs_index = coeffs[offsets[slave] : offsets[slave + 1]]
         # If we have a simply equality constraint (dirichletbc)
         if len(masters_index) > 0:
             for master, coeff in zip(masters_index, coeffs_index):
@@ -165,8 +175,7 @@ def petsc_to_local_CSR(A: PETSc.Mat, mpc: dolfinx_mpc.MultiPointConstraint):  # 
     """
     Convert a PETSc matrix to a local CSR matrix (scipy) including ghost entries
     """
-    global_indices = np.asarray(mpc.function_space.dofmap.index_map.global_indices(),
-                                dtype=PETSc.IntType)  # type: ignore
+    global_indices = np.asarray(mpc.function_space.dofmap.index_map.global_indices(), dtype=PETSc.IntType)  # type: ignore
     sort_index = np.argsort(global_indices)
     is_A = PETSc.IS().createGeneral(global_indices[sort_index])  # type: ignore
     A_loc = A.createSubMatrices(is_A)[0]
@@ -189,8 +198,7 @@ def gather_PETScMatrix(A: PETSc.Mat, root=0) -> scipy.sparse.csr_matrix:  # type
         for ai in ai_all:  # type: ignore
             offsets = ai[1:] + ai_cum[-1]
             ai_cum.extend(offsets)
-        return scipy.sparse.csr_matrix(
-            (np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())  # type: ignore
+        return scipy.sparse.csr_matrix((np.hstack(av_all), np.hstack(aj_all), ai_cum), shape=A.getSize())  # type: ignore
 
 
 def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:  # type: ignore
@@ -203,19 +211,23 @@ def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:  # type: ignore
     numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
-    numpy_vec[l_min: l_max] += vector.array
+    numpy_vec[l_min:l_max] += vector.array
     return np.asarray(sum(MPI.COMM_WORLD.allgather(numpy_vec)))
 
 
 def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-10):
-    """ Compare CSR matrices A and B """
+    """Compare CSR matrices A and B"""
     diff = np.abs(A - B)
     assert diff.max() < atol
 
 
-def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,  # type: ignore
-                    mpc: dolfinx_mpc.MultiPointConstraint, root: int = 0,
-                    atol: np.floating[Any] = 5e3 * np.finfo(dolfinx.default_scalar_type).resolution):
+def compare_mpc_lhs(
+    A_org: PETSc.Mat,  # type: ignore
+    A_mpc: PETSc.Mat,  # type: ignore
+    mpc: dolfinx_mpc.MultiPointConstraint,
+    root: int = 0,
+    atol: np.floating[Any] = 5e3 * np.finfo(dolfinx.default_scalar_type).resolution,
+):
     """
     Compare an unmodified matrix for the problem with the one assembled with a
     multi point constraint.
@@ -250,8 +262,12 @@ def compare_mpc_lhs(A_org: PETSc.Mat, A_mpc: PETSc.Mat,  # type: ignore
     timer.stop()
 
 
-def compare_mpc_rhs(b_org: PETSc.Vec, b: PETSc.Vec,  # type: ignore
-                    constraint: dolfinx_mpc.MultiPointConstraint, root: int = 0):
+def compare_mpc_rhs(
+    b_org: PETSc.Vec,  # type: ignore
+    b: PETSc.Vec,  # type: ignore
+    constraint: dolfinx_mpc.MultiPointConstraint,
+    root: int = 0,
+):
     """
     Compare an unconstrained RHS with an MPC rhs.
     """

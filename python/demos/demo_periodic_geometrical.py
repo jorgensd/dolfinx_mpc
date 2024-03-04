@@ -25,20 +25,30 @@ from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
-from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
-                 exp, grad, inner, pi, sin)
+from ufl import (
+    SpatialCoordinate,
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    dx,
+    exp,
+    grad,
+    inner,
+    pi,
+    sin,
+)
 
 import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 
 # Get PETSc int and scalar types
-complex_mode = True if np.dtype(default_scalar_type).kind == 'c' else False
+complex_mode = True if np.dtype(default_scalar_type).kind == "c" else False
 
 # Create mesh and finite element
 NX = 50
 NY = 100
 mesh = create_unit_square(MPI.COMM_WORLD, NX, NY)
-V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 tol = 250 * np.finfo(default_scalar_type).resolution
 
 
@@ -98,10 +108,15 @@ petsc_options: dict[str, Union[str, int, float]]
 if complex_mode or default_scalar_type == np.float32:
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:
-    petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
-                     "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v"  # ,
-                     # "pc_hypre_boomeramg_print_statistics": 1
-                     }
+    petsc_options = {
+        "ksp_type": "cg",
+        "ksp_rtol": 1e-6,
+        "pc_type": "hypre",
+        "pc_hypre_type": "boomeramg",
+        "pc_hypre_boomeramg_max_iter": 1,
+        "pc_hypre_boomeramg_cycle_type": "v",  # ,
+        # "pc_hypre_boomeramg_print_statistics": 1
+    }
 
 # Set PETSc options
 opts = PETSc.Options()  # type: ignore

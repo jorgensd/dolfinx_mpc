@@ -23,8 +23,15 @@ from dolfinx import default_scalar_type as _dt
 
 import dolfinx_mpc.cpp
 
-__all__ = ["rotation_matrix", "facet_normal_approximation", "log_info", "rigid_motions_nullspace",
-           "determine_closest_block", "create_normal_approximation", "create_point_to_point_constraint"]
+__all__ = [
+    "rotation_matrix",
+    "facet_normal_approximation",
+    "log_info",
+    "rigid_motions_nullspace",
+    "determine_closest_block",
+    "create_normal_approximation",
+    "create_point_to_point_constraint",
+]
 
 
 def rotation_matrix(axis, angle):
@@ -37,16 +44,20 @@ def rotation_matrix(axis, angle):
         n_axis = axis / np.sqrt(np.inner(axis, axis))
 
     # Define cross product matrix of axis
-    axis_x = np.array([[0, -n_axis[2], n_axis[1]],
-                       [n_axis[2], 0, -n_axis[0]],
-                       [-n_axis[1], n_axis[0], 0]])
+    axis_x = np.array([[0, -n_axis[2], n_axis[1]], [n_axis[2], 0, -n_axis[0]], [-n_axis[1], n_axis[0], 0]])
     identity = np.cos(angle) * np.eye(3)
     outer = (1 - np.cos(angle)) * np.outer(n_axis, n_axis)
     return np.sin(angle) * axis_x + identity + outer
 
 
-def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False, jit_options: dict = {},
-                               form_compiler_options: dict = {}):
+def facet_normal_approximation(
+    V,
+    mt: _mesh.MeshTags,
+    mt_id: int,
+    tangent=False,
+    jit_options: dict = {},
+    form_compiler_options: dict = {},
+):
     """
     Approximate the facet normal by projecting it into the function space for a set of facets
 
@@ -62,7 +73,7 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
             the commandline to see all available options. Takes priority over all
             other parameter values, except for `scalar_type` which is determined by
             DOLFINx.
-"""
+    """
     timer = _common.Timer("~MPC: Facet normal projection")
     comm = V.mesh.comm
     n = ufl.FacetNormal(V.mesh)
@@ -76,17 +87,19 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
             a = ufl.inner(u, v) * ds
             L = ufl.inner(ufl.as_vector([-n[1], n[0]]), v) * ds
         else:
+
             def tangential_proj(u, n):
                 """
                 See for instance:
                 https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf
                 """
                 return (ufl.Identity(u.ufl_shape[0]) - ufl.outer(n, n)) * u
+
             c = _fem.Constant(V.mesh, [1, 1, 1])
             a = ufl.inner(u, v) * ds
             L = ufl.inner(tangential_proj(c, n), v) * ds
     else:
-        a = (ufl.inner(u, v) * ds)
+        a = ufl.inner(u, v) * ds
         L = ufl.inner(n, v) * ds
 
     # Find all dofs that are not boundary dofs
@@ -97,8 +110,7 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
 
     # Note there should be a better way to do this
     # Create sparsity pattern only for constraint + bc
-    bilinear_form = _fem.form(a, jit_options=jit_options,
-                              form_compiler_options=form_compiler_options)
+    bilinear_form = _fem.form(a, jit_options=jit_options, form_compiler_options=form_compiler_options)
     pattern = _fem.create_sparsity_pattern(bilinear_form)
     pattern.insert_diagonal(deac_blocks)
     pattern.finalize()
@@ -112,15 +124,13 @@ def facet_normal_approximation(V, mt: _mesh.MeshTags, mt_id: int, tangent=False,
     # Assemble the matrix with all entries
     form_coeffs = _cpp.fem.pack_coefficients(bilinear_form._cpp_object)
     form_consts = _cpp.fem.pack_constants(bilinear_form._cpp_object)
-    _cpp.fem.petsc.assemble_matrix(A, bilinear_form._cpp_object,
-                                   form_consts, form_coeffs, [bc_deac._cpp_object])
+    _cpp.fem.petsc.assemble_matrix(A, bilinear_form._cpp_object, form_consts, form_coeffs, [bc_deac._cpp_object])
     if bilinear_form.function_spaces[0] is bilinear_form.function_spaces[1]:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         _cpp.fem.petsc.insert_diagonal(A, bilinear_form.function_spaces[0], [bc_deac._cpp_object], 1.0)
     A.assemble()
-    linear_form = _fem.form(L, jit_options=jit_options,
-                            form_compiler_options=form_compiler_options)
+    linear_form = _fem.form(L, jit_options=jit_options, form_compiler_options=form_compiler_options)
     b = _fem.petsc.assemble_vector(linear_form)
 
     _fem.petsc.apply_lifting(b, [bilinear_form], [[bc_deac]])
@@ -146,8 +156,7 @@ def log_info(message):
     old_level = _log.get_log_level()
     if MPI.COMM_WORLD.rank == 0:
         _log.set_log_level(_log.LogLevel.INFO)
-        _log.log(_log.LogLevel.INFO,
-                 message)
+        _log.log(_log.LogLevel.INFO, message)
         _log.set_log_level(old_level)
 
 
@@ -219,8 +228,7 @@ def determine_closest_block(V, point):
 
     # Find facet closest
     point = np.reshape(point, (1, 3)).astype(V.mesh.geometry.x.dtype)
-    closest_cell = _geometry.compute_closest_entity(
-        bb_tree, midpoint_tree, V.mesh, point)[0]
+    closest_cell = _geometry.compute_closest_entity(bb_tree, midpoint_tree, V.mesh, point)[0]
 
     # Set distance high if cell is not owned
     if cell_imap.size_local < closest_cell or closest_cell == -1:
@@ -229,7 +237,8 @@ def determine_closest_block(V, point):
         # Get cell geometry
         p = V.mesh.geometry.x
         entities = _cpp.mesh.entities_to_geometry(
-            V.mesh._cpp_object, tdim, np.array([closest_cell], dtype=np.int32), False)
+            V.mesh._cpp_object, tdim, np.array([closest_cell], dtype=np.int32), False
+        )
         R = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, p[entities[0]]))
 
     # Find processor with cell closest to point
@@ -302,8 +311,11 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
         assert len(slave_block) == 1
         slave_block_g = imap.local_to_global(np.asarray(slave_block, dtype=np.int32))[0]
         if vector is None:
-            slaves = np.arange(slave_block[0] * block_size, slave_block[0]
-                               * block_size + block_size, dtype=np.int32)
+            slaves = np.arange(
+                slave_block[0] * block_size,
+                slave_block[0] * block_size + block_size,
+                dtype=np.int32,
+            )
         else:
             assert len(vector) == block_size
             # Check for input vector (Should be of same length as number of slaves)
@@ -321,8 +333,9 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     if is_master_proc:
         assert len(master_block) == 1
         master_block_g = imap.local_to_global(np.asarray(master_block, dtype=np.int32))[0]
-        masters_as_glob = np.arange(master_block_g * block_size,
-                                    master_block_g * block_size + block_size, dtype=np.int64)
+        masters_as_glob = np.arange(
+            master_block_g * block_size, master_block_g * block_size + block_size, dtype=np.int64
+        )
     else:
         masters_as_glob = np.array([], dtype=np.int64)
 
@@ -367,8 +380,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
     ghost_processors = MPI.COMM_WORLD.bcast(ghost_processors, root=slave_proc)
     if is_slave_proc:
         for proc in ghost_processors:
-            MPI.COMM_WORLD.send(slave_block_g * block_size + slaves %
-                                block_size, dest=proc, tag=20 + proc)
+            MPI.COMM_WORLD.send(slave_block_g * block_size + slaves % block_size, dest=proc, tag=20 + proc)
             MPI.COMM_WORLD.send(coeffs, dest=proc, tag=30 + proc)
             MPI.COMM_WORLD.send(owners, dest=proc, tag=40 + proc)
             MPI.COMM_WORLD.send(masters, dest=proc, tag=50 + proc)

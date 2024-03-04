@@ -92,7 +92,7 @@ void _assemble_vector(
     std::span<T> b, const dolfinx::fem::Form<T>& L,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
 {
-  namespace stdex = std::experimental;
+
   const auto mesh = L.mesh();
   assert(mesh);
 
@@ -153,7 +153,7 @@ void _assemble_vector(
         auto cell = entity.front();
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(
+        auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
@@ -202,7 +202,7 @@ void _assemble_vector(
         // Fetch the coordinates of the cell
         const std::int32_t cell = entity[0];
         const int local_facet = entity[1];
-        auto x_dofs = stdex::submdspan(
+        auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
