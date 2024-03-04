@@ -173,7 +173,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
 @numba.njit
 def assemble_cells(
     b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
-    kernel: cffi.FFI,
+    kernel: cffi.FFI.CData,
     active_cells: npt.NDArray[numpy.int32],
     mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[dolfinx.default_real_type]],
     coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
@@ -182,9 +182,9 @@ def assemble_cells(
     dofmap: npt.NDArray[numpy.int32],
     block_size: int,
     num_dofs_per_element: int,
-    mpc: Tuple[
+    mpc: Tuple[  # type: ignore
         npt.NDArray[numpy.int32],
-        npt.NDArray[_PETSc.ScalarType],  # type: ignore
+        npt.NDArray[_PETSc.ScalarType],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
@@ -201,7 +201,7 @@ def assemble_cells(
     # Unpack mesh data
     x_dofmap, x = mesh
 
-    # NOTE: All cells are assumed to be of the same type
+    # NOTE: All cells are assumed to be of the same typecd
     geometry = numpy.zeros((x_dofmap.shape[1], 3), dtype=dolfinx.default_real_type)
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)  # type: ignore
 
@@ -212,12 +212,12 @@ def assemble_cells(
         # Assemble local element vector
         b_local.fill(0.0)
         kernel(
-            ffi_fb(b_local),
-            ffi_fb(coeffs[cell_index, :]),
-            ffi_fb(constants),
-            ffi_fb(geometry),
-            ffi_fb(facet_index),
-            ffi_fb(facet_perm),
+            ffi_fb(b_local),  # type: ignore
+            ffi_fb(coeffs[cell_index, :]),  # type: ignore
+            ffi_fb(constants),  # type: ignore
+            ffi_fb(geometry),  # type: ignore
+            ffi_fb(facet_index),  # type: ignore
+            ffi_fb(facet_perm),  # type: ignore
         )
         # NOTE: Here we need to add the apply_dof_transformation function
 
@@ -233,7 +233,7 @@ def assemble_cells(
 @numba.njit
 def assemble_exterior_slave_facets(
     b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
-    kernel: cffi.FFI,
+    kernel: cffi.FFI.CData,
     facet_info: npt.NDArray[numpy.int32],
     mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.float64]],
     coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
@@ -242,9 +242,9 @@ def assemble_exterior_slave_facets(
     dofmap: npt.NDArray[numpy.int32],
     block_size: int,
     num_dofs_per_element: int,
-    mpc: Tuple[
+    mpc: Tuple[  # type: ignore
         npt.NDArray[numpy.int32],
-        npt.NDArray[_PETSc.ScalarType],  # type: ignore
+        npt.NDArray[_PETSc.ScalarType],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
@@ -278,12 +278,12 @@ def assemble_exterior_slave_facets(
             facet_perm[0] = facet_perms[cell_index * num_facets_per_cell + local_facet]
         b_local.fill(0.0)
         kernel(
-            ffi_fb(b_local),
-            ffi_fb(coeffs[cell_index, :]),
-            ffi_fb(constants),
-            ffi_fb(geometry),
-            ffi_fb(facet_index),
-            ffi_fb(facet_perm),
+            ffi_fb(b_local),  # type: ignore
+            ffi_fb(coeffs[cell_index, :]),  # type: ignore
+            ffi_fb(constants),  # type: ignore
+            ffi_fb(geometry),  # type: ignore
+            ffi_fb(facet_index),  # type: ignore
+            ffi_fb(facet_perm),  # type: ignore
         )
         # NOTE: Here we need to add the apply_dof_transformation
 
@@ -298,13 +298,13 @@ def assemble_exterior_slave_facets(
 
 @numba.njit(cache=True)
 def modify_mpc_contributions(
-    b: npt.NDArray[_PETSc.ScalarType],
+    b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     cell_index: int,  # type: ignore
     b_local: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     b_copy: npt.NDArray[_PETSc.ScalarType],  # type: ignore
-    mpc: Tuple[
+    mpc: Tuple[  # type: ignore
         npt.NDArray[numpy.int32],
-        npt.NDArray[_PETSc.ScalarType],  # type: ignore
+        npt.NDArray[_PETSc.ScalarType],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],

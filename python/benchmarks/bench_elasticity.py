@@ -16,6 +16,7 @@ from petsc4py import PETSc
 import basix.ufl
 import h5py
 import numpy as np
+from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (
     Constant,
@@ -81,8 +82,8 @@ def bench_elasticity_one(
     # Elasticity parameters
     E = 1.0e4
     nu = 0.1
-    mu = Constant(mesh, E / (2.0 * (1.0 + nu)))
-    lmbda = Constant(mesh, E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu)))
+    mu = Constant(mesh, default_scalar_type(E / (2.0 * (1.0 + nu))))
+    lmbda = Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
     g = Constant(mesh, (0, 0, -1e2))
 
     # Stress computation

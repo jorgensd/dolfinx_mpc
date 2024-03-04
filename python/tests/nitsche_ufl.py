@@ -125,13 +125,11 @@ def nitsche_ufl(
     dx = ufl.Measure("dx", domain=mesh)
     ds = ufl.Measure("ds", domain=mesh, metadata=metadata, subdomain_data=facet_marker)
     a = ufl.inner(sigma(u), epsilon(v)) * dx
-    zero = np.asarray(
-        [
-            0,
-        ]
-        * mesh.geometry.dim,
-        dtype=_PETSc.ScalarType,
-    )  # type: ignore
+    zero = np.full(
+        mesh.geometry.dim,
+        0,
+        dtype=_PETSc.ScalarType,  # type: ignore
+    )
     L = ufl.inner(_fem.Constant(mesh, zero), v) * dx
 
     # Derivation of one sided Nitsche with gap function

@@ -24,9 +24,9 @@ from .multipointconstraint import MultiPointConstraint, _float_classes
 
 
 def apply_lifting(
-    b: _PETSc.Vec,
+    b: _PETSc.Vec,  # type: ignore
     form: List[_fem.Form],
-    bcs: List[List[_fem.DirichletBC]],  # type: ignore
+    bcs: List[List[_fem.DirichletBC]],
     constraint: MultiPointConstraint,
     x0: List[_PETSc.Vec] = [],  # type: ignore
     scale: _float_classes = default_scalar_type(1.0),
@@ -57,7 +57,9 @@ def apply_lifting(
 
 
 def assemble_vector(
-    form: ufl.form.Form, constraint: MultiPointConstraint, b: Optional[_PETSc.Vec] = None
+    form: ufl.form.Form,
+    constraint: MultiPointConstraint,
+    b: Optional[_PETSc.Vec] = None,  # type: ignore
 ) -> _PETSc.Vec:  # type: ignore
     """
     Assemble a linear form into vector `b` with corresponding multi point constraint

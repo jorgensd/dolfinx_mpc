@@ -76,14 +76,14 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
         self.u_mpc.vector.axpy(-1.0, dx)
         self.u_mpc.vector.ghostUpdate(
             addv=PETSc.InsertMode.INSERT,  # type: ignore
-            mode=PETSc.ScatterMode.FORWARD,
+            mode=PETSc.ScatterMode.FORWARD,  # type: ignore
         )  # type: ignore
         self.mpc.homogenize(self.u_mpc)
         self.mpc.backsubstitution(self.u_mpc)
         x.array = self.u_mpc.vector.array_r
         x.ghostUpdate(
             addv=PETSc.InsertMode.INSERT,  # type: ignore
-            mode=PETSc.ScatterMode.FORWARD,
+            mode=PETSc.ScatterMode.FORWARD,  # type: ignore
         )  # type: ignore
 
     def solve(self, u: dolfinx.fem.Function):

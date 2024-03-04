@@ -5,7 +5,8 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
-from typing import Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Optional, Union
 
 from petsc4py import PETSc as _PETSc
 
@@ -22,7 +23,7 @@ def assemble_matrix(
     constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
     bcs: Optional[Sequence[_fem.DirichletBC]] = None,
     diagval: _PETSc.ScalarType = 1,  # type: ignore
-    A: Optional[_PETSc.Mat] = None,
+    A: Optional[_PETSc.Mat] = None,  # type: ignore
 ) -> _PETSc.Mat:  # type: ignore
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
@@ -70,7 +71,7 @@ def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Se
         mpc: For square forms, the MPC. For rectangular forms a list of 2 MPCs on
             axis 0 & 1, respectively
     """
-    if isinstance(mpc, list):
+    if isinstance(mpc, Sequence):
         assert len(mpc) == 2
         for mpc_ in mpc:
             mpc_._not_finalized()  # type: ignore
@@ -80,7 +81,7 @@ def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Se
         return cpp.mpc.create_sparsity_pattern(
             form._cpp_object,
             mpc._cpp_object,  # type: ignore
-            mpc._cpp_object,
+            mpc._cpp_object,  # type: ignore
         )  # type: ignore
 
 
@@ -116,8 +117,8 @@ def assemble_matrix_nest(
     a: Sequence[Sequence[_fem.Form]],
     constraints: Sequence[MultiPointConstraint],
     bcs: Sequence[_fem.DirichletBC] = [],
-    diagval: _PETSc.ScalarType = 1,
-):  # type: ignore
+    diagval: _PETSc.ScalarType = 1,  # type: ignore
+):
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
     "nest" with corresponding multi point constraints and Dirichlet boundary

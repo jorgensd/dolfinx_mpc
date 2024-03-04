@@ -142,8 +142,8 @@ def EPS_get_spectrum(
 
 
 def solve_GEP_shiftinvert(
-    A: PETSc.Mat,
-    B: PETSc.Mat,  # type: ignore  #type: ignore
+    A: PETSc.Mat,  # type: ignore
+    B: PETSc.Mat,  # type: ignore
     problem_type: SLEPc.EPS.ProblemType = SLEPc.EPS.ProblemType.GNHEP,
     solver: SLEPc.EPS.Type = SLEPc.EPS.Type.KRYLOVSCHUR,
     nev: int = 10,

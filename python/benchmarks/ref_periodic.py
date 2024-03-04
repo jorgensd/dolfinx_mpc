@@ -137,7 +137,7 @@ def reference_periodic(
     end = perf_counter()
     u_.vector.ghostUpdate(
         addv=PETSc.InsertMode.INSERT,  # type: ignore
-        mode=PETSc.ScatterMode.FORWARD,
+        mode=PETSc.ScatterMode.FORWARD,  # type: ignore
     )  # type: ignore
     if kspview:
         solver.view()

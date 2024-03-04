@@ -63,6 +63,26 @@ class MPCData:
         else:
             raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
 
+    @property
+    def slaves(self):
+        return self._cpp_object.slaves
+
+    @property
+    def masters(self):
+        return self._cpp_object.masters
+
+    @property
+    def coeffs(self):
+        return self._cpp_object.coeffs
+
+    @property
+    def owners(self):
+        return self._cpp_object.owners
+
+    @property
+    def offsets(self):
+        return self._cpp_object.offsets
+
 
 class MultiPointConstraint:
     """
@@ -137,24 +157,14 @@ class MultiPointConstraint:
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
         """
         self._already_finalized()
-        try:
-            self.add_constraint(
-                V,
-                mpc_data.slaves,
-                mpc_data.masters,
-                mpc_data.coeffs,  # type: ignore
-                mpc_data.owners,
-                mpc_data.offsets,
-            )  # type: ignore
-        except AttributeError:
-            self.add_constraint(
-                V,
-                mpc_data._cpp_object.slaves,
-                mpc_data._cpp_object.masters,
-                mpc_data._cpp_object.coeffs,
-                mpc_data._cpp_object.owners,
-                mpc_data._cpp_object.offsets,
-            )
+        self.add_constraint(
+            V,
+            mpc_data.slaves,
+            mpc_data.masters,
+            mpc_data.coeffs,
+            mpc_data.owners,
+            mpc_data.offsets,
+        )
 
     def finalize(self) -> None:
         """

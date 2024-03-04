@@ -18,10 +18,7 @@ description = "DOLFINx_MPC Python interface"
 readme = "README.md"
 requires-python = ">=3.8.0"
 license = { file = "../LICENSE" }
-authors = [
-      { email = "dokken@simula.no", name = "Jørgen S. Dokken" },
-]
-packages = ["dolfinx_mpc"]
+authors = [{ email = "dokken@simula.no", name = "Jørgen S. Dokken" }]
 dependencies = [
       "numpy>=1.21",
       "cffi",
@@ -35,10 +32,11 @@ docs = ['jupyter-book', 'jupytext']
 lint = ["ruff", "mypy"]
 optional = ["numba"]
 test = ["pytest", "coverage"]
-all = ["dolfinx_mpc[docs]",
-"dolfinx_mpc[optional]",
-"dolfinx_mpc[lint]",
-"dolfinx_mpc[test]"
+all = [
+      "dolfinx_mpc[docs]",
+      "dolfinx_mpc[optional]",
+      "dolfinx_mpc[lint]",
+      "dolfinx_mpc[test]",
 ]
 
 [tool.scikit-build]
@@ -57,32 +55,32 @@ exclude = ["docs/", "build/"]
 files = ["src", "tests"]
 
 [tool.ruff]
-src = ["benchmarks","demos","dolfinx_mpc"]
+src = ["benchmarks", "demos", "dolfinx_mpc"]
 line-length = 120
 indent-width = 4
 
 [tool.ruff.lint]
 select = [
-    # Pyflakes
-    "F",
-    # Pycodestyle
-    "E",
-    "W",
-    # isort
-    "I001"
+      # Pyflakes
+      "F",
+      # Pycodestyle
+      "E",
+      "W",
+      # isort
+      "I001",
 ]
 
 
 [tool.ruff.lint.isort]
 known-first-party = ["dolfinx_mpc"]
 known-third-party = [
-    "basix",
-    "dolfinx",
-    "ffcx",
-    "ufl",
-    "gmsh",
-    "numpy",
-    "pytest",
+      "basix",
+      "dolfinx",
+      "ffcx",
+      "ufl",
+      "gmsh",
+      "numpy",
+      "pytest",
 ]
 section-order = [
       "future",

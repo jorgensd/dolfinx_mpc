@@ -256,7 +256,7 @@ ksp.solve(b, Uh)
 for Uh_sub in Uh.getNestSubVecs():
     Uh_sub.ghostUpdate(
         addv=PETSc.InsertMode.INSERT,  # type: ignore
-        mode=PETSc.ScatterMode.FORWARD,
+        mode=PETSc.ScatterMode.FORWARD,  # type: ignore
     )  # type: ignore
 # ----------------------------- Put NestVec into DOLFINx Function - ---------
 uh = dolfinx.fem.Function(mpc.function_space)

@@ -222,7 +222,7 @@ def compare_CSR(A: scipy.sparse.csr_matrix, B: scipy.sparse.csr_matrix, atol=1e-
 
 
 def compare_mpc_lhs(
-    A_org: PETSc.Mat,
+    A_org: PETSc.Mat,  # type: ignore
     A_mpc: PETSc.Mat,  # type: ignore
     mpc: dolfinx_mpc.MultiPointConstraint,
     root: int = 0,
@@ -263,7 +263,7 @@ def compare_mpc_lhs(
 
 
 def compare_mpc_rhs(
-    b_org: PETSc.Vec,
+    b_org: PETSc.Vec,  # type: ignore
     b: PETSc.Vec,  # type: ignore
     constraint: dolfinx_mpc.MultiPointConstraint,
     root: int = 0,
