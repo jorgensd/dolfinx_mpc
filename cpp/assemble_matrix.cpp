@@ -337,9 +337,9 @@ void assemble_exterior_facets(
     const int local_facet = facets[l + 1];
 
     // Get cell vertex coordinates
-    namespace stdex = std::experimental;
-    auto x_dofs = stdex::submdspan(x_dofmap, cell,
-                                   MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+
+    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -466,13 +466,13 @@ void assemble_cells_impl(
       Ae(Aeb.data(), ndim0, ndim1);
   const std::span<T> _Ae(Aeb);
   std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
-  namespace stdex = std::experimental;
+
   for (std::size_t c = 0; c < active_cells.size(); c++)
   {
     const std::int32_t cell = active_cells[c];
     // Get cell coordinates/geometry
-    auto x_dofs = stdex::submdspan(x_dofmap, cell,
-                                   MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
