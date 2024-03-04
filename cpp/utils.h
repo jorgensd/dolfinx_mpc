@@ -282,13 +282,16 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     throw std::runtime_error(
         "Cannot create sparsity pattern. Form is not a bilinear.");
   }
-
   // Get dof maps and mesh
   std::array<std::reference_wrapper<const dolfinx::fem::DofMap>, 2> dofmaps{
       *a.function_spaces().at(0)->dofmap(),
       *a.function_spaces().at(1)->dofmap()};
   std::shared_ptr mesh = a.mesh();
   assert(mesh);
+  std::shared_ptr mesh0 = a.function_spaces().at(0)->mesh();
+  assert(mesh0);
+  std::shared_ptr mesh1 = a.function_spaces().at(1)->mesh();
+  assert(mesh1);
 
   const std::set<dolfinx::fem::IntegralType> types = a.integral_types();
   if (types.find(dolfinx::fem::IntegralType::interior_facet) != types.end()
@@ -300,6 +303,16 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     mesh->topology_mutable()->create_connectivity(tdim - 1, tdim);
   }
 
+  auto extract_cells = [](std::span<const std::int32_t> facets)
+  {
+    assert(facets.size() % 2 == 0);
+    std::vector<std::int32_t> cells;
+    cells.reserve(facets.size() / 2);
+    for (std::size_t i = 0; i < facets.size(); i += 2)
+      cells.push_back(facets[i]);
+    return cells;
+  };
+
   for (auto type : types)
   {
     std::vector<int> ids = a.integral_ids(type);
@@ -308,33 +321,29 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     case dolfinx::fem::IntegralType::cell:
       for (int id : ids)
       {
-        std::span<const std::int32_t> cells = a.domain(type, id);
-        dolfinx::fem::sparsitybuild::cells(pattern, cells,
-                                           {{dofmaps[0], dofmaps[1]}});
+        dolfinx::fem::sparsitybuild::cells(
+            pattern, {a.domain(type, id, *mesh0), a.domain(type, id, *mesh1)},
+            {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
       for (int id : ids)
       {
-        std::span<const std::int32_t> facets = a.domain(type, id);
-        std::vector<std::int32_t> f;
-        f.reserve(facets.size() / 2);
-        for (std::size_t i = 0; i < facets.size(); i += 4)
-          f.insert(f.end(), {facets[i], facets[i + 2]});
         dolfinx::fem::sparsitybuild::interior_facets(
-            pattern, f, {{dofmaps[0], dofmaps[1]}});
+            pattern,
+            {extract_cells(a.domain(type, id, *mesh0)),
+             extract_cells(a.domain(type, id, *mesh1))},
+            {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
       for (int id : ids)
       {
-        std::span<const std::int32_t> facets = a.domain(type, id);
-        std::vector<std::int32_t> cells;
-        cells.reserve(facets.size() / 2);
-        for (std::size_t i = 0; i < facets.size(); i += 2)
-          cells.push_back(facets[i]);
-        dolfinx::fem::sparsitybuild::cells(pattern, cells,
-                                           {{dofmaps[0], dofmaps[1]}});
+        dolfinx::fem::sparsitybuild::cells(
+            pattern,
+            {extract_cells(a.domain(type, id, *mesh0)),
+             extract_cells(a.domain(type, id, *mesh1))},
+            {{dofmaps[0], dofmaps[1]}});
       }
       break;
     default:

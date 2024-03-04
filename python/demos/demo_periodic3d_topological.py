@@ -27,17 +27,26 @@ import scipy.sparse.linalg
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.io import VTXWriter
-from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
-                          meshtags)
+from dolfinx.mesh import CellType, create_unit_cube, locate_entities_boundary, meshtags
 from numpy.typing import NDArray
-from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
-                 exp, grad, inner, pi, sin)
+from ufl import (
+    SpatialCoordinate,
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    dx,
+    exp,
+    grad,
+    inner,
+    pi,
+    sin,
+)
 
 import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem
 
 # Get PETSc int and scalar types
-complex_mode = True if np.dtype(default_scalar_type).kind == 'c' else False
+complex_mode = True if np.dtype(default_scalar_type).kind == "c" else False
 
 
 def demo_periodic3D(celltype: CellType):
@@ -46,17 +55,19 @@ def demo_periodic3D(celltype: CellType):
         # Tet setup
         N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
-        V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+        V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
     else:
         # Hex setup
         N = 10
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
-        V = fem.functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim, )))
+        V = fem.functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim,)))
     tol = float(5e2 * np.finfo(default_scalar_type).resolution)
 
     def dirichletboundary(x: NDArray[Union[np.float32, np.float64]]) -> NDArray[np.bool_]:
-        return np.logical_or(np.logical_or(np.isclose(x[1], 0, atol=tol), np.isclose(x[1], 1, atol=tol)),
-                             np.logical_or(np.isclose(x[2], 0, atol=tol), np.isclose(x[2], 1, atol=tol)))
+        return np.logical_or(
+            np.logical_or(np.isclose(x[1], 0, atol=tol), np.isclose(x[1], 1, atol=tol)),
+            np.logical_or(np.isclose(x[2], 0, atol=tol), np.isclose(x[2], 1, atol=tol)),
+        )
 
     # Create Dirichlet boundary condition
     zero = default_scalar_type([0, 0, 0])
@@ -80,6 +91,7 @@ def demo_periodic3D(celltype: CellType):
         out_x[1] = x[1]
         out_x[2] = x[2]
         return out_x
+
     with Timer("~~Periodic: Compute mpc condition"):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
         mpc.create_periodic_constraint_topological(V.sub(0), mt, 2, periodic_relation, bcs, default_scalar_type(1))
@@ -93,8 +105,13 @@ def demo_periodic3D(celltype: CellType):
     dx_ = x[0] - 0.9
     dy_ = x[1] - 0.5
     dz_ = x[2] - 0.1
-    f = as_vector((x[0] * sin(5.0 * pi * x[1])
-                   + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_ + dz_ * dz_) / 0.02), 0.1 * dx_ * dz_, 0.1 * dx_ * dy_))
+    f = as_vector(
+        (
+            x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_ + dz_ * dz_) / 0.02),
+            0.1 * dx_ * dz_,
+            0.1 * dx_ * dy_,
+        )
+    )
 
     rhs = inner(f, v) * dx
 
@@ -102,9 +119,15 @@ def demo_periodic3D(celltype: CellType):
     if complex_mode or default_scalar_type == np.float32:
         petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
     else:
-        petsc_options = {"ksp_type": "cg", "ksp_rtol": str(tol), "pc_type": "hypre", "pc_hypre_type": "boomeramg",
-                         "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v",
-                         "pc_hypre_boomeramg_print_statistics": 1}
+        petsc_options = {
+            "ksp_type": "cg",
+            "ksp_rtol": str(tol),
+            "pc_type": "hypre",
+            "pc_hypre_type": "boomeramg",
+            "pc_hypre_boomeramg_max_iter": 1,
+            "pc_hypre_boomeramg_cycle_type": "v",
+            "pc_hypre_boomeramg_print_statistics": 1,
+        }
 
     problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)
     u_h = problem.solve()
@@ -129,7 +152,7 @@ def demo_periodic3D(celltype: CellType):
     old_ghosts = u_out.x.index_map.num_ghosts * u_out.x.block_size
     mpc_local = u_h.x.index_map.size_local * u_h.x.block_size
     assert old_local == mpc_local
-    u_out.x.array[:old_local + old_ghosts] = u_h.x.array[:mpc_local + old_ghosts]
+    u_out.x.array[: old_local + old_ghosts] = u_h.x.array[: mpc_local + old_ghosts]
     u_out.name = "u_" + ext
     outdir = Path("results")
     outdir.mkdir(exist_ok=True, parents=True)

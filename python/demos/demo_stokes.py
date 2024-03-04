@@ -24,8 +24,20 @@ import scipy.sparse.linalg
 from dolfinx import common, default_scalar_type, fem, io
 from dolfinx.io import gmshio
 from numpy.typing import NDArray
-from ufl import (FacetNormal, Identity, Measure, TestFunctions, TrialFunctions,
-                 div, dot, dx, grad, inner, outer, sym)
+from ufl import (
+    FacetNormal,
+    Identity,
+    Measure,
+    TestFunctions,
+    TrialFunctions,
+    div,
+    dot,
+    dx,
+    grad,
+    inner,
+    outer,
+    sym,
+)
 from ufl.core.expr import Expr
 
 import dolfinx_mpc.utils
@@ -40,8 +52,15 @@ from dolfinx_mpc import LinearProblem, MultiPointConstraint
 # +
 
 
-def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
-                     wall_marker: int = 1, outlet_marker: int = 2, inlet_marker: int = 3):
+def create_mesh_gmsh(
+    L: int = 2,
+    H: int = 1,
+    res: float = 0.1,
+    theta: float = np.pi / 5,
+    wall_marker: int = 1,
+    outlet_marker: int = 2,
+    inlet_marker: int = 3,
+):
     """
     Create a channel of length L, height H, rotated theta degrees
     around origin, with facet markers for inlet, outlet and walls.
@@ -86,8 +105,7 @@ def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np
             elif np.isclose(com[1], 0) or np.isclose(com[1], H):
                 walls.append(surface[1])
         # Rotate channel theta degrees in the xy-plane
-        gmsh.model.occ.rotate([(2, channel)], 0, 0, 0,
-                              0, 0, 1, theta)
+        gmsh.model.occ.rotate([(2, channel)], 0, 0, 0, 0, 0, 1, theta)
         gmsh.model.occ.synchronize()
 
         # Add physical markers
@@ -123,7 +141,7 @@ fdim = mesh.topology.dim - 1
 # The next step is the create the function spaces for the fluid velocit and pressure.
 # We will use a mixed-formulation, and we use `basix.ufl` to create the Taylor-Hood finite element pair
 
-P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim, ))
+P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim,))
 P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1)
 
 TH = basix.ufl.mixed_element([P2, P1])
@@ -144,12 +162,15 @@ Q, _ = W.sub(1).collapse()
 inlet_velocity = fem.Function(V)
 
 
-def inlet_velocity_expression(x: NDArray[Union[np.float32, np.float64]]) -> NDArray[Union[np.float32,
-                                                                                          np.float64,
-                                                                                          np.complex64,
-                                                                                          np.complex128]]:
-    return np.stack((np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2)),
-                     5 * x[1] * np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2)))).astype(default_scalar_type)
+def inlet_velocity_expression(
+    x: NDArray[Union[np.float32, np.float64]],
+) -> NDArray[Union[np.float32, np.float64, np.complex64, np.complex128]]:
+    return np.stack(
+        (
+            np.sin(np.pi * np.sqrt(x[0] ** 2 + x[1] ** 2)),
+            5 * x[1] * np.sin(np.pi * np.sqrt(x[0] ** 2 + x[1] ** 2)),
+        )
+    ).astype(default_scalar_type)
 
 
 inlet_velocity.interpolate(inlet_velocity_expression)
@@ -209,6 +230,7 @@ def sym_grad(u: Expr):
 def T(u: Expr, p: Expr, mu: Expr):
     return 2 * mu * sym_grad(u) - p * Identity(u.ufl_shape[0])
 
+
 # -
 
 
@@ -216,13 +238,11 @@ def T(u: Expr, p: Expr, mu: Expr):
 # We note that we use the symmetric formulation after integration by parts.
 
 # +
-mu = fem.Constant(mesh, default_scalar_type(1.))
+mu = fem.Constant(mesh, default_scalar_type(1.0))
 f = fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = TrialFunctions(W)
 (v, q) = TestFunctions(W)
-a = (2 * mu * inner(sym_grad(u), sym_grad(v))
-     - inner(p, div(v))
-     - inner(div(u), q)) * dx
+a = (2 * mu * inner(sym_grad(u), sym_grad(v)) - inner(p, div(v)) - inner(div(u), q)) * dx
 L = inner(f, v) * dx
 # -
 
@@ -273,7 +293,6 @@ with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", p, engine="BP4") as vt
 
 # +
 with common.Timer("~Stokes: Verification of problem by global matrix reduction"):
-
     # Solve the MPC problem using a global transformation matrix
     # and numpy solvers to get reference values
     # Generate reference matrices and unconstrained solution
@@ -304,8 +323,7 @@ with common.Timer("~Stokes: Verification of problem by global matrix reduction")
         d = scipy.sparse.linalg.spsolve(KTAK.astype(scipy_dtype), reduced_L.astype(scipy_dtype))
         # Back substitution to full solution vector
         uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
-        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(5e2
-                           * np.finfo(u_mpc.dtype).resolution))
+        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(5e2 * np.finfo(u_mpc.dtype).resolution))
 # -
 
 # ## Timings

@@ -30,4 +30,4 @@ arg_sort = np.argsort(facets)
 mt = meshtags(mesh, mesh.topology.dim - 1, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
 
 mpc = dolfinx_mpc.MultiPointConstraint(V)
-mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, [], default_scalar_type(1.))
+mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, [], default_scalar_type(1.0))

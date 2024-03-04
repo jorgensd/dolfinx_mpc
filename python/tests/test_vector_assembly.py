@@ -23,10 +23,8 @@ from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
 @pytest.mark.parametrize("degree", range(1, 4))
-@pytest.mark.parametrize("celltype", [CellType.quadrilateral,
-                                      CellType.triangle])
+@pytest.mark.parametrize("celltype", [CellType.quadrilateral, CellType.triangle])
 def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: F811
-
     _, assemble_vector = get_assemblers
 
     # Create mesh and function space
@@ -42,9 +40,11 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
 
     def l2b(li):
         return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
-    s_m_c = {l2b([1, 0]): {l2b([0, 1]): 0.43,
-                           l2b([1, 1]): 0.11},
-             l2b([0, 0]): {l2b(master_point): 0.69}}
+
+    s_m_c = {
+        l2b([1, 0]): {l2b([0, 1]): 0.43, l2b([1, 1]): 0.11},
+        l2b([0, 0]): {l2b(master_point): 0.69},
+    }
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c)
     mpc.finalize()

@@ -30,8 +30,15 @@ import dolfinx_mpc
 import dolfinx_mpc.utils
 
 
-def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np.pi / 5,
-                     wall_marker: int = 1, outlet_marker: int = 2, inlet_marker: int = 3):
+def create_mesh_gmsh(
+    L: int = 2,
+    H: int = 1,
+    res: float = 0.1,
+    theta: float = np.pi / 5,
+    wall_marker: int = 1,
+    outlet_marker: int = 2,
+    inlet_marker: int = 3,
+):
     """
     Create a channel of length L, height H, rotated theta degrees
     around origin, with facet markers for inlet, outlet and walls.
@@ -76,8 +83,7 @@ def create_mesh_gmsh(L: int = 2, H: int = 1, res: float = 0.1, theta: float = np
             elif np.isclose(com[1], 0) or np.isclose(com[1], H):
                 walls.append(surface[1])
         # Rotate channel theta degrees in the xy-plane
-        gmsh.model.occ.rotate([(2, channel)], 0, 0, 0,
-                              0, 0, 1, theta)
+        gmsh.model.occ.rotate([(2, channel)], 0, 0, 0, 0, 0, 1, theta)
         gmsh.model.occ.synchronize()
 
         # Add physical markers
@@ -122,8 +128,12 @@ Q = dolfinx.fem.functionspace(mesh, Qe)
 
 
 def inlet_velocity_expression(x):
-    return np.stack((np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2)),
-                     5 * x[1] * np.sin(np.pi * np.sqrt(x[0]**2 + x[1]**2))))
+    return np.stack(
+        (
+            np.sin(np.pi * np.sqrt(x[0] ** 2 + x[1] ** 2)),
+            5 * x[1] * np.sin(np.pi * np.sqrt(x[0] ** 2 + x[1] ** 2)),
+        )
+    )
 
 
 # ----------------------Defining boundary conditions----------------------
@@ -171,8 +181,8 @@ f = dolfinx.fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = ufl.TrialFunction(V), ufl.TrialFunction(Q)
 (v, q) = ufl.TestFunction(V), ufl.TestFunction(Q)
 a00 = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
-a01 = - ufl.inner(p, ufl.div(v)) * ufl.dx
-a10 = - ufl.inner(ufl.div(u), q) * ufl.dx
+a01 = -ufl.inner(p, ufl.div(v)) * ufl.dx
+a10 = -ufl.inner(ufl.div(u), q) * ufl.dx
 a11 = None
 
 L0 = ufl.inner(f, v) * ufl.dx
@@ -180,19 +190,16 @@ L1 = ufl.inner(dolfinx.fem.Constant(mesh, default_scalar_type(0.0)), q) * ufl.dx
 
 # No prescribed shear stress
 n = ufl.FacetNormal(mesh)
-g_tau = tangential_proj(dolfinx.fem.Constant(
-    mesh, default_scalar_type(((0, 0), (0, 0)))) * n, n)
+g_tau = tangential_proj(dolfinx.fem.Constant(mesh, default_scalar_type(((0, 0), (0, 0)))) * n, n)
 ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
 # Terms due to slip condition
 # Explained in for instance: https://arxiv.org/pdf/2001.10639.pdf
 a00 -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
-a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(
-    - p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
+a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(-p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
 L0 += ufl.inner(g_tau, v) * ds
 
-a = [[dolfinx.fem.form(a00), dolfinx.fem.form(a01)],
-     [dolfinx.fem.form(a10), dolfinx.fem.form(a11)]]
+a = [[dolfinx.fem.form(a00), dolfinx.fem.form(a01)], [dolfinx.fem.form(a10), dolfinx.fem.form(a11)]]
 L = [dolfinx.fem.form(L0), dolfinx.fem.form(L1)]
 
 # Assemble LHS matrix and RHS vector
@@ -224,16 +231,16 @@ ksp = PETSc.KSP().create(mesh.comm)  # type: ignore
 ksp.setOperators(A, P)
 ksp.setMonitor(
     lambda ctx, it, r: PETSc.Sys.Print(  # type: ignore
-        f"Iteration: {it:>4d}, |r| = {r:.3e}"))
+        f"Iteration: {it:>4d}, |r| = {r:.3e}"
+    )
+)
 ksp.setType("minres")
 ksp.setTolerances(rtol=1e-8)
 ksp.getPC().setType("fieldsplit")
 ksp.getPC().setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE)  # type: ignore
 
 nested_IS = P.getNestISs()
-ksp.getPC().setFieldSplitIS(
-    ("u", nested_IS[0][0]),
-    ("p", nested_IS[0][1]))
+ksp.getPC().setFieldSplitIS(("u", nested_IS[0][0]), ("p", nested_IS[0][1]))
 
 ksp_u, ksp_p = ksp.getPC().getFieldSplitSubKSP()
 ksp_u.setType("preonly")
@@ -247,8 +254,10 @@ Uh = b.copy()
 ksp.solve(b, Uh)
 
 for Uh_sub in Uh.getNestSubVecs():
-    Uh_sub.ghostUpdate(addv=PETSc.InsertMode.INSERT,  # type: ignore
-                       mode=PETSc.ScatterMode.FORWARD)  # type: ignore
+    Uh_sub.ghostUpdate(
+        addv=PETSc.InsertMode.INSERT,  # type: ignore
+        mode=PETSc.ScatterMode.FORWARD,
+    )  # type: ignore
 # ----------------------------- Put NestVec into DOLFINx Function - ---------
 uh = dolfinx.fem.Function(mpc.function_space)
 uh.vector.setArray(Uh.getNestSubVecs()[0].array)
@@ -270,8 +279,7 @@ ph.name = "p"
 outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
 
-with dolfinx.io.XDMFFile(
-        mesh.comm, outdir / "demo_stokes_nest.xdmf", "w") as outfile:
+with dolfinx.io.XDMFFile(mesh.comm, outdir / "demo_stokes_nest.xdmf", "w") as outfile:
     outfile.write_mesh(mesh)
     outfile.write_meshtags(mt, mesh.geometry)
     outfile.write_function(uh)
@@ -306,9 +314,7 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
 
     (u, p) = ufl.TrialFunctions(W)
     (v, q) = ufl.TestFunctions(W)
-    a = (2 * mu * ufl.inner(sym_grad(u), sym_grad(v))
-         - ufl.inner(p, ufl.div(v))
-         - ufl.inner(ufl.div(u), q)) * ufl.dx
+    a = (2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) - ufl.inner(p, ufl.div(v)) - ufl.inner(ufl.div(u), q)) * ufl.dx
     L = ufl.inner(f, v) * ufl.dx
 
     # Terms due to slip condition

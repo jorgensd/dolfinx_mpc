@@ -71,10 +71,10 @@ def monitor_EPS_short(EPS: SLEPc.EPS, it: int, nconv: int, eig: list, err: list,
         Iteration skip.
 
     """
-    if (it == 1):
-        print0('******************************')
-        print0('***  SLEPc Iterations...   ***')
-        print0('******************************')
+    if it == 1:
+        print0("******************************")
+        print0("***  SLEPc Iterations...   ***")
+        print0("******************************")
         print0("Iter. | Conv. | Max. error")
         print0(f"{it:5d} | {nconv:5d} | {max(err):1.1e}")
     elif not it % it_skip:
@@ -82,7 +82,7 @@ def monitor_EPS_short(EPS: SLEPc.EPS, it: int, nconv: int, eig: list, err: list,
 
 
 def EPS_print_results(EPS: SLEPc.EPS):
-    """ Print summary of solution results. """
+    """Print summary of solution results."""
     print0("\n******************************")
     print0("*** SLEPc Solution Results ***")
     print0("******************************")
@@ -107,21 +107,21 @@ def EPS_print_results(EPS: SLEPc.EPS):
 
 
 def EPS_get_spectrum(
-        EPS: SLEPc.EPS,
-        mpc: MultiPointConstraint) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:  # type: ignore
-    """ Retrieve eigenvalues and eigenfunctions from SLEPc EPS object.
-        Parameters
-        ----------
-        EPS
-           The SLEPc solver
-        mpc
-           The multipoint constraint
+    EPS: SLEPc.EPS, mpc: MultiPointConstraint
+) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:  # type: ignore
+    """Retrieve eigenvalues and eigenfunctions from SLEPc EPS object.
+    Parameters
+    ----------
+    EPS
+       The SLEPc solver
+    mpc
+       The multipoint constraint
 
-        Returns
-        -------
-            Tuple consisting of: List of complex converted eigenvalues,
-             lists of converted eigenvectors (real part) and (imaginary part)
-        """
+    Returns
+    -------
+        Tuple consisting of: List of complex converted eigenvalues,
+         lists of converted eigenvectors (real part) and (imaginary part)
+    """
     # Get results in lists
     eigval = [EPS.getEigenvalue(i) for i in range(EPS.getConverged())]
     eigvec_r = list()
@@ -133,7 +133,7 @@ def EPS_get_spectrum(
 
         EPS.getEigenvector(i, vr.vector, vi.vector)
         eigvec_r.append(vr)
-        eigvec_i.append(vi)    # Sort by increasing real parts
+        eigvec_i.append(vi)  # Sort by increasing real parts
     idx = np.argsort(np.real(np.array(eigval)), axis=0)
     eigval = [eigval[i] for i in idx]
     eigvec_r = [eigvec_r[i] for i in idx]
@@ -141,41 +141,47 @@ def EPS_get_spectrum(
     return (eigval, eigvec_r, eigvec_i)
 
 
-def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,  # type: ignore  #type: ignore
-                          problem_type: SLEPc.EPS.ProblemType = SLEPc.EPS.ProblemType.GNHEP,
-                          solver: SLEPc.EPS.Type = SLEPc.EPS.Type.KRYLOVSCHUR,
-                          nev: int = 10, tol: float = 1e-7, max_it: int = 10,
-                          target: float = 0.0, shift: float = 0.0,
-                          comm: MPI.Intracomm = MPI.COMM_WORLD) -> SLEPc.EPS:
+def solve_GEP_shiftinvert(
+    A: PETSc.Mat,
+    B: PETSc.Mat,  # type: ignore  #type: ignore
+    problem_type: SLEPc.EPS.ProblemType = SLEPc.EPS.ProblemType.GNHEP,
+    solver: SLEPc.EPS.Type = SLEPc.EPS.Type.KRYLOVSCHUR,
+    nev: int = 10,
+    tol: float = 1e-7,
+    max_it: int = 10,
+    target: float = 0.0,
+    shift: float = 0.0,
+    comm: MPI.Intracomm = MPI.COMM_WORLD,
+) -> SLEPc.EPS:
     """
-    Solve generalized eigenvalue problem A*x=lambda*B*x using shift-and-invert
-    as spectral transform method.
+     Solve generalized eigenvalue problem A*x=lambda*B*x using shift-and-invert
+     as spectral transform method.
 
-    Parameters
-    ----------
-    A
-       The matrix A
-    B
-       The matrix B
-    problem_type
-       The problem type, for options see: https://bit.ly/3gM5pth
-   solver:
-       Solver type, for options see: https://bit.ly/35LDcMG
-    nev
-        Number of requested eigenvalues.
-    tol
-       Tolerance for slepc solver
-    max_it
-       Maximum number of iterations.
-    target
-       Target eigenvalue. Also used for sorting.
-    shift
-       Shift 'sigma' used in shift-and-invert.
+     Parameters
+     ----------
+     A
+        The matrix A
+     B
+        The matrix B
+     problem_type
+        The problem type, for options see: https://bit.ly/3gM5pth
+    solver:
+        Solver type, for options see: https://bit.ly/35LDcMG
+     nev
+         Number of requested eigenvalues.
+     tol
+        Tolerance for slepc solver
+     max_it
+        Maximum number of iterations.
+     target
+        Target eigenvalue. Also used for sorting.
+     shift
+        Shift 'sigma' used in shift-and-invert.
 
-    Returns
-    -------
-    EPS
-       The SLEPc solver
+     Returns
+     -------
+     EPS
+        The SLEPc solver
     """
 
     # Build an Eigenvalue Problem Solver object
@@ -200,8 +206,7 @@ def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,  # type: ignore  #type: ig
     EPS.setST(ST)
     # set monitor
     it_skip = 1
-    EPS.setMonitor(lambda eps, it, nconv, eig, err:
-                   monitor_EPS_short(eps, it, nconv, eig, err, it_skip))
+    EPS.setMonitor(lambda eps, it, nconv, eig, err: monitor_EPS_short(eps, it, nconv, eig, err, it_skip))
     # parse command line options
     EPS.setFromOptions()
     # Display all options (including those of ST object)
@@ -211,8 +216,7 @@ def solve_GEP_shiftinvert(A: PETSc.Mat, B: PETSc.Mat,  # type: ignore  #type: ig
     return EPS
 
 
-def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"],
-                       Nev: int = 10):
+def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"], Nev: int = 10):
     """
     Assemble and solve the Laplace eigenvalue problem on the unit square with
     the prescribed boundary conditions.
@@ -245,6 +249,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
             out_x = x.copy()
             out_x[i] = x[i] - 1
             return out_x
+
         return pbc_slave_to_master_map
 
     def generate_pbc_is_slave(i):
@@ -261,6 +266,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
 
             def dirichletboundary(x):
                 return np.logical_or(np.isclose(x[i], 0), np.isclose(x[i], 1))
+
             facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
             topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
             bcs.append(fem.dirichletbc(u_bc, topological_dofs))
@@ -273,16 +279,21 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
 
             facets = locate_entities_boundary(mesh, fdim, pbc_is_slave[-1])
             arg_sort = np.argsort(facets)
-            pbc_meshtags.append(meshtags(mesh,
-                                         fdim,
-                                         facets[arg_sort],
-                                         np.full(len(facets), pbc_slave_tags[-1], dtype=np.int32)))
+            pbc_meshtags.append(
+                meshtags(
+                    mesh,
+                    fdim,
+                    facets[arg_sort],
+                    np.full(len(facets), pbc_slave_tags[-1], dtype=np.int32),
+                )
+            )
 
     # Create MultiPointConstraint object
     mpc = MultiPointConstraint(V)
     N_pbc = len(pbc_directions)
     for i in range(N_pbc):
         if N_pbc > 1:
+
             def pbc_slave_to_master_map(x):
                 out_x = pbc_slave_to_master_maps[i](x)
                 idx = pbc_is_slave[(i + 1) % N_pbc](x)
@@ -291,10 +302,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
         else:
             pbc_slave_to_master_map = pbc_slave_to_master_maps[i]
 
-        mpc.create_periodic_constraint_topological(V, pbc_meshtags[i],
-                                                   pbc_slave_tags[i],
-                                                   pbc_slave_to_master_map,
-                                                   bcs)
+        mpc.create_periodic_constraint_topological(V, pbc_meshtags[i], pbc_slave_tags[i], pbc_slave_to_master_map, bcs)
     if len(pbc_directions) > 1:
         # Map intersection(slaves_x, slaves_y) to intersection(masters_x, masters_y),
         # i.e. map the slave dof at (1, 1) to the master dof at (0, 0)
@@ -306,10 +314,8 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
             out_x[0][~idx] = np.nan
             out_x[1][~idx] = np.nan
             return out_x
-        mpc.create_periodic_constraint_topological(V, pbc_meshtags[1],
-                                                   pbc_slave_tags[1],
-                                                   pbc_slave_to_master_map,
-                                                   bcs)
+
+        mpc.create_periodic_constraint_topological(V, pbc_meshtags[1], pbc_slave_tags[1], pbc_slave_to_master_map, bcs)
     mpc.finalize()
     # Define variational problem
     u = TrialFunction(V)
@@ -329,10 +335,18 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
 
     A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
     B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
-    EPS = solve_GEP_shiftinvert(A, B, problem_type=SLEPc.EPS.ProblemType.GHEP,
-                                solver=SLEPc.EPS.Type.KRYLOVSCHUR,
-                                nev=Nev, tol=tol, max_it=10,
-                                target=1.5, shift=1.5, comm=comm)
+    EPS = solve_GEP_shiftinvert(
+        A,
+        B,
+        problem_type=SLEPc.EPS.ProblemType.GHEP,
+        solver=SLEPc.EPS.Type.KRYLOVSCHUR,
+        nev=Nev,
+        tol=tol,
+        max_it=10,
+        target=1.5,
+        shift=1.5,
+        comm=comm,
+    )
     (eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
     # update slave DoF
     for i in range(len(eigval)):
@@ -355,13 +369,13 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
 def print_exact_eigenvalues(boundary_condition: List[str], N: int):
     L = [1, 1]
     if boundary_condition[0] == "dirichlet":
-        ev_x = [(n * np.pi / L[0])**2 for n in range(1, N + 1)]
+        ev_x = [(n * np.pi / L[0]) ** 2 for n in range(1, N + 1)]
     elif boundary_condition[0] == "periodic":
-        ev_x = [(n * 2 * np.pi / L[0])**2 for n in range(-N, N)]
+        ev_x = [(n * 2 * np.pi / L[0]) ** 2 for n in range(-N, N)]
     if boundary_condition[1] == "dirichlet":
-        ev_y = [(n * np.pi / L[1])**2 for n in range(1, N + 1)]
+        ev_y = [(n * np.pi / L[1]) ** 2 for n in range(1, N + 1)]
     elif boundary_condition[1] == "periodic":
-        ev_y = [(n * 2 * np.pi / L[1])**2 for n in range(-N, N)]
+        ev_y = [(n * 2 * np.pi / L[1]) ** 2 for n in range(-N, N)]
     ev_ex = np.sort([r + q for r in ev_x for q in ev_y])
     ev_ex = ev_ex[0:N]
     print0(f"Exact eigenvalues (repeated with multiplicity):\n {np.around(ev_ex,decimals=2)}")

@@ -23,9 +23,14 @@ import dolfinx_mpc.cpp
 from .multipointconstraint import MultiPointConstraint, _float_classes
 
 
-def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.DirichletBC]],  # type: ignore
-                  constraint: MultiPointConstraint, x0: List[_PETSc.Vec] = [],  # type: ignore
-                  scale: _float_classes = default_scalar_type(1.0)):  # type: ignore
+def apply_lifting(
+    b: _PETSc.Vec,
+    form: List[_fem.Form],
+    bcs: List[List[_fem.DirichletBC]],  # type: ignore
+    constraint: MultiPointConstraint,
+    x0: List[_PETSc.Vec] = [],  # type: ignore
+    scale: _float_classes = default_scalar_type(1.0),
+):  # type: ignore
     """
     Apply lifting to vector b, i.e.
     :math:`b = b - scale \\cdot K^T (A_j (g_j - x0_j))`
@@ -47,13 +52,13 @@ def apply_lifting(b: _PETSc.Vec, form: List[_fem.Form], bcs: List[List[_fem.Diri
         b_local = stack.enter_context(b.localForm())
         _forms = [f._cpp_object for f in form]
         _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]
-        dolfinx_mpc.cpp.mpc.apply_lifting(b_local.array_w, _forms,
-                                          _bcs, x0_r, scale, constraint._cpp_object)
+        dolfinx_mpc.cpp.mpc.apply_lifting(b_local.array_w, _forms, _bcs, x0_r, scale, constraint._cpp_object)
     t.stop()
 
 
-def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
-                    b: Optional[_PETSc.Vec] = None) -> _PETSc.Vec:  # type: ignore
+def assemble_vector(
+    form: ufl.form.Form, constraint: MultiPointConstraint, b: Optional[_PETSc.Vec] = None
+) -> _PETSc.Vec:  # type: ignore
     """
     Assemble a linear form into vector `b` with corresponding multi point constraint
 
@@ -67,20 +72,19 @@ def assemble_vector(form: ufl.form.Form, constraint: MultiPointConstraint,
     """
 
     if b is None:
-        b = _la.create_petsc_vector(constraint.function_space.dofmap.index_map,
-                                    constraint.function_space.dofmap.index_map_bs)
+        b = _la.create_petsc_vector(
+            constraint.function_space.dofmap.index_map,
+            constraint.function_space.dofmap.index_map_bs,
+        )
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)
-        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object,
-                                            constraint._cpp_object)
+        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object)
     t.stop()
     return b
 
 
-def create_vector_nest(
-        L: Sequence[_fem.Form],
-        constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
+def create_vector_nest(L: Sequence[_fem.Form], constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
     """
     Create a PETSc vector of type "nest" appropriate for the provided multi
     point constraints
@@ -94,16 +98,18 @@ def create_vector_nest(
     """
     assert len(constraints) == len(L)
 
-    maps = [(constraint.function_space.dofmap.index_map,
-             constraint.function_space.dofmap.index_map_bs)
-            for constraint in constraints]
+    maps = [
+        (constraint.function_space.dofmap.index_map, constraint.function_space.dofmap.index_map_bs)
+        for constraint in constraints
+    ]
     return _cpp.fem.petsc.create_vector_nest(maps)
 
 
 def assemble_vector_nest(
-        b: _PETSc.Vec,  # type: ignore
-        L: Sequence[_fem.Form],
-        constraints: Sequence[MultiPointConstraint]):
+    b: _PETSc.Vec,  # type: ignore
+    L: Sequence[_fem.Form],
+    constraints: Sequence[MultiPointConstraint],
+):
     """
     Assemble a linear form into a PETSc vector of type "nest"
 

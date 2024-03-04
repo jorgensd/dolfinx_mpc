@@ -57,6 +57,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                                    petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
 
     """
+
     u: _fem.Function
     _a: _fem.Form
     _L: _fem.Form
@@ -68,12 +69,17 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
     bcs: typing.List[_fem.DirichletBC]
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, a: ufl.Form, L: ufl.Form, mpc: MultiPointConstraint,
-                 bcs: typing.Optional[typing.List[_fem.DirichletBC]] = None,
-                 u: typing.Optional[_fem.Function] = None,
-                 petsc_options: typing.Optional[dict] = None,
-                 form_compiler_options: typing.Optional[dict] = None, jit_options: typing.Optional[dict] = None):
-
+    def __init__(
+        self,
+        a: ufl.Form,
+        L: ufl.Form,
+        mpc: MultiPointConstraint,
+        bcs: typing.Optional[typing.List[_fem.DirichletBC]] = None,
+        u: typing.Optional[_fem.Function] = None,
+        petsc_options: typing.Optional[dict] = None,
+        form_compiler_options: typing.Optional[dict] = None,
+        jit_options: typing.Optional[dict] = None,
+    ):
         # Compile forms
         form_compiler_options = {} if form_compiler_options is None else form_compiler_options
         jit_options = {} if jit_options is None else jit_options
@@ -90,8 +96,10 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             if u.function_space is self._mpc.function_space:
                 self.u = u
             else:
-                raise ValueError("The input function has to be in the function space in the multi-point constraint",
-                                 "i.e. u = dolfinx.fem.Function(mpc.function_space)")
+                raise ValueError(
+                    "The input function has to be in the function space in the multi-point constraint",
+                    "i.e. u = dolfinx.fem.Function(mpc.function_space)",
+                )
         self._x = self.u.vector
 
         # Create MPC matrix
@@ -99,8 +107,9 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         pattern.finalize()
         self._A = _cpp.la.petsc.create_matrix(self._mpc.function_space.mesh.comm, pattern)
 
-        self._b = _la.create_petsc_vector(self._mpc.function_space.dofmap.index_map,
-                                          self._mpc.function_space.dofmap.index_map_bs)
+        self._b = _la.create_petsc_vector(
+            self._mpc.function_space.dofmap.index_map, self._mpc.function_space.dofmap.index_map_bs
+        )
         self.bcs = [] if bcs is None else bcs
 
         self._solver = PETSc.KSP().create(self.u.function_space.mesh.comm)  # type: ignore

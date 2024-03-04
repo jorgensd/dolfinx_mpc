@@ -29,7 +29,6 @@ from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 @pytest.mark.parametrize("slave_space", [0, 1])
 @pytest.mark.parametrize("master_space", [0, 1])
 def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # noqa: F811
-
     assemble_matrix, assemble_vector = get_assemblers
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, Nx, Ny)
@@ -70,6 +69,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     # Create multipoint constraint
     def l2b(li):
         return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
+
     s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.1, l2b([0.5, 1]): 0.3}}
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, slave_space, master_space)
@@ -122,8 +122,11 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d
-            nt.assert_allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=500
-                               * np.finfo(default_scalar_type).resolution)
+            nt.assert_allclose(
+                uh_numpy.astype(u_mpc.dtype),
+                u_mpc,
+                rtol=500 * np.finfo(default_scalar_type).resolution,
+            )
 
     b.destroy()
     L_org.destroy()

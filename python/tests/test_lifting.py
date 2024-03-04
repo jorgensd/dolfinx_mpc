@@ -22,8 +22,7 @@ import dolfinx_mpc.utils
 from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
-@pytest.mark.skipif(MPI.COMM_WORLD.size > 1,
-                    reason="This test should only be run in serial.")
+@pytest.mark.skipif(MPI.COMM_WORLD.size > 1, reason="This test should only be run in serial.")
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 def test_lifting(get_assemblers):  # noqa: F811
     """
@@ -72,6 +71,7 @@ def test_lifting(get_assemblers):  # noqa: F811
 
     def l2b(li):
         return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
+
     s_m_c = {l2b([0, 0]): {l2b([0, 1]): 1}}
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
@@ -99,7 +99,6 @@ def test_lifting(get_assemblers):  # noqa: F811
     root = 0
     comm = mesh.comm
     with Timer("~TEST: Compare"):
-
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A, mpc, root=root)
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 

@@ -15,16 +15,27 @@ import basix.ufl
 import gmsh
 import numpy as np
 from dolfinx import default_scalar_type
-from dolfinx.fem import (Constant, Function, dirichletbc, functionspace,
-                         locate_dofs_topological)
+from dolfinx.fem import Constant, Function, dirichletbc, functionspace, locate_dofs_topological
 from dolfinx.io import XDMFFile, gmshio
-from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
-                 TrialFunction, as_vector, grad, inner, sym, tr)
+from ufl import (
+    Identity,
+    Measure,
+    SpatialCoordinate,
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    grad,
+    inner,
+    sym,
+    tr,
+)
 
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
-from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               determine_closest_block,
-                               rigid_motions_nullspace)
+from dolfinx_mpc.utils import (
+    create_point_to_point_constraint,
+    determine_closest_block,
+    rigid_motions_nullspace,
+)
 
 # Mesh parameters for creating a mesh consisting of two spheres,
 # Sphere(r2)\Sphere(r1) and Sphere(r_0)
@@ -107,7 +118,7 @@ gmsh.clear()
 gmsh.finalize()
 MPI.COMM_WORLD.barrier()
 
-V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
 tdim = mesh.topology.dim
 fdim = tdim - 1
@@ -137,8 +148,7 @@ lmbda.vector.destroy()
 
 
 def sigma(v):
-    return (2.0 * mu * sym(grad(v))
-            + lmbda * tr(sym(grad(v))) * Identity(len(v)))
+    return 2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v))
 
 
 # Define variational problem
@@ -178,13 +188,20 @@ mpc.finalize()
 null_space = rigid_motions_nullspace(mpc.function_space)
 
 ksp_rtol = 5e2 * np.finfo(default_scalar_type).resolution
-petsc_options = {"ksp_rtol": ksp_rtol, "pc_type": "gamg", "pc_gamg_type": "agg",
-                 "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
-                 "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
-                 "mg_levels_esteig_ksp_type": "cg", "matptap_via": "scalable",
-                 "pc_gamg_square_graph": 2, "pc_gamg_threshold": 0.02
-                 # ,"help": None, "ksp_view": None
-                 }
+petsc_options = {
+    "ksp_rtol": ksp_rtol,
+    "pc_type": "gamg",
+    "pc_gamg_type": "agg",
+    "pc_gamg_coarse_eq_limit": 1000,
+    "pc_gamg_sym_graph": True,
+    "mg_levels_ksp_type": "chebyshev",
+    "mg_levels_pc_type": "jacobi",
+    "mg_levels_esteig_ksp_type": "cg",
+    "matptap_via": "scalable",
+    "pc_gamg_square_graph": 2,
+    "pc_gamg_threshold": 0.02,
+    # ,"help": None, "ksp_view": None
+}
 problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
 # Build near nullspace
@@ -199,9 +216,16 @@ if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 
 # Write solution to file
-V_out = functionspace(mesh, basix.ufl.element("Lagrange", mesh.topology.cell_name(),
-                      mesh.geometry.cmap.degree,
-                      lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmap.variant), shape=(V.dofmap.bs,)))
+V_out = functionspace(
+    mesh,
+    basix.ufl.element(
+        "Lagrange",
+        mesh.topology.cell_name(),
+        mesh.geometry.cmap.degree,
+        lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmap.variant),
+        shape=(V.dofmap.bs,),
+    ),
+)
 u_out = Function(V_out)
 u_out.interpolate(u_h)
 u_out.name = "uh"

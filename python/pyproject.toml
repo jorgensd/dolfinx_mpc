@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 docs = ['jupyter-book', 'jupytext']
-lint = ["flake8", "mypy"]
+lint = ["ruff", "mypy"]
 optional = ["numba"]
 test = ["pytest", "coverage"]
 all = ["dolfinx_mpc[docs]",
@@ -51,3 +51,47 @@ junit_family = "xunit2"
 
 [tool.mypy]
 ignore_missing_imports = true
+# Folders to exclude
+exclude = ["docs/", "build/"]
+# Folder to check with mypy
+files = ["src", "tests"]
+
+[tool.ruff]
+src = ["benchmarks","demos","dolfinx_mpc"]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    # Pyflakes
+    "F",
+    # Pycodestyle
+    "E",
+    "W",
+    # isort
+    "I001"
+]
+
+
+[tool.ruff.lint.isort]
+known-first-party = ["dolfinx_mpc"]
+known-third-party = [
+    "basix",
+    "dolfinx",
+    "ffcx",
+    "ufl",
+    "gmsh",
+    "numpy",
+    "pytest",
+]
+section-order = [
+      "future",
+      "standard-library",
+      "mpi",
+      "third-party",
+      "first-party",
+      "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+"mpi" = ["mpi4py", "petsc4py"]

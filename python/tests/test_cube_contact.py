@@ -56,17 +56,14 @@ def generate_hex_boxes():
         top = gmsh.model.occ.addRectangle(x0, y0, z2, x1 - x0, y1 - y0)
 
         # Set mesh size at point
-        gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0,
-                               numElements=[int(1 / (2 * res))], recombine=True)
-        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12,
-                               numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0, numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12, numElements=[int(1 / (2 * res))], recombine=True)
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
         # Create entity -> marker map (to be used after rotation)
         volumes = gmsh.model.getEntities(3)
-        volume_entities = {"Top": [None, volume_markers[1]],
-                           "Bottom": [None, volume_markers[0]]}
+        volume_entities = {"Top": [None, volume_markers[1]], "Bottom": [None, volume_markers[0]]}
         for i, volume in enumerate(volumes):
             com = gmsh.model.occ.getCenterOfMass(volume[0], volume[1])
             if np.isclose(com[2], (z1 - z0) / 2):
@@ -76,13 +73,14 @@ def generate_hex_boxes():
                 top_index = i
                 volume_entities["Top"][0] = volume
         surfaces = ["Top", "Bottom", "Left", "Right", "Front", "Back"]
-        entities = {"Bottom": {key: [[], None] for key in surfaces},
-                    "Top": {key: [[], None] for key in surfaces}}
+        entities = {
+            "Bottom": {key: [[], None] for key in surfaces},
+            "Top": {key: [[], None] for key in surfaces},
+        }
         # Identitfy entities for each surface of top and bottom cube
 
         # Physical markers for bottom cube
-        bottom_surfaces = gmsh.model.getBoundary([volumes[bottom_index]],
-                                                 recursive=False, oriented=False)
+        bottom_surfaces = gmsh.model.getBoundary([volumes[bottom_index]], recursive=False, oriented=False)
         for entity in bottom_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
             if np.allclose(com, [(x1 - x0) / 2, y1, (z1 - z0) / 2]):
@@ -104,8 +102,7 @@ def generate_hex_boxes():
                 entities["Bottom"]["Front"][0].append(entity[1])
                 entities["Bottom"]["Front"][1] = facet_markers[0][5]
         # Physical markers for top
-        top_surfaces = gmsh.model.getBoundary([volumes[top_index]],
-                                              recursive=False, oriented=False)
+        top_surfaces = gmsh.model.getBoundary([volumes[top_index]], recursive=False, oriented=False)
         for entity in top_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], entity[1])
             if np.allclose(com, [(x1 - x0) / 2, y1, (z2 - z1) / 2 + z1]):
@@ -134,22 +131,20 @@ def generate_hex_boxes():
 
         for volume in volume_entities.keys():
             gmsh.model.addPhysicalGroup(
-                volume_entities[volume][0][0], [volume_entities[volume][0][1]],
-                tag=volume_entities[volume][1])
-            gmsh.model.setPhysicalName(volume_entities[volume][0][0],
-                                       volume_entities[volume][1], volume)
+                volume_entities[volume][0][0],
+                [volume_entities[volume][0][1]],
+                tag=volume_entities[volume][1],
+            )
+            gmsh.model.setPhysicalName(volume_entities[volume][0][0], volume_entities[volume][1], volume)
 
         for box in entities.keys():
             for surface in entities[box].keys():
-                gmsh.model.addPhysicalGroup(2, entities[box][surface][0],
-                                            tag=entities[box][surface][1])
-                gmsh.model.setPhysicalName(2, entities[box][surface][1], box
-                                           + ":" + surface)
+                gmsh.model.addPhysicalGroup(2, entities[box][surface][0], tag=entities[box][surface][1])
+                gmsh.model.setPhysicalName(2, entities[box][surface][1], box + ":" + surface)
         # Set mesh sizes on the points from the surface we are extruding
         bottom_nodes = gmsh.model.getBoundary([(2, bottom)], recursive=True, oriented=False)
         gmsh.model.occ.mesh.setSize(bottom_nodes, res)
-        top_nodes = gmsh.model.getBoundary([(2, top)],
-                                           recursive=True, oriented=False)
+        top_nodes = gmsh.model.getBoundary([(2, top)], recursive=True, oriented=False)
         gmsh.model.occ.mesh.setSize(top_nodes, 2 * res)
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
@@ -178,7 +173,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     mesh, mt = mesh_data
     fdim = mesh.topology.dim - 1
     # Create functionspaces
-    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
     # Helper for orienting traction
 
@@ -194,8 +189,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     g_vec = [0, 0, -4.25e-1]
     if not nonslip:
         # Helper for orienting traction
-        r_matrix = dolfinx_mpc.utils.rotation_matrix(
-            [1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
+        r_matrix = dolfinx_mpc.utils.rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
 
         # Top boundary has a given deformation normal to the interface
         g_vec = np.dot(r_matrix, [0, 0, -4.25e-1])
@@ -207,6 +201,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
         values[1] = g_vec[1]
         values[2] = g_vec[2]
         return values
+
     u_top = fem.Function(V)
     u_top.interpolate(top_v)
 
@@ -223,8 +218,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * ufl.sym(ufl.grad(v))
-                + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v)))
+        return 2.0 * mu * ufl.sym(ufl.grad(v)) + lmbda * ufl.tr(ufl.sym(ufl.grad(v))) * ufl.Identity(len(v))
 
     # Define variational problem
     u = ufl.TrialFunction(V)

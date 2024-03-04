@@ -17,21 +17,30 @@ import basix.ufl
 import h5py
 import numpy as np
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
-                         locate_dofs_topological, set_bc)
+from dolfinx.fem import (
+    Constant,
+    Function,
+    dirichletbc,
+    form,
+    functionspace,
+    locate_dofs_topological,
+    set_bc,
+)
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import (create_unit_cube, locate_entities_boundary, meshtags,
-                          refine)
-from ufl import (Identity, TestFunction, TrialFunction, ds, dx, grad, inner,
-                 sym, tr)
+from dolfinx.mesh import create_unit_cube, locate_entities_boundary, meshtags, refine
+from ufl import Identity, TestFunction, TrialFunction, ds, dx, grad, inner, sym, tr
 
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
+from dolfinx_mpc import MultiPointConstraint, apply_lifting, assemble_matrix, assemble_vector
 from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 
 
-def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
-                         xdmf: bool = False, boomeramg: bool = False, kspview: bool = False):
+def bench_elasticity_one(
+    r_lvl: int = 0,
+    out_hdf5: Optional[h5py.File] = None,
+    xdmf: bool = False,
+    boomeramg: bool = False,
+    kspview: bool = False,
+):
     N = 3
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
     for i in range(r_lvl):
@@ -50,6 +59,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
+
     facets = locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = locate_dofs_topological(V, fdim, facets)
     bc = dirichletbc(u_bc, topological_dofs)
@@ -58,6 +68,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
     # Create traction meshtag
     def traction_boundary(x):
         return np.isclose(x[0], 1)
+
     t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
     arg_sort = np.argsort(t_facets)
@@ -86,8 +97,10 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
 
     # Create MPC
     with Timer("~Elasticity: Init constraint"):
+
         def l2b(li):
             return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
+
         s_m_c = {l2b([1, 0, 0]): {l2b([1, 0, 1]): 0.5}}
         mpc = MultiPointConstraint(V)
         mpc.create_general_constraint(s_m_c, 2, 2)
@@ -113,7 +126,7 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
         opts["pc_type"] = "hypre"
-        opts['pc_hypre_type'] = 'boomeramg'
+        opts["pc_hypre_type"] = "boomeramg"
         opts["pc_hypre_boomeramg_max_iter"] = 1
         opts["pc_hypre_boomeramg_cycle_type"] = "v"
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
@@ -176,27 +189,26 @@ def bench_elasticity_one(r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--nref", default=1, type=int, dest="n_ref",
-                        help="Number of spatial refinements")
-    parser.add_argument('--xdmf', action='store_true', dest="xdmf",
-                        help="XDMF-output of function (Default false)")
-    parser.add_argument('--timings', action='store_true', dest="timings",
-                        help="List timings (Default false)")
-    parser.add_argument('--kspview', action='store_true', dest="kspview",
-                        help="View PETSc progress")
-    parser.add_argument("-o", default='elasticity_one.hdf5', dest="hdf5",
-                        help="Name of HDF5 output file")
+    parser.add_argument("--nref", default=1, type=int, dest="n_ref", help="Number of spatial refinements")
+    parser.add_argument("--xdmf", action="store_true", dest="xdmf", help="XDMF-output of function (Default false)")
+    parser.add_argument("--timings", action="store_true", dest="timings", help="List timings (Default false)")
+    parser.add_argument("--kspview", action="store_true", dest="kspview", help="View PETSc progress")
+    parser.add_argument("-o", default="elasticity_one.hdf5", dest="hdf5", help="Name of HDF5 output file")
     solver_parser = parser.add_mutually_exclusive_group(required=False)
-    solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True, action='store_true',
-                               help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
-                               help="Use PETSc GAMG preconditioner")
+    solver_parser.add_argument(
+        "--boomeramg",
+        dest="boomeramg",
+        default=True,
+        action="store_true",
+        help="Use BoomerAMG preconditioner (Default)",
+    )
+    solver_parser.add_argument("--gamg", dest="boomeramg", action="store_false", help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
 
     N = args.n_ref + 1
 
     # Setup hd5f output file
-    h5f = h5py.File(args.hdf5, 'w', driver='mpio', comm=MPI.COMM_WORLD)
+    h5f = h5py.File(args.hdf5, "w", driver="mpio", comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)

@@ -17,12 +17,13 @@ from dolfinx_mpc import cpp
 from .multipointconstraint import MultiPointConstraint
 
 
-def assemble_matrix(form: _fem.Form,
-                    constraint: Union[MultiPointConstraint,
-                                      Sequence[MultiPointConstraint]],
-                    bcs: Optional[Sequence[_fem.DirichletBC]] = None,
-                    diagval: _PETSc.ScalarType = 1,  # type: ignore
-                    A: Optional[_PETSc.Mat] = None) -> _PETSc.Mat:  # type: ignore
+def assemble_matrix(
+    form: _fem.Form,
+    constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    bcs: Optional[Sequence[_fem.DirichletBC]] = None,
+    diagval: _PETSc.ScalarType = 1,  # type: ignore
+    A: Optional[_PETSc.Mat] = None,
+) -> _PETSc.Mat:  # type: ignore
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
     and Dirichlet boundary conditions.
@@ -44,13 +45,11 @@ def assemble_matrix(form: _fem.Form,
 
     # Generate matrix with MPC sparsity pattern
     if A is None:
-        A = cpp.mpc.create_matrix(form._cpp_object, constraint[0]._cpp_object,
-                                  constraint[1]._cpp_object)
+        A = cpp.mpc.create_matrix(form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object)
     A.zeroEntries()
 
     # Assemble matrix in C++
-    cpp.mpc.assemble_matrix(A, form._cpp_object, constraint[0]._cpp_object,
-                            constraint[1]._cpp_object, bcs, diagval)
+    cpp.mpc.assemble_matrix(A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs, diagval)
 
     # Add one on diagonal for Dirichlet boundary conditions
     if form.function_spaces[0] is form.function_spaces[1]:
@@ -62,9 +61,7 @@ def assemble_matrix(form: _fem.Form,
     return A
 
 
-def create_sparsity_pattern(form: _fem.Form,
-                            mpc: Union[MultiPointConstraint,
-                                       Sequence[MultiPointConstraint]]):
+def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Sequence[MultiPointConstraint]]):
     """
     Create sparsity-pattern for MPC given a compiled DOLFINx form
 
@@ -77,17 +74,17 @@ def create_sparsity_pattern(form: _fem.Form,
         assert len(mpc) == 2
         for mpc_ in mpc:
             mpc_._not_finalized()  # type: ignore
-            return cpp.mpc.create_sparsity_pattern(form._cpp_object, mpc[0]._cpp_object,
-                                                   mpc[1]._cpp_object)
+            return cpp.mpc.create_sparsity_pattern(form._cpp_object, mpc[0]._cpp_object, mpc[1]._cpp_object)
     else:
         mpc._not_finalized()  # type: ignore
-        return cpp.mpc.create_sparsity_pattern(form._cpp_object, mpc._cpp_object,  # type: ignore
-                                               mpc._cpp_object)  # type: ignore
+        return cpp.mpc.create_sparsity_pattern(
+            form._cpp_object,
+            mpc._cpp_object,  # type: ignore
+            mpc._cpp_object,
+        )  # type: ignore
 
 
-def create_matrix_nest(
-        a: Sequence[Sequence[_fem.Form]],
-        constraints: Sequence[MultiPointConstraint]):
+def create_matrix_nest(a: Sequence[Sequence[_fem.Form]], constraints: Sequence[MultiPointConstraint]):
     """
     Create a PETSc matrix of type "nest" with appropriate sparsity pattern
     given the provided multi points constraints
@@ -105,19 +102,22 @@ def create_matrix_nest(
             if a[i][j] is None:
                 continue
             A_[i][j] = cpp.mpc.create_matrix(
-                a[i][j]._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object)
+                a[i][j]._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object
+            )
 
     A = _PETSc.Mat().createNest(  # type: ignore
-        A_, comm=constraints[0].function_space.mesh.comm)
+        A_, comm=constraints[0].function_space.mesh.comm
+    )
     return A
 
 
 def assemble_matrix_nest(
-        A: _PETSc.Mat,  # type: ignore
-        a: Sequence[Sequence[_fem.Form]],
-        constraints: Sequence[MultiPointConstraint],
-        bcs: Sequence[_fem.DirichletBC] = [],
-        diagval: _PETSc.ScalarType = 1):  # type: ignore
+    A: _PETSc.Mat,  # type: ignore
+    a: Sequence[Sequence[_fem.Form]],
+    constraints: Sequence[MultiPointConstraint],
+    bcs: Sequence[_fem.DirichletBC] = [],
+    diagval: _PETSc.ScalarType = 1,
+):  # type: ignore
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
     "nest" with corresponding multi point constraints and Dirichlet boundary
@@ -134,6 +134,4 @@ def assemble_matrix_nest(
         for j, a_block in enumerate(a_row):
             if a_block is not None:
                 Asub = A.getNestSubMatrix(i, j)
-                assemble_matrix(
-                    a_block, (constraints[i], constraints[j]),
-                    bcs=bcs, diagval=diagval, A=Asub)
+                assemble_matrix(a_block, (constraints[i], constraints[j]), bcs=bcs, diagval=diagval, A=Asub)
