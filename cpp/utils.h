@@ -740,7 +740,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 
     // Create submap
     std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
-        = dolfinx::common::create_sub_index_map(imap, blocks, false);
+        = dolfinx::common::create_sub_index_map(
+            imap, blocks, dolfinx::common::IndexMapOrder::any, false);
     slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
         std::move(compressed_map.first));
 
