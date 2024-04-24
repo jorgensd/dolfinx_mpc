@@ -560,12 +560,13 @@ void assemble_matrix_impl(
   auto element1 = a.function_spaces().at(1)->element();
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
-      apply_dof_transformation
-      = element0->template get_pre_dof_transformation_function<T>();
+      apply_dof_transformation = element0->template dof_transformation_fn<T>(
+          dolfinx::fem::doftransform::standard);
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
       apply_dof_transformation_to_transpose
-      = element1->template get_post_dof_transformation_function<T>();
+      = element1->template dof_transformation_right_fn<T>(
+          dolfinx::fem::doftransform::transpose);
 
   const bool needs_transformation_data
       = element0->needs_dof_transformations()
