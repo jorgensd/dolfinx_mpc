@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx/dolfinx:v0.8.0
+    container: ghcr.io/fenics/dolfinx/dolfinx:nightly
 
     strategy:
       matrix:
@@ -37,10 +37,10 @@ jobs:
         #   - CC: clang
         #     CXX: c++
     env:
-      DOLFINX_BRANCH: v0.8.0
-      BASIX_BRANCH: v0.8.0
-      UFL_BRANCH: 2024.1.0.post0
-      FFCX_BRANCH: v0.8.0
+      DOLFINX_BRANCH: main
+      BASIX_BRANCH: main
+      UFL_BRANCH: main
+      FFCX_BRANCH: main
 
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
