@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx/dev-env:v0.7.2
+    container: ghcr.io/fenics/dolfinx/v0.8.0:current-mpich
 
     strategy:
       matrix:
@@ -37,10 +37,11 @@ jobs:
         #   - CC: clang
         #     CXX: c++
     env:
-      DOLFINX_BRANCH: "v0.7.3"
-      BASIX_BRANCH: "v0.7.0"
-      UFL_BRANCH: "2023.2.0"
-      FFCX_BRANCH: "v0.7.0"
+      DOLFINX_BRANCH: v0.8.0
+      BASIX_BRANCH: v0.8.0
+      UFL_BRANCH: 2024.1.0.post0
+      FFCX_BRANCH: v0.8.0.
+
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
       PETSC_ARCH: "${{ matrix.petsc_arch }}"
@@ -70,10 +71,12 @@ jobs:
       - name: upgrade pip
         run: python3 -m pip install --upgrade setuptools pip
 
-      - name: Flake8 code
-        run: flake8 python/
+      - name: Check formatting
+        run: |
+          ruff check
+          ruff format
 
-      - name: Mypy check
+      - name: Check typing
         run: |
           python3 -m pip install mypy
           cd python
@@ -84,7 +87,7 @@ jobs:
           python3 -m pip install --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
-        uses: ./.github/actions/install-dolfinx
+        uses: jorgensd/actions/install-dolfinx@v0.2.0
         with:
           dolfinx: ${{ env.DOLFINX_BRANCH }}
           ufl: ${{ env.UFL_BRANCH }}
@@ -99,8 +102,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" python3 -m pip -v install -e python/[test]
-        
+        run: python3 -m pip -v install --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test]
 
       - name: Run tests (serial)
         run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -vs
@@ -188,7 +190,7 @@ jobs:
 
       - name: Upload coverage report as artifact
         if: matrix.build_mode == 'Release' && matrix.petsc_arch == 'linux-gnu-real64-32' && matrix.CC == 'cc' && matrix.CXX == 'c++'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: code-coverage-report
           path: htmlcov

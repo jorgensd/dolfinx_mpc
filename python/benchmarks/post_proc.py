@@ -21,28 +21,48 @@ def visualize_side_by_side(dofs):
         procs.append(int(infile.readline().split(": ")[-1].strip("\n")))
         # Skip num dofs
         infile.readline()
-        slaves .append(int(infile.readline().split(": ")[-1].strip("\n")))
+        slaves.append(int(infile.readline().split(": ")[-1].strip("\n")))
         solve_iterations = int(infile.readline().split(": ")[-1].strip("\n"))
         # Skip info line
         infile.readline()
         # Read timings
         operations = infile.readlines()
-        colors = ["tab:blue", "tab:brown", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:cyan", "tab:olive"]
+        colors = [
+            "tab:blue",
+            "tab:brown",
+            "tab:orange",
+            "tab:green",
+            "tab:red",
+            "tab:purple",
+            "tab:cyan",
+            "tab:olive",
+        ]
         total_time = 0
-        for (j, line) in enumerate(operations):
+        for j, line in enumerate(operations):
             data = line.strip("\n").split(" ")
             if data[0] == "Backsubstitution":
                 continue
             if first:
-                plt.bar(i, float(data[2]), 0.5, bottom=total_time, label=data[0], color=colors[j], zorder=2)
+                plt.bar(
+                    i,
+                    float(data[2]),
+                    0.5,
+                    bottom=total_time,
+                    label=data[0],
+                    color=colors[j],
+                    zorder=2,
+                )
             else:
                 plt.bar(i, float(data[2]), 0.5, bottom=total_time, color=colors[j], zorder=2)
             if data[0] == "Solve":
-                ax.annotate('{0:d}'.format(solve_iterations),
-                            xy=(i, total_time + float(data[2]) / 2),
-                            xytext=(0, 0),
-                            textcoords="offset points",
-                            ha='center', va='bottom')
+                ax.annotate(
+                    "{0:d}".format(solve_iterations),
+                    xy=(i, total_time + float(data[2]) / 2),
+                    xytext=(0, 0),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                )
 
             total_time += float(data[2])
         first = False
@@ -100,11 +120,20 @@ def visualize_single(dof):
     infile.readline()
     # Read timings
     operations = infile.readlines()
-    colors = ["tab:blue", "tab:brown", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:cyan", "tab:olive"]
+    colors = [
+        "tab:blue",
+        "tab:brown",
+        "tab:orange",
+        "tab:green",
+        "tab:red",
+        "tab:purple",
+        "tab:cyan",
+        "tab:olive",
+    ]
     fig, ax = plt.subplots()
     plt.grid("on", zorder=1)
 
-    for (j, line) in enumerate(operations):
+    for j, line in enumerate(operations):
         data = line.strip("\n").split(" ")
         if data[0] == "Backsubstitution":
             continue

@@ -28,20 +28,23 @@ import h5py
 import numpy as np
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Function, dirichletbc, form, functionspace,
-                         locate_dofs_geometrical)
-from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
-                               set_bc)
+from dolfinx.fem import Function, dirichletbc, form, functionspace, locate_dofs_geometrical
+from dolfinx.fem.petsc import apply_lifting, assemble_matrix, assemble_vector, set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
 from dolfinx.mesh import CellType, create_unit_cube, refine
-from ufl import (SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad,
-                 inner, pi, sin)
+from ufl import SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad, inner, pi, sin
 
 
-def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File] = None,
-                       xdmf: bool = False, boomeramg: bool = False, kspview: bool = False,
-                       degree: int = 1):
+def reference_periodic(
+    tetra: bool,
+    r_lvl: int = 0,
+    out_hdf5: Optional[h5py.File] = None,
+    xdmf: bool = False,
+    boomeramg: bool = False,
+    kspview: bool = False,
+    degree: int = 1,
+):
     # Create mesh and finite element
     if tetra:
         # Tet setup
@@ -63,10 +66,10 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     # Create Dirichlet boundary condition
 
     def dirichletboundary(x):
-        return np.logical_or(np.logical_or(np.isclose(x[1], 0),
-                                           np.isclose(x[1], 1)),
-                             np.logical_or(np.isclose(x[2], 0),
-                                           np.isclose(x[2], 1)))
+        return np.logical_or(
+            np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
+            np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)),
+        )
 
     mesh.topology.create_connectivity(2, 1)
     geometrical_dofs = locate_dofs_geometrical(V, dirichletboundary)
@@ -104,7 +107,7 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
         opts["pc_type"] = "hypre"
-        opts['pc_hypre_type'] = 'boomeramg'
+        opts["pc_hypre_type"] = "boomeramg"
         opts["pc_hypre_boomeramg_max_iter"] = 1
         opts["pc_hypre_boomeramg_cycle_type"] = "v"
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
@@ -132,8 +135,10 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
     with Timer("Solve"):
         solver.solve(L_org, u_.vector)
     end = perf_counter()
-    u_.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT,  # type: ignore
-                          mode=PETSc.ScatterMode.FORWARD)  # type: ignore
+    u_.vector.ghostUpdate(
+        addv=PETSc.InsertMode.INSERT,  # type: ignore
+        mode=PETSc.ScatterMode.FORWARD,  # type: ignore
+    )  # type: ignore
     if kspview:
         solver.view()
 
@@ -155,55 +160,43 @@ def reference_periodic(tetra: bool, r_lvl: int = 0, out_hdf5: Optional[h5py.File
         ext = "tet" if tetra else "hex"
         outdir = Path("results")
         outdir.mkdir(exist_ok=True, parents=True)
-        fname = outdir / "reference_periodic_{0:d}_{1:s}.xdmf".format(
-            r_lvl, ext)
+        fname = outdir / "reference_periodic_{0:d}_{1:s}.xdmf".format(r_lvl, ext)
         u_.name = "u_" + ext + "_unconstrained"
         with XDMFFile(mesh.comm, fname, "w") as out_periodic:
             out_periodic.write_mesh(mesh)
-            out_periodic.write_function(u_, 0.0,
-                                        "Xdmf/Domain/"
-                                        + "Grid[@Name='{0:s}'][1]"
-                                        .format(mesh.name))
+            out_periodic.write_function(u_, 0.0, "Xdmf/Domain/" + "Grid[@Name='{0:s}'][1]".format(mesh.name))
 
 
 if __name__ == "__main__":
     # Set Argparser defaults
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref",
-                        help="Number of spatial refinements")
-    parser.add_argument("--degree", default=1, type=np.int8, dest="degree",
-                        help="CG Function space degree")
-    parser.add_argument('--xdmf', action='store_true', dest="xdmf",
-                        help="XDMF-output of function (Default false)")
-    parser.add_argument('--timings', action='store_true', dest="timings",
-                        help="List timings (Default false)")
-    parser.add_argument('--kspview', action='store_true', dest="kspview",
-                        help="View PETSc progress")
-    parser.add_argument("-o", default='periodic_ref_output.hdf5', dest="hdf5",
-                        help="Name of HDF5 output file")
+    parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref", help="Number of spatial refinements")
+    parser.add_argument("--degree", default=1, type=np.int8, dest="degree", help="CG Function space degree")
+    parser.add_argument("--xdmf", action="store_true", dest="xdmf", help="XDMF-output of function (Default false)")
+    parser.add_argument("--timings", action="store_true", dest="timings", help="List timings (Default false)")
+    parser.add_argument("--kspview", action="store_true", dest="kspview", help="View PETSc progress")
+    parser.add_argument("-o", default="periodic_ref_output.hdf5", dest="hdf5", help="Name of HDF5 output file")
     ct_parser = parser.add_mutually_exclusive_group(required=False)
-    ct_parser.add_argument('--tet', dest='tetra', action='store_true',
-                           help="Tetrahedron elements", default=True)
-    ct_parser.add_argument('--hex', dest='tetra', action='store_false',
-                           help="Hexahedron elements")
+    ct_parser.add_argument("--tet", dest="tetra", action="store_true", help="Tetrahedron elements", default=True)
+    ct_parser.add_argument("--hex", dest="tetra", action="store_false", help="Hexahedron elements")
     solver_parser = parser.add_mutually_exclusive_group(required=False)
-    solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True,
-                               action='store_true',
-                               help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg',
-                               action='store_false',
-                               help="Use PETSc GAMG preconditioner")
+    solver_parser.add_argument(
+        "--boomeramg",
+        dest="boomeramg",
+        default=True,
+        action="store_true",
+        help="Use BoomerAMG preconditioner (Default)",
+    )
+    solver_parser.add_argument("--gamg", dest="boomeramg", action="store_false", help="Use PETSc GAMG preconditioner")
 
     args = parser.parse_args()
 
     N = args.n_ref + 1
 
-    h5f = h5py.File('periodic_ref_output.hdf5', 'w',
-                    driver='mpio', comm=MPI.COMM_WORLD)
+    h5f = h5py.File("periodic_ref_output.hdf5", "w", driver="mpio", comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
-    sd = h5f.create_dataset("solve_time",
-                            (N, MPI.COMM_WORLD.size), dtype=np.float64)
+    sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if args.boomeramg else "GAMG"
     ct = "Tet" if args.tetra else "Hex"
     sd.attrs["solver"] = np.string_(solver)
@@ -215,9 +208,15 @@ if __name__ == "__main__":
             log(LogLevel.INFO, "Run {0:1d} in progress".format(i))
             set_log_level(LogLevel.ERROR)
 
-        reference_periodic(args.tetra, r_lvl=i, out_hdf5=h5f,
-                           xdmf=args.xdmf, boomeramg=args.boomeramg, kspview=args.kspview,
-                           degree=args.degree)
+        reference_periodic(
+            args.tetra,
+            r_lvl=i,
+            out_hdf5=h5f,
+            xdmf=args.xdmf,
+            boomeramg=args.boomeramg,
+            kspview=args.kspview,
+            degree=args.degree,
+        )
 
         if args.timings and i == N - 1:
             list_timings(MPI.COMM_WORLD, [TimingType.wall])

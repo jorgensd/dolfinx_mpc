@@ -1,18 +1,31 @@
 # Changelog
 
+## v0.8.0
+
+- **API**
+  - Various shared pointers in C++ interface is changed to const references
+  - Multipoint-constraint now accept `std::span` instead of vectors
+  - Now using [nanobind](https://github.com/wjakob/nanobind) for Python bindings
+  - Switch to `pyproject.toml`, **see installation notes** for updated instructions
+- **DOLFINx API-changes**
+  - `dolfinx.fem.FunctionSpaceBase` replaced by `dolfinx.fem.FunctionSpace`
+  - `ufl.FiniteElement` and `ufl.VectorElement` is replaced by `basix.ufl.element`
+
 ## v0.7.2
+
 - **New feature**: Add support for "scalar" inelastic contact conditions. This is a special case where you want to create a periodic constraint between two sets of facets, which might or might not align.
 
 ## v0.7.1
-  - Patch for Python 3.8
-  - Fix import order of `mpi4py`, `petsc4py`, `dolfinx` and `dolfinx_mpc`
+
+- Patch for Python 3.8
+- Fix import order of `mpi4py`, `petsc4py`, `dolfinx` and `dolfinx_mpc`
 
 ## v0.7.0
 
 - **API**:
   - Change input of `dolfinx_mpc.MultiPointConstraint.homogenize` and `dolfinx_mpc.backsubstitution` to `dolfinx.fem.Function` instead of `PETSc.Vec`.
   - **New feature**: Add support for more floating types (float32, float64, complex64, complex128). The floating type of a MPC is related to the mesh geometry.
-    - This resulted in a minor refactoring of the pybindings, meaning that tte class `dolfinx_mpc.cpp.mpc.MultiPointConstraint` is replaced by `dolfinx_mpc.cpp.mpc.MultiPointConstraint_{dtype}`
+    - This resulted in a minor refactoring of the pybindings, meaning that the class `dolfinx_mpc.cpp.mpc.MultiPointConstraint` is replaced by `dolfinx_mpc.cpp.mpc.MultiPointConstraint_{dtype}`
   - Casting scalar-type with `dolfinx.default_scalar_type` instead of `PETSc.ScalarType`
   - Remove usage of `VectorFunctionSpace`. Use blocked basix element instead.
 - **DOLFINX API-changes**:

@@ -17,8 +17,18 @@ from dolfinx import default_scalar_type
 from dolfinx.common import Timer
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
-from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
-                 as_vector, dx, grad, inner, sym, tr)
+from ufl import (
+    Identity,
+    SpatialCoordinate,
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    dx,
+    grad,
+    inner,
+    sym,
+    tr,
+)
 
 import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
@@ -27,12 +37,13 @@ from dolfinx_mpc import LinearProblem, MultiPointConstraint
 def demo_elasticity():
     mesh = create_unit_square(MPI.COMM_WORLD, 10, 10)
 
-    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+    V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
     # Generate Dirichlet BC on lower boundary (Fixed)
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
+
     facets = locate_entities_boundary(mesh, 1, boundaries)
     topological_dofs = fem.locate_dofs_topological(V, 1, facets)
     bc = fem.dirichletbc(np.array([0, 0], dtype=default_scalar_type), topological_dofs, V)
@@ -50,8 +61,7 @@ def demo_elasticity():
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * sym(grad(v))
-                + lmbda * tr(sym(grad(v))) * Identity(len(v)))
+        return 2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v))
 
     x = SpatialCoordinate(mesh)
     # Define variational problem
@@ -63,6 +73,7 @@ def demo_elasticity():
     # Create MPC
     def l2b(li):
         return np.array(li, dtype=mesh.geometry.x.dtype).tobytes()
+
     s_m_c = {l2b([1, 0]): {l2b([1, 1]): 0.9}}
     mpc = MultiPointConstraint(V)
     mpc.create_general_constraint(s_m_c, 1, 1)
@@ -131,21 +142,22 @@ def demo_elasticity():
         slave_owner = MPI.COMM_WORLD.rank
         bs = mpc.function_space.dofmap.index_map_bs
         slave = mpc.slaves[0]
-        print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}"
-              .format(u_h.x.array[slave], u_.vector.array[slave]))
+        print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}".format(u_h.x.array[slave], u_.vector.array[slave]))
         master_owner = mpc._cpp_object.owners.links(slave)[0]
         _masters = mpc.masters
         master = _masters.links(slave)[0]
-        glob_master = mpc.function_space.dofmap.index_map.local_to_global([master // bs])[0]
+        glob_master = mpc.function_space.dofmap.index_map.local_to_global(np.array([master // bs], dtype=np.int32))[0]
         coeffs, offs = mpc.coefficients()
-        master_data = [glob_master * bs + master % bs,
-                       coeffs[offs[slave]:offs[slave + 1]][0]]
+        master_data = [glob_master * bs + master % bs, coeffs[offs[slave] : offs[slave + 1]][0]]
         # If master not on proc send info to this processor
         if MPI.COMM_WORLD.rank != master_owner:
             MPI.COMM_WORLD.send(master_data, dest=master_owner, tag=1)
         else:
-            print("Master*Coeff: {0:.5e}".format(coeffs[offs[slave]:offs[slave + 1]][0]
-                                                 * u_h.x.array[_masters.links(slave)[0]]))
+            print(
+                "Master*Coeff: {0:.5e}".format(
+                    coeffs[offs[slave] : offs[slave + 1]][0] * u_h.x.array[_masters.links(slave)[0]]
+                )
+            )
     # As a processor with a master is not aware that it has a master,
     # Determine this so that it can receive the global dof and coefficient
     master_recv = MPI.COMM_WORLD.allgather(master_owner)
@@ -160,8 +172,7 @@ def demo_elasticity():
         num_local = dofmap.index_map.size_local + dofmap.index_map.num_ghosts
         l2g = dofmap.index_map.local_to_global(np.arange(num_local, dtype=np.int32))
         l_index = np.flatnonzero(l2g == in_data[0] // bs)[0]
-        print("Master*Coeff (on other proc): {0:.5e}"
-              .format(u_h.x.array[l_index * bs + in_data[0] % bs] * in_data[1]))
+        print("Master*Coeff (on other proc): {0:.5e}".format(u_h.x.array[l_index * bs + in_data[0] % bs] * in_data[1]))
 
 
 if __name__ == "__main__":

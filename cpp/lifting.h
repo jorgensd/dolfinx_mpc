@@ -182,7 +182,7 @@ void apply_lifting(
   auto mesh = a->function_spaces()[0]->mesh();
 
   // Prepare cell geometry
-  namespace stdex = std::experimental;
+
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -203,12 +203,14 @@ void apply_lifting(
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
-      dof_transform = element0->template get_dof_transformation_function<T>();
+      dof_transform = element0->template dof_transformation_fn<T>(
+          dolfinx::fem::doftransform::standard);
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
                            int)>
       dof_transform_to_transpose
-      = element1->template get_dof_transformation_to_transpose_function<T>();
+      = element1->template dof_transformation_right_fn<T>(
+          dolfinx::fem::doftransform::transpose);
 
   // Loop over cell integrals and lift bc
   if (a->num_integrals(dolfinx::fem::IntegralType::cell) > 0)
@@ -230,7 +232,7 @@ void apply_lifting(
         auto cell = entity.front();
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(
+        auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
@@ -314,7 +316,7 @@ void apply_lifting(
         const int local_facet = entity[1];
 
         // Fetch the coordinates of the cell
-        auto x_dofs = stdex::submdspan(
+        auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
@@ -469,7 +471,8 @@ void apply_lifting(
         a,
     const std::vector<std::vector<std::shared_ptr<
         const dolfinx::fem::DirichletBC<std::complex<double>>>>>& bcs1,
-    const std::vector<std::span<const std::complex<double>>>& x0, double scale,
+    const std::vector<std::span<const std::complex<double>>>& x0,
+    std::complex<double> scale,
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
@@ -582,7 +585,8 @@ void apply_lifting(
     const std::vector<std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>>&
         bcs1,
-    const std::vector<std::span<const std::complex<float>>>& x0, float scale,
+    const std::vector<std::span<const std::complex<float>>>& x0,
+    std::complex<float> scale,
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&

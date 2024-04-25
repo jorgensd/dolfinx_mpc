@@ -17,21 +17,45 @@ import h5py
 import numpy as np
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, Function, dirichletbc, form, functionspace,
-                         locate_dofs_topological, set_bc)
+from dolfinx.fem import (
+    Constant,
+    Function,
+    dirichletbc,
+    form,
+    functionspace,
+    locate_dofs_topological,
+)
+from dolfinx.fem.petsc import set_bc
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import (CellType, create_unit_cube, locate_entities_boundary,
-                          meshtags)
-from ufl import (Identity, SpatialCoordinate, TestFunction, TrialFunction,
-                 as_vector, ds, dx, grad, inner, sym, tr)
+from dolfinx.mesh import CellType, create_unit_cube, locate_entities_boundary, meshtags
+from ufl import (
+    Identity,
+    SpatialCoordinate,
+    TestFunction,
+    TrialFunction,
+    as_vector,
+    ds,
+    dx,
+    grad,
+    inner,
+    sym,
+    tr,
+)
 
-from dolfinx_mpc import (MultiPointConstraint, apply_lifting, assemble_matrix,
-                         assemble_vector)
+from dolfinx_mpc import MultiPointConstraint, apply_lifting, assemble_matrix, assemble_vector
 from dolfinx_mpc.utils import log_info, rigid_motions_nullspace
 
 
-def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdmf: bool = False,
-                          boomeramg: bool = False, kspview: bool = False, degree: int = 1, info: bool = False):
+def bench_elasticity_edge(
+    tetra: bool = True,
+    r_lvl: int = 0,
+    out_hdf5=None,
+    xdmf: bool = False,
+    boomeramg: bool = False,
+    kspview: bool = False,
+    degree: int = 1,
+    info: bool = False,
+):
     N = 3
     for i in range(r_lvl):
         N *= 2
@@ -47,6 +71,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
 
     def boundaries(x):
         return np.isclose(x[0], 0, 500 * np.finfo(x.dtype).resolution)
+
     fdim = mesh.topology.dim - 1
     facets = locate_entities_boundary(mesh, fdim, boundaries)
     topological_dofs = locate_dofs_topological(V, fdim, facets)
@@ -62,6 +87,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         out_x[1] = x[1]
         out_x[2] = x[2] + 1
         return out_x
+
     with Timer("~Elasticity: Initialize MPC"):
         edim = mesh.topology.dim - 2
         edges = locate_entities_boundary(mesh, edim, PeriodicBoundary)
@@ -69,14 +95,16 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         periodic_mt = meshtags(mesh, edim, edges[arg_sort], np.full(len(edges), 2, dtype=np.int32))
 
         mpc = MultiPointConstraint(V)
-        mpc.create_periodic_constraint_topological(V, periodic_mt, 2, periodic_relation, bcs,
-                                                   scale=default_scalar_type(0.5))
+        mpc.create_periodic_constraint_topological(
+            V, periodic_mt, 2, periodic_relation, bcs, scale=default_scalar_type(0.5)
+        )
         mpc.finalize()
 
     # Create traction meshtag
 
     def traction_boundary(x):
         return np.isclose(x[0], 1)
+
     t_facets = locate_entities_boundary(mesh, fdim, traction_boundary)
     facet_values = np.ones(len(t_facets), dtype=np.int32)
     arg_sort = np.argsort(t_facets)
@@ -89,14 +117,14 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
     lmbda = Constant(mesh, default_scalar_type(E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))))
     g = Constant(mesh, default_scalar_type((0, 0, -1e2)))
     x = SpatialCoordinate(mesh)
-    f = Constant(mesh, default_scalar_type(1e3)) * as_vector((0, -(x[2] - 0.5)**2, (x[1] - 0.5)**2))
+    f = Constant(mesh, default_scalar_type(1e3)) * as_vector((0, -((x[2] - 0.5) ** 2), (x[1] - 0.5) ** 2))
 
     # Stress computation
     def epsilon(v):
         return sym(grad(v))
 
     def sigma(v):
-        return (2.0 * mu * epsilon(v) + lmbda * tr(epsilon(v)) * Identity(len(v)))
+        return 2.0 * mu * epsilon(v) + lmbda * tr(epsilon(v)) * Identity(len(v))
 
     # Define variational problem
     u = TrialFunction(V)
@@ -127,7 +155,7 @@ def bench_elasticity_edge(tetra: bool = True, r_lvl: int = 0, out_hdf5=None, xdm
         opts["ksp_type"] = "cg"
         opts["ksp_rtol"] = 1.0e-5
         opts["pc_type"] = "hypre"
-        opts['pc_hypre_type'] = 'boomeramg'
+        opts["pc_hypre_type"] = "boomeramg"
         opts["pc_hypre_boomeramg_max_iter"] = 1
         opts["pc_hypre_boomeramg_cycle_type"] = "v"
         # opts["pc_hypre_boomeramg_print_statistics"] = 1
@@ -197,24 +225,33 @@ if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument("--nref", default=1, type=np.int8, dest="n_ref", help="Number of spatial refinements")
     parser.add_argument("--degree", default=1, type=np.int8, dest="degree", help="CG Function space degree")
-    parser.add_argument('--xdmf', action='store_true', dest="xdmf", help="XDMF-output of function (Default false)")
-    parser.add_argument('--timings', action='store_true', dest="timings", help="List timings (Default false)")
-    parser.add_argument('--info', action='store_true', dest="info",
-                        help="Set loglevel to info (Default false)", default=False)
-    parser.add_argument('--kspview', action='store_true', dest="kspview", help="View PETSc progress")
+    parser.add_argument("--xdmf", action="store_true", dest="xdmf", help="XDMF-output of function (Default false)")
+    parser.add_argument("--timings", action="store_true", dest="timings", help="List timings (Default false)")
+    parser.add_argument(
+        "--info",
+        action="store_true",
+        dest="info",
+        help="Set loglevel to info (Default false)",
+        default=False,
+    )
+    parser.add_argument("--kspview", action="store_true", dest="kspview", help="View PETSc progress")
     ct_parser = parser.add_mutually_exclusive_group(required=False)
-    ct_parser.add_argument('--tet', dest='tetra', action='store_true', help="Tetrahedron elements")
-    ct_parser.add_argument('--hex', dest='tetra', action='store_false', help="Hexahedron elements")
+    ct_parser.add_argument("--tet", dest="tetra", action="store_true", help="Tetrahedron elements")
+    ct_parser.add_argument("--hex", dest="tetra", action="store_false", help="Hexahedron elements")
     solver_parser = parser.add_mutually_exclusive_group(required=False)
-    solver_parser.add_argument('--boomeramg', dest='boomeramg', default=True, action='store_true',
-                               help="Use BoomerAMG preconditioner (Default)")
-    solver_parser.add_argument('--gamg', dest='boomeramg', action='store_false',
-                               help="Use PETSc GAMG preconditioner")
+    solver_parser.add_argument(
+        "--boomeramg",
+        dest="boomeramg",
+        default=True,
+        action="store_true",
+        help="Use BoomerAMG preconditioner (Default)",
+    )
+    solver_parser.add_argument("--gamg", dest="boomeramg", action="store_false", help="Use PETSc GAMG preconditioner")
     args = parser.parse_args()
     N = args.n_ref + 1
-    out_file = Path('output/ench_edge_output.hdf5').absolute()
+    out_file = Path("output/ench_edge_output.hdf5").absolute()
     out_file.parent.mkdir(exist_ok=True)
-    h5f = h5py.File(out_file, 'w', driver='mpio', comm=MPI.COMM_WORLD)
+    h5f = h5py.File(out_file, "w", driver="mpio", comm=MPI.COMM_WORLD)
     h5f.create_dataset("its", (N,), dtype=np.int32)
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     h5f.create_dataset("num_slaves", (N, MPI.COMM_WORLD.size), dtype=np.int32)
@@ -227,9 +264,16 @@ if __name__ == "__main__":
 
     for i in range(N):
         log_info(f"Run {i} in progress")
-        bench_elasticity_edge(tetra=args.tetra, r_lvl=i, out_hdf5=h5f, xdmf=args.xdmf,
-                              boomeramg=args.boomeramg, kspview=args.kspview,
-                              degree=args.degree, info=args.info)
+        bench_elasticity_edge(
+            tetra=args.tetra,
+            r_lvl=i,
+            out_hdf5=h5f,
+            xdmf=args.xdmf,
+            boomeramg=args.boomeramg,
+            kspview=args.kspview,
+            degree=args.degree,
+            info=args.info,
+        )
 
         if args.timings and i == N - 1:
             list_timings(MPI.COMM_WORLD, [TimingType.wall])

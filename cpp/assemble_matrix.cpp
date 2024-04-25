@@ -337,9 +337,9 @@ void assemble_exterior_facets(
     const int local_facet = facets[l + 1];
 
     // Get cell vertex coordinates
-    namespace stdex = std::experimental;
-    auto x_dofs = stdex::submdspan(x_dofmap, cell,
-                                   MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+
+    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -466,13 +466,13 @@ void assemble_cells_impl(
       Ae(Aeb.data(), ndim0, ndim1);
   const std::span<T> _Ae(Aeb);
   std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
-  namespace stdex = std::experimental;
+
   for (std::size_t c = 0; c < active_cells.size(); c++)
   {
     const std::int32_t cell = active_cells[c];
     // Get cell coordinates/geometry
-    auto x_dofs = stdex::submdspan(x_dofmap, cell,
-                                   MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
       std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
@@ -560,12 +560,13 @@ void assemble_matrix_impl(
   auto element1 = a.function_spaces().at(1)->element();
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
-      apply_dof_transformation
-      = element0->template get_dof_transformation_function<T>();
+      apply_dof_transformation = element0->template dof_transformation_fn<T>(
+          dolfinx::fem::doftransform::standard);
   std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                      const std::int32_t, const int)>
       apply_dof_transformation_to_transpose
-      = element1->template get_dof_transformation_to_transpose_function<T>();
+      = element1->template dof_transformation_right_fn<T>(
+          dolfinx::fem::doftransform::transpose);
 
   const bool needs_transformation_data
       = element0->needs_dof_transformations()

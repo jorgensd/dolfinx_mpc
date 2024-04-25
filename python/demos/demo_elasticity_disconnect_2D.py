@@ -14,17 +14,31 @@ from mpi4py import MPI
 import gmsh
 import numpy as np
 from dolfinx import default_scalar_type
-from dolfinx.fem import (Constant, Function, FunctionSpaceBase, dirichletbc,
-                         functionspace, locate_dofs_geometrical,
-                         locate_dofs_topological)
+from dolfinx.fem import (
+    Constant,
+    Function,
+    FunctionSpace,
+    dirichletbc,
+    functionspace,
+    locate_dofs_geometrical,
+    locate_dofs_topological,
+)
 from dolfinx.io import XDMFFile, gmshio
 from dolfinx.mesh import locate_entities_boundary
-from ufl import (Identity, Measure, SpatialCoordinate, TestFunction,
-                 TrialFunction, grad, inner, sym, tr)
+from ufl import (
+    Identity,
+    Measure,
+    SpatialCoordinate,
+    TestFunction,
+    TrialFunction,
+    grad,
+    inner,
+    sym,
+    tr,
+)
 
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
-from dolfinx_mpc.utils import (create_point_to_point_constraint,
-                               rigid_motions_nullspace)
+from dolfinx_mpc.utils import create_point_to_point_constraint, rigid_motions_nullspace
 
 # Mesh parameters for creating a mesh consisting of two disjoint rectangles
 right_tag = 1
@@ -60,12 +74,13 @@ MPI.COMM_WORLD.barrier()
 
 with XDMFFile(mesh.comm, "test.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
-V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 tdim = mesh.topology.dim
 fdim = tdim - 1
 
 # Locate cells with different elasticity parameters
 DG0 = functionspace(mesh, ("DG", 0))
+mesh.topology.create_connectivity(tdim, tdim)
 left_dofs = locate_dofs_topological(DG0, tdim, ct.find(left_tag))
 right_dofs = locate_dofs_topological(DG0, tdim, ct.find(right_tag))
 
@@ -89,8 +104,7 @@ lmbda.vector.destroy()
 
 
 def sigma(v):
-    return (2.0 * mu * sym(grad(v))
-            + lmbda * tr(sym(grad(v))) * Identity(len(v)))
+    return 2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v))
 
 
 # Define variational problem
@@ -110,7 +124,7 @@ bc_fix = dirichletbc(u_fix, locate_dofs_geometrical(V, lambda x: np.isclose(x[0]
 bcs = [bc_push, bc_fix]
 
 
-def gather_dof_coordinates(V: FunctionSpaceBase, dofs: np.ndarray):
+def gather_dof_coordinates(V: FunctionSpace, dofs: np.ndarray):
     """
     Distributes the dof coordinates of this subset of dofs to all processors
     """
@@ -148,8 +162,7 @@ for x in nodes[0]:
 
 mpc = MultiPointConstraint(V)
 for i, pair in enumerate(pairs):
-    sl, ms, co, ow, off = create_point_to_point_constraint(
-        V, pair[0], pair[1], vector=[1, 0])
+    sl, ms, co, ow, off = create_point_to_point_constraint(V, pair[0], pair[1], vector=[1, 0])
     mpc.add_constraint(V, sl, ms, co, ow, off)
 mpc.finalize()
 

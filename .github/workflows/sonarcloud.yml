@@ -15,8 +15,7 @@ jobs:
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: ghcr.io/fenics/dolfinx/dev-env:v0.7.2
-
+    container: ghcr.io/fenics/dolfinx/dev-env:v0.8.0-mpich
     env:
       SONAR_SCANNER_VERSION: 5.0.1.3006 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
@@ -35,13 +34,13 @@ jobs:
           apt-get install unzip
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: "zulu"
           java-version: 17
-  
+
       - name: Cache SonarCloud packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
@@ -65,10 +64,11 @@ jobs:
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
 
       - name: Install DOLFINx
-        uses: ./.github/actions/install-dolfinx
+        uses: jorgensd/actions/install-dolfinx@v0.2.0
         with:
           petsc_arch: ${PETSC_ARCH}
-          
+          dolfinx: main
+
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc
@@ -81,7 +81,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install python/
+        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python
 
       - name: Run sonar-scanner
         env:

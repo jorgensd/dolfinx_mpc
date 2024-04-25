@@ -84,7 +84,7 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
     std::shared_ptr<const dolfinx::common::IndexMap> index_map)
 {
   // Get data from IndexMap
-  const std::vector<int>& ghost_owners = index_map->owners();
+  std::span<const int> ghost_owners = index_map->owners();
   const std::int32_t size_local = index_map->size_local();
   dolfinx::graph::AdjacencyList<int> shared_indices
       = index_map->index_to_dest_ranks();
@@ -133,7 +133,7 @@ dolfinx_mpc::create_block_to_cell_map(const dolfinx::mesh::Topology& topology,
   // Compute number of cells each dof is in
   auto imap = dofmap.index_map;
   const int size_local = imap->size_local();
-  const std::vector<int>& ghost_owners = imap->owners();
+  std::span<const int> ghost_owners = imap->owners();
   std::vector<std::int32_t> num_cells_per_dof(size_local + ghost_owners.size());
 
   const int tdim = topology.dim();

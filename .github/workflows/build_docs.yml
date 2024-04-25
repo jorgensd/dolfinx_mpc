@@ -10,38 +10,39 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container: ghcr.io/fenics/dolfinx/dev-env:v0.7.0-mpich
+    container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./_build/html
       PETSC_ARCH: "linux-gnu-real64-32"
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install DOLFINx
-      uses: ./.github/actions/install-dolfinx
-      with:
-        dolfinx: v0.7.3
-        ufl: 2023.2.0
-        ffcx: v0.7.0
-        basix: v0.7.0
+      - name: Install DOLFINx
+        uses: jorgensd/actions/install-dolfinx@v0.2.0
+        with:
+          dolfinx: v0.8.0
+          ufl: 2024.1.0.post0
+          ffcx: v0.8.0
+          basix: v0.8.0
+          petsc_arch: ${PETSC_ARCH}
 
-    - name: Install DOLFINx-MPC (C++)
-      run: |
-        cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -S cpp/
-        cmake --build build-dir --parallel 3
-        cmake --install build-dir
+      - name: Install DOLFINx-MPC (C++)
+        run: |
+          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -S cpp/
+          cmake --build build-dir --parallel 3
+          cmake --install build-dir
 
-    - name: Install DOLFINx-MPC (Python)
-      run: python3 -m pip -v install python/[docs]
+      - name: Install DOLFINx-MPC (Python)
+        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python/[docs]
 
-    - name: Build docs
-      run: jupyter book build .
+      - name: Build docs
+        run: jupyter book build .
 
-    - name: Upload documentation as artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: documentation
-        path: ${{ env.PUBLISH_DIR }}
-        if-no-files-found: error
+      - name: Upload documentation as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: ${{ env.PUBLISH_DIR }}
+          if-no-files-found: error

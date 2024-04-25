@@ -4,23 +4,26 @@
 //
 // SPDX-License-Identifier:    MIT
 
-#include <iostream>
-#include <pybind11/pybind11.h>
+#include <nanobind/nanobind.h>
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
 namespace dolfinx_mpc_wrappers
 {
-void mpc(py::module& m);
+void mpc(nb::module_& m);
 } // namespace dolfinx_mpc_wrappers
 
-PYBIND11_MODULE(cpp, m)
+NB_MODULE(cpp, m)
 {
   // Create module for C++ wrappers
   m.doc() = "DOLFINX MultiPointConstraint Python interface";
   m.attr("__version__") = DOLFINX_MPC_VERSION;
 
+#ifdef NDEBUG
+  nanobind::set_leak_warnings(false);
+#endif
+
   // Create mpc submodule [mpc]
-  py::module mpc = m.def_submodule("mpc", "General module");
+  nb::module_ mpc = m.def_submodule("mpc", "General module");
   dolfinx_mpc_wrappers::mpc(mpc);
 }

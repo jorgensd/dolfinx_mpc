@@ -18,11 +18,11 @@ namespace dolfinx_mpc
 /// process) in the cell
 template <std::floating_point U>
 std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
-create_cell_to_dofs_map(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
+create_cell_to_dofs_map(const dolfinx::fem::FunctionSpace<U>& V,
                         std::span<const std::int32_t> dofs)
 {
-  const auto& mesh = *(V->mesh());
-  const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
+  const auto& mesh = *(V.mesh());
+  const dolfinx::fem::DofMap& dofmap = *(V.dofmap());
   const int tdim = mesh.topology()->dim();
   const int num_cells = mesh.topology()->index_map(tdim)->size_local();
 
@@ -99,15 +99,15 @@ create_cell_to_dofs_map(std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
 /// @tparam The floating type of the mesh
 /// @returns List of local dofs
 template <std::floating_point U>
-std::vector<std::int32_t> map_dofs_global_to_local(
-    std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-    const std::vector<std::int64_t>& global_dofs)
+std::vector<std::int32_t>
+map_dofs_global_to_local(const dolfinx::fem::FunctionSpace<U>& V,
+                         const std::vector<std::int64_t>& global_dofs)
 {
   const std::size_t num_dofs = global_dofs.size();
 
-  const std::int32_t& block_size = V->dofmap()->index_map_bs();
+  const std::int32_t& block_size = V.dofmap()->index_map_bs();
   const std::shared_ptr<const dolfinx::common::IndexMap> imap
-      = V->dofmap()->index_map;
+      = V.dofmap()->index_map;
 
   std::vector<std::int64_t> global_blocks;
   global_blocks.reserve(num_dofs);
@@ -136,19 +136,19 @@ std::vector<std::int32_t> map_dofs_global_to_local(
 /// @param[in] owners The owners of the master degrees of freedom
 /// @tparam The floating type of the mesh
 template <std::floating_point U>
-dolfinx::fem::FunctionSpace<U> create_extended_functionspace(
-    std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
-    const std::vector<std::int64_t>& global_dofs,
-    const std::vector<std::int32_t>& owners)
+dolfinx::fem::FunctionSpace<U>
+create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
+                              const std::vector<std::int64_t>& global_dofs,
+                              const std::vector<std::int32_t>& owners)
 {
   dolfinx::common::Timer timer(
       "~MPC: Create new index map with additional ghosts");
-  MPI_Comm comm = V->mesh()->comm();
-  const dolfinx::fem::DofMap& old_dofmap = *(V->dofmap());
+  MPI_Comm comm = V.mesh()->comm();
+  const dolfinx::fem::DofMap& old_dofmap = *(V.dofmap());
   std::shared_ptr<const dolfinx::common::IndexMap> old_index_map
       = old_dofmap.index_map;
 
-  const std::int32_t& block_size = V->dofmap()->index_map_bs();
+  const std::int32_t& block_size = V.dofmap()->index_map_bs();
 
   // Compute local master block index.
   const std::size_t num_dofs = global_dofs.size();
@@ -168,13 +168,13 @@ dolfinx::fem::FunctionSpace<U> create_extended_functionspace(
   else
   {
     // Map global master blocks to local blocks
-    V->dofmap()->index_map->global_to_local(global_blocks, local_blocks);
+    V.dofmap()->index_map->global_to_local(global_blocks, local_blocks);
 
     // Check which local masters that are not on the process already
-    std::vector<std::int64_t> new_ghosts;
-    new_ghosts.reserve(num_dofs);
-    std::vector<std::int32_t> new_owners;
-    new_owners.reserve(num_dofs);
+    std::vector<std::int64_t> additional_ghosts;
+    additional_ghosts.reserve(num_dofs);
+    std::vector<std::int32_t> additional_owners;
+    additional_owners.reserve(num_dofs);
     for (std::size_t i = 0; i < num_dofs; i++)
     {
       // Check if master block already has a local index and
@@ -182,30 +182,36 @@ dolfinx::fem::FunctionSpace<U> create_extended_functionspace(
       // when we have multiple masters from the same block
 
       if ((local_blocks[i] == -1)
-          and (std::find(new_ghosts.begin(), new_ghosts.end(), global_blocks[i])
-               == new_ghosts.end()))
+          and (std::find(additional_ghosts.begin(), additional_ghosts.end(),
+                         global_blocks[i])
+               == additional_ghosts.end()))
       {
-        new_ghosts.push_back(global_blocks[i]);
-        new_owners.push_back(owners[i]);
+        additional_ghosts.push_back(global_blocks[i]);
+        additional_owners.push_back(owners[i]);
       }
     }
 
     // Append new ghosts (and corresponding rank) at the end of the old set of
     // ghosts originating from the old index map
-    std::vector<int> ghost_owners = old_index_map->owners();
+    std::span<const int> ghost_owners = old_index_map->owners();
 
-    std::vector<std::int64_t> ghosts = old_index_map->ghosts();
+    std::span<const std::int64_t> ghosts = old_index_map->ghosts();
     const std::int32_t num_ghosts = ghosts.size();
-    ghosts.resize(num_ghosts + new_ghosts.size());
-    ghost_owners.resize(num_ghosts + new_ghosts.size());
-    for (std::size_t i = 0; i < new_ghosts.size(); i++)
-    {
-      ghosts[num_ghosts + i] = new_ghosts[i];
-      ghost_owners[num_ghosts + i] = new_owners[i];
-    }
+    assert(ghost_owners.size() == ghosts.size());
+
+    std::vector<std::int64_t> all_ghosts(num_ghosts + additional_ghosts.size());
+    std::copy(ghosts.begin(), ghosts.end(), all_ghosts.begin());
+    std::copy(additional_ghosts.cbegin(), additional_ghosts.cend(),
+              all_ghosts.begin() + num_ghosts);
+
+    std::vector<int> all_owners(all_ghosts.size());
+    std::copy(ghost_owners.begin(), ghost_owners.end(), all_owners.begin());
+    std::copy(additional_owners.cbegin(), additional_owners.cend(),
+              all_owners.begin() + num_ghosts);
+
     // Create new indexmap with ghosts for master blocks added
     new_index_map = std::make_shared<dolfinx::common::IndexMap>(
-        comm, old_index_map->size_local(), ghosts, ghost_owners);
+        comm, old_index_map->size_local(), all_ghosts, all_owners);
   }
 
   // Extract information from the old dofmap to create a new one
@@ -220,14 +226,17 @@ dolfinx::fem::FunctionSpace<U> create_extended_functionspace(
     for (std::size_t j = 0; j < dofmap_adj.extent(1); ++j)
       flattened_dofmap.push_back(dofmap_adj(i, j));
 
-  auto element = V->element();
+  auto element = V.element();
 
   // Create the new dofmap based on the extended index map
   auto new_dofmap = std::make_shared<const dolfinx::fem::DofMap>(
       old_dofmap.element_dof_layout(), new_index_map, old_dofmap.bs(),
       std::move(flattened_dofmap), old_dofmap.bs());
 
-  return dolfinx::fem::FunctionSpace(V->mesh(), element, new_dofmap);
+  return dolfinx::fem::FunctionSpace(
+      V.mesh(), element, new_dofmap,
+      dolfinx::fem::compute_value_shape(element, V.mesh()->topology()->dim(),
+                                        V.mesh()->geometry().dim()));
 }
 
 } // namespace dolfinx_mpc

@@ -9,6 +9,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import numpy as np
+import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
@@ -21,7 +22,6 @@ import dolfinx_mpc.utils
 
 @pytest.mark.parametrize("u_from_mpc", [True, False])
 def test_pipeline(u_from_mpc):
-
     # Create mesh and function space
     mesh = create_unit_square(MPI.COMM_WORLD, 5, 5)
     V = fem.functionspace(mesh, ("Lagrange", 1))
@@ -57,13 +57,19 @@ def test_pipeline(u_from_mpc):
     mt = meshtags(mesh, mesh.topology.dim - 1, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, [], 1)
+    mpc.create_periodic_constraint_topological(V, mt, 2, periodic_relation, [], 1.0)
     mpc.finalize()
 
     if u_from_mpc:
         uh = fem.Function(mpc.function_space)
-        problem = dolfinx_mpc.LinearProblem(bilinear_form, linear_form, mpc, bcs=[], u=uh,
-                                            petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
+        problem = dolfinx_mpc.LinearProblem(
+            bilinear_form,
+            linear_form,
+            mpc,
+            bcs=[],
+            u=uh,
+            petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+        )
         problem.solve()
 
         root = 0
@@ -85,15 +91,22 @@ def test_pipeline(u_from_mpc):
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d
-            assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc,
-                               rtol=500
-                               * np.finfo(default_scalar_type).resolution,
-                               atol=500
-                               * np.finfo(default_scalar_type).resolution)
+            nt.assert_allclose(
+                uh_numpy.astype(u_mpc.dtype),
+                u_mpc,
+                rtol=500 * np.finfo(default_scalar_type).resolution,
+                atol=500 * np.finfo(default_scalar_type).resolution,
+            )
 
     else:
         uh = fem.Function(V)
         with pytest.raises(ValueError):
-            problem = dolfinx_mpc.LinearProblem(bilinear_form, linear_form, mpc, bcs=[], u=uh,
-                                                petsc_options={"ksp_type": "preonly", "pc_type": "lu"})
+            problem = dolfinx_mpc.LinearProblem(
+                bilinear_form,
+                linear_form,
+                mpc,
+                bcs=[],
+                u=uh,
+                petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+            )
             problem.solve()

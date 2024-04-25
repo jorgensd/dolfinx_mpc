@@ -1,0 +1,95 @@
+# The DOLFINx Python interface must be built without build isolation (PEP517)
+# due to its runtime and build time dependency on system built petsc4py and
+# mpi4py.
+# pip install -r build-requirements.txt
+[build-system]
+requires = [
+      "scikit-build-core[pyproject]",
+      "nanobind>=1.8.0",
+      "petsc4py",
+      "mpi4py",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "dolfinx_mpc"
+version = "0.8.0"
+description = "DOLFINx_MPC Python interface"
+readme = "README.md"
+requires-python = ">=3.8.0"
+license = { file = "../LICENSE" }
+authors = [{ email = "dokken@simula.no", name = "Jørgen S. Dokken" }]
+dependencies = [
+      "numpy>=1.21",
+      "cffi",
+      "petsc4py",
+      "mpi4py",
+      "fenics-dolfinx>=0.8.0.dev0,<0.9.0",
+]
+
+[project.optional-dependencies]
+docs = ['jupyter-book', 'jupytext']
+lint = ["ruff", "mypy"]
+optional = ["numba"]
+test = ["pytest", "coverage"]
+all = [
+      "dolfinx_mpc[docs]",
+      "dolfinx_mpc[optional]",
+      "dolfinx_mpc[lint]",
+      "dolfinx_mpc[test]",
+]
+
+[tool.scikit-build]
+wheel.packages = ["dolfinx_mpc"]
+sdist.exclude = ["*.cpp"]
+cmake.build-type = "Release"
+
+[tool.pytest]
+junit_family = "xunit2"
+
+[tool.mypy]
+ignore_missing_imports = true
+# Folders to exclude
+exclude = ["docs/", "build/"]
+# Folder to check with mypy
+files = ["src", "tests"]
+
+[tool.ruff]
+src = ["benchmarks", "demos", "dolfinx_mpc"]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+      # Pyflakes
+      "F",
+      # Pycodestyle
+      "E",
+      "W",
+      # isort
+      "I001",
+]
+
+
+[tool.ruff.lint.isort]
+known-first-party = ["dolfinx_mpc"]
+known-third-party = [
+      "basix",
+      "dolfinx",
+      "ffcx",
+      "ufl",
+      "gmsh",
+      "numpy",
+      "pytest",
+]
+section-order = [
+      "future",
+      "standard-library",
+      "mpi",
+      "third-party",
+      "first-party",
+      "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+"mpi" = ["mpi4py", "petsc4py"]

@@ -24,30 +24,39 @@ import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.fem import (Constant, dirichletbc, form, functionspace,
-                         locate_dofs_geometrical)
-from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
-                               set_bc)
+from dolfinx.fem import Constant, dirichletbc, form, functionspace, locate_dofs_geometrical
+from dolfinx.fem.petsc import apply_lifting, assemble_matrix, assemble_vector, set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, set_log_level
 from dolfinx.mesh import locate_entities_boundary, meshtags
-from ufl import (Identity, Measure, TestFunction, TrialFunction, dx, grad,
-                 inner, sym, tr)
+from ufl import Identity, Measure, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
 from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
-from dolfinx_mpc.utils import (compare_mpc_lhs, compare_mpc_rhs,
-                               create_normal_approximation,
-                               facet_normal_approximation, gather_PETScMatrix,
-                               gather_PETScVector,
-                               gather_transformation_matrix, log_info,
-                               rigid_motions_nullspace, rotation_matrix)
+from dolfinx_mpc.utils import (
+    compare_mpc_lhs,
+    compare_mpc_rhs,
+    create_normal_approximation,
+    facet_normal_approximation,
+    gather_PETScMatrix,
+    gather_PETScVector,
+    gather_transformation_matrix,
+    log_info,
+    rigid_motions_nullspace,
+    rotation_matrix,
+)
 
 set_log_level(LogLevel.ERROR)
 
 
-def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad: bool = False,
-                       compare: bool = False, res: float = 0.1):
+def demo_stacked_cubes(
+    outfile: XDMFFile,
+    theta: float,
+    gmsh: bool = True,
+    quad: bool = False,
+    compare: bool = False,
+    res: float = 0.1,
+):
     log_info(f"Run theta:{theta:.2f}, Quad: {quad}, Gmsh {gmsh}, Res {res:.2e}")
 
     celltype = "quadrilateral" if quad else "triangle"
@@ -75,7 +84,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
             mt = xdmf.read_meshtags(mesh, name="facet_tags")
 
     # Helper until meshtags can be read in from xdmf
-    V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim, )))
+    V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
     r_matrix = rotation_matrix([0, 0, 1], theta)
     g_vec = np.dot(r_matrix, [0, -1.25e2, 0])
     g = Constant(mesh, default_scalar_type(g_vec[:2]))
@@ -97,7 +106,7 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
 
     # Stress computation
     def sigma(v):
-        return (2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v)))
+        return 2.0 * mu * sym(grad(v)) + lmbda * tr(sym(grad(v))) * Identity(len(v))
 
     # Define variational problem
     u = TrialFunction(V)
@@ -130,13 +139,20 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
 
     mpc.finalize()
     tol = float(5e2 * np.finfo(default_scalar_type).resolution)
-    petsc_options = {"ksp_rtol": tol, "ksp_atol": tol, "pc_type": "gamg",
-                     "pc_gamg_type": "agg", "pc_gamg_square_graph": 2,
-                     "pc_gamg_threshold": 0.02, "pc_gamg_coarse_eq_limit": 1000, "pc_gamg_sym_graph": True,
-                     "mg_levels_ksp_type": "chebyshev", "mg_levels_pc_type": "jacobi",
-                     "mg_levels_esteig_ksp_type": "cg"
-                     #  , "help": None, "ksp_view": None
-                     }
+    petsc_options = {
+        "ksp_rtol": tol,
+        "ksp_atol": tol,
+        "pc_type": "gamg",
+        "pc_gamg_type": "agg",
+        "pc_gamg_square_graph": 2,
+        "pc_gamg_threshold": 0.02,
+        "pc_gamg_coarse_eq_limit": 1000,
+        "pc_gamg_sym_graph": True,
+        "mg_levels_ksp_type": "chebyshev",
+        "mg_levels_pc_type": "jacobi",
+        "mg_levels_esteig_ksp_type": "cg",
+        #  , "help": None, "ksp_view": None
+    }
 
     # Solve Linear problem
     problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
@@ -198,22 +214,34 @@ def demo_stacked_cubes(outfile: XDMFFile, theta: float, gmsh: bool = True, quad:
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--res", default=0.1, type=np.float64, dest="res",
-                        help="Resolution of Mesh")
-    parser.add_argument("--theta", default=np.pi / 3, type=np.float64, dest="theta",
-                        help="Rotation angle around axis [1, 1, 0]")
+    parser.add_argument("--res", default=0.1, type=np.float64, dest="res", help="Resolution of Mesh")
+    parser.add_argument(
+        "--theta",
+        default=np.pi / 3,
+        type=np.float64,
+        dest="theta",
+        help="Rotation angle around axis [1, 1, 0]",
+    )
     quad = parser.add_mutually_exclusive_group(required=False)
-    quad.add_argument('--quad', dest='quad', action='store_true',
-                      help="Use quadrilateral mesh", default=False)
+    quad.add_argument("--quad", dest="quad", action="store_true", help="Use quadrilateral mesh", default=False)
     gmsh = parser.add_mutually_exclusive_group(required=False)
-    gmsh.add_argument('--gmsh', dest='gmsh', action='store_true',
-                      help="Gmsh mesh instead of built-in grid", default=False)
+    gmsh.add_argument(
+        "--gmsh",
+        dest="gmsh",
+        action="store_true",
+        help="Gmsh mesh instead of built-in grid",
+        default=False,
+    )
     comp = parser.add_mutually_exclusive_group(required=False)
-    comp.add_argument('--compare', dest='compare', action='store_true',
-                      help="Compare with global solution", default=False)
+    comp.add_argument(
+        "--compare",
+        dest="compare",
+        action="store_true",
+        help="Compare with global solution",
+        default=False,
+    )
     time = parser.add_mutually_exclusive_group(required=False)
-    time.add_argument('--timing', dest='timing', action='store_true',
-                      help="List timings", default=False)
+    time.add_argument("--timing", dest="timing", action="store_true", help="List timings", default=False)
 
     args = parser.parse_args()
 
@@ -223,8 +251,14 @@ if __name__ == "__main__":
     outfile = XDMFFile(MPI.COMM_WORLD, outdir / "demo_contact_2D.xdmf", "w")
 
     # Run demo for input parameters
-    demo_stacked_cubes(outfile, theta=args.theta, gmsh=args.gmsh, quad=args.quad,
-                       compare=args.compare, res=args.res)
+    demo_stacked_cubes(
+        outfile,
+        theta=args.theta,
+        gmsh=args.gmsh,
+        quad=args.quad,
+        compare=args.compare,
+        res=args.res,
+    )
 
     outfile.close()
     if args.timing:
