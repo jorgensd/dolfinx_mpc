@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx:v0.8.0-mpich
+    container: ghcr.io/fenics/dolfinx/dolfinx:v0.8.0
 
     strategy:
       matrix:
