@@ -1,15 +1,24 @@
 # Changelog
 
-## Main
-- **New feature**: Add support for "scalar" inelastic contact conditions. This is a special case where you want to create a periodic constraint between two sets of facets, which might or might not align.
- - **API**
+## v0.8.0
+
+- **API**
   - Various shared pointers in C++ interface is changed to const references
   - Multipoint-constraint now accept `std::span` instead of vectors
   - Now using [nanobind](https://github.com/wjakob/nanobind) for Python bindings
   - Switch to `pyproject.toml`, **see installation notes** for updated instructions
- - **DOLFINx API-changes**
-   - `dolfinx.fem.FunctionSpaceBase` replaced by `dolfinx.fem.FunctionSpace`
-   - `ufl.FiniteElement` and `ufl.VectorElement` is replaced by `basix.ufl.element`
+- **DOLFINx API-changes**
+  - `dolfinx.fem.FunctionSpaceBase` replaced by `dolfinx.fem.FunctionSpace`
+  - `ufl.FiniteElement` and `ufl.VectorElement` is replaced by `basix.ufl.element`
+
+## v0.7.2
+
+- **New feature**: Add support for "scalar" inelastic contact conditions. This is a special case where you want to create a periodic constraint between two sets of facets, which might or might not align.
+
+## v0.7.1
+
+- Patch for Python 3.8
+- Fix import order of `mpi4py`, `petsc4py`, `dolfinx` and `dolfinx_mpc`
 
 ## v0.7.0
 

@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
+    container: ghcr.io/fenics/dolfinx/dev-env:v0.8.0-mpich
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./_build/html
@@ -22,10 +22,10 @@ jobs:
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.2.0
         with:
-          dolfinx: main
-          ufl: main
-          ffcx: main
-          basix: main
+          dolfinx: v0.8.0
+          ufl: 2024.1.0.post0
+          ffcx: v0.8.0
+          basix: v0.8.0
           petsc_arch: ${PETSC_ARCH}
 
       - name: Install DOLFINx-MPC (C++)
