@@ -40,7 +40,7 @@ jobs:
       DOLFINX_BRANCH: v0.8.0
       BASIX_BRANCH: v0.8.0
       UFL_BRANCH: 2024.1.0.post0
-      FFCX_BRANCH: v0.8.0.
+      FFCX_BRANCH: v0.8.0
 
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
