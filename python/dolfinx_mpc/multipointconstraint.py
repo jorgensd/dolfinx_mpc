@@ -105,7 +105,7 @@ class MultiPointConstraint:
     _dtype: numpy.floating
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, V: _fem.FunctionSpace, dtype: _float_classes = default_scalar_type):
+    def __init__(self, V: _fem.FunctionSpace, dtype: numpy.floating = default_scalar_type):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=dtype)  # type: ignore
