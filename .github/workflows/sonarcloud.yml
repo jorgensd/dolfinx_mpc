@@ -67,8 +67,11 @@ jobs:
         uses: jorgensd/actions/install-dolfinx@v0.2.0
         with:
           petsc_arch: ${PETSC_ARCH}
-          dolfinx: main
-
+          dolfinx: v0.8.0
+          basix: v0.8.0
+          ufl: 2024.1.0.post0
+          ffcx: v0.8.0
+  
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc
