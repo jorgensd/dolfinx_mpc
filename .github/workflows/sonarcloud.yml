@@ -15,7 +15,7 @@ jobs:
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
+    container: ghcr.io/fenics/dolfinx/dev-env:v0.8.0-mpich
     env:
       SONAR_SCANNER_VERSION: 5.0.1.3006 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
