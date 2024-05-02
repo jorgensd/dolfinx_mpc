@@ -1,4 +1,4 @@
-FROM ghcr.io/fenics/dolfinx/dolfinx:nightly
+FROM ghcr.io/fenics/dolfinx/dolfinx:v0.8.0
 
 WORKDIR /tmp
 
@@ -23,7 +23,7 @@ RUN . /usr/local/bin/dolfinx-real-mode && \
     . /usr/local/dolfinx-real/lib/dolfinx/dolfinx.conf && \
     cmake -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local/dolfinx-real  -DCMAKE_BUILD_TYPE=Developer -B build-dir-real dolfinx_mpc/cpp/ && \
     ninja install -j4  -C build-dir-real && \
-    python3 -m pip install -v --no-build-isolation --check-build-dependencies --no-dependencies --target /usr/local/dolfinx-real/lib/python${PYTHON_VERSION}/dist-packages --config-settings=cmake.build-type=Developer -e dolfinx_mpc/python/[test]
+    python3 -m pip install -v --no-build-isolation --check-build-dependencies --no-dependencies --target /usr/local/dolfinx-real/lib/python${PYTHON_VERSION}/dist-packages --config-settings=cmake.build-type=Developer ./dolfinx_mpc/python/[test]
 
 # Clean repo to remove build dir from pip
 RUN rm -rf dolfinx_mpc/python/build 
@@ -33,6 +33,6 @@ RUN . /usr/local/bin/dolfinx-complex-mode && \
     . /usr/local/dolfinx-complex/lib/dolfinx/dolfinx.conf && \
     cmake -G Ninja  -DCMAKE_INSTALL_PREFIX=/usr/local/dolfinx-complex -DCMAKE_BUILD_TYPE=Developer -B build-dir-complex dolfinx_mpc/cpp/ && \
     ninja install -j4  -C build-dir-complex && \
-    python3 -m pip install -v --no-build-isolation --check-build-dependencies --no-dependencies --target /usr/local/dolfinx-complex/lib/python${PYTHON_VERSION}/dist-packages --config-settings=cmake.build-type=Developer -e dolfinx_mpc/python/[test]
+    python3 -m pip install -v --no-build-isolation --check-build-dependencies --no-dependencies --target /usr/local/dolfinx-complex/lib/python${PYTHON_VERSION}/dist-packages --config-settings=cmake.build-type=Developer ./dolfinx_mpc/python/[test]
 
 WORKDIR /root
