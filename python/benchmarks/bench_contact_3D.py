@@ -211,7 +211,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext:s}"
 
     # Create functionspaces
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,),
+                           dtype=default_real_type)
     V = functionspace(mesh, el)
 
     # Define boundary conditions
