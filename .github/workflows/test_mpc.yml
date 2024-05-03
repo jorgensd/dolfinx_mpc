@@ -87,7 +87,7 @@ jobs:
           python3 -m pip install --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.2.0
+        uses: jorgensd/actions/install-dolfinx@v0.3.0
         with:
           dolfinx: ${{ env.DOLFINX_BRANCH }}
           ufl: ${{ env.UFL_BRANCH }}
