@@ -73,8 +73,9 @@ def ref_elasticity(
         # set_log_level(LogLevel.ERROR)
     N = degree * N
     fdim = mesh.topology.dim - 1
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,),
-                           dtype=default_real_type)
+    el = basix.ufl.element(
+        "Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,), dtype=default_real_type
+    )
     V = functionspace(mesh, el)
 
     # Generate Dirichlet BC on lower boundary (Fixed)

@@ -62,8 +62,9 @@ def bench_elasticity_edge(
     ct = CellType.tetrahedron if tetra else CellType.hexahedron
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
 
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,),
-                           dtype=default_real_type)
+    el = basix.ufl.element(
+        "Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,), dtype=default_real_type
+    )
     V = functionspace(mesh, el)
 
     # Generate Dirichlet BC (Fixed)
