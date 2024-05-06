@@ -78,7 +78,7 @@ jobs:
 
       - name: Check typing
         run: |
-          python3 -m pip install mypy
+          python3 -m pip install --break-system-packages mypy
           cd python
           python3 -m mypy . --exclude=build
 
