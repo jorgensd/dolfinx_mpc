@@ -204,7 +204,7 @@ def rigid_motions_nullspace(V: _fem.FunctionSpace):
         b.scatter_forward()
 
     _la.orthonormalize(nullspace_basis)
-    assert _la.is_orthonormal(nullspace_basis)
+    assert _la.is_orthonormal(nullspace_basis, np.finfo(_x.x.array.dtype).eps)
     local_size = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     basis_petsc = [
         PETSc.Vec().createWithArray(x[:local_size], bsize=gdim, comm=V.mesh.comm)  # type: ignore
