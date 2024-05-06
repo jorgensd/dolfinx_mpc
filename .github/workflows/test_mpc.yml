@@ -84,7 +84,7 @@ jobs:
 
       - name: Install h5py
         run: |
-          python3 -m pip install --break-system-packages --no-cache-dir --no-binary=h5py h5py
+          python3 -m pip install --no-build-isolation --break-system-packages --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.3
