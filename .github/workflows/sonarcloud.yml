@@ -32,6 +32,9 @@ jobs:
         run: |
           apt-get -y update
           apt-get install unzip
+      - name: Update pip
+        run: |
+          python3 -m pip install --break-system-packages --upgrade pip setuptools
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
