@@ -5,8 +5,6 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
-from contextlib import ExitStack
-
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -176,36 +174,41 @@ def rigid_motions_nullspace(V: _fem.FunctionSpace):
     dim = 3 if gdim == 2 else 6
 
     # Create list of vectors for null space
-    nullspace_basis = [_x.vector.copy() for _ in range(dim)]
+    nullspace_basis = [
+        _la.vector(V.dofmap.index_map, bs=V.dofmap.index_map_bs, dtype=PETSc.ScalarType)  # type: ignore
+        for i in range(dim)
+    ]
 
-    with ExitStack() as stack:
-        vec_local = [stack.enter_context(x.localForm()) for x in nullspace_basis]
-        basis = [np.asarray(x) for x in vec_local]
+    basis = [b.array for b in nullspace_basis]
+    dofs = [V.sub(i).dofmap.list.reshape(-1) for i in range(gdim)]
 
-        dofs = [V.sub(i).dofmap.list.reshape(-1) for i in range(gdim)]
+    # Build translational null space basis
+    for i in range(gdim):
+        basis[i][dofs[i]] = 1.0
+    # Build rotational null space basis
+    x = V.tabulate_dof_coordinates()
+    dofs_block = V.dofmap.list.reshape(-1)
+    x0, x1, x2 = x[dofs_block, 0], x[dofs_block, 1], x[dofs_block, 2]
+    if gdim == 2:
+        basis[2][dofs[0]] = -x1
+        basis[2][dofs[1]] = x0
+    elif gdim == 3:
+        basis[3][dofs[0]] = -x1
+        basis[3][dofs[1]] = x0
 
-        # Build translational null space basis
-        for i in range(gdim):
-            basis[i][dofs[i]] = 1.0
-        # Build rotational null space basis
-        x = V.tabulate_dof_coordinates()
-        dofs_block = V.dofmap.list.reshape(-1)
-        x0, x1, x2 = x[dofs_block, 0], x[dofs_block, 1], x[dofs_block, 2]
-        if gdim == 2:
-            basis[2][dofs[0]] = -x1
-            basis[2][dofs[1]] = x0
-        elif gdim == 3:
-            basis[3][dofs[0]] = -x1
-            basis[3][dofs[1]] = x0
-
-            basis[4][dofs[0]] = x2
-            basis[4][dofs[2]] = -x0
-            basis[5][dofs[2]] = x1
-            basis[5][dofs[1]] = -x2
+        basis[4][dofs[0]] = x2
+        basis[4][dofs[2]] = -x0
+        basis[5][dofs[2]] = x1
+        basis[5][dofs[1]] = -x2
 
     _la.orthonormalize(nullspace_basis)
-    assert _la.is_orthonormal(nullspace_basis, float(500 * np.finfo(_x.x.array.dtype).resolution))
-    return PETSc.NullSpace().create(vectors=nullspace_basis)  # type: ignore
+    assert _la.is_orthonormal(nullspace_basis)
+    local_size = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    basis_petsc = [
+        PETSc.Vec().createWithArray(x[:local_size], bsize=gdim, comm=V.mesh.comm)  # type: ignore
+        for x in basis
+    ]
+    return PETSc.NullSpace().create(comm=V.mesh.comm, vectors=basis_petsc)  # type: ignore
 
 
 def determine_closest_block(V, point):
