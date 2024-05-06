@@ -69,7 +69,7 @@ jobs:
           apt-get install -y clang
 
       - name: upgrade pip
-        run: python3 -m pip install --upgrade setuptools pip
+        run: python3 -m pip install --break-system-packages --upgrade setuptools pip
 
       - name: Check formatting
         run: |
@@ -84,7 +84,7 @@ jobs:
 
       - name: Install h5py
         run: |
-          python3 -m pip install --no-cache-dir --no-binary=h5py h5py
+          python3 -m pip install --break-system-packages --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.3
@@ -102,7 +102,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test]
+        run: python3 -m pip -v install --break-system-packages --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test]
 
       - name: Run tests (serial)
         run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -vs
