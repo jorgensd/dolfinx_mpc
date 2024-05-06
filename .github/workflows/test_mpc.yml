@@ -56,7 +56,7 @@ jobs:
       HDF5_DIR: "/usr/local/"
       MPC_BUILD_MODE: ${{ matrix.build_mode }}
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
-      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib"
+      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.12/dist-packages:/usr/local/lib"
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
@@ -87,7 +87,7 @@ jobs:
           python3 -m pip install --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.3.0
+        uses: jorgensd/actions/install-dolfinx@v0.3
         with:
           dolfinx: ${{ env.DOLFINX_BRANCH }}
           ufl: ${{ env.UFL_BRANCH }}

@@ -3,7 +3,7 @@ FROM ghcr.io/fenics/dolfinx/dolfinx:nightly
 WORKDIR /tmp
 
 # This argument should be the same as what-ever the python version of the dol
-ARG PYTHON_VERSION=3.10
+ARG PYTHON_VERSION=3.12
 
 # Set env variables
 ENV HDF5_MPI="ON" \
