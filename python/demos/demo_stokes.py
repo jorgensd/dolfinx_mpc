@@ -21,7 +21,7 @@ import basix.ufl
 import gmsh
 import numpy as np
 import scipy.sparse.linalg
-from dolfinx import common, default_scalar_type, fem, io
+from dolfinx import common, default_real_type, default_scalar_type, fem, io
 from dolfinx.io import gmshio
 from numpy.typing import NDArray
 from ufl import (
@@ -141,8 +141,8 @@ fdim = mesh.topology.dim - 1
 # The next step is the create the function spaces for the fluid velocit and pressure.
 # We will use a mixed-formulation, and we use `basix.ufl` to create the Taylor-Hood finite element pair
 
-P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim,))
-P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1)
+P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
+P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, dtype=default_real_type)
 
 TH = basix.ufl.mixed_element([P2, P1])
 W = fem.functionspace(mesh, TH)

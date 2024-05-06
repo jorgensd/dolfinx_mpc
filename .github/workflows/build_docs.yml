@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.2.0
+        uses: jorgensd/actions/install-dolfinx@v0.3
         with:
           dolfinx: main
           ufl: main
@@ -35,7 +35,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python/[docs]
+        run: python3 -m pip -v install --break-system-packages --config-settings=cmake.build-type="Release" --no-build-isolation  ./python/[docs]
 
       - name: Build docs
         run: jupyter book build .

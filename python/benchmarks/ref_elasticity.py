@@ -17,7 +17,7 @@ from petsc4py import PETSc
 import basix.ufl
 import h5py
 import numpy as np
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (
     Constant,
@@ -73,7 +73,9 @@ def ref_elasticity(
         # set_log_level(LogLevel.ERROR)
     N = degree * N
     fdim = mesh.topology.dim - 1
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    el = basix.ufl.element(
+        "Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,), dtype=default_real_type
+    )
     V = functionspace(mesh, el)
 
     # Generate Dirichlet BC on lower boundary (Fixed)

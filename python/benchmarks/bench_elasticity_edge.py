@@ -15,7 +15,7 @@ from petsc4py import PETSc
 import basix.ufl
 import h5py
 import numpy as np
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (
     Constant,
@@ -62,7 +62,9 @@ def bench_elasticity_edge(
     ct = CellType.tetrahedron if tetra else CellType.hexahedron
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
 
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,))
+    el = basix.ufl.element(
+        "Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,), dtype=default_real_type
+    )
     V = functionspace(mesh, el)
 
     # Generate Dirichlet BC (Fixed)

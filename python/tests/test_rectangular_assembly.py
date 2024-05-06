@@ -48,15 +48,19 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # Create the function space
     cellname = mesh.ufl_cell().cellname()
-    Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
-    Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
+    Ve = basix.ufl.element(
+        basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,), dtype=dolfinx.default_real_type
+    )
+    Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=dolfinx.default_real_type)
 
     V = dolfinx.fem.functionspace(mesh, Ve)
     Q = dolfinx.fem.functionspace(mesh, Qe)
     W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
 
     inlet_velocity = dolfinx.fem.Function(V)
-    inlet_velocity.interpolate(lambda x: np.zeros((mesh.geometry.dim, x[0].shape[0]), dtype=np.double))
+    inlet_velocity.interpolate(
+        lambda x: np.zeros((mesh.geometry.dim, x[0].shape[0]), dtype=dolfinx.default_scalar_type)
+    )
     inlet_velocity.x.scatter_forward()
 
     # -- Nested assembly

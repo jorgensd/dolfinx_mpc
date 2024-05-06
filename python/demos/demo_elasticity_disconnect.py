@@ -14,7 +14,7 @@ from mpi4py import MPI
 import basix.ufl
 import gmsh
 import numpy as np
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.fem import Constant, Function, dirichletbc, functionspace, locate_dofs_topological
 from dolfinx.io import XDMFFile, gmshio
 from ufl import (
@@ -224,6 +224,7 @@ V_out = functionspace(
         mesh.geometry.cmap.degree,
         lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmap.variant),
         shape=(V.dofmap.bs,),
+        dtype=default_real_type,
     ),
 )
 u_out = Function(V_out)
