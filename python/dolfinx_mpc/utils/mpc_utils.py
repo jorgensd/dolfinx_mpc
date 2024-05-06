@@ -200,6 +200,8 @@ def rigid_motions_nullspace(V: _fem.FunctionSpace):
         basis[4][dofs[2]] = -x0
         basis[5][dofs[2]] = x1
         basis[5][dofs[1]] = -x2
+    for b in nullspace_basis:
+        b.scatter_forward()
 
     _la.orthonormalize(nullspace_basis)
     assert _la.is_orthonormal(nullspace_basis)
