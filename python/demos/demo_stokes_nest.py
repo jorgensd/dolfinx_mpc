@@ -22,7 +22,7 @@ import gmsh
 import numpy as np
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.io import gmshio
 from ufl.core.expr import Expr
 
@@ -120,8 +120,8 @@ fdim = mesh.topology.dim - 1
 
 # Create the function space
 cellname = mesh.ufl_cell().cellname()
-Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
-Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
+Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
+Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=default_real_type)
 
 V = dolfinx.fem.functionspace(mesh, Ve)
 Q = dolfinx.fem.functionspace(mesh, Qe)
