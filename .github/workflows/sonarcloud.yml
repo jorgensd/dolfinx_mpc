@@ -84,7 +84,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python
+        run: python3 -m pip --break-system-packages -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python
 
       - name: Run sonar-scanner
         env:
