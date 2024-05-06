@@ -1,6 +1,5 @@
 # Multi-point constraints with FEniCS-X
-![CI status](https://github.com/jorgensd/dolfinx_mpc/actions/workflows/test_mpc.yml/badge.svg)
-
+[![Github Pages](https://github.com/jorgensd/dolfinx_mpc/actions/workflows/deploy-pages.yml/badge.svg?branch=main)](https://github.com/jorgensd/dolfinx_mpc/actions/workflows/deploy-pages.yml)
 [![SonarCloud](https://sonarcloud.io/images/project_badges/sonarcloud-orange.svg)](https://sonarcloud.io/summary/new_code?id=jorgensd_dolfinx_mpc)
 
 [Code Coverage Report](https://jsdokken.com/dolfinx_mpc/code-coverage-report/index.html)
