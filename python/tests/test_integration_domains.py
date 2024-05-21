@@ -38,7 +38,7 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     tdim = mesh.topology.dim
     num_cells = mesh.topology.index_map(tdim).size_local
     cells = np.arange(num_cells, dtype=np.int32)
-    mesh.topology.create_connecitivity(fdim, tdim)
+    mesh.topology.create_connecitivity(tdim, tdim)
     cell_midpoints = compute_midpoints(mesh, tdim, cells)
     values = np.ones_like(cells)
     # All cells on right side marked one, all other with 1
