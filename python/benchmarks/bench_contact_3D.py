@@ -145,6 +145,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
     # Find top and bottom interface facets
     cells = np.arange(num_cells, dtype=np.int32)
+    mesh.topology.create_connectivity(tdim, tdim)
     cell_midpoints = compute_midpoints(mesh, tdim, cells)
     top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
     for facet in i_facets:
