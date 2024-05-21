@@ -402,7 +402,7 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     std::array<int, 2> bs = {bs0, bs1};
     dolfinx::la::SparsityPattern pattern(mesh.comm(), new_maps, bs);
 
-    spdlog::debug("Build standard pattern\n");
+    spdlog::debug("Build standard pattern");
     ///  Create and build sparsity pattern for original form. Should be
     ///  equivalent to calling create_sparsity_pattern(Form a)
     build_standard_pattern<T>(pattern, a);
