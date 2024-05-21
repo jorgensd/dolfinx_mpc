@@ -379,7 +379,7 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc1)
 {
   {
-    LOG(INFO) << "Generating MPC sparsity pattern";
+    spdlog::info("Generating MPC sparsity pattern");
     dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
     if (a.rank() != 2)
     {
@@ -402,11 +402,11 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     std::array<int, 2> bs = {bs0, bs1};
     dolfinx::la::SparsityPattern pattern(mesh.comm(), new_maps, bs);
 
-    LOG(INFO) << "Build standard pattern\n";
+    spdlog::debug("Build standard pattern\n");
     ///  Create and build sparsity pattern for original form. Should be
     ///  equivalent to calling create_sparsity_pattern(Form a)
     build_standard_pattern<T>(pattern, a);
-    LOG(INFO) << "Build new pattern\n";
+    spdlog::debug("Build new pattern\n");
 
     // Arrays replacing slave dof with master dof in sparsity pattern
     auto pattern_populator
@@ -491,13 +491,11 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
       pattern_populator(
           pattern, mpc0, mpc1,
           [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
-          { pattern.insert(dofs_m, dofs_s); },
-          do_nothing_inserter);
+          { pattern.insert(dofs_m, dofs_s); }, do_nothing_inserter);
       pattern_populator(
           pattern, mpc1, mpc0,
           [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
-          { pattern.insert(dofs_s, dofs_m); },
-          do_nothing_inserter);
+          { pattern.insert(dofs_s, dofs_m); }, do_nothing_inserter);
     }
 
     return pattern;
