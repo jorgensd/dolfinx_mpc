@@ -467,7 +467,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
         top_cube = over_line(bottom_points[:, 2], bottom_points[:, 3])
 
         num_cells = mesh.topology.index_map(tdim).size_local
-        mesh.topology.create_connecitivity(tdim, tdim)
+        mesh.topology.create_connectivity(tdim, tdim)
         cell_midpoints = _mesh.compute_midpoints(mesh, tdim, np.arange(num_cells, dtype=np.int32))
         interface = find_line_function(bottom_points[:, 2], bottom_points[:, 3])
         i_facets = _mesh.locate_entities_boundary(mesh, fdim, interface)
@@ -603,7 +603,7 @@ def mesh_3D_dolfin(
         bottom_interface = []
         facet_to_cell = mesh.topology.connectivity(fdim, tdim)
         num_cells = mesh.topology.index_map(tdim).size_local
-        mesh.topology.create_connecitivity(tdim, tdim)
+        mesh.topology.create_connectivity(tdim, tdim)
         cell_midpoints = _mesh.compute_midpoints(mesh, tdim, np.arange(num_cells, dtype=np.int32))
         top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
         for facet in i_facets:
@@ -616,7 +616,7 @@ def mesh_3D_dolfin(
                 bottom_interface.append(facet)
 
         num_cells = mesh.topology.index_map(tdim).size_local
-        mesh.topology.create_connecitivity(tdim, tdim)
+        mesh.topology.create_connectivity(tdim, tdim)
         cell_midpoints = _mesh.compute_midpoints(mesh, tdim, np.arange(num_cells, dtype=np.int32))
         top_cube_marker = 2
         indices = []
