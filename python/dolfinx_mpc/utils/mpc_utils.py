@@ -241,6 +241,7 @@ def determine_closest_block(V, point):
     else:
         # Get cell geometry
         p = V.mesh.geometry.x
+        V.mesh.topology.create_connectivity(tdim, tdim)
         entities = _cpp.mesh.entities_to_geometry(
             V.mesh._cpp_object, tdim, np.array([closest_cell], dtype=np.int32), False
         )
