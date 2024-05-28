@@ -5,7 +5,7 @@
 [build-system]
 requires = [
       "scikit-build-core[pyproject]",
-      "nanobind>=1.8.0",
+      "nanobind>=2.0.0",
       "petsc4py",
       "mpi4py",
 ]

@@ -79,17 +79,17 @@ void declare_mpc(nb::module_& m, std::string type)
              const std::vector<T>& data = adj->array();
 
              return std::make_pair(
-                 nb::ndarray<nb::numpy, const T, nb::ndim<1>>(data.data(),
-                                                              {data.size()}),
+                 nb::ndarray<nb::numpy, const T, nb::ndim<1>>(
+                     data.data(), {data.size()}, nb::handle()),
                  nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
-                     offsets.data(), {offsets.size()}));
+                     offsets.data(), {offsets.size()}, nb::handle()));
            })
       .def_prop_ro("constants",
                    [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
                    {
                      const std::vector<T>& consts = self.constant_values();
                      return nb::ndarray<nb::numpy, const T, nb::ndim<1>>(
-                         consts.data(), {consts.size()});
+                         consts.data(), {consts.size()}, nb::handle());
                    })
       .def_prop_ro("owners", &dolfinx_mpc::MultiPointConstraint<T, U>::owners)
       .def_prop_ro(
@@ -98,7 +98,7 @@ void declare_mpc(nb::module_& m, std::string type)
           {
             const std::vector<std::int32_t>& slaves = self.slaves();
             return nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
-                slaves.data(), {slaves.size()});
+                slaves.data(), {slaves.size()}, nb::handle());
           })
       .def_prop_ro(
           "is_slave",
@@ -106,7 +106,7 @@ void declare_mpc(nb::module_& m, std::string type)
           {
             std::span<const std::int8_t> slaves = self.is_slave();
             return nb::ndarray<nb::numpy, const std::int8_t, nb::ndim<1>>(
-                slaves.data(), {slaves.size()});
+                slaves.data(), {slaves.size()}, nb::handle());
           })
 
       .def_prop_ro("cell_to_slaves",
@@ -164,7 +164,7 @@ void declare_functions(nb::module_& m)
         {
           assert(x.size() % 3 == 0);
           nb::ndarray<const U, nb::ndim<2>, nb::numpy> x_view(
-              x.data_handle(), {3, x.size() / 3});
+              x.data_handle(), {3, x.size() / 3}, nb::handle());
           auto m = indicator(x_view);
           std::vector<std::int8_t> s(m.data(), m.data() + m.size());
           return s;
@@ -174,7 +174,7 @@ void declare_functions(nb::module_& m)
         {
           assert(x.size() % 3 == 0);
           nb::ndarray<const U, nb::ndim<2>, nb::numpy> x_view(
-              x.data(), {3, x.size() / 3});
+              x.data(), {3, x.size() / 3}, nb::handle());
           auto v = relation(x_view);
           std::vector<U> output(v.data(), v.data() + v.size());
           return output;
@@ -198,7 +198,7 @@ void declare_functions(nb::module_& m)
         auto _relation = [&relation](std::span<const U> x) -> std::vector<U>
         {
           nb::ndarray<const U, nb::ndim<2>, nb::numpy> x_view(
-              x.data(), {3, x.size() / 3});
+              x.data(), {3, x.size() / 3}, nb::handle());
           auto v = relation(x_view);
           std::vector<U> output(v.data(), v.data() + v.size());
           return output;
@@ -222,7 +222,7 @@ void declare_mpc_data(nb::module_& m, std::string type)
           {
             const std::vector<std::int32_t>& slaves = self.slaves;
             return nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
-                slaves.data(), {slaves.size()});
+                slaves.data(), {slaves.size()}, nb::handle());
           })
       .def_prop_ro(
           "masters",
@@ -230,14 +230,14 @@ void declare_mpc_data(nb::module_& m, std::string type)
           {
             const std::vector<std::int64_t>& masters = self.masters;
             return nb::ndarray<nb::numpy, const std::int64_t, nb::ndim<1>>(
-                masters.data(), {masters.size()});
+                masters.data(), {masters.size()}, nb::handle());
           })
       .def_prop_ro("coeffs",
                    [](dolfinx_mpc::mpc_data<T>& self)
                    {
                      const std::vector<T>& coeffs = self.coeffs;
                      return nb::ndarray<nb::numpy, const T, nb::ndim<1>>(
-                         coeffs.data(), {coeffs.size()});
+                         coeffs.data(), {coeffs.size()}, nb::handle());
                    })
       .def_prop_ro(
           "owners",
@@ -245,7 +245,7 @@ void declare_mpc_data(nb::module_& m, std::string type)
           {
             const std::vector<std::int32_t>& owners = self.owners;
             return nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
-                owners.data(), {owners.size()});
+                owners.data(), {owners.size()}, nb::handle());
           })
       .def_prop_ro(
           "offsets",
@@ -253,7 +253,7 @@ void declare_mpc_data(nb::module_& m, std::string type)
           {
             const std::vector<std::int32_t>& offsets = self.offsets;
             return nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
-                offsets.data(), {offsets.size()});
+                offsets.data(), {offsets.size()}, nb::handle());
           });
 }
 
