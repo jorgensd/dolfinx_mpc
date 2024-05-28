@@ -102,7 +102,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         cells0 = entities_to_geometry(mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
-        mesh0.topology.create_connectivity(tdim1, tdim1)
+        mesh1.topology.create_connectivity(tdim1, tdim1)
         cells1 = entities_to_geometry(mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
