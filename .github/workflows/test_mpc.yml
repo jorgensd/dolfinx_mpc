@@ -73,6 +73,7 @@ jobs:
 
       - name: Check formatting
         run: |
+          python3 -m pip install --break-system-packages ruff
           ruff check
           ruff format
 
