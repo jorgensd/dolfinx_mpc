@@ -31,7 +31,7 @@ dependencies = [
 docs = ['jupyter-book', 'jupytext']
 lint = ["ruff", "mypy"]
 optional = ["numba"]
-test = ["pytest", "coverage"]
+test = ["pytest", "coverage", "scipy"]
 all = [
       "dolfinx_mpc[docs]",
       "dolfinx_mpc[optional]",
