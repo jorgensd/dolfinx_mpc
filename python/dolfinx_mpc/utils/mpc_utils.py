@@ -175,7 +175,7 @@ def rigid_motions_nullspace(V: _fem.FunctionSpace):
 
     # Create list of vectors for null space
     nullspace_basis = [
-        _la.Vector(V.dofmap.index_map, bs=V.dofmap.index_map_bs, dtype=PETSc.ScalarType)  # type: ignore
+        _la.vector(V.dofmap.index_map, bs=V.dofmap.index_map_bs, dtype=PETSc.ScalarType)  # type: ignore
         for i in range(dim)
     ]
 
