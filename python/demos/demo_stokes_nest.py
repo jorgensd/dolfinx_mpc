@@ -260,10 +260,10 @@ for Uh_sub in Uh.getNestSubVecs():
     )  # type: ignore
 # ----------------------------- Put NestVec into DOLFINx Function - ---------
 uh = dolfinx.fem.Function(mpc.function_space)
-uh.vector.setArray(Uh.getNestSubVecs()[0].array)
+uh.x.petsc_vec.setArray(Uh.getNestSubVecs()[0].array)
 
 ph = dolfinx.fem.Function(mpc_q.function_space)
-ph.vector.setArray(Uh.getNestSubVecs()[1].array)
+ph.x.petsc_vec.setArray(Uh.getNestSubVecs()[1].array)
 
 uh.x.scatter_forward()
 ph.x.scatter_forward()
@@ -342,8 +342,8 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
 
-    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
-    p_mpc = dolfinx_mpc.utils.gather_PETScVector(ph.vector, root=root)
+    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
+    p_mpc = dolfinx_mpc.utils.gather_PETScVector(ph.x.petsc_vec, root=root)
     up_mpc = np.hstack([u_mpc, p_mpc])
     if MPI.COMM_WORLD.rank == root:
         KTAK = K.T * A_csr * K

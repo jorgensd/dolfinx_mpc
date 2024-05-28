@@ -82,7 +82,7 @@ def test_pipeline(u_from_mpc):
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)

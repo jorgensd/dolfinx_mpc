@@ -113,7 +113,7 @@ def facet_normal_approximation(
     pattern.insert_diagonal(deac_blocks)
     pattern.finalize()
     u_0 = _fem.Function(V)
-    u_0.vector.set(0)
+    u_0.x.petsc_vec.set(0)
 
     bc_deac = _fem.dirichletbc(u_0, deac_blocks)
     A = _cpp.la.petsc.create_matrix(comm, pattern)
@@ -140,8 +140,8 @@ def facet_normal_approximation(
     solver.setType("cg")
     solver.rtol = 1e-8
     solver.setOperators(A)
-    solver.solve(b, nh.vector)
-    nh.vector.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
+    solver.solve(b, nh.x.petsc_vec)
+    nh.x.petsc_vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
     timer.stop()
     return nh
 
@@ -241,6 +241,7 @@ def determine_closest_block(V, point):
     else:
         # Get cell geometry
         p = V.mesh.geometry.x
+        V.mesh.topology.create_connectivity(tdim, tdim)
         entities = _cpp.mesh.entities_to_geometry(
             V.mesh._cpp_object, tdim, np.array([closest_cell], dtype=np.int32), False
         )

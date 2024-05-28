@@ -187,7 +187,7 @@ def bench_elasticity_edge(
         solver.setOperators(A)
         uh = Function(mpc.function_space)
         uh.x.array[:] = 0
-        solver.solve(b, uh.vector)
+        solver.solve(b, uh.x.petsc_vec)
         uh.x.scatter_forward()
         mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
@@ -213,7 +213,7 @@ def bench_elasticity_edge(
     if xdmf:
         # Write solution to file
         u_h = Function(mpc.function_space)
-        u_h.vector.setArray(uh.array)
+        u_h.x.petsc_vec.setArray(uh.array)
         u_h.name = "u_mpc"
         results = Path("results").absolute()
         results.mkdir(exist_ok=True)

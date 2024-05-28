@@ -79,7 +79,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
     # Solve
     uh = fem.Function(mpc.function_space)
     uh.x.array[:] = 0
-    solver.solve(b, uh.vector)
+    solver.solve(b, uh.x.petsc_vec)
     uh.x.scatter_forward()
     mpc.backsubstitution(uh)
 
@@ -95,7 +95,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
@@ -164,7 +164,7 @@ def test_linearproblem(master_point):
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)

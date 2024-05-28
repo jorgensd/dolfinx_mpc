@@ -56,9 +56,9 @@ def bench_elasticity_one(
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
@@ -180,7 +180,7 @@ def bench_elasticity_one(
     if xdmf:
         # Write solution to file
         u_h = Function(mpc.function_space)
-        u_h.vector.setArray(uh.array)
+        u_h.x.petsc_vec.setArray(uh.array)
         u_h.name = "u_mpc"
         outdir = Path("results")
         outdir.mkdir(exist_ok=True, parents=True)

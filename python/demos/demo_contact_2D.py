@@ -166,7 +166,7 @@ def demo_stacked_cubes(
     if MPI.COMM_WORLD.rank == 0:
         print("Number of iterations: {0:d}".format(it))
 
-    unorm = u_h.vector.norm()
+    unorm = u_h.x.petsc_vec.norm()
     if MPI.COMM_WORLD.rank == 0:
         print(f"Norm of u: {unorm}")
 
@@ -199,7 +199,7 @@ def demo_stacked_cubes(
         A_csr = gather_PETScMatrix(A_org, root=root)
         K = gather_transformation_matrix(mpc, root=root)
         L_np = gather_PETScVector(L_org, root=root)
-        u_mpc = gather_PETScVector(u_h.vector, root=root)
+        u_mpc = gather_PETScVector(u_h.x.petsc_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K

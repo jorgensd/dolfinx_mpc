@@ -174,14 +174,14 @@ def demo_stacked_cubes(
         # gets sorted
         A.convert("baij", A)
         A.convert("aij", A)
-        solver.solve(b, u_h.vector)
+        solver.solve(b, u_h.x.petsc_vec)
         u_h.x.scatter_forward()
 
     with Timer("~~Contact: Backsubstitution"):
         mpc.backsubstitution(u_h)
 
     it = solver.getIterationNumber()
-    unorm = u_h.vector.norm()
+    unorm = u_h.x.petsc_vec.norm()
     num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves, op=MPI.SUM)
     if mesh.comm.rank == 0:
         num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
@@ -221,7 +221,7 @@ def demo_stacked_cubes(
         A_csr = gather_PETScMatrix(A_org, root=root)
         K = gather_transformation_matrix(mpc, root=root)
         L_np = gather_PETScVector(L_org, root=root)
-        u_mpc = gather_PETScVector(u_h.vector, root=root)
+        u_mpc = gather_PETScVector(u_h.x.petsc_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K

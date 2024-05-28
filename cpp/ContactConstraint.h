@@ -426,8 +426,10 @@ mpc_data<T> create_contact_slip_condition(
                        + normal[2] * normal[2]);
     std::for_each(normal.begin(), normal.end(),
                   [norm](auto& n) { return std::abs(n / norm); });
-    return std::distance(normal.begin(),
-                         std::max_element(normal.begin(), normal.end()));
+    return std::distance(
+        normal.begin(),
+        std::max_element(normal.begin(), normal.end(),
+                         [](T a, T b) { return std::norm(a) < std::norm(b); }));
   };
 
   // Determine which dof in local slave block is the actual slave

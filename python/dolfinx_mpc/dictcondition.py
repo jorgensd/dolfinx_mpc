@@ -125,7 +125,7 @@ def create_dictionary_constraint(
             master_dofs = master_dofs[master_dofs < local_size]
             if len(master_dofs) == 1:
                 master_block = master_dofs[0] // bs
-                master_rem = master_dofs % bs
+                master_rem = master_dofs[0] % bs
                 glob_master = index_map.local_to_global(np.asarray([master_block], dtype=np.int32))[0]
                 if slave_status == -1:
                     if i in non_local_entities.keys():

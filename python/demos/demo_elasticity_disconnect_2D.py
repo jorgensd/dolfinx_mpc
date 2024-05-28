@@ -91,14 +91,14 @@ nu_right = 0.3
 nu_left = 0.1
 mu = Function(DG0)
 lmbda = Function(DG0)
-with mu.vector.localForm() as local:
+with mu.x.petsc_vec.localForm() as local:
     local.array[left_dofs] = E_left / (2 * (1 + nu_left))
     local.array[right_dofs] = E_right / (2 * (1 + nu_right))
-with lmbda.vector.localForm() as local:
+with lmbda.x.petsc_vec.localForm() as local:
     local.array[left_dofs] = E_left * nu_left / ((1 + nu_left) * (1 - 2 * nu_left))
     local.array[right_dofs] = E_right * nu_right / ((1 + nu_right) * (1 - 2 * nu_right))
-mu.vector.destroy()
-lmbda.vector.destroy()
+mu.x.petsc_vec.destroy()
+lmbda.x.petsc_vec.destroy()
 
 # Stress computation
 
@@ -195,7 +195,7 @@ u_h = problem.solve()
 
 it = problem.solver.getIterationNumber()
 
-unorm = u_h.vector.norm()
+unorm = u_h.x.petsc_vec.norm()
 if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 

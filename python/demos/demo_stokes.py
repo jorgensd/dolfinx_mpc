@@ -313,7 +313,7 @@ with common.Timer("~Stokes: Verification of problem by global matrix reduction")
     A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
     K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-    u_mpc = dolfinx_mpc.utils.gather_PETScVector(U.vector, root=root)
+    u_mpc = dolfinx_mpc.utils.gather_PETScVector(U.x.petsc_vec, root=root)
     is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
     scipy_dtype = np.complex128 if is_complex else np.float64
     if MPI.COMM_WORLD.rank == root:
