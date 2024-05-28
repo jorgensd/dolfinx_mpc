@@ -1,11 +1,7 @@
-# The DOLFINx Python interface must be built without build isolation (PEP517)
-# due to its runtime and build time dependency on system built petsc4py and
-# mpi4py.
-# pip install -r build-requirements.txt
 [build-system]
 requires = [
       "scikit-build-core[pyproject]",
-      "nanobind>=1.8.0",
+      "nanobind>=1.8.0,<2.0.0",
       "petsc4py",
       "mpi4py",
 ]
@@ -13,7 +9,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "dolfinx_mpc"
-version = "0.8.0"
+version = "0.8.1"
 description = "DOLFINx_MPC Python interface"
 readme = "README.md"
 requires-python = ">=3.8.0"
