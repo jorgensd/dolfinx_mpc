@@ -222,9 +222,9 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
     u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     bottom_dofs = locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = dirichletbc(u_bc, bottom_dofs)
@@ -325,7 +325,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     uh.x.array[:] = 0
     log_info("Solve")
     with Timer(f"{num_dofs}: Solve"):
-        solver.solve(b, uh.vector)
+        solver.solve(b, uh.x.petsc_vec)
         uh.x.scatter_forward()
     log_info("Backsub")
     with Timer(f"{num_dofs}: Backsubstitution"):

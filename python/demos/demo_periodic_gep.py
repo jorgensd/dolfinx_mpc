@@ -131,7 +131,7 @@ def EPS_get_spectrum(
         vr = fem.Function(V)
         vi = fem.Function(V)
 
-        EPS.getEigenvector(i, vr.vector, vi.vector)
+        EPS.getEigenvector(i, vr.x.petsc_vec, vi.x.petsc_vec)
         eigvec_r.append(vr)
         eigvec_i.append(vi)  # Sort by increasing real parts
     idx = np.argsort(np.real(np.array(eigval)), axis=0)

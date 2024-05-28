@@ -133,9 +133,9 @@ def reference_periodic(
     u_ = Function(V)
     start = perf_counter()
     with Timer("Solve"):
-        solver.solve(L_org, u_.vector)
+        solver.solve(L_org, u_.x.petsc_vec)
     end = perf_counter()
-    u_.vector.ghostUpdate(
+    u_.x.petsc_vec.ghostUpdate(
         addv=PETSc.InsertMode.INSERT,  # type: ignore
         mode=PETSc.ScatterMode.FORWARD,  # type: ignore
     )  # type: ignore

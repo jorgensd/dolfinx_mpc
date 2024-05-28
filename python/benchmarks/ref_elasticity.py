@@ -80,9 +80,9 @@ def ref_elasticity(
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
@@ -170,7 +170,7 @@ def ref_elasticity(
     u_ = Function(V)
     start = perf_counter()
     with Timer("Ref solve"):
-        solver.solve(L_org, u_.vector)
+        solver.solve(L_org, u_.x.petsc_vec)
     end = perf_counter()
     u_.x.scatter_forward()
 
