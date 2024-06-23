@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-docs = ['jupyter-book', 'jupytext']
+docs = ['jupyter-book', 'jupytext', "scipy"]
 lint = ["ruff", "mypy"]
 optional = ["numba"]
 test = ["pytest", "coverage", "scipy"]
