@@ -183,8 +183,7 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
       // when we have multiple masters from the same block
 
       if ((local_blocks[i] == -1)
-          and (std::find(additional_ghosts.begin(), additional_ghosts.end(),
-                         global_blocks[i])
+          and (std::ranges::find(additional_ghosts, global_blocks[i])
                == additional_ghosts.end()))
       {
         additional_ghosts.push_back(global_blocks[i]);
@@ -202,13 +201,11 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
 
     std::vector<std::int64_t> all_ghosts(num_ghosts + additional_ghosts.size());
     std::ranges::copy(ghosts, all_ghosts.begin());
-    std::copy(additional_ghosts.cbegin(), additional_ghosts.cend(),
-              all_ghosts.begin() + num_ghosts);
+    std::ranges::copy(additional_ghosts, all_ghosts.begin() + num_ghosts);
 
     std::vector<int> all_owners(all_ghosts.size());
     std::ranges::copy(ghost_owners, all_owners.begin());
-    std::copy(additional_owners.cbegin(), additional_owners.cend(),
-              all_owners.begin() + num_ghosts);
+    std::ranges::copy(additional_owners, all_owners.begin() + num_ghosts);
 
     // Create new indexmap with ghosts for master blocks added
     new_index_map = std::make_shared<dolfinx::common::IndexMap>(

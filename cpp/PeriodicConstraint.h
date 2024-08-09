@@ -296,7 +296,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
         if (rank == proc)
           continue;
         // Find position in neighborhood communicator
-        auto it = std::find(s_to_m_ranks.begin(), s_to_m_ranks.end(), proc);
+        auto it = std::ranges::find(s_to_m_ranks, proc);
         assert(it != s_to_m_ranks.end());
         auto dist = std::distance(s_to_m_ranks.begin(), it);
         const std::int32_t insert_location

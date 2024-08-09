@@ -59,20 +59,20 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
 
     // Get local index of facet with respect to the cell
     auto cell_entities = c_to_e->links(cell[0]);
-    const auto* it
-        = std::find(cell_entities.data(),
-                    cell_entities.data() + cell_entities.size(), entities[i]);
-    assert(it != (cell_entities.data() + cell_entities.size()));
-    const int local_entity = std::distance(cell_entities.data(), it);
+    const auto it
+        = std::find(cell_entities.begin(), cell_entities.end(), entities[i]);
+    assert(it != cell_entities.end());
+    const auto local_entity = std::distance(cell_entities.begin(), it);
     local_indices[i] = local_entity;
     auto cell_blocks = dofmap.cell_dofs(cell[0]);
     auto closure_blocks
         = dofmap.element_dof_layout().entity_closure_dofs(dim, local_entity);
-    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
-    {
-      const int dof = cell_blocks[closure_blocks[j]];
-      num_facets_per_dof[dof]++;
-    }
+    std::ranges::for_each(closure_blocks,
+                          [&num_facets_per_dof, &cell_blocks](auto block)
+                          {
+                            const int dof = cell_blocks[block];
+                            num_facets_per_dof[dof]++;
+                          });
   }
 
   // Compute offsets
@@ -90,11 +90,13 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
     auto cell_blocks = dofmap.cell_dofs(cells[i]);
     auto closure_blocks = dofmap.element_dof_layout().entity_closure_dofs(
         dim, local_indices[i]);
-    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
-    {
-      const int dof = cell_blocks[closure_blocks[j]];
-      data[offsets[dof] + num_facets_per_dof[dof]++] = entities[i];
-    }
+    std::for_each(closure_blocks.begin(), closure_blocks.end(),
+                  [&num_facets_per_dof, &data, &cell_blocks, &offsets,
+                   entity = entities[i]](auto block)
+                  {
+                    const int dof = cell_blocks[block];
+                    data[offsets[dof] + num_facets_per_dof[dof]++] = entity;
+                  });
   }
   return dolfinx::graph::AdjacencyList<std::int32_t>(data, offsets);
 }
@@ -749,7 +751,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       std::div_t div = std::div(slaves[i], bs);
       slave_blocks[i] = div.quot;
       slave_rems[i] = div.rem;
-      auto it = std::find(blocks.begin(), blocks.end(), div.quot);
+      auto it = std::ranges::find(blocks, div.quot);
       assert(it != blocks.end());
       auto index = std::distance(blocks.begin(), it);
       parent_to_sub.push_back((int)index);
@@ -773,8 +775,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     for (auto proc : shared_indices.links(parent_to_sub[i]))
     {
       // Find index of process in local MPI communicator
-      auto it
-          = std::find(dest_ranks_ghosts.begin(), dest_ranks_ghosts.end(), proc);
+      auto it = std::ranges::find(dest_ranks_ghosts, proc);
       const auto index = std::distance(dest_ranks_ghosts.begin(), it);
       out_num_masters[index] += num_masters_per_slave[i];
       out_num_slaves[index]++;
@@ -828,8 +829,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     for (auto proc : shared_indices.links(parent_to_sub[i]))
     {
       // Find index of process in local MPI communicator
-      auto it
-          = std::find(dest_ranks_ghosts.begin(), dest_ranks_ghosts.end(), proc);
+      auto it = std::ranges::find(dest_ranks_ghosts, proc);
       const auto index = std::distance(dest_ranks_ghosts.begin(), it);
 
       // Insert slave and num masters per slave
@@ -839,17 +839,18 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       insert_slaves[index]++;
 
       // Insert global master dofs to send
-      std::copy(masters.begin() + master_start, masters.begin() + master_end,
-                masters_out.begin() + disp_out_masters[index]
-                    + insert_masters[index]);
+      std::ranges::copy(masters.begin() + master_start,
+                        masters.begin() + master_end,
+                        masters_out.begin() + disp_out_masters[index]
+                            + insert_masters[index]);
       // Insert owners to send
-      std::copy(owners.begin() + master_start, owners.begin() + master_end,
-                owners_out.begin() + disp_out_masters[index]
-                    + insert_masters[index]);
+      std::ranges::copy(
+          owners.begin() + master_start, owners.begin() + master_end,
+          owners_out.begin() + disp_out_masters[index] + insert_masters[index]);
       // Insert coeffs to send
-      std::copy(coeffs.begin() + master_start, coeffs.begin() + master_end,
-                coeffs_out.begin() + disp_out_masters[index]
-                    + insert_masters[index]);
+      std::ranges::copy(
+          coeffs.begin() + master_start, coeffs.begin() + master_end,
+          coeffs_out.begin() + disp_out_masters[index] + insert_masters[index]);
       insert_masters[index] += num_masters_per_slave[i];
     }
   }
@@ -1348,7 +1349,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
 
     // Get cell dofmap
     auto cell_dofs = dofmap->cell_dofs(cells[c]);
-    auto it = std::find(cell_dofs.begin(), cell_dofs.end(), dofs[c]);
+    auto it = std::ranges::find(cell_dofs, dofs[c]);
     auto loc = std::distance(cell_dofs.begin(), it);
 
     // Copy dof coordinates into vector
