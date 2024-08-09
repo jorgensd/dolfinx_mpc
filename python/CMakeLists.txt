@@ -1,11 +1,7 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.21)
 
-PROJECT(dolfinx_mpc_pybind11)
+PROJECT(dolfinx_mpc_nanobind)
 
-# Set C++ standard
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Python COMPONENTS Interpreter Development REQUIRED)
 
@@ -48,13 +44,8 @@ nanobind_add_module(
   dolfinx_mpc/dolfinx_mpc.cpp
   dolfinx_mpc/mpc.cpp
 )
-# Add strict compiler flags
-# include(CheckCXXCompilerFlag)
-# check_cxx_compiler_flag("-Wall -Werror -pedantic" HAVE_PEDANTIC)
 
-# if(HAVE_PEDANTIC)
-#   # target_compile_options(cpp PRIVATE -Wall;-Werror;-pedantic)
-# endif()
+target_compile_definitions(cpp PRIVATE cxx_std_20)
 target_link_libraries(cpp PRIVATE dolfinx_mpc)
 
 # Check for petsc4py
