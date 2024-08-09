@@ -28,8 +28,7 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
   std::vector<std::uint8_t> has_slaves(mpi_size, slave_val);
   // Check if entities if master entities are on this processor
   std::vector<std::uint8_t> has_masters(mpi_size, 0);
-  if (std::find(meshtags.values().begin(), meshtags.values().end(),
-                master_marker)
+  if (std::ranges::find(meshtags.values(), master_marker)
       != meshtags.values().end())
     std::ranges::fill(has_masters, 1);
 
