@@ -17,7 +17,7 @@ jobs:
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
     env:
-      SONAR_SCANNER_VERSION: 5.0.1.3006 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
+      SONAR_SCANNER_VERSION: 6.1.0.4477 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       PETSC_ARCH: linux-gnu-real64-32
@@ -34,7 +34,7 @@ jobs:
           apt-get install unzip
       - name: Update pip
         run: |
-          python3 -m pip install --break-system-packages --upgrade pip setuptools
+          python3 -m pip install --upgrade pip setuptools
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -87,7 +87,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install --break-system-packages --config-settings=cmake.build-type="Release" --no-build-isolation  ./python
+        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python
 
       - name: Run sonar-scanner
         env:
