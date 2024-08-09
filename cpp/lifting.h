@@ -82,19 +82,19 @@ void lift_bc_entities(
 
     // Check if bc is applied to entity
     bool has_bc = false;
-    std::for_each(dmap1.begin(), dmap1.end(),
-                  [&bc_markers1, bs1, &has_bc](const auto dof)
-                  {
-                    for (int k = 0; k < bs1; ++k)
-                    {
-                      assert(bs1 * dof + k < (int)bc_markers1.size());
-                      if (bc_markers1[bs1 * dof + k])
-                      {
-                        has_bc = true;
-                        break;
-                      }
-                    }
-                  });
+    std::ranges::for_each(dmap1,
+                          [&bc_markers1, bs1, &has_bc](const auto dof)
+                          {
+                            for (int k = 0; k < bs1; ++k)
+                            {
+                              assert(bs1 * dof + k < (int)bc_markers1.size());
+                              if (bc_markers1[bs1 * dof + k])
+                              {
+                                has_bc = true;
+                                break;
+                              }
+                            }
+                          });
     if (!has_bc)
       continue;
 
@@ -110,7 +110,7 @@ void lift_bc_entities(
       // Modify element vector for MPC and insert into b for non-local
       // contributions
       be_copy.resize(num_rows);
-      std::copy(be.begin(), be.end(), be_copy.begin());
+      std::ranges::copy(be, be_copy.begin());
       const std::span<T> _be_copy(be_copy);
       dolfinx_mpc::modify_mpc_vec<T>(b, _be, _be_copy, dmap0, dmap0.size(), bs0,
                                      is_slave, slaves, masters, coefficients);
@@ -236,19 +236,19 @@ void apply_lifting(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                      std::next(coordinate_dofs.begin(), 3 * i));
+          std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                              std::next(coordinate_dofs.begin(), 3 * i));
         }
 
         // Tabulate tensor
-        std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
+        std::ranges::fill(Ae, 0);
         kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
                constants.data(), coordinate_dofs.data(), nullptr, nullptr);
         dof_transform(Ae, cell_info, cell, num_cols);
         dof_transform_to_transpose(Ae, cell_info, cell, num_rows);
 
         auto dmap1 = dofmap1->cell_dofs(cell);
-        std::fill(be.begin(), be.end(), 0);
+        std::ranges::fill(be, 0);
         for (std::size_t j = 0; j < dmap1.size(); ++j)
         {
           for (std::int32_t k = 0; k < bs1; k++)
@@ -320,19 +320,19 @@ void apply_lifting(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                      std::next(coordinate_dofs.begin(), 3 * i));
+          std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                              std::next(coordinate_dofs.begin(), 3 * i));
         }
 
         // Tabulate tensor
-        std::fill(Ae.data(), Ae.data() + Ae.size(), 0);
+        std::ranges::fill(Ae, 0);
         kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
                constants.data(), coordinate_dofs.data(), &local_facet, nullptr);
         dof_transform(Ae, cell_info, cell, num_cols);
         dof_transform_to_transpose(Ae, cell_info, cell, num_rows);
 
         auto dmap1 = dofmap1->cell_dofs(cell);
-        std::fill(be.begin(), be.end(), 0);
+        std::ranges::fill(be, 0);
         for (std::size_t j = 0; j < dmap1.size(); ++j)
         {
           for (std::int32_t k = 0; k < bs1; k++)

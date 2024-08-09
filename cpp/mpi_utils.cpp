@@ -15,8 +15,8 @@ dolfinx_mpc::create_owner_to_ghost_comm(const dolfinx::common::IndexMap& map)
   std::span<const int> dest_ranks = map.dest();
 
   // Check that src and dest ranks are unique and sorted
-  assert(std::is_sorted(src_ranks.begin(), src_ranks.end()));
-  assert(std::is_sorted(dest_ranks.begin(), dest_ranks.end()));
+  assert(std::ranges::is_sorted(src_ranks));
+  assert(std::ranges::is_sorted(dest_ranks));
 
   // Create communicators with directed edges owner -> ghost,
   MPI_Comm comm;

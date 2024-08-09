@@ -142,14 +142,15 @@ void modify_mpc_cell(
   const int ndim1 = bs[1] * num_dofs[1];
   assert(scratch_memory.size()
          >= std::size_t(2 * ndim0 * ndim1 + ndim0 + ndim1));
-  std::fill(scratch_memory.begin(), scratch_memory.end(), T(0));
+  std::ranges::fill(scratch_memory, T(0));
 
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
       Ae_original(scratch_memory.data(), ndim0, ndim1);
 
   // Copy Ae into new matrix for distirbution of master dofs
-  std::copy_n(Ae.data_handle(), ndim0 * ndim1, Ae_original.data_handle());
+  std::ranges::copy_n(Ae.data_handle(), ndim0 * ndim1,
+                      Ae_original.data_handle());
 
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -161,17 +162,19 @@ void modify_mpc_cell(
 
   // Zero out slave entries in element matrix
   // Zero slave row
-  std::for_each(
-      local_index[0].cbegin(), local_index[0].cend(),
-      [&Ae, ndim1](const auto dof)
-      { std::fill_n(std::next(Ae.data_handle(), ndim1 * dof), ndim1, 0.0); });
+  std::ranges::for_each(local_index[0],
+                        [&Ae, ndim1](const auto dof) {
+                          std::ranges::fill_n(
+                              std::next(Ae.data_handle(), ndim1 * dof), ndim1,
+                              0.0);
+                        });
   // Zero slave column
-  std::for_each(local_index[1].cbegin(), local_index[1].cend(),
-                [&Ae, ndim0](const auto dof)
-                {
-                  for (int row = 0; row < ndim0; ++row)
-                    Ae(row, dof) = 0.0;
-                });
+  std::ranges::for_each(local_index[1],
+                        [&Ae, ndim0](const auto dof)
+                        {
+                          for (int row = 0; row < ndim0; ++row)
+                            Ae(row, dof) = 0.0;
+                        });
 
   // Flatten slaves, masters and coeffs for efficient
   // modification of the matrices
@@ -342,11 +345,11 @@ void assemble_exterior_facets(
         x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                  std::next(coordinate_dofs.begin(), 3 * i));
+      std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                          std::next(coordinate_dofs.begin(), 3 * i));
     }
     // Tabulate tensor
-    std::fill(Aeb.begin(), Aeb.end(), 0);
+    std::ranges::fill(Aeb, 0);
     kernel(Aeb.data(), coeffs.data() + l / 2 * cstride, constants.data(),
            coordinate_dofs.data(), &local_facet, nullptr);
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
@@ -365,7 +368,8 @@ void assemble_exterior_facets(
           {
             // Zero row bs0 * i + k
             const int row = bs0 * i + k;
-            std::fill_n(std::next(Ae.data_handle(), ndim1 * row), ndim1, 0.0);
+            std::ranges::fill_n(std::next(Ae.data_handle(), ndim1 * row), ndim1,
+                                0.0);
           }
         }
       }
@@ -475,12 +479,12 @@ void assemble_cells_impl(
         x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
     for (std::size_t i = 0; i < x_dofs.size(); ++i)
     {
-      std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                  std::next(coordinate_dofs.begin(), 3 * i));
+      std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                          std::next(coordinate_dofs.begin(), 3 * i));
     }
 
     // Tabulate tensor
-    std::fill(Aeb.begin(), Aeb.end(), 0);
+    std::ranges::fill(Aeb, 0);
     kernel(Aeb.data(), coeffs.data() + c * cstride, constants.data(),
            coordinate_dofs.data(), nullptr, nullptr);
     apply_dof_transformation(_Ae, cell_info, cell, ndim1);
@@ -496,8 +500,9 @@ void assemble_cells_impl(
         for (std::int32_t k = 0; k < bs.front(); ++k)
         {
           if (bc0[bs.front() * dofs0[i] + k])
-            std::fill_n(std::next(Aeb.begin(), ndim1 * (bs.front() * i + k)),
-                        ndim1, T(0));
+            std::ranges::fill_n(
+                std::next(Aeb.begin(), ndim1 * (bs.front() * i + k)), ndim1,
+                T(0));
         }
       }
     }

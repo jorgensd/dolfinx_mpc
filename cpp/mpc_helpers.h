@@ -113,12 +113,13 @@ map_dofs_global_to_local(const dolfinx::fem::FunctionSpace<U>& V,
   global_blocks.reserve(num_dofs);
   std::vector<std::int32_t> remainders;
   remainders.reserve(num_dofs);
-  std::for_each(global_dofs.cbegin(), global_dofs.cend(),
-                [block_size, &global_blocks, &remainders](const auto slave)
-                {
-                  global_blocks.push_back(slave / block_size);
-                  remainders.push_back(slave % block_size);
-                });
+  std::ranges::for_each(
+      global_dofs,
+      [block_size, &global_blocks, &remainders](const auto slave)
+      {
+        global_blocks.push_back(slave / block_size);
+        remainders.push_back(slave % block_size);
+      });
   // Compute the new local index of the master blocks
   std::vector<std::int32_t> local_blocks(num_dofs);
   imap->global_to_local(global_blocks, local_blocks);
@@ -154,9 +155,9 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
   const std::size_t num_dofs = global_dofs.size();
   std::vector<std::int64_t> global_blocks(num_dofs);
   std::vector<std::int32_t> local_blocks(num_dofs);
-  std::transform(global_dofs.cbegin(), global_dofs.cend(),
-                 global_blocks.begin(),
-                 [block_size](const auto dof) { return dof / block_size; });
+  std::ranges::transform(global_dofs, global_blocks.begin(),
+                         [block_size](const auto dof)
+                         { return dof / block_size; });
 
   int mpi_size = -1;
   MPI_Comm_size(comm, &mpi_size);
@@ -200,12 +201,12 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
     assert(ghost_owners.size() == ghosts.size());
 
     std::vector<std::int64_t> all_ghosts(num_ghosts + additional_ghosts.size());
-    std::copy(ghosts.begin(), ghosts.end(), all_ghosts.begin());
+    std::ranges::copy(ghosts, all_ghosts.begin());
     std::copy(additional_ghosts.cbegin(), additional_ghosts.cend(),
               all_ghosts.begin() + num_ghosts);
 
     std::vector<int> all_owners(all_ghosts.size());
-    std::copy(ghost_owners.begin(), ghost_owners.end(), all_owners.begin());
+    std::ranges::copy(ghost_owners, all_owners.begin());
     std::copy(additional_owners.cbegin(), additional_owners.cend(),
               all_owners.begin() + num_ghosts);
 

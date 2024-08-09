@@ -68,7 +68,7 @@ public:
     // Create adjacency list with all local dofs, where the slave dofs maps to
     // its masters
     std::vector<std::int32_t> _num_masters(num_dofs_local);
-    std::fill(_num_masters.begin(), _num_masters.end(), 0);
+    std::ranges::fill(_num_masters, 0);
     for (std::int32_t i = 0; i < slaves.size(); i++)
       _num_masters[slaves[i]] = offsets[i + 1] - offsets[i];
     std::vector<std::int32_t> masters_offsets(num_dofs_local + 1);
@@ -77,7 +77,7 @@ public:
                         masters_offsets.begin() + 1);
 
     // Reuse num masters as fill position array
-    std::fill(_num_masters.begin(), _num_masters.end(), 0);
+    std::ranges::fill(_num_masters, 0);
     std::vector<std::int64_t> _master_data(masters.size());
     std::vector<T> _coeff_data(masters.size());
     std::vector<std::int32_t> _owner_data(masters.size());
@@ -111,7 +111,7 @@ public:
 
     const std::int32_t num_local
         = dofmap.index_map_bs() * dofmap.index_map->size_local();
-    auto it = std::lower_bound(_slaves.begin(), _slaves.end(), num_local);
+    auto it = std::ranges::lower_bound(_slaves, num_local);
     _num_local_slaves = std::distance(_slaves.begin(), it);
 
     // Create new function space with extended index map
