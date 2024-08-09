@@ -75,7 +75,7 @@ void _assemble_entities_impl(
     {
       // Modify element vector for MPC and insert into b for non-local
       // contributions
-      std::copy(be.begin(), be.end(), be_copy.begin());
+      std::ranges::copy(be, be_copy.begin());
       dolfinx_mpc::modify_mpc_vec<T>(b, _be, _be_copy, dofs, num_dofs, bs,
                                      is_slave, slaves, masters, coefficients);
     }
@@ -157,12 +157,12 @@ void _assemble_vector(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                      std::next(coordinate_dofs.begin(), 3 * i));
+          std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                              std::next(coordinate_dofs.begin(), 3 * i));
         }
 
         // Tabulate tensor
-        std::fill(be.data(), be.data() + be.size(), 0);
+        std::ranges::fill(be, 0);
         fn(be.data(), coeffs.first.data() + index * coeffs.second,
            constants.data(), coordinate_dofs.data(), nullptr, nullptr);
 
@@ -206,12 +206,12 @@ void _assemble_vector(
             x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
         for (std::size_t i = 0; i < x_dofs.size(); ++i)
         {
-          std::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                      std::next(coordinate_dofs.begin(), 3 * i));
+          std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+                              std::next(coordinate_dofs.begin(), 3 * i));
         }
 
         // Tabulate tensor
-        std::fill(be.data(), be.data() + be.size(), 0);
+        std::ranges::fill(be, 0);
         fn(be.data(), coeffs.first.data() + index * coeffs.second,
            constants.data(), coordinate_dofs.data(), &local_facet, nullptr);
 

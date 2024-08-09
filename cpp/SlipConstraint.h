@@ -117,9 +117,8 @@ mpc_data<T> create_slip_condition(
 
     // Determine slave dof by component with biggest normal vector (to avoid
     // issues with grids aligned with coordiante system)
-    auto max_el = std::max_element(normal.begin(), normal.end(),
-                                   [](T a, T b)
-                                   { return std::norm(a) < std::norm(b); });
+    auto max_el = std::ranges::max_element(
+        normal, [](T a, T b) { return std::norm(a) < std::norm(b); });
     auto slave_index = std::distance(normal.begin(), max_el);
     assert(slave_index < num_normal_components);
     std::int32_t parent_slave
@@ -147,8 +146,7 @@ mpc_data<T> create_slip_condition(
     }
     // Convert local parent dof to local parent block
     std::vector<std::int32_t> parent_blocks = parent_masters;
-    std::for_each(parent_blocks.begin(), parent_blocks.end(),
-                  [W_bs](auto& b) { b /= W_bs; });
+    std::ranges::for_each(parent_blocks, [W_bs](auto& b) { b /= W_bs; });
     // Map blocks from local to global
     pair_m.resize(parent_masters.size());
     W_imap->local_to_global(parent_blocks, pair_m);

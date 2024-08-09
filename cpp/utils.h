@@ -81,7 +81,7 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
   std::partial_sum(num_facets_per_dof.begin(), num_facets_per_dof.end(),
                    offsets.begin() + 1);
   // Reuse data structure for insertion
-  std::fill(num_facets_per_dof.begin(), num_facets_per_dof.end(), 0);
+  std::ranges::fill(num_facets_per_dof, 0);
 
   // Create dof->entities map
   std::vector<std::int32_t> data(offsets.back());
@@ -226,8 +226,8 @@ create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
       continue;
     // Sum all normal for entities
     std::vector<U> normals = dolfinx::mesh::cell_normals(*V->mesh(), dim, ents);
-    std::copy_n(normals.begin(), 3, n_0.begin());
-    std::copy_n(n_0.begin(), 3, normal.begin());
+    std::ranges::copy_n(normals.begin(), 3, n_0.begin());
+    std::ranges::copy_n(n_0.begin(), 3, normal.begin());
     for (std::size_t j = 1; j < normals.size() / 3; ++j)
     {
       // Align direction of normal vectors n_0 and n_j
@@ -239,7 +239,7 @@ create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
       for (std::size_t k = 0; k < 3; ++k)
         normal[k] += sign * normals[3 * j + k];
     }
-    std::copy_n(normal.begin(), bs, std::next(_n.begin(), i * bs));
+    std::ranges::copy_n(normal.begin(), bs, std::next(_n.begin(), i * bs));
   }
   // Receive normals from other processes with dofs on the facets
   VecGhostUpdateBegin(n_vec.vec(), ADD_VALUES, SCATTER_REVERSE);
@@ -711,13 +711,13 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     // Fill in owned blocks
     std::vector<std::int32_t> blocks;
     blocks.reserve(slaves.size());
-    std::transform(slaves.begin(), slaves.end(), std::back_inserter(blocks),
-                   [bs](auto& dof) { return dof / bs; });
+    std::ranges::transform(slaves, std::back_inserter(blocks),
+                           [bs](auto& dof) { return dof / bs; });
 
     // Propagate local slave information to ghost processes
     std::vector<std::int8_t> indicator(imap.size_local(), 0);
-    std::for_each(blocks.begin(), blocks.end(),
-                  [&indicator](auto& block) { indicator[block] = 1; });
+    std::ranges::for_each(blocks,
+                          [&indicator](auto& block) { indicator[block] = 1; });
     dolfinx::common::Scatterer ghost_scatterer(imap, 1);
     std::vector<std::int8_t> recieve_indicator(imap.num_ghosts());
     ghost_scatterer.scatter_fwd(std::span<const std::int8_t>(indicator),
@@ -733,7 +733,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     }
 
     // Sort and delete duplicates
-    std::sort(blocks.begin(), blocks.end());
+    std::ranges::sort(blocks);
     blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
 
     // Create submap
@@ -864,9 +864,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       rems[i] = pos.rem;
     }
     imap.local_to_global(blocks, slaves_out);
-    std::transform(slaves_out.cbegin(), slaves_out.cend(), rems.cbegin(),
-                   slaves_out.begin(),
-                   [bs](auto dof, auto rem) { return dof * bs + rem; });
+    std::ranges::transform(slaves_out, rems, slaves_out.begin(),
+                           [bs](auto dof, auto rem) { return dof * bs + rem; });
   }
 
   // Create in displacements for slaves
@@ -909,12 +908,12 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   recv_block.reserve(recv_slaves.size());
   std::vector<std::int32_t> recv_rem;
   recv_rem.reserve(recv_slaves.size());
-  std::for_each(recv_slaves.cbegin(), recv_slaves.cend(),
-                [bs, &recv_rem, &recv_block](const auto dof)
-                {
-                  recv_rem.push_back(dof % bs);
-                  recv_block.push_back(dof / bs);
-                });
+  std::ranges::for_each(recv_slaves,
+                        [bs, &recv_rem, &recv_block](const auto dof)
+                        {
+                          recv_rem.push_back(dof % bs);
+                          recv_block.push_back(dof / bs);
+                        });
   std::vector<std::int32_t> recv_local(recv_slaves.size());
   imap.global_to_local(recv_block, recv_local);
   for (std::size_t i = 0; i < recv_local.size(); i++)
@@ -1189,8 +1188,9 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       continue;
 
     // Permute the reference values to account for the cell's orientation
-    std::copy_n(std::next(reference_basisb.begin(), num_basis_values * p),
-                num_basis_values, basis_valuesb.begin());
+    std::ranges::copy_n(
+        std::next(reference_basisb.begin(), num_basis_values * p),
+        num_basis_values, basis_valuesb.begin());
     apply_dof_transformation(basis_valuesb, cell_info, cell_index,
                              (int)reference_value_size);
 
@@ -1401,11 +1401,10 @@ dolfinx::graph::AdjacencyList<int> compute_colliding_cells(
                 .front();
     }
     // Only push back closest cell
-    if (auto cell_idx
-        = std::min_element(distances_sq.cbegin(), distances_sq.cend());
+    if (auto cell_idx = std::ranges::min_element(distances_sq);
         *cell_idx < eps2)
     {
-      auto pos = std::distance(distances_sq.cbegin(), cell_idx);
+      auto pos = std::distance(distances_sq.begin(), cell_idx);
       colliding_cells.push_back(cells[pos]);
     }
     offsets.push_back((std::int32_t)colliding_cells.size());
@@ -1473,14 +1472,14 @@ std::vector<std::int8_t> is_bc(
   const int bs = dofmap->index_map_bs();
   std::int32_t dim = bs * (imap->size_local() + imap->num_ghosts());
   std::vector<std::int8_t> dof_marker(dim, false);
-  std::for_each(bcs.begin(), bcs.end(),
-                [&dof_marker, &V](auto bc)
-                {
-                  assert(bc);
-                  assert(bc->function_space());
-                  if (bc->function_space()->contains(V))
-                    bc->mark_dofs(dof_marker);
-                });
+  std::ranges::for_each(bcs,
+                        [&dof_marker, &V](auto bc)
+                        {
+                          assert(bc);
+                          assert(bc->function_space());
+                          if (bc->function_space()->contains(V))
+                            bc->mark_dofs(dof_marker);
+                        });
   // Remove slave blocks contained in DirichletBC
   std::vector<std::int8_t> bc_marker(blocks.size(), 0);
   const int dofmap_bs = dofmap->bs();
