@@ -237,9 +237,9 @@ if __name__ == "__main__":
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if args.boomeramg else "GAMG"
     ct = "Tet" if args.tetra else "Hex"
-    sd.attrs["solver"] = np.string_(solver)
-    sd.attrs["degree"] = np.string_(str(int(args.degree)))
-    sd.attrs["ct"] = np.string_(ct)
+    sd.attrs["solver"] = np.bytes_(solver)
+    sd.attrs["degree"] = np.bytes_(str(int(args.degree)))
+    sd.attrs["ct"] = np.bytes_(ct)
 
     # Loop over refinement levels
     for i in range(N):
