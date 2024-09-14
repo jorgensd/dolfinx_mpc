@@ -138,7 +138,7 @@ def gather_dof_coordinates(V: FunctionSpace, dofs: np.ndarray):
         recvbuf = np.zeros(3 * glob_num_nodes, dtype=V.mesh.geometry.x.dtype)
     sendbuf = coords.reshape(-1)
     sendcounts = np.array(MPI.COMM_WORLD.gather(len(sendbuf), 0))
-    MPI.COMM_WORLD.Gatherv(sendbuf, (recvbuf.tolist(), sendcounts.tolist()), root=0)
+    MPI.COMM_WORLD.Gatherv(sendbuf, (recvbuf, sendcounts), root=0)  #  type: ignore
     glob_coords = MPI.COMM_WORLD.bcast(recvbuf, root=0).reshape((-1, 3))
     return glob_coords
 
