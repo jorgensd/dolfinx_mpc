@@ -216,7 +216,7 @@ if __name__ == "__main__":
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if args.boomeramg else "GAMG"
-    sd.attrs["solver"] = np.string_(solver)
+    sd.attrs["solver"] = np.bytes_(solver)
 
     # Loop over refinement levels
     for i in range(N):
