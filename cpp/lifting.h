@@ -163,7 +163,7 @@ void apply_lifting(
   for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T>>& bc : bcs)
   {
     bc->mark_dofs(bc_markers1);
-    bc->dof_values(bc_values1);
+    bc->set(bc_values1, std::nullopt, 1);
   }
 
   // Extract dofmaps for columns and rows of a
