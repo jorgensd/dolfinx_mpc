@@ -210,6 +210,7 @@ def demo_stacked_cubes(
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
     L_org.destroy()
+    A_org.destroy()
 
 
 if __name__ == "__main__":

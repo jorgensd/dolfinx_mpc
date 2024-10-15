@@ -97,6 +97,8 @@ def test_pipeline(u_from_mpc):
                 rtol=500 * np.finfo(default_scalar_type).resolution,
                 atol=500 * np.finfo(default_scalar_type).resolution,
             )
+        L_org.destroy()
+        A_org.destroy()
 
     else:
         uh = fem.Function(V)

@@ -173,6 +173,8 @@ def demo_elasticity():
         l2g = dofmap.index_map.local_to_global(np.arange(num_local, dtype=np.int32))
         l_index = np.flatnonzero(l2g == in_data[0] // bs)[0]
         print("Master*Coeff (on other proc): {0:.5e}".format(u_h.x.array[l_index * bs + in_data[0] % bs] * in_data[1]))
+    L_org.destroy()
+    solver.destroy()
 
 
 if __name__ == "__main__":
