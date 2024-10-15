@@ -298,5 +298,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             atol = 1000 * np.finfo(default_scalar_type).resolution
             nt.assert_allclose(uh_numpy, u_mpc, atol=atol)
     L_org.destroy()
+    b.destroy()
+    solver.destroy()
 
     list_timings(comm, [TimingType.wall])

@@ -157,6 +157,7 @@ def demo_stacked_cubes(
     # Solve Linear problem
     problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
+    
     # Build near nullspace
     null_space = rigid_motions_nullspace(mpc.function_space)
     problem.A.setNearNullSpace(null_space)
@@ -210,7 +211,7 @@ def demo_stacked_cubes(
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
     L_org.destroy()
-
+    A_org.destroy()
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)

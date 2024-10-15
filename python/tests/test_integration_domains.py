@@ -127,7 +127,6 @@ def test_cell_domains(get_assemblers):  # noqa: F811
             )
     solver.destroy()
     b.destroy()
-    del uh
     A.destroy()
     pc.destroy()
     L_org.destroy()

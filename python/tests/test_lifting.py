@@ -118,3 +118,6 @@ def test_lifting(get_assemblers):  # noqa: F811
             nt.assert_allclose(uh_numpy, u_mpc, rtol=1e-5, atol=1e-8)
 
     list_timings(comm, [TimingType.wall])
+    L_org.destroy()
+    b.destroy()
+    solver.destroy()

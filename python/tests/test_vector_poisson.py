@@ -130,4 +130,5 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
 
     b.destroy()
     L_org.destroy()
+    solver.destroy()
     list_timings(comm, [TimingType.wall])

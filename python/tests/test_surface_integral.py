@@ -140,6 +140,8 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
 
     L_org.destroy()
     b.destroy()
+    A_org.destroy()
+    solver.destroy()
     list_timings(comm, [TimingType.wall])
 
 
@@ -213,4 +215,6 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
     L_org.destroy()
     b.destroy()
+    A_org.destroy()
+    A.destroy()
     list_timings(comm, [TimingType.wall])

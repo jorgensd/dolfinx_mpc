@@ -60,3 +60,5 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
     list_timings(comm, [TimingType.wall])
+    b.destroy()
+    L_org.destroy()

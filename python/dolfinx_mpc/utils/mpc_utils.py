@@ -143,6 +143,8 @@ def facet_normal_approximation(
     solver.solve(b, nh.x.petsc_vec)
     nh.x.petsc_vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
     timer.stop()
+    solver.destroy()
+    b.destroy() 
     return nh
 
 

@@ -372,7 +372,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
             if comm.rank == 0:
                 print(op, num_calls, avg_time, min_time, max_time, file=results_file)
         list_timings(MPI.COMM_WORLD, [TimingType.wall])
-
+    b.destroy()
+    solver.destroy()
 
 if __name__ == "__main__":
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
