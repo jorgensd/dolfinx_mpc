@@ -106,7 +106,7 @@ def demo_elasticity():
     solver.getPC().setType(PETSc.PC.Type.LU)
     solver.setOperators(A_org)
     u_ = fem.Function(V)
-    solver.solve(L_org, u_.vector)
+    solver.solve(L_org, u_.x.petsc_vec)
     u_.x.scatter_forward()
     u_.name = "u_unconstrained"
 
@@ -123,7 +123,7 @@ def demo_elasticity():
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(u_h.vector, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(u_h.x.petsc_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -142,7 +142,7 @@ def demo_elasticity():
         slave_owner = MPI.COMM_WORLD.rank
         bs = mpc.function_space.dofmap.index_map_bs
         slave = mpc.slaves[0]
-        print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}".format(u_h.x.array[slave], u_.vector.array[slave]))
+        print("Constrained: {0:.5e}\n Unconstrained: {1:.5e}".format(u_h.x.array[slave], u_.x.petsc_vec.array[slave]))
         master_owner = mpc._cpp_object.owners.links(slave)[0]
         _masters = mpc.masters
         master = _masters.links(slave)[0]
@@ -173,6 +173,8 @@ def demo_elasticity():
         l2g = dofmap.index_map.local_to_global(np.arange(num_local, dtype=np.int32))
         l_index = np.flatnonzero(l2g == in_data[0] // bs)[0]
         print("Master*Coeff (on other proc): {0:.5e}".format(u_h.x.array[l_index * bs + in_data[0] % bs] * in_data[1]))
+    L_org.destroy()
+    solver.destroy()
 
 
 if __name__ == "__main__":

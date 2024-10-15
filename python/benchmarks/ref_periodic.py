@@ -133,9 +133,9 @@ def reference_periodic(
     u_ = Function(V)
     start = perf_counter()
     with Timer("Solve"):
-        solver.solve(L_org, u_.vector)
+        solver.solve(L_org, u_.x.petsc_vec)
     end = perf_counter()
-    u_.vector.ghostUpdate(
+    u_.x.petsc_vec.ghostUpdate(
         addv=PETSc.InsertMode.INSERT,  # type: ignore
         mode=PETSc.ScatterMode.FORWARD,  # type: ignore
     )  # type: ignore
@@ -199,9 +199,9 @@ if __name__ == "__main__":
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if args.boomeramg else "GAMG"
     ct = "Tet" if args.tetra else "Hex"
-    sd.attrs["solver"] = np.string_(solver)
-    sd.attrs["degree"] = np.string_(str(int(args.degree)))
-    sd.attrs["ct"] = np.string_(ct)
+    sd.attrs["solver"] = np.bytes_(solver)
+    sd.attrs["degree"] = np.bytes_(str(int(args.degree)))
+    sd.attrs["ct"] = np.bytes_(ct)
     for i in range(N):
         if MPI.COMM_WORLD.rank == 0:
             set_log_level(LogLevel.INFO)

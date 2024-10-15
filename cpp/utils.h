@@ -59,20 +59,20 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
 
     // Get local index of facet with respect to the cell
     auto cell_entities = c_to_e->links(cell[0]);
-    const auto* it
-        = std::find(cell_entities.data(),
-                    cell_entities.data() + cell_entities.size(), entities[i]);
-    assert(it != (cell_entities.data() + cell_entities.size()));
-    const int local_entity = std::distance(cell_entities.data(), it);
+    const auto it
+        = std::find(cell_entities.begin(), cell_entities.end(), entities[i]);
+    assert(it != cell_entities.end());
+    const auto local_entity = std::distance(cell_entities.begin(), it);
     local_indices[i] = local_entity;
     auto cell_blocks = dofmap.cell_dofs(cell[0]);
     auto closure_blocks
         = dofmap.element_dof_layout().entity_closure_dofs(dim, local_entity);
-    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
-    {
-      const int dof = cell_blocks[closure_blocks[j]];
-      num_facets_per_dof[dof]++;
-    }
+    std::ranges::for_each(closure_blocks,
+                          [&num_facets_per_dof, &cell_blocks](auto block)
+                          {
+                            const int dof = cell_blocks[block];
+                            num_facets_per_dof[dof]++;
+                          });
   }
 
   // Compute offsets
@@ -81,7 +81,7 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
   std::partial_sum(num_facets_per_dof.begin(), num_facets_per_dof.end(),
                    offsets.begin() + 1);
   // Reuse data structure for insertion
-  std::fill(num_facets_per_dof.begin(), num_facets_per_dof.end(), 0);
+  std::ranges::fill(num_facets_per_dof, 0);
 
   // Create dof->entities map
   std::vector<std::int32_t> data(offsets.back());
@@ -90,11 +90,13 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
     auto cell_blocks = dofmap.cell_dofs(cells[i]);
     auto closure_blocks = dofmap.element_dof_layout().entity_closure_dofs(
         dim, local_indices[i]);
-    for (std::size_t j = 0; j < closure_blocks.size(); ++j)
-    {
-      const int dof = cell_blocks[closure_blocks[j]];
-      data[offsets[dof] + num_facets_per_dof[dof]++] = entities[i];
-    }
+    std::for_each(closure_blocks.begin(), closure_blocks.end(),
+                  [&num_facets_per_dof, &data, &cell_blocks, &offsets,
+                   entity = entities[i]](auto block)
+                  {
+                    const int dof = cell_blocks[block];
+                    data[offsets[dof] + num_facets_per_dof[dof]++] = entity;
+                  });
   }
   return dolfinx::graph::AdjacencyList<std::int32_t>(data, offsets);
 }
@@ -226,8 +228,8 @@ create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
       continue;
     // Sum all normal for entities
     std::vector<U> normals = dolfinx::mesh::cell_normals(*V->mesh(), dim, ents);
-    std::copy_n(normals.begin(), 3, n_0.begin());
-    std::copy_n(n_0.begin(), 3, normal.begin());
+    std::ranges::copy_n(normals.begin(), 3, n_0.begin());
+    std::ranges::copy_n(n_0.begin(), 3, normal.begin());
     for (std::size_t j = 1; j < normals.size() / 3; ++j)
     {
       // Align direction of normal vectors n_0 and n_j
@@ -239,7 +241,7 @@ create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
       for (std::size_t k = 0; k < 3; ++k)
         normal[k] += sign * normals[3 * j + k];
     }
-    std::copy_n(normal.begin(), bs, std::next(_n.begin(), i * bs));
+    std::ranges::copy_n(normal.begin(), bs, std::next(_n.begin(), i * bs));
   }
   // Receive normals from other processes with dofs on the facets
   VecGhostUpdateBegin(n_vec.vec(), ADD_VALUES, SCATTER_REVERSE);
@@ -379,7 +381,7 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc1)
 {
   {
-    LOG(INFO) << "Generating MPC sparsity pattern";
+    spdlog::info("Generating MPC sparsity pattern");
     dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
     if (a.rank() != 2)
     {
@@ -402,11 +404,11 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     std::array<int, 2> bs = {bs0, bs1};
     dolfinx::la::SparsityPattern pattern(mesh.comm(), new_maps, bs);
 
-    LOG(INFO) << "Build standard pattern\n";
+    spdlog::debug("Build standard pattern");
     ///  Create and build sparsity pattern for original form. Should be
     ///  equivalent to calling create_sparsity_pattern(Form a)
     build_standard_pattern<T>(pattern, a);
-    LOG(INFO) << "Build new pattern\n";
+    spdlog::debug("Build new pattern\n");
 
     // Arrays replacing slave dof with master dof in sparsity pattern
     auto pattern_populator
@@ -491,13 +493,11 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
       pattern_populator(
           pattern, mpc0, mpc1,
           [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
-          { pattern.insert(dofs_m, dofs_s); },
-          do_nothing_inserter);
+          { pattern.insert(dofs_m, dofs_s); }, do_nothing_inserter);
       pattern_populator(
           pattern, mpc1, mpc0,
           [](auto& pattern, const auto& dofs_m, const auto& dofs_s)
-          { pattern.insert(dofs_s, dofs_m); },
-          do_nothing_inserter);
+          { pattern.insert(dofs_s, dofs_m); }, do_nothing_inserter);
     }
 
     return pattern;
@@ -713,13 +713,13 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     // Fill in owned blocks
     std::vector<std::int32_t> blocks;
     blocks.reserve(slaves.size());
-    std::transform(slaves.begin(), slaves.end(), std::back_inserter(blocks),
-                   [bs](auto& dof) { return dof / bs; });
+    std::ranges::transform(slaves, std::back_inserter(blocks),
+                           [bs](auto& dof) { return dof / bs; });
 
     // Propagate local slave information to ghost processes
     std::vector<std::int8_t> indicator(imap.size_local(), 0);
-    std::for_each(blocks.begin(), blocks.end(),
-                  [&indicator](auto& block) { indicator[block] = 1; });
+    std::ranges::for_each(blocks,
+                          [&indicator](auto& block) { indicator[block] = 1; });
     dolfinx::common::Scatterer ghost_scatterer(imap, 1);
     std::vector<std::int8_t> recieve_indicator(imap.num_ghosts());
     ghost_scatterer.scatter_fwd(std::span<const std::int8_t>(indicator),
@@ -735,7 +735,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     }
 
     // Sort and delete duplicates
-    std::sort(blocks.begin(), blocks.end());
+    std::ranges::sort(blocks);
     blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
 
     // Create submap
@@ -751,7 +751,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       std::div_t div = std::div(slaves[i], bs);
       slave_blocks[i] = div.quot;
       slave_rems[i] = div.rem;
-      auto it = std::find(blocks.begin(), blocks.end(), div.quot);
+      auto it = std::ranges::find(blocks, div.quot);
       assert(it != blocks.end());
       auto index = std::distance(blocks.begin(), it);
       parent_to_sub.push_back((int)index);
@@ -775,8 +775,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     for (auto proc : shared_indices.links(parent_to_sub[i]))
     {
       // Find index of process in local MPI communicator
-      auto it
-          = std::find(dest_ranks_ghosts.begin(), dest_ranks_ghosts.end(), proc);
+      auto it = std::ranges::find(dest_ranks_ghosts, proc);
       const auto index = std::distance(dest_ranks_ghosts.begin(), it);
       out_num_masters[index] += num_masters_per_slave[i];
       out_num_slaves[index]++;
@@ -830,8 +829,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     for (auto proc : shared_indices.links(parent_to_sub[i]))
     {
       // Find index of process in local MPI communicator
-      auto it
-          = std::find(dest_ranks_ghosts.begin(), dest_ranks_ghosts.end(), proc);
+      auto it = std::ranges::find(dest_ranks_ghosts, proc);
       const auto index = std::distance(dest_ranks_ghosts.begin(), it);
 
       // Insert slave and num masters per slave
@@ -841,17 +839,18 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       insert_slaves[index]++;
 
       // Insert global master dofs to send
-      std::copy(masters.begin() + master_start, masters.begin() + master_end,
-                masters_out.begin() + disp_out_masters[index]
-                    + insert_masters[index]);
+      std::ranges::copy(masters.begin() + master_start,
+                        masters.begin() + master_end,
+                        masters_out.begin() + disp_out_masters[index]
+                            + insert_masters[index]);
       // Insert owners to send
-      std::copy(owners.begin() + master_start, owners.begin() + master_end,
-                owners_out.begin() + disp_out_masters[index]
-                    + insert_masters[index]);
+      std::ranges::copy(
+          owners.begin() + master_start, owners.begin() + master_end,
+          owners_out.begin() + disp_out_masters[index] + insert_masters[index]);
       // Insert coeffs to send
-      std::copy(coeffs.begin() + master_start, coeffs.begin() + master_end,
-                coeffs_out.begin() + disp_out_masters[index]
-                    + insert_masters[index]);
+      std::ranges::copy(
+          coeffs.begin() + master_start, coeffs.begin() + master_end,
+          coeffs_out.begin() + disp_out_masters[index] + insert_masters[index]);
       insert_masters[index] += num_masters_per_slave[i];
     }
   }
@@ -866,9 +865,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       rems[i] = pos.rem;
     }
     imap.local_to_global(blocks, slaves_out);
-    std::transform(slaves_out.cbegin(), slaves_out.cend(), rems.cbegin(),
-                   slaves_out.begin(),
-                   [bs](auto dof, auto rem) { return dof * bs + rem; });
+    std::ranges::transform(slaves_out, rems, slaves_out.begin(),
+                           [bs](auto dof, auto rem) { return dof * bs + rem; });
   }
 
   // Create in displacements for slaves
@@ -911,12 +909,12 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   recv_block.reserve(recv_slaves.size());
   std::vector<std::int32_t> recv_rem;
   recv_rem.reserve(recv_slaves.size());
-  std::for_each(recv_slaves.cbegin(), recv_slaves.cend(),
-                [bs, &recv_rem, &recv_block](const auto dof)
-                {
-                  recv_rem.push_back(dof % bs);
-                  recv_block.push_back(dof / bs);
-                });
+  std::ranges::for_each(recv_slaves,
+                        [bs, &recv_rem, &recv_block](const auto dof)
+                        {
+                          recv_rem.push_back(dof % bs);
+                          recv_block.push_back(dof / bs);
+                        });
   std::vector<std::int32_t> recv_local(recv_slaves.size());
   imap.global_to_local(recv_block, recv_local);
   for (std::size_t i = 0; i < recv_local.size(); i++)
@@ -1191,8 +1189,9 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       continue;
 
     // Permute the reference values to account for the cell's orientation
-    std::copy_n(std::next(reference_basisb.begin(), num_basis_values * p),
-                num_basis_values, basis_valuesb.begin());
+    std::ranges::copy_n(
+        std::next(reference_basisb.begin(), num_basis_values * p),
+        num_basis_values, basis_valuesb.begin());
     apply_dof_transformation(basis_valuesb, cell_info, cell_index,
                              (int)reference_value_size);
 
@@ -1350,7 +1349,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
 
     // Get cell dofmap
     auto cell_dofs = dofmap->cell_dofs(cells[c]);
-    auto it = std::find(cell_dofs.begin(), cell_dofs.end(), dofs[c]);
+    auto it = std::ranges::find(cell_dofs, dofs[c]);
     auto loc = std::distance(cell_dofs.begin(), it);
 
     // Copy dof coordinates into vector
@@ -1403,11 +1402,10 @@ dolfinx::graph::AdjacencyList<int> compute_colliding_cells(
                 .front();
     }
     // Only push back closest cell
-    if (auto cell_idx
-        = std::min_element(distances_sq.cbegin(), distances_sq.cend());
+    if (auto cell_idx = std::ranges::min_element(distances_sq);
         *cell_idx < eps2)
     {
-      auto pos = std::distance(distances_sq.cbegin(), cell_idx);
+      auto pos = std::distance(distances_sq.begin(), cell_idx);
       colliding_cells.push_back(cells[pos]);
     }
     offsets.push_back((std::int32_t)colliding_cells.size());
@@ -1475,14 +1473,14 @@ std::vector<std::int8_t> is_bc(
   const int bs = dofmap->index_map_bs();
   std::int32_t dim = bs * (imap->size_local() + imap->num_ghosts());
   std::vector<std::int8_t> dof_marker(dim, false);
-  std::for_each(bcs.begin(), bcs.end(),
-                [&dof_marker, &V](auto bc)
-                {
-                  assert(bc);
-                  assert(bc->function_space());
-                  if (bc->function_space()->contains(V))
-                    bc->mark_dofs(dof_marker);
-                });
+  std::ranges::for_each(bcs,
+                        [&dof_marker, &V](auto bc)
+                        {
+                          assert(bc);
+                          assert(bc->function_space());
+                          if (bc->function_space()->contains(V))
+                            bc->mark_dofs(dof_marker);
+                        });
   // Remove slave blocks contained in DirichletBC
   std::vector<std::int8_t> bc_marker(blocks.size(), 0);
   const int dofmap_bs = dofmap->bs();

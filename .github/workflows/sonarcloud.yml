@@ -17,7 +17,7 @@ jobs:
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     container: ghcr.io/fenics/dolfinx/dev-env:v0.8.0-mpich
     env:
-      SONAR_SCANNER_VERSION: 5.0.1.3006 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
+      SONAR_SCANNER_VERSION: 6.1.0.4477 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       PETSC_ARCH: linux-gnu-real64-32
@@ -32,6 +32,9 @@ jobs:
         run: |
           apt-get -y update
           apt-get install unzip
+      - name: Update pip
+        run: |
+          python3 -m pip install --upgrade pip setuptools
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -48,12 +51,12 @@ jobs:
 
       - name: Download and set up sonar-scanner
         env:
-          SONAR_SCANNER_DOWNLOAD_URL: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux.zip
+          SONAR_SCANNER_DOWNLOAD_URL: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux-x64.zip
         run: |
           mkdir -p $HOME/.sonar
           wget -O $HOME/.sonar/sonar-scanner.zip ${{ env.SONAR_SCANNER_DOWNLOAD_URL }}
           unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
-          echo "$HOME/.sonar/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux/bin" >> $GITHUB_PATH
+          echo "$HOME/.sonar/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux-x64/bin" >> $GITHUB_PATH
 
       - name: Download and set up build-wrapper
         env:
@@ -64,14 +67,14 @@ jobs:
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.2.0
+        uses: jorgensd/actions/install-dolfinx@v0.3
         with:
           petsc_arch: ${PETSC_ARCH}
-          dolfinx: v0.8.0
-          basix: v0.8.0
-          ufl: 2024.1.0.post0
-          ffcx: v0.8.0
-  
+          dolfinx: main
+          basix: main
+          ufl: main
+          ffcx: main
+
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc

@@ -16,7 +16,7 @@ from petsc4py import PETSc
 import basix.ufl
 import h5py
 import numpy as np
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (
     Constant,
@@ -49,14 +49,16 @@ def bench_elasticity_one(
         mesh = refine(mesh, redistribute=True)
 
     fdim = mesh.topology.dim - 1
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    el = basix.ufl.element(
+        "Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,), dtype=default_real_type
+    )
     V = functionspace(mesh, el)
 
     # Generate Dirichlet BC on lower boundary (Fixed)
     u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     def boundaries(x):
         return np.isclose(x[0], np.finfo(float).eps)
@@ -178,7 +180,7 @@ def bench_elasticity_one(
     if xdmf:
         # Write solution to file
         u_h = Function(mpc.function_space)
-        u_h.vector.setArray(uh.array)
+        u_h.x.petsc_vec.setArray(uh.array)
         u_h.name = "u_mpc"
         outdir = Path("results")
         outdir.mkdir(exist_ok=True, parents=True)
@@ -214,7 +216,7 @@ if __name__ == "__main__":
     h5f.create_dataset("num_dofs", (N,), dtype=np.int32)
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if args.boomeramg else "GAMG"
-    sd.attrs["solver"] = np.string_(solver)
+    sd.attrs["solver"] = np.bytes_(solver)
 
     # Loop over refinement levels
     for i in range(N):

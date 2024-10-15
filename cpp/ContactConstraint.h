@@ -118,7 +118,7 @@ dolfinx_mpc::mpc_data<T> compute_master_contributions(
   std::vector<std::int64_t> global_blocks;
 
   // Reuse num_masters_local for insertion
-  std::fill(num_masters_local.begin(), num_masters_local.end(), 0);
+  std::ranges::fill(num_masters_local, 0);
   for (std::size_t i = 0; i < num_slaves_local; ++i)
   {
     if (const std::int32_t cell = local_colliding_cell[i]; cell != -1)
@@ -241,7 +241,7 @@ dolfinx_mpc::mpc_data<T> compute_block_contributions(
                       masters_offsets.begin() + 1);
 
   // Reuse num masters as fill position array
-  std::fill(num_masters_in_cell.begin(), num_masters_in_cell.end(), 0);
+  std::ranges::fill(num_masters_in_cell, 0);
 
   // Compute coeffs and owners for local cells
   std::vector<std::int64_t> global_slave_blocks(local_slaves.size());
@@ -253,7 +253,7 @@ dolfinx_mpc::mpc_data<T> compute_block_contributions(
   {
     const std::int32_t local_slave = local_slaves[i];
     std::iota(dofs.begin(), dofs.end(), local_slave_blocks[i] * block_size);
-    auto local_max = std::find(dofs.begin(), dofs.end(), local_slave);
+    auto local_max = std::ranges::find(dofs, local_slave);
     const auto max_index = std::distance(dofs.begin(), local_max);
     for (std::int32_t j = 0; j < block_size; j++)
     {
@@ -308,7 +308,7 @@ dolfinx_mpc::mpc_data<T> concatenate(dolfinx_mpc::mpc_data<T>& mpc0,
                       num_masters_per_slave.end(), masters_offsets.begin() + 1);
 
   // Reuse num_masters_per_slave for indexing
-  std::fill(num_masters_per_slave.begin(), num_masters_per_slave.end(), 0);
+  std::ranges::fill(num_masters_per_slave, 0);
   std::vector<std::int64_t> masters_out(masters_offsets.back());
   std::vector<T> coefficients_out(masters_offsets.back());
   std::vector<std::int32_t> owners_out(masters_offsets.back());
@@ -389,14 +389,14 @@ mpc_data<T> create_contact_slip_condition(
         = impl::locate_slave_dofs<U>(V, meshtags, slave_marker);
 
     local_slave_blocks.reserve(slave_dofs.size());
-    std::for_each(slave_dofs.begin(), slave_dofs.end(),
-                  [&local_slave_blocks, bs = block_size,
-                   sl = size_local](const std::int32_t dof)
-                  {
-                    std::div_t div = std::div(dof, bs);
-                    if (div.quot < sl)
-                      local_slave_blocks.push_back(div.quot);
-                  });
+    std::ranges::for_each(slave_dofs,
+                          [&local_slave_blocks, bs = block_size,
+                           sl = size_local](const std::int32_t dof)
+                          {
+                            std::div_t div = std::div(dof, bs);
+                            if (div.quot < sl)
+                              local_slave_blocks.push_back(div.quot);
+                          });
   }
 
   // Data structures to hold information about slave data local to process
@@ -424,12 +424,12 @@ mpc_data<T> create_contact_slip_condition(
       normal[j] = std::real(normal_array[dofs[j]]);
     U norm = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1]
                        + normal[2] * normal[2]);
-    std::for_each(normal.begin(), normal.end(),
-                  [norm](auto& n) { return std::abs(n / norm); });
+    std::ranges::for_each(normal,
+                          [norm](auto& n) { return std::abs(n / norm); });
     return std::distance(
         normal.begin(),
-        std::max_element(normal.begin(), normal.end(),
-                         [](T a, T b) { return std::norm(a) < std::norm(b); }));
+        std::ranges::max_element(normal, [](T a, T b)
+                                 { return std::norm(a) < std::norm(b); }));
   };
 
   // Determine which dof in local slave block is the actual slave
@@ -532,10 +532,10 @@ mpc_data<T> create_contact_slip_condition(
   {
     const std::int32_t slave_idx = slave_indices_remote[i];
     send_rems[i] = local_rems[slave_idx];
-    std::copy_n(std::next(slave_coordinates.begin(), 3 * slave_idx), 3,
-                std::next(coordinates_send.begin(), 3 * i));
-    std::copy_n(std::next(normals.begin(), 3 * slave_idx), 3,
-                std::next(normals_send.begin(), 3 * i));
+    std::ranges::copy_n(std::next(slave_coordinates.begin(), 3 * slave_idx), 3,
+                        std::next(coordinates_send.begin(), 3 * i));
+    std::ranges::copy_n(std::next(normals.begin(), 3 * slave_idx), 3,
+                        std::next(normals_send.begin(), 3 * i));
   }
 
   // Figure out how much data to receive from each neighbor
@@ -564,9 +564,9 @@ mpc_data<T> create_contact_slip_condition(
   // function data
   std::vector<std::int32_t> num_slaves_recv3;
   num_slaves_recv3.reserve(indegree);
-  std::transform(num_slaves_recv.begin(), num_slaves_recv.end(),
-                 std::back_inserter(num_slaves_recv3),
-                 [](std::int32_t num_slaves) { return 3 * num_slaves; });
+  std::ranges::transform(num_slaves_recv, std::back_inserter(num_slaves_recv3),
+                         [](std::int32_t num_slaves)
+                         { return 3 * num_slaves; });
   std::vector<int> disp3(indegree + 1, 0);
   std::partial_sum(num_slaves_recv3.begin(), num_slaves_recv3.end(),
                    disp3.begin() + 1);
@@ -612,9 +612,9 @@ mpc_data<T> create_contact_slip_condition(
   std::vector<std::int32_t> num_collision_masters(indegree + 1, 0);
   std::vector<int> num_out_offsets;
   num_out_offsets.reserve(indegree);
-  std::transform(num_slaves_recv.begin(), num_slaves_recv.end(),
-                 std::back_inserter(num_out_offsets),
-                 [](std::int32_t num_slaves) { return num_slaves + 1; });
+  std::ranges::transform(num_slaves_recv, std::back_inserter(num_out_offsets),
+                         [](std::int32_t num_slaves)
+                         { return num_slaves + 1; });
   const std::int32_t num_offsets
       = std::accumulate(num_out_offsets.begin(), num_out_offsets.end(), 0);
   std::vector<std::int32_t> offsets_remote(num_offsets);
@@ -698,7 +698,7 @@ mpc_data<T> create_contact_slip_condition(
   std::vector<MPI_Status> status(4);
   MPI_Wait(&requests[0], &status[0]);
 
-  std::vector<bool> slave_found(slave_indices_remote.size(), false);
+  std::vector<std::int8_t> slave_found(slave_indices_remote.size(), false);
   std::vector<std::int32_t> num_inc_masters(slave_indices_remote.size());
   // Iterate through the processors and find one set of inputs per slave that
   // was sent to the other processes
@@ -723,7 +723,7 @@ mpc_data<T> create_contact_slip_condition(
       }
     }
   }
-  if (auto not_found = std::find(slave_found.begin(), slave_found.end(), false);
+  if (auto not_found = std::ranges::find(slave_found, false);
       not_found != slave_found.end())
   {
     std::runtime_error(
@@ -744,7 +744,7 @@ mpc_data<T> create_contact_slip_condition(
   std::vector<T> offproc_coeffs(offproc_offsets.back());
   std::vector<std::int32_t> offproc_owners(offproc_offsets.back());
 
-  std::fill(slave_found.begin(), slave_found.end(), false);
+  std::ranges::fill(slave_found, false);
   for (std::size_t i = 0; i < src_ranks_rev.size(); ++i)
   {
     const std::int32_t proc_start = disp_inc_masters[i];
@@ -768,17 +768,20 @@ mpc_data<T> create_contact_slip_condition(
       if (!(slave_found[c]) && (slave_max - slave_min > 0))
       {
         slave_found[c] = true;
-        std::copy(remote_colliding_masters.begin() + proc_start + slave_min,
-                  remote_colliding_masters.begin() + proc_start + slave_max,
-                  offproc_masters.begin() + offproc_offsets[c]);
+        std::ranges::copy(
+            remote_colliding_masters.begin() + proc_start + slave_min,
+            remote_colliding_masters.begin() + proc_start + slave_max,
+            offproc_masters.begin() + offproc_offsets[c]);
 
-        std::copy(remote_colliding_coeffs.begin() + proc_start + slave_min,
-                  remote_colliding_coeffs.begin() + proc_start + slave_max,
-                  offproc_coeffs.begin() + offproc_offsets[c]);
+        std::ranges::copy(
+            remote_colliding_coeffs.begin() + proc_start + slave_min,
+            remote_colliding_coeffs.begin() + proc_start + slave_max,
+            offproc_coeffs.begin() + offproc_offsets[c]);
 
-        std::copy(remote_colliding_owners.begin() + proc_start + slave_min,
-                  remote_colliding_owners.begin() + proc_start + slave_max,
-                  offproc_owners.begin() + offproc_offsets[c]);
+        std::ranges::copy(
+            remote_colliding_owners.begin() + proc_start + slave_min,
+            remote_colliding_owners.begin() + proc_start + slave_max,
+            offproc_owners.begin() + offproc_offsets[c]);
       }
     }
   }
@@ -814,15 +817,15 @@ mpc_data<T> create_contact_slip_condition(
     {
       const std::int32_t master_min = masters_offsets[i];
       const std::int32_t master_max = masters_offsets[i + 1];
-      std::copy(masters_out.begin() + master_min,
-                masters_out.begin() + master_max,
-                local_masters.begin() + local_offsets[i] + loc_pos[i]);
-      std::copy(coefficients_out.begin() + master_min,
-                coefficients_out.begin() + master_max,
-                local_coeffs.begin() + local_offsets[i] + loc_pos[i]);
-      std::copy(owners_out.begin() + master_min,
-                owners_out.begin() + master_max,
-                local_owners.begin() + local_offsets[i] + loc_pos[i]);
+      std::ranges::copy(masters_out.begin() + master_min,
+                        masters_out.begin() + master_max,
+                        local_masters.begin() + local_offsets[i] + loc_pos[i]);
+      std::ranges::copy(coefficients_out.begin() + master_min,
+                        coefficients_out.begin() + master_max,
+                        local_coeffs.begin() + local_offsets[i] + loc_pos[i]);
+      std::ranges::copy(owners_out.begin() + master_min,
+                        owners_out.begin() + master_max,
+                        local_owners.begin() + local_offsets[i] + loc_pos[i]);
       loc_pos[i] += master_max - master_min;
     }
 
@@ -832,18 +835,18 @@ mpc_data<T> create_contact_slip_condition(
       const std::int32_t master_min = offproc_offsets[i];
       const std::int32_t master_max = offproc_offsets[i + 1];
       const std::int32_t slave_index = slave_indices_remote[i];
-      std::copy(offproc_masters.begin() + master_min,
-                offproc_masters.begin() + master_max,
-                local_masters.begin() + local_offsets[slave_index]
-                    + loc_pos[slave_index]);
-      std::copy(offproc_coeffs.begin() + master_min,
-                offproc_coeffs.begin() + master_max,
-                local_coeffs.begin() + local_offsets[slave_index]
-                    + loc_pos[slave_index]);
-      std::copy(offproc_owners.begin() + master_min,
-                offproc_owners.begin() + master_max,
-                local_owners.begin() + local_offsets[slave_index]
-                    + loc_pos[slave_index]);
+      std::ranges::copy(offproc_masters.begin() + master_min,
+                        offproc_masters.begin() + master_max,
+                        local_masters.begin() + local_offsets[slave_index]
+                            + loc_pos[slave_index]);
+      std::ranges::copy(offproc_coeffs.begin() + master_min,
+                        offproc_coeffs.begin() + master_max,
+                        local_coeffs.begin() + local_offsets[slave_index]
+                            + loc_pos[slave_index]);
+      std::ranges::copy(offproc_owners.begin() + master_min,
+                        offproc_owners.begin() + master_max,
+                        local_owners.begin() + local_offsets[slave_index]
+                            + loc_pos[slave_index]);
       loc_pos[slave_index] += master_max - master_min;
     }
   }
@@ -919,8 +922,8 @@ mpc_data<T> create_contact_inelastic_condition(
 
   std::vector<std::int32_t> slave_blocks
       = impl::locate_slave_dofs<U>(V, meshtags, slave_marker);
-  std::for_each(slave_blocks.begin(), slave_blocks.end(),
-                [block_size](std::int32_t& d) { d /= block_size; });
+  std::ranges::for_each(slave_blocks,
+                        [block_size](std::int32_t& d) { d /= block_size; });
 
   // Vector holding what blocks local to process are slaves
   std::vector<std::int32_t> local_blocks;
@@ -930,8 +933,8 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<std::int32_t> ghost_blocks;
 
   // Map slave blocks to arrays holding local bocks and ghost blocks
-  std::for_each(
-      slave_blocks.begin(), slave_blocks.end(),
+  std::ranges::for_each(
+      slave_blocks,
       [size_local, &local_blocks, &ghost_blocks](const std::int32_t block)
       {
         if (block < size_local)
@@ -1069,8 +1072,9 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<U> distribute_coordinates(blocks_wo_local_collision.size() * 3);
   for (std::size_t i = 0; i < collision_to_local.size(); ++i)
   {
-    std::copy_n(std::next(slave_coordinates.begin(), 3 * collision_to_local[i]),
-                3, std::next(distribute_coordinates.begin(), 3 * i));
+    std::ranges::copy_n(
+        std::next(slave_coordinates.begin(), 3 * collision_to_local[i]), 3,
+        std::next(distribute_coordinates.begin(), 3 * i));
   }
   dolfinx_mpc::mpc_data<T> mpc;
 
@@ -1096,8 +1100,8 @@ mpc_data<T> create_contact_inelastic_condition(
     // slaves)
     std::vector<std::int32_t> slaves;
     slaves.reserve(block_size * local_blocks.size());
-    std::for_each(
-        local_blocks.begin(), local_blocks.end(),
+    std::ranges::for_each(
+        local_blocks,
         [block_size, tdim, &masters_out, &local_masters, &coeffs_out,
          &local_coeffs, &offsets_out, &slaves](const std::int32_t block)
         {
@@ -1113,7 +1117,7 @@ mpc_data<T> create_contact_inelastic_condition(
           }
         });
     std::vector<std::int32_t> owners(masters_out.size());
-    std::fill(owners.begin(), owners.end(), 0);
+    std::ranges::fill(owners, 0);
     mpc.slaves = slaves;
     mpc.masters = masters_out;
     mpc.offsets = offsets_out;
@@ -1478,17 +1482,18 @@ mpc_data<T> create_contact_inelastic_condition(
 
   // Count number of incoming slaves
   std::vector<std::int32_t> inc_num_slaves(src_ranks_ghost.size(), 0);
-  std::for_each(ghost_slaves.begin(), ghost_slaves.end(),
-                [block_size, size_local, &ghost_owners, &inc_num_slaves,
-                 &src_ranks_ghost](std::int32_t slave)
-                {
-                  const std::int32_t owner
-                      = ghost_owners[slave / block_size - size_local];
-                  const auto it = std::find(src_ranks_ghost.begin(),
-                                            src_ranks_ghost.end(), owner);
-                  const auto index = std::distance(src_ranks_ghost.begin(), it);
-                  inc_num_slaves[index]++;
-                });
+  std::ranges::for_each(ghost_slaves,
+                        [block_size, size_local, &ghost_owners, &inc_num_slaves,
+                         &src_ranks_ghost](std::int32_t slave)
+                        {
+                          const std::int32_t owner
+                              = ghost_owners[slave / block_size - size_local];
+                          const auto it
+                              = std::ranges::find(src_ranks_ghost, owner);
+                          const auto index
+                              = std::distance(src_ranks_ghost.begin(), it);
+                          inc_num_slaves[index]++;
+                        });
   // Count number of outgoing slaves and masters
   dolfinx::graph::AdjacencyList<int> shared_indices
       = slave_index_map->index_to_dest_ranks();
@@ -1505,8 +1510,8 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<std::int32_t> loc_block(1);
   std::vector<std::int64_t> glob_block(1);
 
-  std::for_each(
-      local_blocks.begin(), local_blocks.end(),
+  std::ranges::for_each(
+      local_blocks,
       [block_size, &local_masters, &local_coeffs, &local_owners,
        &shared_indices, &dest_ranks_ghost, &loc_block, &glob_block,
        &out_num_masters, &out_num_slaves, &imap, &proc_to_ghost,
@@ -1522,8 +1527,7 @@ mpc_data<T> create_contact_inelastic_condition(
           const auto num_masters = (std::int32_t)masters_i.size();
           for (auto proc : shared_indices.links(slave / block_size))
           {
-            const auto it = std::find(dest_ranks_ghost.begin(),
-                                      dest_ranks_ghost.end(), proc);
+            const auto it = std::ranges::find(dest_ranks_ghost, proc);
             std::int32_t index = std::distance(dest_ranks_ghost.begin(), it);
             out_num_masters[index] += num_masters;
             out_num_slaves[index]++;
@@ -1663,8 +1667,8 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<std::int32_t> offsets = {0};
   offsets.reserve(slaves.size() + 1);
 
-  std::for_each(
-      local_blocks.begin(), local_blocks.end(),
+  std::ranges::for_each(
+      local_blocks,
       [block_size, tdim, &masters, &local_masters, &coeffs_out, &local_coeffs,
        &owners_out, &local_owners, &offsets, &slaves](const std::int32_t block)
       {
@@ -1706,8 +1710,7 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<std::int32_t> local_ghosts
       = map_dofs_global_to_local<U>(V, in_ghost_slaves);
   slaves.resize(num_loc_slaves + num_ghost_slaves);
-  std::copy(local_ghosts.cbegin(), local_ghosts.cend(),
-            slaves.begin() + num_loc_slaves);
+  std::ranges::copy(local_ghosts, slaves.begin() + num_loc_slaves);
   mpc.slaves = slaves;
   mpc.masters = masters;
   mpc.offsets = offsets;

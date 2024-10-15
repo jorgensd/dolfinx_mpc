@@ -33,8 +33,9 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   auto sub_to_parent = [&parent_map](const std::vector<std::int32_t>& sub_dofs)
   {
     std::vector<std::int32_t> parent_dofs(sub_dofs.size());
-    std::transform(sub_dofs.cbegin(), sub_dofs.cend(), parent_dofs.begin(),
-                   [&parent_map](auto& dof) { return parent_map(dof); });
+    std::ranges::transform(sub_dofs, parent_dofs.begin(),
+                           [&parent_map](auto& dof)
+                           { return parent_map(dof); });
     return parent_dofs;
   };
 
@@ -49,13 +50,13 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     parent_rems.reserve(dofs.size());
     const auto bs = parent_dofmap->index_map_bs();
     // Split parent dofs into blocks and rems
-    std::for_each(dofs.cbegin(), dofs.cend(),
-                  [&parent_blocks, &parent_rems, &bs](auto dof)
-                  {
-                    std::div_t div = std::div(dof, bs);
-                    parent_blocks.push_back(div.quot);
-                    parent_rems.push_back(div.rem);
-                  });
+    std::ranges::for_each(dofs,
+                          [&parent_blocks, &parent_rems, &bs](auto dof)
+                          {
+                            std::div_t div = std::div(dof, bs);
+                            parent_blocks.push_back(div.quot);
+                            parent_rems.push_back(div.rem);
+                          });
     // Map blocks to global index
     std::vector<std::int64_t> parents_glob(dofs.size());
     parent_dofmap->index_map->local_to_global(parent_blocks, parents_glob);
@@ -86,12 +87,12 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Only work with local blocks
   std::vector<std::int32_t> local_blocks;
   local_blocks.reserve(slave_blocks.size());
-  std::for_each(slave_blocks.begin(), slave_blocks.end(),
-                [&local_blocks, size_local](auto block)
-                {
-                  if (block < size_local)
-                    local_blocks.push_back(block);
-                });
+  std::ranges::for_each(slave_blocks,
+                        [&local_blocks, size_local](auto block)
+                        {
+                          if (block < size_local)
+                            local_blocks.push_back(block);
+                        });
 
   // Create map from slave dof blocks to a cell containing them
   std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
@@ -295,14 +296,14 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
         if (rank == proc)
           continue;
         // Find position in neighborhood communicator
-        auto it = std::find(s_to_m_ranks.begin(), s_to_m_ranks.end(), proc);
+        auto it = std::ranges::find(s_to_m_ranks, proc);
         assert(it != s_to_m_ranks.end());
         auto dist = std::distance(s_to_m_ranks.begin(), it);
         const std::int32_t insert_location
             = disp_out[dist] + out_placement[dist]++;
         // Copy coordinates and dofs to output arrays
-        std::copy_n(std::next(mapped_T_b.begin(), 3 * i), 3,
-                    std::next(coords_out.begin(), 3 * insert_location));
+        std::ranges::copy_n(std::next(mapped_T_b.begin(), 3 * i), 3,
+                            std::next(coords_out.begin(), 3 * insert_location));
         for (int b = 0; b < bs; b++)
         {
           searching_dofs[insert_location * bs + b]
@@ -323,10 +324,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Take into account that we send three values per slave
   auto m_3 = [](auto& num) { num *= 3; };
-  std::for_each(disp_out.begin(), disp_out.end(), m_3);
-  std::for_each(num_out_slaves.begin(), num_out_slaves.end(), m_3);
-  std::for_each(disp_in.begin(), disp_in.end(), m_3);
-  std::for_each(num_recv_slaves.begin(), num_recv_slaves.end(), m_3);
+  std::ranges::for_each(disp_out, m_3);
+  std::ranges::for_each(num_out_slaves, m_3);
+  std::ranges::for_each(disp_in, m_3);
+  std::ranges::for_each(num_recv_slaves, m_3);
 
   // Communicate coordinates
   MPI_Neighbor_alltoallv(
@@ -336,12 +337,12 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Reset in_displacements to be per block for later usage
   auto d_3 = [](auto& num) { num /= 3; };
-  std::for_each(disp_in.begin(), disp_in.end(), d_3);
+  std::ranges::for_each(disp_in, d_3);
 
   // Reset out_displacments to be for every slave
   auto m_bs_d_3 = [bs](auto& num) { num = num * bs / 3; };
-  std::for_each(disp_out.begin(), disp_out.end(), m_bs_d_3);
-  std::for_each(num_out_slaves.begin(), num_out_slaves.end(), m_bs_d_3);
+  std::ranges::for_each(disp_out, m_bs_d_3);
+  std::ranges::for_each(num_out_slaves, m_bs_d_3);
 
   // Create remote arrays
   std::vector<std::int64_t> masters_remote;

@@ -22,7 +22,7 @@ import gmsh
 import numpy as np
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.io import gmshio
 from ufl.core.expr import Expr
 
@@ -120,8 +120,8 @@ fdim = mesh.topology.dim - 1
 
 # Create the function space
 cellname = mesh.ufl_cell().cellname()
-Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,))
-Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1)
+Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
+Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=default_real_type)
 
 V = dolfinx.fem.functionspace(mesh, Ve)
 Q = dolfinx.fem.functionspace(mesh, Qe)
@@ -260,10 +260,10 @@ for Uh_sub in Uh.getNestSubVecs():
     )  # type: ignore
 # ----------------------------- Put NestVec into DOLFINx Function - ---------
 uh = dolfinx.fem.Function(mpc.function_space)
-uh.vector.setArray(Uh.getNestSubVecs()[0].array)
+uh.x.petsc_vec.setArray(Uh.getNestSubVecs()[0].array)
 
 ph = dolfinx.fem.Function(mpc_q.function_space)
-ph.vector.setArray(Uh.getNestSubVecs()[1].array)
+ph.x.petsc_vec.setArray(Uh.getNestSubVecs()[1].array)
 
 uh.x.scatter_forward()
 ph.x.scatter_forward()
@@ -342,8 +342,8 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
 
-    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
-    p_mpc = dolfinx_mpc.utils.gather_PETScVector(ph.vector, root=root)
+    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
+    p_mpc = dolfinx_mpc.utils.gather_PETScVector(ph.x.petsc_vec, root=root)
     up_mpc = np.hstack([u_mpc, p_mpc])
     if MPI.COMM_WORLD.rank == root:
         KTAK = K.T * A_csr * K

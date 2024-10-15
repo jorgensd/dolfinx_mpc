@@ -1,25 +1,10 @@
 #------------------------------------------------------------------------------
-# Top level CMakeLists.txt file for DOLFIN
-cmake_minimum_required(VERSION 3.19)
+# Top level CMakeLists.txt file for DOLFINX_MPC
+cmake_minimum_required(VERSION 3.21)
 
 #------------------------------------------------------------------------------
 # Set project name and version number
-project(DOLFINX_MPC VERSION "0.8.0.0")
-
-#------------------------------------------------------------------------------
-# Set CMake options, see `cmake --help-policy CMP000x`
-
-cmake_policy(VERSION 3.19)
-
-#------------------------------------------------------------------------------
-# Use C++17
-set(CMAKE_CXX_STANDARD 20)
-
-# Require C++17
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Do not enable compler-specific extensions
-set(CMAKE_CXX_EXTENSIONS OFF)
+project(DOLFINX_MPC VERSION "0.9.0.0")
 
 #------------------------------------------------------------------------------
 # General configuration
@@ -38,7 +23,7 @@ option(CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and install
 add_feature_info(CMAKE_INSTALL_RPATH_USE_LINK_PATH CMAKE_INSTALL_RPATH_USE_LINK_PATH "Add paths to linker search and installed rpath.")
 
 # Check for required package DOLFINX
-find_package(DOLFINX 0.8.0.0 REQUIRED)
+find_package(DOLFINX 0.9.0.0 REQUIRED)
 set_package_properties(DOLFINX PROPERTIES TYPE REQUIRED
     DESCRIPTION "New generation Dynamic Object-oriented Library for - FINite element computation"
     URL "https://github.com/FEniCS/dolfinx"
@@ -51,6 +36,7 @@ feature_summary(WHAT ALL)
 # Declare the library (target)
 
 add_library(dolfinx_mpc)
+target_compile_features(dolfinx_mpc PUBLIC cxx_std_20)
 
 # dolfinx gives us transitive dependency on mpi, petsc, basix, ufcx
 # without us needing to reimplement detection/dependency

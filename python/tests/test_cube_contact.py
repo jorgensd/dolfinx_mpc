@@ -179,9 +179,9 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
 
     # Bottom boundary is fixed in all directions
     u_bc = fem.Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     bottom_dofs = fem.locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = fem.dirichletbc(u_bc, bottom_dofs)
@@ -260,7 +260,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
         solver.setOperators(A)
         uh = fem.Function(mpc.function_space)
         uh.x.array[:] = 0
-        u_vec = uh.vector
+        u_vec = uh.x.petsc_vec
         solver.solve(b, u_vec)
 
     u_vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
@@ -298,5 +298,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
             atol = 1000 * np.finfo(default_scalar_type).resolution
             nt.assert_allclose(uh_numpy, u_mpc, atol=atol)
     L_org.destroy()
+    b.destroy()
+    solver.destroy()
 
     list_timings(comm, [TimingType.wall])

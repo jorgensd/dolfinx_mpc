@@ -156,7 +156,7 @@ L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVER
 fem.petsc.set_bc(L_org, bcs)
 solver.setOperators(A_org)
 u_ = fem.Function(V)
-solver.solve(L_org, u_.vector)
+solver.solve(L_org, u_.x.petsc_vec)
 
 it = solver.getIterationNumber()
 print("Unconstrained solver iterations {0:d}".format(it))
@@ -175,7 +175,7 @@ with Timer("~Demo: Verification"):
     A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
     K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+    u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
 
     if MPI.COMM_WORLD.rank == root:
         KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)

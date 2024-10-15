@@ -15,7 +15,7 @@ from petsc4py import PETSc
 import basix.ufl
 import h5py
 import numpy as np
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
 from dolfinx.fem import (
     Constant,
@@ -62,7 +62,9 @@ def bench_elasticity_edge(
     ct = CellType.tetrahedron if tetra else CellType.hexahedron
     mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ct)
 
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,))
+    el = basix.ufl.element(
+        "Lagrange", mesh.topology.cell_name(), int(degree), shape=(mesh.geometry.dim,), dtype=default_real_type
+    )
     V = functionspace(mesh, el)
 
     # Generate Dirichlet BC (Fixed)
@@ -185,7 +187,7 @@ def bench_elasticity_edge(
         solver.setOperators(A)
         uh = Function(mpc.function_space)
         uh.x.array[:] = 0
-        solver.solve(b, uh.vector)
+        solver.solve(b, uh.x.petsc_vec)
         uh.x.scatter_forward()
         mpc.backsubstitution(uh)
         solver_time = timer.elapsed()
@@ -211,7 +213,7 @@ def bench_elasticity_edge(
     if xdmf:
         # Write solution to file
         u_h = Function(mpc.function_space)
-        u_h.vector.setArray(uh.array)
+        u_h.x.petsc_vec.setArray(uh.array)
         u_h.name = "u_mpc"
         results = Path("results").absolute()
         results.mkdir(exist_ok=True)
@@ -258,9 +260,9 @@ if __name__ == "__main__":
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if args.boomeramg else "GAMG"
     ct = "Tet" if args.tetra else "Hex"
-    sd.attrs["solver"] = np.string_(solver)
-    sd.attrs["degree"] = np.string_(str(int(args.degree)))
-    sd.attrs["ct"] = np.string_(ct)
+    sd.attrs["solver"] = np.bytes_(solver)
+    sd.attrs["degree"] = np.bytes_(str(int(args.degree)))
+    sd.attrs["ct"] = np.bytes_(ct)
 
     for i in range(N):
         log_info(f"Run {i} in progress")

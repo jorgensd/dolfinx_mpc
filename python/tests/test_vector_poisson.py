@@ -40,9 +40,9 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
 
     # Define boundary conditions (HAS TO BE NON-MASTER NODES)
     u_bc = fem.Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     bdofsV = fem.locate_dofs_geometrical(V, boundary)
     bc = fem.dirichletbc(u_bc, bdofsV)
@@ -88,7 +88,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     uh = fem.Function(mpc.function_space)
     uh.x.array[:] = 0
 
-    solver.solve(b, uh.vector)
+    solver.solve(b, uh.x.petsc_vec)
     uh.x.scatter_forward()
     mpc.backsubstitution(uh)
 
@@ -113,7 +113,7 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
 
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
@@ -130,4 +130,5 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
 
     b.destroy()
     L_org.destroy()
+    solver.destroy()
     list_timings(comm, [TimingType.wall])

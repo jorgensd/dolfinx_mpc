@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.2.0
+        uses: jorgensd/actions/install-dolfinx@v0.3
         with:
           dolfinx: v0.8.0
           ufl: 2024.1.0.post0

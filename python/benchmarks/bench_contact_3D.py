@@ -98,9 +98,11 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
         tdim0 = mesh0.topology.dim
         num_cells0 = mesh0.topology.index_map(tdim0).size_local
+        mesh0.topology.create_connectivity(tdim0, tdim0)
         cells0 = entities_to_geometry(mesh0._cpp_object, tdim0, np.arange(num_cells0, dtype=np.int32), False)
         tdim1 = mesh1.topology.dim
         num_cells1 = mesh1.topology.index_map(tdim1).size_local
+        mesh1.topology.create_connectivity(tdim1, tdim1)
         cells1 = entities_to_geometry(mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
@@ -145,6 +147,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
 
     # Find top and bottom interface facets
     cells = np.arange(num_cells, dtype=np.int32)
+    mesh.topology.create_connectivity(tdim, tdim)
     cell_midpoints = compute_midpoints(mesh, tdim, cells)
     top_cube = over_plane(if_points[:, 0], if_points[:, 1], if_points[:, 2])
     for facet in i_facets:
@@ -211,15 +214,17 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     mesh.name = f"mesh_{celltype}_{theta:.2f}{type_ext:s}"
 
     # Create functionspaces
-    el = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,))
+    el = basix.ufl.element(
+        "Lagrange", mesh.topology.cell_name(), 1, shape=(mesh.geometry.dim,), dtype=default_real_type
+    )
     V = functionspace(mesh, el)
 
     # Define boundary conditions
     # Bottom boundary is fixed in all directions
     u_bc = Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(0.0)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     bottom_dofs = locate_dofs_topological(V, fdim, mt.find(5))
     bc_bottom = dirichletbc(u_bc, bottom_dofs)
@@ -320,7 +325,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     uh.x.array[:] = 0
     log_info("Solve")
     with Timer(f"{num_dofs}: Solve"):
-        solver.solve(b, uh.vector)
+        solver.solve(b, uh.x.petsc_vec)
         uh.x.scatter_forward()
     log_info("Backsub")
     with Timer(f"{num_dofs}: Backsubstitution"):
@@ -367,6 +372,8 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
             if comm.rank == 0:
                 print(op, num_calls, avg_time, min_time, max_time, file=results_file)
         list_timings(MPI.COMM_WORLD, [TimingType.wall])
+    b.destroy()
+    solver.destroy()
 
 
 if __name__ == "__main__":

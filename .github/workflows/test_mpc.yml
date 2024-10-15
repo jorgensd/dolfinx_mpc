@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx/dolfinx:v0.8.0
+    container: ghcr.io/fenics/dolfinx/dolfinx:stable
 
     strategy:
       matrix:
@@ -37,10 +37,10 @@ jobs:
         #   - CC: clang
         #     CXX: c++
     env:
-      DOLFINX_BRANCH: v0.8.0
-      BASIX_BRANCH: v0.8.0
-      UFL_BRANCH: 2024.1.0.post0
-      FFCX_BRANCH: v0.8.0
+      DOLFINX_BRANCH: v0.9.0
+      BASIX_BRANCH: v0.9.0
+      UFL_BRANCH: 2024.2.0
+      FFCX_BRANCH: v0.9.0
 
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
@@ -56,7 +56,7 @@ jobs:
       HDF5_DIR: "/usr/local/"
       MPC_BUILD_MODE: ${{ matrix.build_mode }}
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
-      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.10/dist-packages:/usr/local/lib"
+      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.12/dist-packages:/usr/local/lib"
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
@@ -69,25 +69,26 @@ jobs:
           apt-get install -y clang
 
       - name: upgrade pip
-        run: python3 -m pip install --upgrade setuptools pip
+        run: python3 -m pip install  --upgrade setuptools pip
 
       - name: Check formatting
         run: |
+          python3 -m pip install  ruff
           ruff check
           ruff format
 
       - name: Check typing
         run: |
-          python3 -m pip install mypy
+          python3 -m pip install  mypy
           cd python
           python3 -m mypy . --exclude=build
 
       - name: Install h5py
         run: |
-          python3 -m pip install --no-cache-dir --no-binary=h5py h5py
+          python3 -m pip install --no-build-isolation  --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.2.0
+        uses: jorgensd/actions/install-dolfinx@v0.3
         with:
           dolfinx: ${{ env.DOLFINX_BRANCH }}
           ufl: ${{ env.UFL_BRANCH }}
@@ -102,7 +103,7 @@ jobs:
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test]
+        run: python3 -m pip -v install  --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test]
 
       - name: Run tests (serial)
         run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -vs

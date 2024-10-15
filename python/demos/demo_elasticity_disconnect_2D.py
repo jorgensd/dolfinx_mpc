@@ -91,14 +91,14 @@ nu_right = 0.3
 nu_left = 0.1
 mu = Function(DG0)
 lmbda = Function(DG0)
-with mu.vector.localForm() as local:
+with mu.x.petsc_vec.localForm() as local:
     local.array[left_dofs] = E_left / (2 * (1 + nu_left))
     local.array[right_dofs] = E_right / (2 * (1 + nu_right))
-with lmbda.vector.localForm() as local:
+with lmbda.x.petsc_vec.localForm() as local:
     local.array[left_dofs] = E_left * nu_left / ((1 + nu_left) * (1 - 2 * nu_left))
     local.array[right_dofs] = E_right * nu_right / ((1 + nu_right) * (1 - 2 * nu_right))
-mu.vector.destroy()
-lmbda.vector.destroy()
+mu.x.petsc_vec.destroy()
+lmbda.x.petsc_vec.destroy()
 
 # Stress computation
 
@@ -133,12 +133,12 @@ def gather_dof_coordinates(V: FunctionSpace, dofs: np.ndarray):
     coords = x[local_dofs]
     num_nodes = len(coords)
     glob_num_nodes = MPI.COMM_WORLD.allreduce(num_nodes, op=MPI.SUM)
-    recvbuf = None
+    recvbuf = np.empty(0, dtype=V.mesh.geometry.x.dtype)
     if MPI.COMM_WORLD.rank == 0:
         recvbuf = np.zeros(3 * glob_num_nodes, dtype=V.mesh.geometry.x.dtype)
     sendbuf = coords.reshape(-1)
     sendcounts = np.array(MPI.COMM_WORLD.gather(len(sendbuf), 0))
-    MPI.COMM_WORLD.Gatherv(sendbuf, (recvbuf, sendcounts), root=0)
+    MPI.COMM_WORLD.Gatherv(sendbuf, (recvbuf, sendcounts), root=0)  #  type: ignore
     glob_coords = MPI.COMM_WORLD.bcast(recvbuf, root=0).reshape((-1, 3))
     return glob_coords
 
@@ -195,7 +195,7 @@ u_h = problem.solve()
 
 it = problem.solver.getIterationNumber()
 
-unorm = u_h.vector.norm()
+unorm = u_h.x.petsc_vec.norm()
 if MPI.COMM_WORLD.rank == 0:
     print("Number of iterations: {0:d}".format(it))
 

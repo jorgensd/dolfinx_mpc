@@ -47,9 +47,9 @@ def test_lifting(get_assemblers):  # noqa: F811
 
     # Create Dirichlet boundary condition
     u_bc = fem.Function(V)
-    with u_bc.vector.localForm() as u_local:
+    with u_bc.x.petsc_vec.localForm() as u_local:
         u_local.set(2.3)
-    u_bc.vector.destroy()
+    u_bc.x.petsc_vec.destroy()
 
     def dirichletboundary(x):
         return np.isclose(x[0], 1)
@@ -92,7 +92,7 @@ def test_lifting(get_assemblers):  # noqa: F811
     # Solve
     uh = fem.Function(mpc.function_space)
     uh.x.array[:] = 0
-    solver.solve(b, uh.vector)
+    solver.solve(b, uh.x.petsc_vec)
     uh.x.scatter_forward()
     mpc.backsubstitution(uh)
 
@@ -106,7 +106,7 @@ def test_lifting(get_assemblers):  # noqa: F811
         A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.vector, root=root)
+        u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
         # constants = dolfinx_mpc.utils.gather_contants(mpc, root=root)
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
@@ -118,3 +118,6 @@ def test_lifting(get_assemblers):  # noqa: F811
             nt.assert_allclose(uh_numpy, u_mpc, rtol=1e-5, atol=1e-8)
 
     list_timings(comm, [TimingType.wall])
+    L_org.destroy()
+    b.destroy()
+    solver.destroy()

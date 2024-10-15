@@ -72,15 +72,15 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
 
     def update(self, solver: dolfinx.nls.petsc.NewtonSolver, dx: PETSc.Vec, x: PETSc.Vec):  # type: ignore
         # We need to use a vector created on the MPC's space to update ghosts
-        self.u_mpc.vector.array = x.array_r
-        self.u_mpc.vector.axpy(-1.0, dx)
-        self.u_mpc.vector.ghostUpdate(
+        self.u_mpc.x.petsc_vec.array = x.array_r
+        self.u_mpc.x.petsc_vec.axpy(-1.0, dx)
+        self.u_mpc.x.petsc_vec.ghostUpdate(
             addv=PETSc.InsertMode.INSERT,  # type: ignore
             mode=PETSc.ScatterMode.FORWARD,  # type: ignore
         )  # type: ignore
         self.mpc.homogenize(self.u_mpc)
         self.mpc.backsubstitution(self.u_mpc)
-        x.array = self.u_mpc.vector.array_r
+        x.array = self.u_mpc.x.petsc_vec.array_r
         x.ghostUpdate(
             addv=PETSc.InsertMode.INSERT,  # type: ignore
             mode=PETSc.ScatterMode.FORWARD,  # type: ignore
@@ -89,7 +89,7 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
     def solve(self, u: dolfinx.fem.Function):
         """Solve non-linear problem into function u. Returns the number
         of iterations and if the solver converged."""
-        n, converged = super().solve(u.vector)
+        n, converged = super().solve(u.x.petsc_vec)
         u.x.scatter_forward()
         return n, converged
 
@@ -199,7 +199,7 @@ def test_homogenize(tensor_order, poly_order):
         pytest.xfail("Unknown tensor order")
 
     cellname = mesh.ufl_cell().cellname()
-    el = basix.ufl.element(basix.ElementFamily.P, cellname, poly_order, shape=shape)
+    el = basix.ufl.element(basix.ElementFamily.P, cellname, poly_order, shape=shape, dtype=mesh.geometry.x.dtype)
 
     V = dolfinx.fem.functionspace(mesh, el)
 
@@ -222,16 +222,16 @@ def test_homogenize(tensor_order, poly_order):
     assert num_slaves_global > 0
 
     u = dolfinx.fem.Function(V)
-    u.vector.set(1.0)
-    assert np.isclose(u.vector.min()[1], u.vector.max()[1])
-    assert np.isclose(u.vector.array_r[0], 1.0)
+    u.x.petsc_vec.set(1.0)
+    assert np.isclose(u.x.petsc_vec.min()[1], u.x.petsc_vec.max()[1])
+    assert np.isclose(u.x.petsc_vec.array_r[0], 1.0)
 
     mpc.homogenize(u)
 
-    with u.vector.localForm() as u_:
+    with u.x.petsc_vec.localForm() as u_:
         for i in range(V.dofmap.index_map.size_local * V.dofmap.index_map_bs):
             if i in mpc.slaves:
                 assert np.isclose(u_.array_r[i], 0.0)
             else:
                 assert np.isclose(u_.array_r[i], 1.0)
-    u.vector.destroy()
+    u.x.petsc_vec.destroy()

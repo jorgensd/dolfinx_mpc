@@ -28,10 +28,9 @@ std::array<MPI_Comm, 2> dolfinx_mpc::create_neighborhood_comms(
   std::vector<std::uint8_t> has_slaves(mpi_size, slave_val);
   // Check if entities if master entities are on this processor
   std::vector<std::uint8_t> has_masters(mpi_size, 0);
-  if (std::find(meshtags.values().begin(), meshtags.values().end(),
-                master_marker)
+  if (std::ranges::find(meshtags.values(), master_marker)
       != meshtags.values().end())
-    std::fill(has_masters.begin(), has_masters.end(), 1);
+    std::ranges::fill(has_masters, 1);
 
   // Get received data sizes from each rank
   std::vector<std::uint8_t> procs_with_masters(mpi_size, -1);
@@ -151,7 +150,7 @@ dolfinx_mpc::create_block_to_cell_map(const dolfinx::mesh::Topology& topology,
                    cell_dofs_disp.begin() + 1);
   std::vector<std::int32_t> cell_map(cell_dofs_disp.back());
   // Reuse num_cells_per_dof for insertion
-  std::fill(num_cells_per_dof.begin(), num_cells_per_dof.end(), 0);
+  std::ranges::fill(num_cells_per_dof, 0);
 
   // Create the block -> cells map
   for (std::int32_t i = 0; i < num_cells_local + num_ghost_cells; i++)
@@ -162,9 +161,9 @@ dolfinx_mpc::create_block_to_cell_map(const dolfinx::mesh::Topology& topology,
   }
 
   // Populate map from slaves to corresponding cell (choose first cell in map)
-  std::for_each(blocks.begin(), blocks.end(),
-                [&cell_dofs_disp, &cell_map, &cells](const auto dof)
-                { cells.push_back(cell_map[cell_dofs_disp[dof]]); });
+  std::ranges::for_each(blocks,
+                        [&cell_dofs_disp, &cell_map, &cells](const auto dof)
+                        { cells.push_back(cell_map[cell_dofs_disp[dof]]); });
   assert(cells.size() == blocks.size());
   return cells;
 }

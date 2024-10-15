@@ -144,7 +144,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
         uh.x.array[:] = 0
         solver.setFromOptions()
         solver.setOperators(A)
-        solver.solve(b, uh.vector)
+        solver.solve(b, uh.x.petsc_vec)
         uh.x.scatter_forward()
         mpc.backsubstitution(uh)
 
@@ -172,7 +172,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
     if xdmf:
         # Create function space with correct index map for MPC
         u_h = Function(mpc.function_space)
-        u_h.vector.setArray(uh.array)
+        u_h.x.petsc_vec.setArray(uh.array)
 
         # Name formatting of functions
         ext = "tet" if tetra else "hex"
@@ -222,9 +222,9 @@ if __name__ == "__main__":
     sd = h5f.create_dataset("solve_time", (N, MPI.COMM_WORLD.size), dtype=np.float64)
     solver = "BoomerAMG" if args.boomeramg else "GAMG"
     ct = "Tet" if args.tetra else "Hex"
-    sd.attrs["solver"] = np.string_(solver)
-    sd.attrs["degree"] = np.string_(str(int(args.degree)))
-    sd.attrs["ct"] = np.string_(ct)
+    sd.attrs["solver"] = np.bytes_(solver)
+    sd.attrs["degree"] = np.bytes_(str(int(args.degree)))
+    sd.attrs["ct"] = np.bytes_(ct)
 
     # Loop over refinements
     for i in range(N):

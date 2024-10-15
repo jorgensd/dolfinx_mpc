@@ -100,7 +100,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                     "The input function has to be in the function space in the multi-point constraint",
                     "i.e. u = dolfinx.fem.Function(mpc.function_space)",
                 )
-        self._x = self.u.vector
+        self._x = self.u.x.petsc_vec
 
         # Create MPC matrix
         pattern = create_sparsity_pattern(self._a, self._mpc)
