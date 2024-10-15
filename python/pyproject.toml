@@ -1,7 +1,3 @@
-# The DOLFINx Python interface must be built without build isolation (PEP517)
-# due to its runtime and build time dependency on system built petsc4py and
-# mpi4py.
-# pip install -r build-requirements.txt
 [build-system]
 requires = [
       "scikit-build-core[pyproject]",

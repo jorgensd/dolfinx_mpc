@@ -74,7 +74,7 @@ jobs:
           basix: main
           ufl: main
           ffcx: main
-  
+
       - name: Run build-wrapper
         run: |
           cmake -S ./cpp -B build-mpc

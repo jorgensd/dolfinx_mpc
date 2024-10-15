@@ -1,4 +1,4 @@
-FROM ghcr.io/fenics/dolfinx/dolfinx:nightly
+FROM ghcr.io/fenics/dolfinx/dolfinx:stable
 
 WORKDIR /tmp
 
@@ -17,6 +17,7 @@ RUN python3 -m pip install  meshio
 
 # Copy DOLFINX_MPC source dir
 COPY . dolfinx_mpc
+RUN python3 -m pip install -U pip setuptools
 
 # Install real mode
 RUN . /usr/local/bin/dolfinx-real-mode && \

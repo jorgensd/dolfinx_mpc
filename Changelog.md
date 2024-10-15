@@ -4,6 +4,10 @@
 
 - No changes
 
+## v0.9.0
+
+- No major API changes, only following DOLFINx API changes
+
 ## v0.8.0
 
 - **API**
