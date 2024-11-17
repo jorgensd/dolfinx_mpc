@@ -329,4 +329,4 @@ with common.Timer("~Stokes: Verification of problem by global matrix reduction")
 # ## Timings
 # Finally, we list the execution time of various operations used in the demo
 
-common.list_timings(MPI.COMM_WORLD, [common.TimingType.wall])
+common.list_timings(MPI.COMM_WORLD)

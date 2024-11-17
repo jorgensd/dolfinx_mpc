@@ -14,7 +14,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import fem
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import CellType, create_unit_square
 
 import dolfinx_mpc
@@ -117,7 +117,7 @@ def test_lifting(get_assemblers):  # noqa: F811
             uh_numpy = K @ (d)  # + constants)
             nt.assert_allclose(uh_numpy, u_mpc, rtol=1e-5, atol=1e-8)
 
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)
     L_org.destroy()
     b.destroy()
     solver.destroy()

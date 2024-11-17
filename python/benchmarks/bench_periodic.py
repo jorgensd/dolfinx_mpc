@@ -21,7 +21,7 @@ from petsc4py import PETSc
 import h5py
 import numpy as np
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.fem import Function, dirichletbc, form, functionspace, locate_dofs_geometrical
 from dolfinx.fem.petsc import set_bc
 from dolfinx.io import XDMFFile
@@ -148,7 +148,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
         uh.x.scatter_forward()
         mpc.backsubstitution(uh)
 
-        solver_time = timer.elapsed()
+        solver_time = timer.elapsed().total_seconds()
         if kspview:
             solver.view()
 
@@ -163,7 +163,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
         d_set = out_hdf5.get("num_slaves")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = mpc.num_local_slaves
         d_set = out_hdf5.get("solve_time")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time
 
     if MPI.COMM_WORLD.rank == 0:
         print(f"Rlvl {r_lvl}, Iterations {it}")
@@ -241,5 +241,5 @@ if __name__ == "__main__":
 
         # List_timings
         if args.timings and i == N - 1:
-            list_timings(MPI.COMM_WORLD, [TimingType.wall])
+            list_timings(MPI.COMM_WORLD)
     h5f.close()

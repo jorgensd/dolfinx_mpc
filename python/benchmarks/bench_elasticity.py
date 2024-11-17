@@ -17,7 +17,7 @@ import basix.ufl
 import h5py
 import numpy as np
 from dolfinx import default_real_type, default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.fem import (
     Constant,
     Function,
@@ -157,7 +157,7 @@ def bench_elasticity_one(
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
         mpc.backsubstitution(uh)
-        solver_time = timer.elapsed()
+        solver_time = timer.elapsed().total_seconds()
 
     it = solver.getIterationNumber()
     if kspview:
@@ -176,7 +176,7 @@ def bench_elasticity_one(
         d_set = out_hdf5.get("num_dofs")
         d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("solve_time")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time
     if xdmf:
         # Write solution to file
         u_h = Function(mpc.function_space)
@@ -223,5 +223,5 @@ if __name__ == "__main__":
         log_info(f"Run {i} in progress")
         bench_elasticity_one(r_lvl=i, out_hdf5=h5f, xdmf=args.xdmf, boomeramg=args.boomeramg, kspview=args.kspview)
         if args.timings and i == N - 1:
-            list_timings(MPI.COMM_WORLD, [TimingType.wall])
+            list_timings(MPI.COMM_WORLD)
     h5f.close()

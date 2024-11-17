@@ -14,7 +14,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type, fem
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import compute_midpoints, create_unit_square, meshtags
 
 import dolfinx_mpc
@@ -131,4 +131,4 @@ def test_cell_domains(get_assemblers):  # noqa: F811
     pc.destroy()
     L_org.destroy()
     A_org.destroy()
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)
