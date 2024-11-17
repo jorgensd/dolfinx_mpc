@@ -65,8 +65,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       parents_glob[i] = parents_glob[i] * bs + parent_rems[i];
     return parents_glob;
   };
-  if (const std::size_t value_size
-      = V.element()->reference_value_size() / V.element()->block_size();
+  if (const std::size_t value_size = V.element()->reference_value_size();
       value_size > 1)
     throw std::runtime_error(
         "Periodic conditions for vector valued spaces are not "
