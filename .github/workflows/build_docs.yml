@@ -19,6 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install libbost for backwards compatibility
+        run: |
+          apt-get update
+          apt-get install -y libboost-dev libboost-timer-dev
+
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
         with:
