@@ -206,7 +206,7 @@ def bench_elasticity_edge(
         d_set = out_hdf5.get("num_slaves")
         d_set[r_lvl, MPI.COMM_WORLD.rank] = mpc.num_local_slaves
         d_set = out_hdf5.get("solve_time")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time
     if info:
         log_info(f"Lvl: {r_lvl}, Its: {it}, max Mem: {mem}, dim(V): {num_dofs}")
 

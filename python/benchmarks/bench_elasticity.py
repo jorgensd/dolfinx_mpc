@@ -176,7 +176,7 @@ def bench_elasticity_one(
         d_set = out_hdf5.get("num_dofs")
         d_set[r_lvl] = num_dofs
         d_set = out_hdf5.get("solve_time")
-        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time[0]
+        d_set[r_lvl, MPI.COMM_WORLD.rank] = solver_time
     if xdmf:
         # Write solution to file
         u_h = Function(mpc.function_space)
