@@ -67,7 +67,7 @@ jobs:
           echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.3
+        uses: jorgensd/actions/install-dolfinx@v0.4
         with:
           petsc_arch: ${PETSC_ARCH}
           dolfinx: main

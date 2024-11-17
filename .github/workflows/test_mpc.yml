@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx/dolfinx:stable
+    container: ghcr.io/fenics/dolfinx/dolfinx:nightly
 
     strategy:
       matrix:
@@ -37,10 +37,10 @@ jobs:
         #   - CC: clang
         #     CXX: c++
     env:
-      DOLFINX_BRANCH: v0.9.0
-      BASIX_BRANCH: v0.9.0
-      UFL_BRANCH: 2024.2.0
-      FFCX_BRANCH: v0.9.0
+      DOLFINX_BRANCH: main
+      BASIX_BRANCH: main
+      UFL_BRANCH: main
+      FFCX_BRANCH: main
 
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
@@ -88,7 +88,7 @@ jobs:
           python3 -m pip install --no-build-isolation  --no-cache-dir --no-binary=h5py h5py
 
       - name: Install DOLFINx
-        uses: jorgensd/actions/install-dolfinx@v0.3
+        uses: jorgensd/actions/install-dolfinx@v0.4
         with:
           dolfinx: ${{ env.DOLFINX_BRANCH }}
           ufl: ${{ env.UFL_BRANCH }}
