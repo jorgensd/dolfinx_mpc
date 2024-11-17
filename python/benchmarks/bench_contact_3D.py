@@ -365,7 +365,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
         for op in operations:
             op_timing = timing(f"{num_dofs}: {op}")
             num_calls = op_timing[0]
-            wall_time = op_timing[1]
+            wall_time = op_timing[1].total_seconds()
             avg_time = comm.allreduce(wall_time, op=MPI.SUM) / comm.size
             min_time = comm.allreduce(wall_time, op=MPI.MIN)
             max_time = comm.allreduce(wall_time, op=MPI.MAX)

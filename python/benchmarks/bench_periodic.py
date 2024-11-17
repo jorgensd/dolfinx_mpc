@@ -148,7 +148,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
         uh.x.scatter_forward()
         mpc.backsubstitution(uh)
 
-        solver_time = timer.elapsed()
+        solver_time = timer.elapsed().total_seconds()
         if kspview:
             solver.view()
 

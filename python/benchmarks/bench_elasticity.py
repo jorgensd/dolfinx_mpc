@@ -157,7 +157,7 @@ def bench_elasticity_one(
         solver.solve(b, uh)
         uh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
         mpc.backsubstitution(uh)
-        solver_time = timer.elapsed()
+        solver_time = timer.elapsed().total_seconds()
 
     it = solver.getIterationNumber()
     if kspview:

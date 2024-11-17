@@ -190,7 +190,7 @@ def bench_elasticity_edge(
         solver.solve(b, uh.x.petsc_vec)
         uh.x.scatter_forward()
         mpc.backsubstitution(uh)
-        solver_time = timer.elapsed()
+        solver_time = timer.elapsed().total_seconds()
     if kspview:
         solver.view()
 
