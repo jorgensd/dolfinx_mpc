@@ -362,4 +362,4 @@ for Uh_sub in Uh.getNestSubVecs():
 Uh.destroy()
 ksp.destroy()
 # -------------------- List timings --------------------------
-dolfinx.common.list_timings(MPI.COMM_WORLD])
+dolfinx.common.list_timings(MPI.COMM_WORLD)
