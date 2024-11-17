@@ -22,7 +22,7 @@ import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
 from ufl import (
@@ -185,5 +185,5 @@ with Timer("~Demo: Verification"):
         # Back substitution to full solution vector
         uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
         assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(tol))
-list_timings(MPI.COMM_WORLD, [TimingType.wall])
+list_timings(MPI.COMM_WORLD)
 L_org.destroy()

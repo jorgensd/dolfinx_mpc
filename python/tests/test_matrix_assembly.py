@@ -11,7 +11,7 @@ import dolfinx.fem as fem
 import numpy as np
 import pytest
 import ufl
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import CellType, create_unit_square
 
 import dolfinx_mpc
@@ -100,4 +100,4 @@ def test_slave_on_same_cell(master_point, degree, celltype, get_assemblers):  # 
         A_org.assemble()
         dolfinx_mpc.utils.compare_mpc_lhs(A_org, A_mpc, mpc)
 
-    list_timings(mesh.comm, [TimingType.wall])
+    list_timings(mesh.comm)

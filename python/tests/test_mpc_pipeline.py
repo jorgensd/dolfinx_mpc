@@ -14,7 +14,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type, fem
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import create_unit_square
 
 import dolfinx_mpc
@@ -110,7 +110,7 @@ def test_pipeline(master_point, get_assemblers):  # noqa: F811
                 rtol=500 * np.finfo(default_scalar_type).resolution,
             )
 
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)
 
 
 @pytest.mark.parametrize("master_point", [[1, 1], [0, 1]])
@@ -179,4 +179,4 @@ def test_linearproblem(master_point):
                 rtol=500 * np.finfo(default_scalar_type).resolution,
             )
 
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)

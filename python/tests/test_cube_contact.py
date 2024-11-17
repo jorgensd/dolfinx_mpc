@@ -19,7 +19,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.io import gmshio
 
 import dolfinx_mpc
@@ -301,4 +301,4 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     b.destroy()
     solver.destroy()
 
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)

@@ -15,7 +15,7 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import create_unit_square
 
 import dolfinx_mpc
@@ -131,4 +131,4 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     b.destroy()
     L_org.destroy()
     solver.destroy()
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)

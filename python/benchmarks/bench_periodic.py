@@ -21,7 +21,7 @@ from petsc4py import PETSc
 import h5py
 import numpy as np
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.fem import Function, dirichletbc, form, functionspace, locate_dofs_geometrical
 from dolfinx.fem.petsc import set_bc
 from dolfinx.io import XDMFFile
@@ -241,5 +241,5 @@ if __name__ == "__main__":
 
         # List_timings
         if args.timings and i == N - 1:
-            list_timings(MPI.COMM_WORLD, [TimingType.wall])
+            list_timings(MPI.COMM_WORLD)
     h5f.close()

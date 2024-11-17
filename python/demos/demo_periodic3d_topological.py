@@ -25,7 +25,7 @@ import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.io import VTXWriter
 from dolfinx.mesh import CellType, create_unit_cube, locate_entities_boundary, meshtags
 from numpy.typing import NDArray
@@ -185,4 +185,4 @@ def demo_periodic3D(celltype: CellType):
 if __name__ == "__main__":
     for celltype in [CellType.hexahedron, CellType.tetrahedron]:
         demo_periodic3D(celltype)
-    list_timings(MPI.COMM_WORLD, [TimingType.wall])
+    list_timings(MPI.COMM_WORLD)

@@ -16,7 +16,7 @@ import basix.ufl
 import h5py
 import numpy as np
 from dolfinx import default_real_type, default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.fem import (
     Constant,
     Function,
@@ -278,5 +278,5 @@ if __name__ == "__main__":
         )
 
         if args.timings and i == N - 1:
-            list_timings(MPI.COMM_WORLD, [TimingType.wall])
+            list_timings(MPI.COMM_WORLD)
     h5f.close()
