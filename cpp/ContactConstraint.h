@@ -542,8 +542,8 @@ mpc_data<T> create_contact_slip_condition(
   const std::size_t out_collision_slaves = slave_indices_remote.size();
   std::vector<std::int32_t> num_slaves_recv(indegree + 1);
   MPI_Neighbor_allgather(
-      &out_collision_slaves, 1, dolfinx::MPI::mpi_type<std::int32_t>(),
-      num_slaves_recv.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
+      &out_collision_slaves, 1, dolfinx::MPI::mpi_t<std::int32_t>,
+      num_slaves_recv.data(), 1, dolfinx::MPI::mpi_t<std::int32_t>,
       neighborhood_comms[0]);
   num_slaves_recv.pop_back();
 
@@ -555,9 +555,9 @@ mpc_data<T> create_contact_slip_condition(
   // Send data to neighbors and receive data
   std::vector<std::int32_t> recv_rems(disp.back());
   MPI_Neighbor_allgatherv(send_rems.data(), (int)send_rems.size(),
-                          dolfinx::MPI::mpi_type<std::int32_t>(),
-                          recv_rems.data(), num_slaves_recv.data(), disp.data(),
-                          dolfinx::MPI::mpi_type<std::int32_t>(),
+                          dolfinx::MPI::mpi_t<std::int32_t>, recv_rems.data(),
+                          num_slaves_recv.data(), disp.data(),
+                          dolfinx::MPI::mpi_t<std::int32_t>,
                           neighborhood_comms[0]);
 
   // Multiply recv size by three to accommodate vector coordinates and
@@ -574,14 +574,14 @@ mpc_data<T> create_contact_slip_condition(
   // Send slave normal and coordinate to neighbors
   std::vector<U> recv_coords(disp.back() * 3);
   MPI_Neighbor_allgatherv(coordinates_send.data(), (int)coordinates_send.size(),
-                          dolfinx::MPI::mpi_type<U>(), recv_coords.data(),
+                          dolfinx::MPI::mpi_t<U>, recv_coords.data(),
                           num_slaves_recv3.data(), disp3.data(),
-                          dolfinx::MPI::mpi_type<U>(), neighborhood_comms[0]);
+                          dolfinx::MPI::mpi_t<U>, neighborhood_comms[0]);
   std::vector<U> slave_normals(disp.back() * 3);
   MPI_Neighbor_allgatherv(normals_send.data(), (int)normals_send.size(),
-                          dolfinx::MPI::mpi_type<U>(), slave_normals.data(),
+                          dolfinx::MPI::mpi_t<U>, slave_normals.data(),
                           num_slaves_recv3.data(), disp3.data(),
-                          dolfinx::MPI::mpi_type<U>(), neighborhood_comms[0]);
+                          dolfinx::MPI::mpi_t<U>, neighborhood_comms[0]);
 
   // Compute off-process contributions
   mpc_data<T> remote_data;
@@ -667,31 +667,30 @@ mpc_data<T> create_contact_slip_condition(
   std::vector<std::int32_t> remote_colliding_offsets(inc_disp_offsets.back());
   MPI_Ineighbor_alltoallv(
       offsets_remote.data(), num_out_offsets.data(), send_disp_offsets.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), remote_colliding_offsets.data(),
+      dolfinx::MPI::mpi_t<std::int32_t>, remote_colliding_offsets.data(),
       num_inc_offsets.data(), inc_disp_offsets.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), neighborhood_comms[1],
-      &requests[0]);
+      dolfinx::MPI::mpi_t<std::int32_t>, neighborhood_comms[1], &requests[0]);
   // Receive colliding masters and relevant data from other processor
   std::vector<std::int64_t> remote_colliding_masters(disp_inc_masters.back());
   MPI_Ineighbor_alltoallv(
       remote_data.masters.data(), num_collision_masters.data(),
-      send_disp_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_t<std::int64_t>,
       remote_colliding_masters.data(), inc_num_collision_masters.data(),
-      disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_t<std::int64_t>,
       neighborhood_comms[1], &requests[1]);
   std::vector<T> remote_colliding_coeffs(disp_inc_masters.back());
   MPI_Ineighbor_alltoallv(
       remote_data.coeffs.data(), num_collision_masters.data(),
-      send_disp_masters.data(), dolfinx::MPI::mpi_type<T>(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_t<T>,
       remote_colliding_coeffs.data(), inc_num_collision_masters.data(),
-      disp_inc_masters.data(), dolfinx::MPI::mpi_type<T>(),
-      neighborhood_comms[1], &requests[2]);
+      disp_inc_masters.data(), dolfinx::MPI::mpi_t<T>, neighborhood_comms[1],
+      &requests[2]);
   std::vector<std::int32_t> remote_colliding_owners(disp_inc_masters.back());
   MPI_Ineighbor_alltoallv(
       remote_data.owners.data(), num_collision_masters.data(),
-      send_disp_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_t<std::int32_t>,
       remote_colliding_owners.data(), inc_num_collision_masters.data(),
-      disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_t<std::int32_t>,
       neighborhood_comms[1], &requests[3]);
 
   // Wait for offsets to be sent
@@ -1137,8 +1136,8 @@ mpc_data<T> create_contact_inelastic_condition(
   const auto num_colliding_blocks = (int)blocks_wo_local_collision.size();
   std::vector<std::int32_t> num_slave_blocks(indegree + 1);
   MPI_Neighbor_allgather(
-      &num_colliding_blocks, 1, dolfinx::MPI::mpi_type<std::int32_t>(),
-      num_slave_blocks.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
+      &num_colliding_blocks, 1, dolfinx::MPI::mpi_t<std::int32_t>,
+      num_slave_blocks.data(), 1, dolfinx::MPI::mpi_t<std::int32_t>,
       neighborhood_comms[0]);
   num_slave_blocks.pop_back();
 
@@ -1151,9 +1150,9 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<std::int64_t> remote_slave_blocks(disp.back());
   MPI_Neighbor_allgatherv(
       blocks_wo_local_collision.data(), num_colliding_blocks,
-      dolfinx::MPI::mpi_type<std::int64_t>(), remote_slave_blocks.data(),
-      num_slave_blocks.data(), disp.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), neighborhood_comms[0]);
+      dolfinx::MPI::mpi_t<std::int64_t>, remote_slave_blocks.data(),
+      num_slave_blocks.data(), disp.data(), dolfinx::MPI::mpi_t<std::int64_t>,
+      neighborhood_comms[0]);
 
   // Multiply recv size by three to accommodate block coordinates
   std::vector<std::int32_t> num_block_coordinates(indegree);
@@ -1165,11 +1164,10 @@ mpc_data<T> create_contact_inelastic_condition(
 
   // Send slave coordinates to neighbors
   std::vector<U> recv_coords(disp.back() * 3);
-  MPI_Neighbor_allgatherv(distribute_coordinates.data(),
-                          (int)distribute_coordinates.size(),
-                          dolfinx::MPI::mpi_type<U>(), recv_coords.data(),
-                          num_block_coordinates.data(), coordinate_disp.data(),
-                          dolfinx::MPI::mpi_type<U>(), neighborhood_comms[0]);
+  MPI_Neighbor_allgatherv(
+      distribute_coordinates.data(), (int)distribute_coordinates.size(),
+      dolfinx::MPI::mpi_t<U>, recv_coords.data(), num_block_coordinates.data(),
+      coordinate_disp.data(), dolfinx::MPI::mpi_t<U>, neighborhood_comms[0]);
 
   // Vector for processes with slaves, mapping slaves with
   // collision on this process
@@ -1334,9 +1332,9 @@ mpc_data<T> create_contact_inelastic_condition(
       disp_inc_slave_blocks.back());
   MPI_Neighbor_alltoallv(
       found_slave_blocks.data(), num_found_slave_blocks.data(),
-      send_disp_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      send_disp_slave_blocks.data(), dolfinx::MPI::mpi_t<std::int64_t>,
       remote_colliding_blocks.data(), inc_num_found_slave_blocks.data(),
-      disp_inc_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      disp_inc_slave_blocks.data(), dolfinx::MPI::mpi_t<std::int64_t>,
       neighborhood_comms[1]);
   std::vector<std::int32_t> recv_blocks_as_local(
       remote_colliding_blocks.size());
@@ -1345,31 +1343,30 @@ mpc_data<T> create_contact_inelastic_condition(
       disp_inc_slave_blocks.back());
   MPI_Neighbor_alltoallv(
       offset_for_blocks.data(), num_found_slave_blocks.data(),
-      send_disp_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      send_disp_slave_blocks.data(), dolfinx::MPI::mpi_t<std::int32_t>,
       remote_colliding_offsets.data(), inc_num_found_slave_blocks.data(),
-      disp_inc_slave_blocks.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      disp_inc_slave_blocks.data(), dolfinx::MPI::mpi_t<std::int32_t>,
       neighborhood_comms[1]);
   // Receive colliding masters and relevant data from other processor
   std::vector<std::int64_t> remote_colliding_masters(disp_inc_masters.back());
   MPI_Neighbor_alltoallv(
       found_masters.data(), num_collision_masters.data(),
-      send_disp_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_t<std::int64_t>,
       remote_colliding_masters.data(), num_inc_masters.data(),
-      disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_t<std::int64_t>,
       neighborhood_comms[1]);
   std::vector<T> remote_colliding_coeffs(disp_inc_masters.back());
   MPI_Neighbor_alltoallv(found_coefficients.data(),
                          num_collision_masters.data(), send_disp_masters.data(),
-                         dolfinx::MPI::mpi_type<T>(),
-                         remote_colliding_coeffs.data(), num_inc_masters.data(),
-                         disp_inc_masters.data(), dolfinx::MPI::mpi_type<T>(),
-                         neighborhood_comms[1]);
+                         dolfinx::MPI::mpi_t<T>, remote_colliding_coeffs.data(),
+                         num_inc_masters.data(), disp_inc_masters.data(),
+                         dolfinx::MPI::mpi_t<T>, neighborhood_comms[1]);
   std::vector<std::int32_t> remote_colliding_owners(disp_inc_masters.back());
   MPI_Neighbor_alltoallv(
       found_owners.data(), num_collision_masters.data(),
-      send_disp_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      send_disp_masters.data(), dolfinx::MPI::mpi_t<std::int32_t>,
       remote_colliding_owners.data(), num_inc_masters.data(),
-      disp_inc_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      disp_inc_masters.data(), dolfinx::MPI::mpi_t<std::int32_t>,
       neighborhood_comms[1]);
 
   // Create receive displacement of data per slave block
@@ -1390,9 +1387,9 @@ mpc_data<T> create_contact_inelastic_condition(
   std::vector<std::int32_t> block_dofs_recv(inc_block_disp.back());
   MPI_Neighbor_alltoallv(
       offsets_in_blocks.data(), num_found_blocks.data(), send_block_disp.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), block_dofs_recv.data(),
+      dolfinx::MPI::mpi_t<std::int32_t>, block_dofs_recv.data(),
       recv_num_found_blocks.data(), inc_block_disp.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), neighborhood_comms[1]);
+      dolfinx::MPI::mpi_t<std::int32_t>, neighborhood_comms[1]);
 
   // Iterate through the processors
   for (std::size_t i = 0; i < src_ranks_rev.size(); ++i)
@@ -1591,19 +1588,19 @@ mpc_data<T> create_contact_inelastic_condition(
                    disp_send_ghost_slaves.begin() + 1);
 
   std::vector<std::int64_t> in_ghost_slaves(disp_recv_ghost_slaves.back());
-  MPI_Neighbor_alltoallv(
-      out_ghost_slaves.data(), num_send_slaves.data(),
-      disp_send_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
-      in_ghost_slaves.data(), inc_num_slaves.data(),
-      disp_recv_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
-      slave_to_ghost);
+  MPI_Neighbor_alltoallv(out_ghost_slaves.data(), num_send_slaves.data(),
+                         disp_send_ghost_slaves.data(),
+                         dolfinx::MPI::mpi_t<std::int64_t>,
+                         in_ghost_slaves.data(), inc_num_slaves.data(),
+                         disp_recv_ghost_slaves.data(),
+                         dolfinx::MPI::mpi_t<std::int64_t>, slave_to_ghost);
   std::vector<std::int32_t> in_ghost_offsets(disp_recv_ghost_slaves.back());
-  MPI_Neighbor_alltoallv(
-      out_ghost_offsets.data(), num_send_slaves.data(),
-      disp_send_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
-      in_ghost_offsets.data(), inc_num_slaves.data(),
-      disp_recv_ghost_slaves.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
-      slave_to_ghost);
+  MPI_Neighbor_alltoallv(out_ghost_offsets.data(), num_send_slaves.data(),
+                         disp_send_ghost_slaves.data(),
+                         dolfinx::MPI::mpi_t<std::int32_t>,
+                         in_ghost_offsets.data(), inc_num_slaves.data(),
+                         disp_recv_ghost_slaves.data(),
+                         dolfinx::MPI::mpi_t<std::int32_t>, slave_to_ghost);
 
   // Communicate size of communication of masters
   std::vector<int> inc_num_masters(src_ranks_ghost.size() + 1);
@@ -1620,25 +1617,25 @@ mpc_data<T> create_contact_inelastic_condition(
   std::partial_sum(num_send_masters.begin(), num_send_masters.end(),
                    disp_send_ghost_masters.begin() + 1);
   std::vector<std::int64_t> in_ghost_masters(disp_recv_ghost_masters.back());
-  MPI_Neighbor_alltoallv(
-      out_ghost_masters.data(), num_send_masters.data(),
-      disp_send_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
-      in_ghost_masters.data(), inc_num_masters.data(),
-      disp_recv_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int64_t>(),
-      slave_to_ghost);
+  MPI_Neighbor_alltoallv(out_ghost_masters.data(), num_send_masters.data(),
+                         disp_send_ghost_masters.data(),
+                         dolfinx::MPI::mpi_t<std::int64_t>,
+                         in_ghost_masters.data(), inc_num_masters.data(),
+                         disp_recv_ghost_masters.data(),
+                         dolfinx::MPI::mpi_t<std::int64_t>, slave_to_ghost);
   std::vector<T> in_ghost_coeffs(disp_recv_ghost_masters.back());
   MPI_Neighbor_alltoallv(out_ghost_coeffs.data(), num_send_masters.data(),
-                         disp_send_ghost_masters.data(),
-                         dolfinx::MPI::mpi_type<T>(), in_ghost_coeffs.data(),
-                         inc_num_masters.data(), disp_recv_ghost_masters.data(),
-                         dolfinx::MPI::mpi_type<T>(), slave_to_ghost);
+                         disp_send_ghost_masters.data(), dolfinx::MPI::mpi_t<T>,
+                         in_ghost_coeffs.data(), inc_num_masters.data(),
+                         disp_recv_ghost_masters.data(), dolfinx::MPI::mpi_t<T>,
+                         slave_to_ghost);
   std::vector<std::int32_t> in_ghost_owners(disp_recv_ghost_masters.back());
-  MPI_Neighbor_alltoallv(
-      out_ghost_owners.data(), num_send_masters.data(),
-      disp_send_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
-      in_ghost_owners.data(), inc_num_masters.data(),
-      disp_recv_ghost_masters.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
-      slave_to_ghost);
+  MPI_Neighbor_alltoallv(out_ghost_owners.data(), num_send_masters.data(),
+                         disp_send_ghost_masters.data(),
+                         dolfinx::MPI::mpi_t<std::int32_t>,
+                         in_ghost_owners.data(), inc_num_masters.data(),
+                         disp_recv_ghost_masters.data(),
+                         dolfinx::MPI::mpi_t<std::int32_t>, slave_to_ghost);
 
   // Accumulate offsets of masters from different processors
   std::vector<std::int32_t> ghost_offsets = {0};

@@ -262,10 +262,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Compute number of receiving slaves
   std::vector<std::int32_t> num_recv_slaves(indegree + 1);
-  MPI_Neighbor_alltoall(
-      num_out_slaves.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
-      num_recv_slaves.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
-      slave_to_master);
+  MPI_Neighbor_alltoall(num_out_slaves.data(), 1,
+                        dolfinx::MPI::mpi_t<std::int32_t>,
+                        num_recv_slaves.data(), 1,
+                        dolfinx::MPI::mpi_t<std::int32_t>, slave_to_master);
   num_out_slaves.pop_back();
   num_recv_slaves.pop_back();
   // Prepare data structures for sending information
@@ -332,8 +332,8 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Communicate coordinates
   MPI_Neighbor_alltoallv(
       coords_out.data(), num_out_slaves.data(), disp_out.data(),
-      dolfinx::MPI::mpi_type<U>(), coords_recvb.data(), num_recv_slaves.data(),
-      disp_in.data(), dolfinx::MPI::mpi_type<U>(), slave_to_master);
+      dolfinx::MPI::mpi_t<U>, coords_recvb.data(), num_recv_slaves.data(),
+      disp_in.data(), dolfinx::MPI::mpi_t<U>, slave_to_master);
 
   // Reset in_displacements to be per block for later usage
   auto d_3 = [](auto& num) { num /= 3; };
