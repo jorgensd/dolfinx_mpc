@@ -113,6 +113,7 @@ if MPI.COMM_WORLD.rank == 0:
 
 MPI.COMM_WORLD.barrier()
 mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=3)
+mesh = mesh_data.mesh
 assert mesh_data.cell_tags is not None
 ct = mesh_data.cell_tags
 assert mesh_data.facet_tags is not None
