@@ -67,13 +67,14 @@ if MPI.COMM_WORLD.rank == 0:
     # gmsh.option.setNumber("General.Terminal", 1)
     gmsh.model.mesh.optimize("Netgen")
 
-mesh, ct, _ = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
+MPI.COMM_WORLD.barrier()
+mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
 gmsh.clear()
 gmsh.finalize()
-MPI.COMM_WORLD.barrier()
+mesh = mesh_data.mesh
+assert mesh_data.cell_tags is not None
+ct = mesh_data.cell_tags
 
-with XDMFFile(mesh.comm, "test.xdmf", "w") as xdmf:
-    xdmf.write_mesh(mesh)
 V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 tdim = mesh.topology.dim
 fdim = tdim - 1

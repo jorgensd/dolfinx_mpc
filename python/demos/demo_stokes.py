@@ -130,9 +130,10 @@ def create_mesh_gmsh(
         # Generate mesh
         gmsh.model.mesh.generate(2)
     # Convert gmsh model to DOLFINx Mesh and meshtags
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
     gmsh.finalize()
-    return mesh, ft
+    assert mesh_data.facet_tags is not None
+    return mesh_data.mesh, mesh_data.facet_tags
 
 
 mesh, mt = create_mesh_gmsh(res=0.1)

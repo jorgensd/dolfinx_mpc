@@ -111,12 +111,15 @@ if MPI.COMM_WORLD.rank == 0:
     gmsh.model.mesh.optimize("Netgen")
     gmsh.model.mesh.setOrder(2)
 
-
-mesh, ct, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=3)
+MPI.COMM_WORLD.barrier()
+mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=3)
+assert mesh_data.cell_tags is not None
+ct = mesh_data.cell_tags
+assert mesh_data.facet_tags is not None
+ft = mesh_data.facet_tags
 
 gmsh.clear()
 gmsh.finalize()
-MPI.COMM_WORLD.barrier()
 
 V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
