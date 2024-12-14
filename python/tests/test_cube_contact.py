@@ -154,12 +154,14 @@ def generate_hex_boxes():
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
+    MPI.COMM_WORLD.barrier()
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.clear()
     gmsh.finalize()
     # NOTE: Hex mesh must be rotated after generation due to gmsh API
-    mesh.geometry.x[:] = np.dot(r_matrix, mesh.geometry.x.T).T
-    return (mesh, ft)
+    mesh_data.mesh.geometry.x[:] = np.dot(r_matrix, mesh_data.mesh.geometry.x.T).T
+    assert mesh_data.facet_tags is not None
+    return (mesh_data.mesh, mesh_data.facet_tags)
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)

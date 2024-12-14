@@ -108,9 +108,11 @@ def create_mesh_gmsh(
         # Generate mesh
         gmsh.model.mesh.generate(2)
     # Convert gmsh model to DOLFINx Mesh and meshtags
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
+    assert mesh_data.cell_tags is not None
+    ft = mesh_data.facet_tags
     gmsh.finalize()
-    return mesh, ft
+    return mesh_data.mesh, ft
 
 
 # ------------------- Mesh and function space creation ------------------------

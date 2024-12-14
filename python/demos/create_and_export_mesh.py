@@ -209,9 +209,10 @@ def generate_tet_boxes(
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.finalize()
-    return mesh, ft
+    assert mesh_data.facet_tags is not None
+    return mesh_data.mesh, mesh_data.facet_tags
 
 
 def generate_hex_boxes(
@@ -266,11 +267,12 @@ def generate_hex_boxes(
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
+    MPI.COMM_WORLD.barrier()
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.clear()
     gmsh.finalize()
-    MPI.COMM_WORLD.barrier()
-    return mesh, ft
+    assert mesh_data.facet_tags is not None
+    return mesh_data.mesh, mesh_data.facet_tags
 
 
 def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
@@ -381,15 +383,18 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(2)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
+    MPI.COMM_WORLD.Barrier()
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
     r_matrix = _utils.rotation_matrix([0, 0, 1], theta)
 
     # NOTE: Hex mesh must be rotated after generation due to gmsh API
+    mesh = mesh_data.mesh
+    assert mesh_data.facet_tags is not None
     mesh.geometry.x[:] = np.dot(r_matrix, mesh.geometry.x.T).T
     gmsh.clear()
     gmsh.finalize()
     MPI.COMM_WORLD.barrier()
-    return mesh, ft
+    return mesh,  mesh_data.facet_tags
 
 
 def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = Path("meshes")):
