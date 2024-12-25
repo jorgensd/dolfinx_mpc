@@ -962,13 +962,16 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 /// @param[in,out] u The values at the points. Values are not computed
 /// for points with a negative cell index. This argument must be
 /// passed with the correct size.
+/// @param[in] tol The stopping tolerance for the l2 norm of the Newton update
+/// when pulling back a point on a non-affine cell. For affine cells this value
+/// is not used.
 /// @returns basis values (not unrolled for block size) for each point. shape
 /// (num_points, number_of_dofs, value_size). Flattened row major
 template <std::floating_point U>
 std::pair<std::vector<U>, std::array<std::size_t, 3>>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
                          std::span<const U> x,
-                         std::span<const std::int32_t> cells)
+                         std::span<const std::int32_t> cells, const U tol)
 {
   assert(x.size() % 3 == 0);
   const std::size_t num_points = x.size() / 3;
@@ -1132,8 +1135,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     else
     {
       // Pull-back physical point xp to reference coordinate Xp
-      cmap.pull_back_nonaffine(Xp, xp, coord_dofs,
-                               5000 * std::numeric_limits<U>::epsilon(), 15);
+      cmap.pull_back_nonaffine(Xp, xp, coord_dofs, tol, 15);
 
       cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,

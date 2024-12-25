@@ -152,7 +152,7 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse)
+         T scale, bool collapse, const U tol)
       {
         auto _indicator
             = [&indicator](MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -180,10 +180,10 @@ void declare_functions(nb::module_& m)
           return output;
         };
         return dolfinx_mpc::create_periodic_condition_geometrical(
-            V, _indicator, _relation, bcs, scale, collapse);
+            V, _indicator, _relation, bcs, scale, collapse, tol);
       },
       "V"_a, "indicator"_a, "relation"_a, "bcs"_a, nb::arg("scale").noconvert(),
-      nb::arg("collapse").noconvert());
+      nb::arg("collapse").noconvert(), nb::arg("tol").noconvert());
   m.def(
       "create_periodic_constraint_topological",
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
@@ -193,7 +193,7 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse)
+         T scale, bool collapse, const U tol)
       {
         auto _relation = [&relation](std::span<const U> x) -> std::vector<U>
         {
@@ -204,10 +204,11 @@ void declare_functions(nb::module_& m)
           return output;
         };
         return dolfinx_mpc::create_periodic_condition_topological(
-            V, meshtags, dim, _relation, bcs, scale, collapse);
+            V, meshtags, dim, _relation, bcs, scale, collapse, tol);
       },
       "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a,
-      nb::arg("scale").noconvert(), nb::arg("collapse").noconvert());
+      nb::arg("scale").noconvert(), nb::arg("collapse").noconvert(),
+      nb::arg("tol").noconvert());
 }
 
 template <typename T, std::floating_point U>
