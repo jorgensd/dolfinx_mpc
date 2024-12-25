@@ -971,8 +971,7 @@ template <std::floating_point U>
 std::pair<std::vector<U>, std::array<std::size_t, 3>>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
                          std::span<const U> x,
-                         std::span<const std::int32_t> cells,
-                         const U tol = 5000 * std::numeric_limits<U>::epsilon())
+                         std::span<const std::int32_t> cells, const U tol)
 {
   assert(x.size() % 3 == 0);
   const std::size_t num_points = x.size() / 3;
