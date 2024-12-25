@@ -137,8 +137,6 @@ public:
       {
         vector[slave]
             += coeffs[k] * vector[masters[k]]; //+ _mpc_constants[slave];
-        std::cout << slave << " " << masters[k] << " " << vector[slave] << " "
-                  << coeffs[k] << " " << vector[masters[k]] << "\n";
       }
     }
   };
