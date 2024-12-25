@@ -469,7 +469,7 @@ mpc_data<T> create_contact_slip_condition(
                                                 slave_coordinates, eps2);
 
     auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, slave_coordinates, local_cell_collisions);
+        V, slave_coordinates, local_cell_collisions, eps2);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -590,7 +590,7 @@ mpc_data<T> create_contact_slip_condition(
         = dolfinx_mpc::find_local_collisions<U>(*mesh, bb_tree, recv_coords,
                                                 eps2);
     auto [recv_basis_values, shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, recv_coords, remote_cell_collisions);
+        V, recv_coords, remote_cell_collisions, eps2);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
         basis_span(recv_basis_values.data(), shape[0], shape[1]);
@@ -1000,7 +1000,7 @@ mpc_data<T> create_contact_inelastic_condition(
         = dolfinx_mpc::find_local_collisions<U>(*V.mesh(), bb_tree,
                                                 slave_coordinates, eps2);
     auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, slave_coordinates, colliding_cells);
+        V, slave_coordinates, colliding_cells, eps2);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -1185,7 +1185,7 @@ mpc_data<T> create_contact_inelastic_condition(
         = dolfinx_mpc::find_local_collisions<U>(*V.mesh(), bb_tree, recv_coords,
                                                 eps2);
     auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, recv_coords, remote_cell_collisions);
+        V, recv_coords, remote_cell_collisions, eps2);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>

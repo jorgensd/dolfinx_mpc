@@ -134,8 +134,12 @@ public:
       auto coeffs = _coeff_map->links(slave);
       assert(masters.size() == coeffs.size());
       for (std::size_t k = 0; k < masters.size(); ++k)
+      {
         vector[slave]
             += coeffs[k] * vector[masters[k]]; //+ _mpc_constants[slave];
+        std::cout << slave << " " << masters[k] << " " << vector[slave] << " "
+                  << coeffs[k] << " " << vector[masters[k]] << "\n";
+      }
     }
   };
 
