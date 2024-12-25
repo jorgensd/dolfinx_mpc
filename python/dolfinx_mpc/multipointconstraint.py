@@ -252,11 +252,11 @@ class MultiPointConstraint:
             scale = scale.item()  # type: ignore
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, False, tol
+                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, False, float(tol)
             )
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, True, tol
+                V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, True, float(tol)
             )
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
@@ -292,11 +292,11 @@ class MultiPointConstraint:
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                self.V._cpp_object, indicator, relation, bcs, scale, False, tol
+                self.V._cpp_object, indicator, relation, bcs, scale, False, float(tol)
             )
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                V._cpp_object, indicator, relation, bcs, scale, True, tol
+                V._cpp_object, indicator, relation, bcs, scale, True, float(tol)
             )
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
