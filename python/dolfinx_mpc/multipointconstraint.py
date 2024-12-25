@@ -14,7 +14,7 @@ import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 
 import dolfinx_mpc.cpp
 
@@ -230,7 +230,7 @@ class MultiPointConstraint:
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),
-        tol: float = 500 * numpy.finfo(default_scalar_type).eps,
+        tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
     ):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
@@ -269,7 +269,7 @@ class MultiPointConstraint:
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),
-        tol: float = 500 * numpy.finfo(default_scalar_type).eps,
+        tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
     ):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies
