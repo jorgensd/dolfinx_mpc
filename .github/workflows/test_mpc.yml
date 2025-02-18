@@ -95,6 +95,9 @@ jobs:
           basix: ${{ env.BASIX_BRANCH }}
           ffcx: ${{ env.FFCX_BRANCH }}
           petsc_arch: ${{ env.PETSC_ARCH }}
+      - name: Restrict CFFI
+        run:
+           python3 -m pip install --no-build-isolation cffi<1.17
 
       - name: Install DOLFINx-MPC (C++)
         run: |
