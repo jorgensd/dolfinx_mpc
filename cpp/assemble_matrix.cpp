@@ -603,8 +603,7 @@ void assemble_matrix_impl(
         or a.needs_facet_permutations();
   std::span<const std::uint32_t> cell_info0;
   std::span<const std::uint32_t> cell_info1;
-  if (element0->needs_dof_transformations()
-      or element1->needs_dof_transformations() or a.needs_facet_permutations())
+  if (needs_transformation_data)
   {
     mesh0->topology_mutable()->create_entity_permutations();
     mesh1->topology_mutable()->create_entity_permutations();
