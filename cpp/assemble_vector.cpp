@@ -131,7 +131,7 @@ void _assemble_vector(
   const bool needs_transformation_data
       = element->needs_dof_transformations() or L.needs_facet_permutations();
   std::span<const std::uint32_t> cell_info0;
-  if (element->needs_dof_transformations() or L.needs_facet_permutations())
+  if (needs_transformation_data)
   {
     mesh0->topology_mutable()->create_entity_permutations();
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());

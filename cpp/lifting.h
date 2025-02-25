@@ -185,11 +185,6 @@ void apply_lifting(
   const int bs0 = a->function_spaces()[0]->dofmap()->bs();
   auto element0 = a->function_spaces()[0]->element();
 
-  const bool needs_transformation_data
-      = element0->needs_dof_transformations()
-        or element1->needs_dof_transformations()
-        or a->needs_facet_permutations();
-
   auto mesh0 = a->function_spaces()[0]->mesh();
   assert(mesh0);
   auto mesh1 = a->function_spaces()[1]->mesh();
@@ -210,6 +205,10 @@ void apply_lifting(
 
   std::span<const std::uint32_t> cell_info0;
   std::span<const std::uint32_t> cell_info1;
+  const bool needs_transformation_data
+      = element0->needs_dof_transformations()
+        or element1->needs_dof_transformations()
+        or a->needs_facet_permutations();
 
   if (needs_transformation_data)
   {
