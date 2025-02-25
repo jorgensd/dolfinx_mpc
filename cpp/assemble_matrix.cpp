@@ -646,7 +646,7 @@ void assemble_matrix_impl(
         cstride, constants, cell_info0, cell_info1, mpc0, mpc1);
   }
 
-  if (a.integral_ids(dolfinx::fem::IntegralType::exterior_facet).size() > 0)
+  if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
     throw std::runtime_error("Not implemented yet");
 }
 //-----------------------------------------------------------------------------
