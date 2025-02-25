@@ -290,10 +290,6 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       *a.function_spaces().at(1)->dofmap()};
   std::shared_ptr mesh = a.mesh();
   assert(mesh);
-  std::shared_ptr mesh0 = a.function_spaces().at(0)->mesh();
-  assert(mesh0);
-  std::shared_ptr mesh1 = a.function_spaces().at(1)->mesh();
-  assert(mesh1);
 
   const std::set<dolfinx::fem::IntegralType> types = a.integral_types();
   if (types.find(dolfinx::fem::IntegralType::interior_facet) != types.end()
@@ -324,7 +320,8 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       for (int id : ids)
       {
         dolfinx::fem::sparsitybuild::cells(
-            pattern, {a.domain(type, id, *mesh0), a.domain(type, id, *mesh1)},
+            pattern,
+            {a.domain_arg(type, 0, id, 0), a.domain_arg(type, 1, id, 0)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
@@ -333,8 +330,8 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       {
         dolfinx::fem::sparsitybuild::interior_facets(
             pattern,
-            {extract_cells(a.domain(type, id, *mesh0)),
-             extract_cells(a.domain(type, id, *mesh1))},
+            {extract_cells(a.domain_arg(type, 0, id, 0)),
+             extract_cells(a.domain_arg(type, 1, id, 0))},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
@@ -343,8 +340,8 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       {
         dolfinx::fem::sparsitybuild::cells(
             pattern,
-            {extract_cells(a.domain(type, id, *mesh0)),
-             extract_cells(a.domain(type, id, *mesh1))},
+            {extract_cells(a.domain_arg(type, 0, id, 0)),
+             extract_cells(a.domain_arg(type, 1, id, 0))},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
