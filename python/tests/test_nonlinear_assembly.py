@@ -120,7 +120,6 @@ def test_nonlinear_poisson(poly_order):
     l2_error = np.zeros_like(N_vals, dtype=np.double)
     for run_no, N in enumerate(N_vals):
         mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N)
-
         V = dolfinx.fem.functionspace(mesh, ("Lagrange", poly_order))
         u_bc = dolfinx.fem.Function(V)
         u_bc.x.array[:] = 0.0
@@ -131,17 +130,6 @@ def test_nonlinear_poisson(poly_order):
         zero = np.array(0, dtype=dolfinx.default_scalar_type)
         bc = dolfinx.fem.dirichletbc(zero, topological_dofs, V)
         bcs = [bc]
-
-        # Define variational problem
-        u = dolfinx.fem.Function(V)
-        v = ufl.TestFunction(V)
-        x = ufl.SpatialCoordinate(mesh)
-
-        u_soln = ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
-        f = -ufl.div((1 + u_soln**2) * ufl.grad(u_soln))
-
-        F = ufl.inner((1 + u**2) * ufl.grad(u), ufl.grad(v)) * ufl.dx - ufl.inner(f, v) * ufl.dx
-        J = ufl.derivative(F, u)
 
         # -- Impose the pi/2 rotational symmetry of the solution as a constraint,
         # -- except at the centre DoF
@@ -159,6 +147,22 @@ def test_nonlinear_poisson(poly_order):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
         mpc.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_relation, bcs)
         mpc.finalize()
+
+        # Define variational problem
+        V_mpc = mpc.function_space
+
+        # NOTE: The unknown function should always live in the MPC space,
+        # but to be compatible with the dirichlet bc the arguments (test and trial function)
+        # has to live in the original space V
+        u = dolfinx.fem.Function(V_mpc)
+        v = ufl.TestFunction(V)
+        x = ufl.SpatialCoordinate(mesh)
+
+        u_soln = ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+        f = -ufl.div((1 + u_soln**2) * ufl.grad(u_soln))
+
+        F = ufl.inner((1 + u**2) * ufl.grad(u), ufl.grad(v)) * ufl.dx - ufl.inner(f, v) * ufl.dx
+        J = ufl.derivative(F, u, ufl.TrialFunction(V))
 
         # Sanity check that the MPC class has some constraints to impose
         num_slaves_global = mesh.comm.allreduce(len(mpc.slaves), op=MPI.SUM)
