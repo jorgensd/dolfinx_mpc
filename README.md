@@ -16,15 +16,15 @@ where $I_N$ is the set of degrees of freedom to constrain.
 This can be used to for instance enforce slip conditions strongly.
 
 Consider a linear system of the form 
-$Au=b$, with the additional constraints written on the form $K\hat u=u$, where $K$ is a prolongation matrix, $\hat u$ is the vector of unknowns excluding the $I_N$ entries. 
+$Au=b$, with the additional constraints written on the form ${K\hat{u}=u}$, where $K$ is a prolongation matrix, $\hat{u}$ is the vector of unknowns excluding the $I_N$ entries. 
 
 We then solve the system 
-$K^T A K \hat u = K^T b$, where $K^T A K$ is symmetric if $A$ was symmetric.
-(For complex numbers, we use the Hermitian transpose and solve the system $\overline{K^T} A K \hat u = \overline{K^T} b$, where $\overline{K^T}$ is the complex conjugate of $K^T$, and $\overline{K^T} A K$ is Hermitian if $A$ was Hermitian.)
+${K^T A K \hat{u} = K^T b}$, where $K^T A K$ is symmetric if $A$ was symmetric.
+For complex numbers, we use the Hermitian transpose and solve the system ${\overline{K^T} A K \hat{u} = \overline{K^T} b}$, where $\overline{K^T}$ is the complex conjugate of $K^T$, and $\overline{K^T} A K$ is Hermitian if $A$ was Hermitian.
 
 If we include boundary conditions on the form $u=g$, we 
 assemble the system
-$K^TAK\hat u = K^T(b-A\hat g)$ where $A\hat g$ is an extension of the boundary condition $g$ to all degrees of freedom.
+${K^TAK\hat{u} = K^T(b-A\hat{g})}$ where ${A\hat{g}}$ is an extension of the boundary condition $g$ to all degrees of freedom.
 
 The library performs custom matrix and vector assembly adding the extra constraints to the set of linear equations. All assemblies are local to the process, and no MPI communication except when setting up the multi point constraints.
 
@@ -42,10 +42,10 @@ The C++ library can be found under [libdolfinx_mpc](https://anaconda.org/conda-f
 
 ## Docker
 
-Version 0.7.0 is available as an docker image at [Github Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc)
+Version 0.9.0 is available as an docker image at [Github Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc)
 and can be ran using
 ```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared ghcr.io/jorgensd/dolfinx_mpc:v0.7.0
+docker run -ti -v $(pwd):/root/shared -w /root/shared ghcr.io/jorgensd/dolfinx_mpc:v0.9.0
 ```
 To change to complex mode run `source dolfinx-complex-mode`.
 Similarly, to change back to real mode, call `source dolfinx-real-mode`.

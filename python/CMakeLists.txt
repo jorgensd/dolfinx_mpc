@@ -69,7 +69,7 @@ endif()
 
 # Get python include-dirs
 execute_process(
-  COMMAND ${Python3_EXECUTABLE} -c "import dolfinx.wrappers, sys; sys.stdout.write(str(dolfinx.wrappers.get_include_path()))"
+  COMMAND ${Python3_EXECUTABLE} -c "import dolfinx, sys; sys.stdout.write(str(dolfinx.get_include()))"
   OUTPUT_VARIABLE DOLFINX_PY_DIR
   RESULT_VARIABLE DOLFINX_PY_COMMAND_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
 

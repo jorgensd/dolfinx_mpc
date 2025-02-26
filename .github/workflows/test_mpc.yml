@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ghcr.io/fenics/dolfinx/dolfinx:nightly
+    container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
 
     strategy:
       matrix:
@@ -95,11 +95,14 @@ jobs:
           basix: ${{ env.BASIX_BRANCH }}
           ffcx: ${{ env.FFCX_BRANCH }}
           petsc_arch: ${{ env.PETSC_ARCH }}
+      - name: Restrict CFFI
+        run:
+           python3 -m pip install --no-build-isolation "cffi<1.17"
 
       - name: Install DOLFINx-MPC (C++)
         run: |
           cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
-          cmake --build build-dir --parallel 3
+          cmake --build build-dir
           cmake --install build-dir
 
       - name: Install DOLFINx-MPC (Python)
