@@ -130,6 +130,9 @@ public:
   {
     for (auto slave : _slaves)
     {
+      // Zero out intial data in slave dof
+      vector[slave] = 0.0;
+      // Accumulate master contributions
       auto masters = _master_map->links(slave);
       auto coeffs = _coeff_map->links(slave);
       assert(masters.size() == coeffs.size());
