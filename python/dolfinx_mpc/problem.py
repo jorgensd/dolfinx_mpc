@@ -14,7 +14,7 @@ import dolfinx.fem.petsc
 import ufl
 from dolfinx import cpp as _cpp
 from dolfinx import fem as _fem
-from dolfinx import la as _la
+from dolfinx.la.petsc import create_vector
 
 from .assemble_matrix import assemble_matrix, create_sparsity_pattern
 from .assemble_vector import apply_lifting, assemble_vector
@@ -107,9 +107,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         pattern.finalize()
         self._A = _cpp.la.petsc.create_matrix(self._mpc.function_space.mesh.comm, pattern)
 
-        self._b = _la.create_petsc_vector(
-            self._mpc.function_space.dofmap.index_map, self._mpc.function_space.dofmap.index_map_bs
-        )
+        self._b = create_vector(self._mpc.function_space.dofmap.index_map, self._mpc.function_space.dofmap.index_map_bs)
         self.bcs = [] if bcs is None else bcs
 
         self._solver = PETSc.KSP().create(self.u.function_space.mesh.comm)  # type: ignore
