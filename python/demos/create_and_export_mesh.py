@@ -394,7 +394,7 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple
     gmsh.clear()
     gmsh.finalize()
     MPI.COMM_WORLD.barrier()
-    return mesh,  mesh_data.facet_tags
+    return mesh, mesh_data.facet_tags
 
 
 def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = Path("meshes")):

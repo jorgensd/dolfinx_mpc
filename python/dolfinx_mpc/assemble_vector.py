@@ -12,11 +12,11 @@ from petsc4py import PETSc as _PETSc
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
-import dolfinx.la as _la
 import numpy
 import ufl
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer
+from dolfinx.la.petsc import create_vector
 
 import dolfinx_mpc.cpp
 
@@ -74,7 +74,7 @@ def assemble_vector(
     """
 
     if b is None:
-        b = _la.create_petsc_vector(
+        b = create_vector(
             constraint.function_space.dofmap.index_map,
             constraint.function_space.dofmap.index_map_bs,
         )

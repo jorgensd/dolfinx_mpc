@@ -354,7 +354,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
         mpc.backsubstitution(eigvec_r[i])
         eigvec_i[i].x.scatter_forward()
         mpc.backsubstitution(eigvec_i[i])
-    print0(f"Computed eigenvalues:\n {np.around(eigval,decimals=2)}")
+    print0(f"Computed eigenvalues:\n {np.around(eigval, decimals=2)}")
 
     # Save all eigenvectors
     suffix = "".join([bc_type[0] for bc_type in boundary_condition])
@@ -378,7 +378,7 @@ def print_exact_eigenvalues(boundary_condition: List[str], N: int):
         ev_y = [(n * 2 * np.pi / L[1]) ** 2 for n in range(-N, N)]
     ev_ex = np.sort([r + q for r in ev_x for q in ev_y])
     ev_ex = ev_ex[0:N]
-    print0(f"Exact eigenvalues (repeated with multiplicity):\n {np.around(ev_ex,decimals=2)}")
+    print0(f"Exact eigenvalues (repeated with multiplicity):\n {np.around(ev_ex, decimals=2)}")
 
 
 # Dirichlet boundary condition on {x=0} and {x=1}

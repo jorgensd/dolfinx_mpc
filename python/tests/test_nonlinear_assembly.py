@@ -11,11 +11,11 @@ from petsc4py import PETSc
 import basix
 import dolfinx
 import dolfinx.fem.petsc
-import dolfinx.la as _la
 import dolfinx.nls.petsc
 import numpy as np
 import pytest
 import ufl
+from dolfinx.la.petsc import create_vector
 
 import dolfinx_mpc
 
@@ -63,7 +63,7 @@ class NewtonSolverMPC(dolfinx.cpp.nls.petsc.NewtonSolver):
         # Create matrix and vector to be used for assembly of the non-linear
         # MPC problem
         self._A = dolfinx_mpc.cpp.mpc.create_matrix(problem.a._cpp_object, mpc._cpp_object)
-        self._b = _la.create_petsc_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
+        self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
 
         self.setF(problem.F, self._b)
         self.setJ(problem.J, self._A)
