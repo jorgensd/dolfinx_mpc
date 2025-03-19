@@ -289,7 +289,7 @@ void assemble_exterior_facets(
     const dolfinx::fem::DofMap& dofmap1, const std::vector<std::int8_t>& bc0,
     const std::vector<std::int8_t>& bc1,
     const std::function<void(T*, const T*, const T*, const U*, const int*,
-                             const std::uint8_t*)>& kernel,
+                             const std::uint8_t*, void*)>& kernel,
     const std::span<const T> coeffs, int cstride,
     const std::vector<T>& constants,
     const std::span<const std::uint32_t>& cell_info0,
@@ -356,7 +356,7 @@ void assemble_exterior_facets(
     // Tabulate tensor
     std::ranges::fill(Aeb, 0);
     kernel(Aeb.data(), coeffs.data() + l / 2 * cstride, constants.data(),
-           coordinate_dofs.data(), &local_facet, nullptr);
+           coordinate_dofs.data(), &local_facet, nullptr, nullptr);
     apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
 
@@ -433,7 +433,7 @@ void assemble_cells_impl(
     const dolfinx::fem::DofMap& dofmap1, const std::vector<std::int8_t>& bc0,
     const std::vector<std::int8_t>& bc1,
     const std::function<void(T*, const T*, const T*, const U*, const int*,
-                             const std::uint8_t*)>& kernel,
+                             const std::uint8_t*, void*)>& kernel,
     const std::span<const T>& coeffs, int cstride,
     const std::vector<T>& constants,
     const std::span<const std::uint32_t>& cell_info0,
@@ -497,7 +497,7 @@ void assemble_cells_impl(
     // Tabulate tensor
     std::ranges::fill(Aeb, 0);
     kernel(Aeb.data(), coeffs.data() + index * cstride, constants.data(),
-           coordinate_dofs.data(), nullptr, nullptr);
+           coordinate_dofs.data(), nullptr, nullptr, nullptr);
     apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
     apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
 

@@ -260,7 +260,8 @@ void apply_lifting(
       // Tabulate tensor
       std::ranges::fill(Ae, 0);
       kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
-             constants.data(), coordinate_dofs.data(), nullptr, nullptr);
+             constants.data(), coordinate_dofs.data(), nullptr, nullptr,
+             nullptr);
       dof_transform(Ae, cell_info0, cell0, num_cols);
       dof_transform_to_transpose(Ae, cell_info1, cell1, num_rows);
 
@@ -340,7 +341,8 @@ void apply_lifting(
       // Tabulate tensor
       std::ranges::fill(Ae, 0);
       kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
-             constants.data(), coordinate_dofs.data(), &local_facet, nullptr);
+             constants.data(), coordinate_dofs.data(), &local_facet, nullptr,
+             nullptr);
       dof_transform(Ae, cell_info0, cell0, num_cols);
       dof_transform_to_transpose(Ae, cell_info1, cell1, num_rows);
 
