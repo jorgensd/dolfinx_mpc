@@ -516,7 +516,7 @@ def assemble_exterior_slave_facets(
             ffi.from_buffer(consts),  # type: ignore
             ffi.from_buffer(geometry),  # type: ignore
             ffi.from_buffer(facet_index),  # type: ignore
-            ffi.from_buffer(facet_perm),  # type: ignore,
+            ffi.from_buffer(facet_perm),  # type: ignore
             void_ptr,
         )
         # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
