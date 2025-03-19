@@ -174,7 +174,7 @@ void _assemble_vector(
       // Tabulate tensor
       std::ranges::fill(be, 0);
       fn(be.data(), coeffs.first.data() + index * coeffs.second,
-         constants.data(), coordinate_dofs.data(), nullptr, nullptr);
+         constants.data(), coordinate_dofs.data(), nullptr, nullptr, nullptr);
 
       // Apply any required transformations
       dof_transform(be, cell_info0, cell0, 1);
@@ -217,7 +217,8 @@ void _assemble_vector(
       // Tabulate tensor
       std::ranges::fill(be, 0);
       fn(be.data(), coeffs.first.data() + index * coeffs.second,
-         constants.data(), coordinate_dofs.data(), &local_facet, nullptr);
+         constants.data(), coordinate_dofs.data(), &local_facet, nullptr,
+         nullptr);
 
       // Apply any required transformations
       dof_transform(be, cell_info0, cell0, 1);
