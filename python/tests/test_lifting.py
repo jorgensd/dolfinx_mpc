@@ -19,7 +19,6 @@ from dolfinx.mesh import CellType, create_unit_square
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.skipif(MPI.COMM_WORLD.size > 1, reason="This test should only be run in serial.")

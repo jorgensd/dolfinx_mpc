@@ -41,8 +41,8 @@ nanobind_add_module(
   cpp
   NOMINSIZE
   MODULE
-  dolfinx_mpc/dolfinx_mpc.cpp
-  dolfinx_mpc/mpc.cpp
+  src/dolfinx_mpc/dolfinx_mpc.cpp
+  src/dolfinx_mpc/mpc.cpp
 )
 
 target_compile_definitions(cpp PRIVATE cxx_std_20)

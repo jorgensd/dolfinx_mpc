@@ -14,12 +14,13 @@ import dolfinx
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import dolfinx.log as _log
+import numba
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
 from dolfinx.la.petsc import create_vector
+from ffcx.codegeneration.utils import get_void_pointer
 
-import numba
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 
 from .helpers import _forms, extract_slave_cells, pack_slave_facet_info
@@ -204,6 +205,7 @@ def assemble_cells(
     # NOTE: All cells are assumed to be of the same typecd
     geometry = numpy.zeros((x_dofmap.shape[1], 3), dtype=dolfinx.default_real_type)
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)  # type: ignore
+    custom_data_ptr = get_void_pointer(numpy.zeros(0, dtype=numpy.int32))
 
     for cell_index in active_cells:
         # Compute mesh geometry for cell
@@ -218,6 +220,7 @@ def assemble_cells(
             ffi_fb(geometry),  # type: ignore
             ffi_fb(facet_index),  # type: ignore
             ffi_fb(facet_perm),  # type: ignore
+            custom_data_ptr,
         )
         # NOTE: Here we need to add the apply_dof_transformation function
 
@@ -262,6 +265,7 @@ def assemble_exterior_slave_facets(
 
     # Unpack mesh data
     x_dofmap, x = mesh
+    custom_data_ptr = get_void_pointer(numpy.zeros(0, dtype=numpy.int32))
 
     geometry = numpy.zeros((x_dofmap.shape[1], 3), dtype=x.dtype)
     b_local = numpy.zeros(block_size * num_dofs_per_element, dtype=_PETSc.ScalarType)  # type: ignore
@@ -284,6 +288,7 @@ def assemble_exterior_slave_facets(
             ffi_fb(geometry),  # type: ignore
             ffi_fb(facet_index),  # type: ignore
             ffi_fb(facet_perm),  # type: ignore
+            custom_data_ptr,
         )
         # NOTE: Here we need to add the apply_dof_transformation
 

@@ -28,11 +28,12 @@ import h5py
 import numpy as np
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, list_timings
+from dolfinx.cpp.mesh import create_cell_partitioner
 from dolfinx.fem import Function, dirichletbc, form, functionspace, locate_dofs_geometrical
 from dolfinx.fem.petsc import apply_lifting, assemble_matrix, assemble_vector, set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
-from dolfinx.mesh import CellType, create_unit_cube, refine
+from dolfinx.mesh import CellType, GhostMode, create_unit_cube, refine
 from ufl import SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad, inner, pi, sin
 
 
@@ -49,10 +50,12 @@ def reference_periodic(
     if tetra:
         # Tet setup
         N = 3
-        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
+        gmode = GhostMode.shared_facet
+        partitioner = create_cell_partitioner(gmode)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ghost_mode=gmode)
         for i in range(r_lvl):
             mesh.topology.create_entities(mesh.topology.dim - 2)
-            mesh = refine(mesh, redistribute=True)
+            mesh, _, _ = refine(mesh, partitioner=partitioner)
             N *= 2
     else:
         # Hex setup

@@ -13,7 +13,7 @@ version = "0.9.0"
 description = "DOLFINx_MPC Python interface"
 readme = "README.md"
 requires-python = ">=3.8.0"
-license = { file = "../LICENSE" }
+license = { file = "LICENSE" }
 authors = [{ email = "dokken@simula.no", name = "Jørgen S. Dokken" }]
 dependencies = [
       "numpy>=1.21",
@@ -36,7 +36,6 @@ all = [
 ]
 
 [tool.scikit-build]
-wheel.packages = ["dolfinx_mpc"]
 sdist.exclude = ["*.cpp"]
 cmake.build-type = "Release"
 
@@ -51,7 +50,7 @@ exclude = ["docs/", "build/"]
 files = ["src", "tests"]
 
 [tool.ruff]
-src = ["benchmarks", "demos", "dolfinx_mpc"]
+src = ["benchmarks", "demos", "src"]
 line-length = 120
 indent-width = 4
 
