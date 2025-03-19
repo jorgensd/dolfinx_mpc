@@ -16,6 +16,7 @@ import dolfinx.fem as _fem
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
+from ffcx.codegeneration.utils import get_void_pointer
 
 import numba
 from dolfinx_mpc.assemble_matrix import create_sparsity_pattern
@@ -23,7 +24,6 @@ from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 
 from .helpers import _bcs, _forms, extract_slave_cells, pack_slave_facet_info
 from .numba_setup import initialize_petsc, sink
-from ffcx.codegeneration.utils import get_void_pointer
 
 mode = _PETSc.InsertMode.ADD_VALUES  # type: ignore
 insert = _PETSc.InsertMode.INSERT_VALUES  # type: ignore
@@ -287,7 +287,7 @@ def assemble_slave_cells(
             ffi_fb(geometry),  # type: ignore
             ffi_fb(facet_index),  # type: ignore
             ffi_fb(facet_perm),  # type: ignore
-            custom_data_ptr
+            custom_data_ptr,
         )
 
         # NOTE: Here we need to apply dof transformations
@@ -517,7 +517,7 @@ def assemble_exterior_slave_facets(
             ffi.from_buffer(geometry),  # type: ignore
             ffi.from_buffer(facet_index),  # type: ignore
             ffi.from_buffer(facet_perm),  # type: ignore,
-            void_ptr
+            void_ptr,
         )
         # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
 
