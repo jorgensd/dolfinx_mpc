@@ -13,12 +13,12 @@ import cffi
 import dolfinx
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import numba
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
 from ffcx.codegeneration.utils import get_void_pointer
 
-import numba
 from dolfinx_mpc.assemble_matrix import create_sparsity_pattern
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
 
@@ -271,7 +271,7 @@ def assemble_slave_cells(
         dtype=_PETSc.ScalarType,  # type: ignore
     )
     masters, coefficients, offsets, c_to_s, c_to_s_off, is_slave = mpc
-    custom_data_ptr = get_void_pointer(None)
+    custom_data_ptr = get_void_pointer(numpy.zeros(0, dtype=numpy.int32))
     # Loop over all cells
     local_dofs = numpy.zeros(block_size * num_dofs_per_element, dtype=numpy.int32)
     for cell in active_cells:
@@ -496,7 +496,7 @@ def assemble_exterior_slave_facets(
 
     # Permutation info
     cell_perms, needs_facet_perm, facet_perms = perm
-    void_ptr = get_void_pointer(None)
+    custom_data_ptr = get_void_pointer(numpy.zeros(0, dtype=numpy.int32))
 
     # Loop over all external facets that are active
     for i in range(facet_info.shape[0]):
@@ -517,7 +517,7 @@ def assemble_exterior_slave_facets(
             ffi.from_buffer(geometry),  # type: ignore
             ffi.from_buffer(facet_index),  # type: ignore
             ffi.from_buffer(facet_perm),  # type: ignore
-            void_ptr,
+            custom_data_ptr,
         )
         # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
 

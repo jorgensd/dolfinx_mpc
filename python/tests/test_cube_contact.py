@@ -24,7 +24,6 @@ from dolfinx.io import gmshio
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 theta = np.pi / 5
 
@@ -166,7 +165,7 @@ def generate_hex_boxes():
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("nonslip", [True, False])
-def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F811
+def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
     assemble_matrix, assemble_vector = get_assemblers
     comm = MPI.COMM_WORLD
     root = 0

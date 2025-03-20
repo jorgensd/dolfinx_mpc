@@ -8,10 +8,9 @@ from __future__ import annotations
 from typing import Union
 
 import dolfinx.cpp as _cpp
+import numba
 import numpy
 import numpy.typing as npt
-
-import numba
 
 _forms = Union[_cpp.fem.Form_float32, _cpp.fem.Form_float64, _cpp.fem.Form_complex128]
 _bcs = Union[

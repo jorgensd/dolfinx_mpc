@@ -18,6 +18,7 @@ import h5py
 import numpy as np
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
+from dolfinx.cpp.mesh import create_cell_partitioner
 from dolfinx.fem import (
     Constant,
     Function,
@@ -28,7 +29,7 @@ from dolfinx.fem import (
     set_bc,
 )
 from dolfinx.io import XDMFFile
-from dolfinx.mesh import create_unit_cube, locate_entities_boundary, meshtags, refine
+from dolfinx.mesh import GhostMode, create_unit_cube, locate_entities_boundary, meshtags, refine
 from ufl import Identity, TestFunction, TrialFunction, ds, dx, grad, inner, sym, tr
 
 from dolfinx_mpc import MultiPointConstraint, apply_lifting, assemble_matrix, assemble_vector
@@ -43,10 +44,13 @@ def bench_elasticity_one(
     kspview: bool = False,
 ):
     N = 3
-    mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
+    gmode = GhostMode.shared_facet
+    partitioner = create_cell_partitioner(gmode)
+    mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ghost_mode=gmode)
     for i in range(r_lvl):
         mesh.topology.create_entities(mesh.topology.dim - 2)
-        mesh = refine(mesh, redistribute=True)
+        mesh.topology.create_entities(mesh.topology.dim - 2)
+        mesh, _, _ = refine(mesh, partitioner=partitioner)
 
     fdim = mesh.topology.dim - 1
     el = basix.ufl.element(

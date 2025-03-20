@@ -18,7 +18,6 @@ from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import compute_midpoints, create_unit_square, meshtags
 
 import dolfinx_mpc
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)

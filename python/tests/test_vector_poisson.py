@@ -20,7 +20,6 @@ from dolfinx.mesh import create_unit_square
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)

@@ -19,6 +19,7 @@ import h5py
 import numpy as np
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
+from dolfinx.cpp.mesh import create_cell_partitioner
 from dolfinx.fem import (
     Constant,
     Function,
@@ -30,7 +31,7 @@ from dolfinx.fem import (
 from dolfinx.fem.petsc import apply_lifting, assemble_matrix, assemble_vector, set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, log, set_log_level
-from dolfinx.mesh import CellType, create_unit_cube, locate_entities_boundary, meshtags, refine
+from dolfinx.mesh import CellType, GhostMode, create_unit_cube, locate_entities_boundary, meshtags, refine
 from ufl import (
     Identity,
     SpatialCoordinate,
@@ -59,7 +60,9 @@ def ref_elasticity(
 ):
     if tetra:
         N = 3 if degree == 1 else 2
-        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
+        gmode = GhostMode.shared_facet
+        partitioner = create_cell_partitioner(gmode)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ghost_mode=gmode)
     else:
         N = 3
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
@@ -67,7 +70,8 @@ def ref_elasticity(
         # set_log_level(LogLevel.INFO)
         N *= 2
         if tetra:
-            mesh = refine(mesh, redistribute=True)
+            mesh.topology.create_entities(mesh.topology.dim - 2)
+            mesh, _, _ = refine(mesh, partitioner=partitioner)
         else:
             mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
         # set_log_level(LogLevel.ERROR)
