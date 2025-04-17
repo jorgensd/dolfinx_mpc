@@ -555,7 +555,7 @@ void assemble_matrix_impl(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
   // Integration domain mesh
-  std::shared_ptr<const mesh::Mesh<U>> mesh = a.mesh();
+  std::shared_ptr<const dolfinx::mesh::Mesh<U>> mesh = a.mesh();
   assert(mesh);
 
   // Test function mesh
