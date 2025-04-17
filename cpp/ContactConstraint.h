@@ -363,7 +363,7 @@ mpc_data<T> create_contact_slip_condition(
 {
 
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
-  std::shared_ptr<const mesh::Mesh<U>> mesh = V.mesh();
+  std::shared_ptr<const dolfinx::mesh::Mesh<U>> mesh = V.mesh();
   MPI_Comm comm = mesh->comm();
   int rank = -1;
   MPI_Comm_rank(comm, &rank);
