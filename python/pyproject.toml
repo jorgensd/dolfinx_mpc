@@ -28,11 +28,13 @@ docs = ['jupyter-book', 'jupytext', "scipy"]
 lint = ["ruff", "mypy"]
 optional = ["numba"]
 test = ["pytest", "coverage", "scipy"]
+eigen = ["slepc4py"]
 all = [
       "dolfinx_mpc[docs]",
       "dolfinx_mpc[optional]",
       "dolfinx_mpc[lint]",
       "dolfinx_mpc[test]",
+      "dolfinx_mpc[eigen]",
 ]
 
 [tool.scikit-build]
