@@ -106,6 +106,7 @@ def assemble_residual_mpc(
     """
     # Update input vector before assigning
     _fem.petsc._ghostUpdate(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
+    mpc.backsubstitution(x)
 
     # Assign the input vector to the unknowns
     _fem.petsc.assign(x, u)

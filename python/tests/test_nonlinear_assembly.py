@@ -190,10 +190,7 @@ def test_nonlinear_poisson(poly_order):
         l2_error_global = mesh.comm.allreduce(l2_error_local, op=MPI.SUM)
 
         l2_error[run_no] = l2_error_global**0.5
-        with dolfinx.io.XDMFFile(mesh.comm, f"test_nonlinear_poisson_{poly_order}_N{N}.xdmf", "w") as xdmf:
-            xdmf.write_mesh(mesh)
-            xdmf.write_function(u, 0.0)
-        breakpoint()
+ 
     rates = np.log(l2_error[:-1] / l2_error[1:]) / np.log(2.0)
 
     assert np.all(rates > poly_order + 0.9)
