@@ -1,4 +1,4 @@
-# Copyright (C) 2022 Nathan Sime
+# Copyright (C) 2022-2025 Nathan Sime and Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -7,8 +7,8 @@
 # This demo illustrates how to apply a slip condition on an
 # interface not aligned with the coordiante axis.
 # The demos solves the Stokes problem using the nest functionality to
-# avoid using mixed function spaces. The demo also illustrates how to use
-#  block preconditioners with PETSc
+# avoid using mixed function spaces and as a non-linear problem.
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -97,8 +97,8 @@ def create_mesh_gmsh(
         gmsh.model.setPhysicalName(1, outlet_marker, "Fluid outlet")
 
         # Set number of threads used for mesh
-        # gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        # gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
+        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
         gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
 
         # Set uniform mesh size
@@ -127,6 +127,7 @@ Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=default_real_ty
 
 V = dolfinx.fem.functionspace(mesh, Ve)
 Q = dolfinx.fem.functionspace(mesh, Qe)
+W = ufl.MixedFunctionSpace(V, Q)
 
 
 def inlet_velocity_expression(x):
@@ -147,7 +148,7 @@ dofs = dolfinx.fem.locate_dofs_topological(V, 1, mt.find(3))
 bc1 = dolfinx.fem.dirichletbc(inlet_velocity, dofs)
 
 # Collect Dirichlet boundary conditions
-bcs: list[dolfinx.fem.DirichletBC] = [bc1]
+bcs = [bc1]
 
 # Slip conditions for walls
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
@@ -180,15 +181,15 @@ def T(u: Expr, p: Expr, mu: Expr):
 # Traditional terms
 mu = 1
 f = dolfinx.fem.Constant(mesh, default_scalar_type((0, 0)))
-(u, p) = ufl.TrialFunction(V), ufl.TrialFunction(Q)
-(v, q) = ufl.TestFunction(V), ufl.TestFunction(Q)
-a00 = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
-a01 = -ufl.inner(p, ufl.div(v)) * ufl.dx
-a10 = -ufl.inner(ufl.div(u), q) * ufl.dx
-a11 = None
-
-L0 = ufl.inner(f, v) * ufl.dx
-L1 = ufl.inner(dolfinx.fem.Constant(mesh, default_scalar_type(0.0)), q) * ufl.dx
+Wh = ufl.MixedFunctionSpace(mpc.function_space, mpc_q.function_space)
+uh = dolfinx.fem.Function(mpc.function_space)
+ph = dolfinx.fem.Function(mpc_q.function_space)
+(v, q) = ufl.TestFunctions(W)
+F = 2 * mu * ufl.inner(sym_grad(uh), sym_grad(v)) * ufl.dx
+F -= ufl.inner(ph, ufl.div(v)) * ufl.dx
+F -= ufl.inner(ufl.div(uh), q) * ufl.dx
+F -= ufl.inner(f, v) * ufl.dx
+F -= ufl.inner(dolfinx.fem.Constant(mesh, default_scalar_type(0.0)), q) * ufl.dx
 
 # No prescribed shear stress
 n = ufl.FacetNormal(mesh)
@@ -197,87 +198,51 @@ ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
 # Terms due to slip condition
 # Explained in for instance: https://arxiv.org/pdf/2001.10639.pdf
-a00 = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
+F -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(uh), n), v) * ds
+F -= ufl.inner(ufl.outer(n, n) * ufl.dot(-ph * ufl.Identity(uh.ufl_shape[0]), n), v) * ds
+F -= ufl.inner(g_tau, v) * ds
 
-a00 -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
-a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(-p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
-L0 += ufl.inner(g_tau, v) * ds
+u, p = ufl.TrialFunctions(W)
+P = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
+P -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
+P += p * q * ufl.dx
 
-a: list[list[dolfinx.fem.Form]] = [
-    [dolfinx.fem.form(a00), dolfinx.fem.form(a01)],
-    [dolfinx.fem.form(a10), dolfinx.fem.form(a11)],
-]
-L: list[dolfinx.fem.Form] = [dolfinx.fem.form(L0), dolfinx.fem.form(L1)]
-
-# Assemble LHS matrix and RHS vector
-with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
-    A = dolfinx_mpc.create_matrix_nest(a, [mpc, mpc_q])
-    dolfinx_mpc.assemble_matrix_nest(A, a, [mpc, mpc_q], bcs)
-    A.assemble()
-
-    b = dolfinx_mpc.create_vector_nest(L, [mpc, mpc_q])
-    dolfinx_mpc.assemble_vector_nest(b, L, [mpc, mpc_q])
-
-# Set Dirichlet boundary condition values in the RHS
-dolfinx_mpc.apply_lifting(b, a, bcs, constraint=[mpc, mpc_q])
-for b_sub in b.getNestSubVecs():
-    b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
-
-# bcs0 = dolfinx.cpp.fem.bcs_rows(
-#     dolfinx.fem.assemble._create_cpp_form(L), bcs)
-bcs0 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(L), bcs)
-dolfinx.fem.petsc.set_bc(b, bcs0)
-
-# Preconditioner
-P11 = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(p * q * ufl.dx))
-P = PETSc.Mat().createNest([[A.getNestSubMatrix(0, 0), None], [None, P11]])  # type: ignore
-P.assemble()
-
-# ---------------------- Solve variational problem -----------------------
-ksp = PETSc.KSP().create(mesh.comm)  # type: ignore
-ksp.setOperators(A, P)
+tol = 1e-7
+problem = dolfinx_mpc.NonlinearProblem(
+    ufl.extract_blocks(F),
+    [uh, ph],
+    mpc=[mpc, mpc_q],
+    bcs=bcs,
+    kind="nest",
+    petsc_options={
+        "snes_type": "newtonls",
+        "snes_atol": tol,
+        "snes_rtol": tol,
+        "snes_error_if_not_converged": True,
+        "snes_monitor": None,
+        "snes_linesearch_type": "none",
+        "ksp_error_if_not_converged": True,
+        "ksp_type": "minres",
+        "ksp_rtol": 1e-8,
+        "pc_type": "fieldsplit",
+        "pc_fieldsplit_type": "additive",
+    },
+)
+nested_IS = problem.A.getNestISs()
+ksp = problem.solver.getKSP()
+pc = ksp.getPC()
+pc.setFieldSplitIS(("u", nested_IS[0][0]), ("p", nested_IS[0][1]))
+ksp_u, ksp_p = pc.getFieldSplitSubKSP()
+ksp_u.setType("preonly")
+ksp_u.getPC().setType("gamg")
+ksp_p.setType("preonly")
+ksp_p.getPC().setType("jacobi")
 ksp.setMonitor(
     lambda ctx, it, r: PETSc.Sys.Print(  # type: ignore
         f"Iteration: {it:>4d}, |r| = {r:.3e}"
     )
 )
-ksp.setType("minres")
-ksp.setTolerances(rtol=1e-8)
-ksp.getPC().setType("fieldsplit")
-ksp.getPC().setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE)  # type: ignore
-
-nested_IS = P.getNestISs()
-ksp.getPC().setFieldSplitIS(("u", nested_IS[0][0]), ("p", nested_IS[0][1]))
-
-ksp_u, ksp_p = ksp.getPC().getFieldSplitSubKSP()
-ksp_u.setType("preonly")
-ksp_u.getPC().setType("gamg")
-ksp_p.setType("preonly")
-ksp_p.getPC().setType("jacobi")
-
-ksp.setFromOptions()
-
-Uh = b.copy()
-ksp.solve(b, Uh)
-
-for Uh_sub in Uh.getNestSubVecs():
-    Uh_sub.ghostUpdate(
-        addv=PETSc.InsertMode.INSERT,  # type: ignore
-        mode=PETSc.ScatterMode.FORWARD,  # type: ignore
-    )  # type: ignore
-# ----------------------------- Put NestVec into DOLFINx Function - ---------
-uh = dolfinx.fem.Function(mpc.function_space)
-uh.x.petsc_vec.setArray(Uh.getNestSubVecs()[0].array)
-
-ph = dolfinx.fem.Function(mpc_q.function_space)
-ph.x.petsc_vec.setArray(Uh.getNestSubVecs()[1].array)
-
-uh.x.scatter_forward()
-ph.x.scatter_forward()
-
-# Backsubstitute to update slave dofs in solution vector
-mpc.backsubstitution(uh)
-mpc_q.backsubstitution(ph)
+_, converged, num_iterations = problem.solve()
 
 # ------------------------------ Output ----------------------------------
 
@@ -286,12 +251,12 @@ ph.name = "p"
 outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
 
-with dolfinx.io.XDMFFile(mesh.comm, outdir / "demo_stokes_nest.xdmf", "w") as outfile:
+with dolfinx.io.XDMFFile(mesh.comm, outdir / "demo_stokes_nest_nonlinear.xdmf", "w") as outfile:
     outfile.write_mesh(mesh)
     outfile.write_meshtags(mt, mesh.geometry)
     outfile.write_function(ph)
 
-with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh, engine="BP4") as vtx:
+with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh_nonlinear.bp", uh, engine="BP4") as vtx:
     vtx.write(0.0)
 # -------------------- Verification --------------------------------
 # Transfer data from the MPC problem to numpy arrays for comparison
@@ -360,12 +325,5 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
         uh_numpy = K @ d
         assert np.allclose(np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2))
 
-
-A.destroy()
-b.destroy()
-for Uh_sub in Uh.getNestSubVecs():
-    Uh_sub.destroy()
-Uh.destroy()
-ksp.destroy()
 # -------------------- List timings --------------------------
 dolfinx.common.list_timings(MPI.COMM_WORLD)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import typing
 from functools import partial
-from typing import Sequence
+from typing import Iterable, Sequence
 
 from petsc4py import PETSc
 
@@ -22,8 +22,8 @@ from dolfinx.la.petsc import create_vector
 
 from dolfinx_mpc.cpp import mpc as _cpp_mpc
 
-from .assemble_matrix import assemble_matrix, create_matrix_nest, create_sparsity_pattern
-from .assemble_vector import apply_lifting, assemble_vector
+from .assemble_matrix import assemble_matrix, assemble_matrix_nest, create_matrix_nest, create_sparsity_pattern
+from .assemble_vector import apply_lifting, assemble_vector, assemble_vector_nest, create_vector_nest
 from .multipointconstraint import MultiPointConstraint
 
 
@@ -69,11 +69,18 @@ def assemble_jacobian_mpc(
 
     # Assemble Jacobian
     J.zeroEntries()
-    assemble_matrix(jacobian, mpc, bcs, diagval=1.0, A=J)  # type: ignore
+    if J.getType() == "nest":
+        assemble_matrix_nest(J, jacobian, mpc, bcs, diagval=1.0)  # type: ignore
+    else:
+        assemble_matrix(jacobian, mpc, bcs, diagval=1.0, A=J)  # type: ignore
     J.assemble()
     if preconditioner is not None:
         P.zeroEntries()
-        assemble_matrix(mpc, preconditioner, bcs, diagval=1.0, A=P)  # type: ignore
+        if P.getType() == "nest":
+            assemble_matrix_nest(P, preconditioner, mpc, bcs, diagval=1.0)  # type: ignore
+        else:
+            assemble_matrix(mpc, preconditioner, bcs, diagval=1.0, A=P)  # type: ignore
+
         P.assemble()
 
 
@@ -108,31 +115,37 @@ def assemble_residual_mpc(
     """
     # Update input vector before assigning
     _fem.petsc._ghostUpdate(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
-    mpc.backsubstitution(x)
 
     # Assign the input vector to the unknowns
     _fem.petsc.assign(x, u)
-
+    if isinstance(u, Sequence):
+        assert isinstance(mpc, Sequence)
+        for i in range(len(u)):
+            mpc[i].homogenize(u[i])
+            mpc[i].backsubstitution(u[i])
+    else:
+        assert isinstance(u, _fem.Function)
+        assert isinstance(mpc, MultiPointConstraint)
+        mpc.homogenize(u)
+        mpc.backsubstitution(u)
     # Assemble the residual
     _fem.petsc._zero_vector(F)
-    try:
-        # Single form and nest assembly
+    if x.getType() == "nest":
+        assemble_vector_nest(F, residual, mpc)  # type: ignore
+    else:
+        assert isinstance(residual, _fem.Form)
+        assert isinstance(mpc, MultiPointConstraint)
         assemble_vector(residual, mpc, F)
-    except TypeError:
-        raise NotImplementedError("Need to implement block assembly for residuals")  # type: ignore
-        # # Block assembly
-        # _fem._assign_block_data(residual, F)  # type: ignore
-        # assemble_vector(F, residual)  # type: ignore
 
     # Lift vector
     try:
         # Nest and blocked lifting
         bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(jacobian, 1), bcs)  # type: ignore
-        _fem._assign_block_data(residual, x)  # type: ignore
+        _fem.petsc._assign_block_data(residual, x)  # type: ignore
         apply_lifting(F, jacobian, bcs=bcs1, constraint=mpc, x0=x, scale=-1.0)  # type: ignore
         _fem.petsc._ghostUpdate(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(residual), bcs)  # type: ignore
-        _fem.petsc.set_bc(F, bcs0, x0=x, scale=-1.0)
+        _fem.petsc.set_bc(F, bcs0, x0=x, alpha=-1.0)
     except RuntimeError:
         # Single form lifting
         apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0)  # type: ignore
@@ -146,15 +159,15 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         self,
         F: typing.Union[ufl.form.Form, Sequence[ufl.form.Form]],
         u: typing.Union[_fem.Function, Sequence[_fem.Function]],
+        mpc: typing.Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
         bcs: typing.Optional[Sequence[_fem.DirichletBC]] = None,
-        J: typing.Optional[typing.Union[ufl.form.Form, Sequence[Sequence[ufl.form.Form]]]] = None,
-        P: typing.Optional[typing.Union[ufl.form.Form, Sequence[Sequence[ufl.form.Form]]]] = None,
+        J: typing.Optional[typing.Union[ufl.form.Form, Iterable[Iterable[ufl.form.Form]]]] = None,
+        P: typing.Optional[typing.Union[ufl.form.Form, Iterable[Iterable[ufl.form.Form]]]] = None,
         kind: typing.Optional[typing.Union[str, typing.Iterable[typing.Iterable[str]]]] = None,
         form_compiler_options: typing.Optional[dict] = None,
         jit_options: typing.Optional[dict] = None,
         petsc_options: typing.Optional[dict] = None,
         entity_maps: typing.Optional[dict[dolfinx.mesh.Mesh, npt.NDArray[np.int32]]] = None,
-        mpc: typing.Optional[MultiPointConstraint | Sequence[MultiPointConstraint]] = None,
     ):
         """Class for solving nonlinear problems with SNES.
 
@@ -205,7 +218,8 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         )
 
         if J is None:
-            J = _fem.derivative_block(F, u)
+            dus = [ufl.TrialFunction(Fi.arguments()[0].ufl_function_space()) for Fi in F]
+            J = _fem.forms.derivative_block(F, u, dus)
 
         self._J = _fem.form(
             J,
@@ -231,22 +245,35 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         # Create PETSc structures for the residual, Jacobian and solution
         # vector
         if kind == "nest" or isinstance(kind, Sequence):
-            self._A = create_matrix_nest(self._J, mpc, kind=kind)
+            assert isinstance(mpc, Sequence)
+            assert isinstance(self._J, Sequence)
+            self._A = create_matrix_nest(self._J, mpc)
         elif kind is None:
+            assert isinstance(mpc, MultiPointConstraint)
             self._A = _cpp_mpc.create_matrix(self._J._cpp_object, mpc._cpp_object)
         else:
             raise ValueError("Unsupported kind for matrix: {}".format(kind))
 
         # FIXME: Add support for nest here
-        self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
-        self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
+        kind = "nest" if self._A.getType() == "nest" else kind
+        if kind == "nest":
+            assert isinstance(mpc, Sequence)
+            assert isinstance(self._F, Sequence)
+            self._b = create_vector_nest(self._F, mpc)
+            self._x = create_vector_nest(self._F, mpc)
+        else:
+            assert isinstance(mpc, MultiPointConstraint)
+            self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
+            self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
 
         # Create PETSc structure for preconditioner if provided
-        kind = "nest" if self._A.getType() == PETSc.Mat.Type.NEST else kind
-        if self.P is not None:
+        if self._P is not None:
             if kind == "nest":
-                self._P_mat = create_matrix_nest(self.P, mpc)
+                assert isinstance(self.P, Sequence)
+                assert isinstance(self.mpc, Sequence)
+                self._P_mat = create_matrix_nest(self.P, self.mpc)
             else:
+                assert isinstance(self._P, _fem.Form)
                 self._P_mat = _cpp_mpc.create_matrix(self.P, kind=kind)
         else:
             self._P_mat = None
@@ -289,11 +316,17 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
 
         # Move solution back to function
         dolfinx.fem.petsc.assign(self.x, self._u)
-        self.mpc.homogenize(self._u)
-        self.mpc.backsubstitution(self._u)
+        if isinstance(self.mpc, Sequence):
+            for i in range(len(self._u)):
+                self.mpc[i].backsubstitution(self._u[i])
+                self.mpc[i].backsubstitution(self._u[i])
+        else:
+            assert isinstance(self._u, _fem.Function)
+            self.mpc.homogenize(self._u)
+            self.mpc.backsubstitution(self._u)
 
         converged_reason = self.solver.getConvergedReason()
-        return self._u.x.array, converged_reason, self.solver.getIterationNumber()
+        return self._u, converged_reason, self.solver.getIterationNumber()
 
 
 class LinearProblem(dolfinx.fem.petsc.LinearProblem):
