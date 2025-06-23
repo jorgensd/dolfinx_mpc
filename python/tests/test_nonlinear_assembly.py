@@ -171,19 +171,29 @@ def test_nonlinear_poisson(poly_order):
         assert num_slaves_global > 0
         assert num_masters_global == num_slaves_global
 
-        problem = NonlinearMPCProblem(F, u, mpc, bcs=bcs, J=J)
-        solver = NewtonSolverMPC(mesh.comm, problem, mpc)
-        solver.atol = 1e1 * np.finfo(u.x.array.dtype).resolution
-        solver.rtol = 1e1 * np.finfo(u.x.array.dtype).resolution
+        petsc_options = {"snes_type": "newtonls", "ksp_type": "preonly", "pc_type": "lu",
+                         "pc_factor_mat_solver_type": "mumps", "snes_atol": 1e1 * np.finfo(u.x.array.dtype).resolution,
+                         "snes_rtol": 1e1 * np.finfo(u.x.array.dtype).resolution,
+                         "snes_linesearch_type": "none",
+                         "ksp_error_if_not_converged": True,
+                         "snes_error_if_not_converged": True,
+                         "snes_monitor": None}
+        problem = dolfinx_mpc.NonlinearProblem(F, u, mpc=mpc, bcs=bcs, J=J, petsc_options=petsc_options)
+        #solver = NewtonSolverMPC(mesh.comm, problem, mpc)
 
         # Ensure the solver works with nonzero initial guess
         u.interpolate(lambda x: x[0] ** 2 * x[1] ** 2)
-        solver.solve(u)
+        _, converged, num_iterations = problem.solve()
+        
+        print(f"Converged: {converged}, iterations: {num_iterations}")
         l2_error_local = dolfinx.fem.assemble_scalar(dolfinx.fem.form((u - u_soln) ** 2 * ufl.dx))
         l2_error_global = mesh.comm.allreduce(l2_error_local, op=MPI.SUM)
 
         l2_error[run_no] = l2_error_global**0.5
-
+        with dolfinx.io.XDMFFile(mesh.comm, f"test_nonlinear_poisson_{poly_order}_N{N}.xdmf", "w") as xdmf:
+            xdmf.write_mesh(mesh)
+            xdmf.write_function(u, 0.0)
+        breakpoint()
     rates = np.log(l2_error[:-1] / l2_error[1:]) / np.log(2.0)
 
     assert np.all(rates > poly_order + 0.9)

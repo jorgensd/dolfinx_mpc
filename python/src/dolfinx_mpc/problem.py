@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2021 Jørgen S. Dokken
+# Copyright (C) 2021-2025 Jørgen S. Dokken
 #
 # This file is part of DOLFINx MPC
 #
@@ -16,9 +16,287 @@ from dolfinx import cpp as _cpp
 from dolfinx import fem as _fem
 from dolfinx.la.petsc import create_vector
 
-from .assemble_matrix import assemble_matrix, create_sparsity_pattern
+from .assemble_matrix import assemble_matrix, create_sparsity_pattern, create_matrix_nest, assemble_matrix_nest
 from .assemble_vector import apply_lifting, assemble_vector
 from .multipointconstraint import MultiPointConstraint
+from dolfinx_mpc.cpp import mpc as _cpp_mpc
+import numpy.typing as npt
+import numpy as np
+from typing import Sequence
+from functools import partial
+
+
+def assemble_jacobian_mpc(
+    u: typing.Union[Sequence[_fem.Function], _fem.Function],
+    jacobian: typing.Union[_fem.Form, typing.Iterable[typing.Iterable[_fem.Form]]],
+    preconditioner: typing.Optional[typing.Union[_fem.Form, typing.Iterable[typing.Iterable[_fem.Form]]]],
+    bcs: typing.Iterable[_fem.DirichletBC],
+    mpc: typing.Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    _snes: PETSc.SNES,  # type: ignore
+    x: PETSc.Vec,  # type: ignore
+    J: PETSc.Mat,  # type: ignore
+    P: PETSc.Mat,  # type: ignore
+):
+    """Assemble the Jacobian matrix and preconditioner.
+
+    A function conforming to the interface expected by SNES.setJacobian can
+    be created by fixing the first four arguments:
+
+        functools.partial(assemble_jacobian, u, jacobian, preconditioner,
+                          bcs)
+
+    Args:
+        u: Function tied to the solution vector within the residual and
+            jacobian
+        jacobian: Form of the Jacobian
+        preconditioner: Form of the preconditioner
+        bcs: List of Dirichlet boundary conditions
+        mpc: The multi point constraint or a sequence of multi point
+        _snes: The solver instance
+        x: The vector containing the point to evaluate at
+        J: Matrix to assemble the Jacobian into
+        P: Matrix to assemble the preconditioner into
+    """
+    # Copy existing soultion into the function used in the residual and
+    # Jacobian
+    try:
+        x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
+    except PETSc.Error:  # type: ignore
+        for x_sub in x.getNestSubVecs():
+            x_sub.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
+    _fem.petsc.assign(x, u)
+
+    # Assemble Jacobian
+    J.zeroEntries()
+    assemble_matrix(jacobian, mpc, bcs, diagval=1.0, A=J)  # type: ignore
+    J.assemble()
+    if preconditioner is not None:
+        P.zeroEntries()
+        assemble_matrix(mpc, preconditioner, bcs, diagval=1.0, A=P)  # type: ignore
+        P.assemble()
+
+def assemble_residual_mpc(
+    u: typing.Union[_fem.Function, Sequence[_fem.Function]],
+    residual: typing.Union[_fem.Form, typing.Iterable[_fem.Form]],
+    jacobian: typing.Union[_fem.Form, typing.Iterable[typing.Iterable[_fem.Form]]],
+    bcs: typing.Iterable[_fem.DirichletBC],
+    mpc: typing.Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    _snes: PETSc.SNES,  # type: ignore
+    x: PETSc.Vec,  # type: ignore
+    F: PETSc.Vec,  # type: ignore
+):
+    """Assemble the residual into the vector `F`.
+
+    A function conforming to the interface expected by SNES.setResidual can
+    be created by fixing the first four arguments:
+
+        functools.partial(assemble_residual, u, jacobian, preconditioner,
+                          bcs)
+
+    Args:
+        u: Function(s) tied to the solution vector within the residual and
+            Jacobian.
+        residual: Form of the residual. It can be a sequence of forms.
+        jacobian: Form of the Jacobian. It can be a nested sequence of
+            forms.
+        bcs: List of Dirichlet boundary conditions.
+        _snes: The solver instance.
+        x: The vector containing the point to evaluate the residual at.
+        F: Vector to assemble the residual into.
+    """
+    # Update input vector before assigning
+    _fem.petsc._ghostUpdate(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
+
+    # Assign the input vector to the unknowns
+    _fem.petsc.assign(x, u)
+
+    # Assemble the residual
+    _fem.petsc._zero_vector(F)
+    try:
+        # Single form and nest assembly
+        assemble_vector(residual, mpc, F)
+    except TypeError:
+        raise NotImplementedError("Need to implement block assembly for residuals")  # type: ignore
+        # # Block assembly
+        # _fem._assign_block_data(residual, F)  # type: ignore
+        # assemble_vector(F, residual)  # type: ignore
+
+    # Lift vector
+    try:
+        # Nest and blocked lifting
+        bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(jacobian, 1), bcs)  # type: ignore
+        _fem._assign_block_data(residual, x)  # type: ignore
+        apply_lifting(F, jacobian, bcs=bcs1, constraint=mpc, x0=x, scale=-1.0)  # type: ignore
+        _fem.petsc._ghostUpdate(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
+        bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(residual), bcs)  # type: ignore
+        _fem.petsc.set_bc(F, bcs0, x0=x, scale=-1.0)
+    except RuntimeError:
+        # Single form lifting
+        apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0)  # type: ignore
+        _fem.petsc._ghostUpdate(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
+        _fem.petsc.set_bc(F, bcs, x0=x, alpha=-1.0)
+    _fem.petsc._ghostUpdate(F, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
+
+
+
+class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
+    def __init__(
+        self,
+        F: typing.Union[ufl.form.Form, Sequence[ufl.form.Form]],
+        u: typing.Union[_fem.Function, Sequence[_fem.Function]],
+        bcs: typing.Optional[Sequence[_fem.DirichletBC]] = None,
+        J: typing.Optional[typing.Union[ufl.form.Form, Sequence[Sequence[ufl.form.Form]]]] = None,
+        P: typing.Optional[typing.Union[ufl.form.Form, Sequence[Sequence[ufl.form.Form]]]] = None,
+        kind: typing.Optional[typing.Union[str, typing.Iterable[typing.Iterable[str]]]] = None,
+        form_compiler_options: typing.Optional[dict] = None,
+        jit_options: typing.Optional[dict] = None,
+        petsc_options: typing.Optional[dict] = None,
+        entity_maps: typing.Optional[dict[dolfinx.mesh.Mesh, npt.NDArray[np.int32]]] = None,
+        mpc: typing.Optional[MultiPointConstraint|Sequence[MultiPointConstraint]] = None,
+    ):
+        """Class for solving nonlinear problems with SNES.
+
+        Solves problems of the form
+        :math:`F_i(u, v) = 0, i=0,...N\\ \\forall v \\in V` where
+        :math:`u=(u_0,...,u_N), v=(v_0,...,v_N)` using PETSc SNES as the
+        non-linear solver.
+
+        Note: The deprecated version of this class for use with
+            NewtonSolver has been renamed NewtonSolverNonlinearProblem.
+
+        Args:
+            F: UFL form(s) of residual :math:`F_i`.
+            u: Function used to define the residual and Jacobian.
+            bcs: Dirichlet boundary conditions.
+            J: UFL form(s) representing the Jacobian
+                :math:`J_ij = dF_i/du_j`.
+            P: UFL form(s) representing the preconditioner.
+            kind: The PETSc matrix type(s) for the Jacobian and
+                preconditioner (``MatType``).
+                See :func:`dolfinx.fem.petsc.create_matrix` for more
+                information.
+            form_compiler_options: Options used in FFCx compilation of all
+                forms. Run ``ffcx --help`` at the command line to see all
+                available options.
+            jit_options: Options used in CFFI JIT compilation of C code
+                generated by FFCx. See ``python/dolfinx/jit.py`` for all
+                available options. Takes priority over all other option
+                values.
+            petsc_options: Options to pass to the PETSc SNES object.
+            entity_maps: If any trial functions, test functions, or
+                coefficients in the form are not defined over the same mesh
+                as the integration domain, ``entity_maps`` must be
+                supplied. For each key (a mesh, different to the
+                integration domain mesh) a map should be provided relating
+                the entities in the integration domain mesh to the entities
+                in the key mesh e.g. for a key-value pair ``(msh, emap)``
+                in ``entity_maps``, ``emap[i]`` is the entity in ``msh``
+                corresponding to entity ``i`` in the integration domain
+                mesh.
+        """
+        # Compile residual and Jacobian forms
+        self._F = _fem.form(
+            F,
+            form_compiler_options=form_compiler_options,
+            jit_options=jit_options,
+            entity_maps=entity_maps,
+        )
+
+        if J is None:
+            J = _fem.derivative_block(F, u)
+
+        self._J = _fem.form(
+            J,
+            form_compiler_options=form_compiler_options,
+            jit_options=jit_options,
+            entity_maps=entity_maps,
+        )
+
+        if P is not None:
+            self._P = _fem.form(
+                P,
+                form_compiler_options=form_compiler_options,
+                jit_options=jit_options,
+                entity_maps=entity_maps,
+            )
+        else:
+            self._P = None
+
+        self._u = u
+        # Set default values if not supplied
+        bcs = [] if bcs is None else bcs
+        self.mpc = mpc
+        # Create PETSc structures for the residual, Jacobian and solution
+        # vector
+        if kind == "nest" or isinstance(kind, Sequence):
+            self._A = create_matrix_nest(self._J, mpc, kind=kind)
+        elif kind is None:
+            self._A = _cpp_mpc.create_matrix(self._J._cpp_object, mpc._cpp_object)
+        else:
+            raise ValueError("Unsupported kind for matrix: {}".format(kind))
+
+        # FIXME: Add support for nest here
+        self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
+        self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
+
+        # Create PETSc structure for preconditioner if provided
+        kind = "nest" if self._A.getType() == PETSc.Mat.Type.NEST else kind
+        if self.P is not None:
+            if kind == "nest":
+                self._P_mat = create_matrix_nest(self.P, mpc)
+            else:
+                self._P_mat =  _cpp_mpc.create_matrix(self.P, kind=kind)
+        else:
+            self._P_mat = None
+
+
+
+        # Create the SNES solver and attach the corresponding Jacobian and
+        # residual computation functions
+        self._snes = PETSc.SNES().create(comm=self.A.comm)  # type: ignore
+        self.solver.setJacobian(
+            partial(assemble_jacobian_mpc, u, self.J, self.P, bcs, mpc), self._A, self.P_mat
+        )
+        self.solver.setFunction(partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc), self.b)
+
+        # Set PETSc options
+        problem_prefix = f"dolfinx_nonlinearproblem_{id(self)}"
+        self.solver.setOptionsPrefix(problem_prefix)
+        opts = PETSc.Options()  # type: ignore
+        opts.prefixPush(problem_prefix)
+
+        if petsc_options is not None:
+            for k, v in petsc_options.items():
+                opts[k] = v
+            self.solver.setFromOptions()
+
+            for k in petsc_options.keys():
+                del opts[k]
+
+        opts.prefixPop()
+
+    def solve(self) -> tuple[PETSc.Vec, int, int]:  # type: ignore
+        """Solve the problem and update the solution in the problem
+        instance.
+
+        Returns:
+            The solution, convergence reason and number of iterations.
+        """
+
+        # Move current iterate into the work array.
+        _fem.petsc.assign(self._u, self.x)
+
+        # Solve problem
+        self.solver.solve(None, self.x)
+
+        # Move solution back to function
+        dolfinx.fem.petsc.assign(self.x, self._u)
+        self.mpc.homogenize(self._u)
+        self.mpc.backsubstitution(self._u)
+
+        converged_reason = self.solver.getConvergedReason()
+        return self._u.x.array, converged_reason, self.solver.getIterationNumber()
+
 
 
 class LinearProblem(dolfinx.fem.petsc.LinearProblem):

@@ -24,7 +24,7 @@ from .assemble_vector import (
     create_vector_nest,
 )
 from .multipointconstraint import MultiPointConstraint
-from .problem import LinearProblem
+from .problem import LinearProblem, NonlinearProblem
 
 __all__ = [
     "assemble_matrix",
@@ -37,4 +37,5 @@ __all__ = [
     "MultiPointConstraint",
     "LinearProblem",
     "create_sparsity_pattern",
+    "NonlinearProblem"
 ]
