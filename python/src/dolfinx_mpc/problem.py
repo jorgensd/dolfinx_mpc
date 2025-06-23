@@ -465,10 +465,10 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
             self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
             if self._preconditioner is None:
+                self._P = None
+            else:
                 assert isinstance(self._preconditioner, _fem.Form)
                 self._P = _cpp_mpc.create_matrix(self._preconditioner._cpp_object, mpc._cpp_object)
-            else:
-                self._P = None
 
         self.bcs = [] if bcs is None else bcs
 
