@@ -37,5 +37,5 @@ __all__ = [
     "MultiPointConstraint",
     "LinearProblem",
     "create_sparsity_pattern",
-    "NonlinearProblem"
+    "NonlinearProblem",
 ]

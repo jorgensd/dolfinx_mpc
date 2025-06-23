@@ -7,23 +7,24 @@
 from __future__ import annotations
 
 import typing
+from functools import partial
+from typing import Sequence
 
 from petsc4py import PETSc
 
 import dolfinx.fem.petsc
+import numpy as np
+import numpy.typing as npt
 import ufl
 from dolfinx import cpp as _cpp
 from dolfinx import fem as _fem
 from dolfinx.la.petsc import create_vector
 
-from .assemble_matrix import assemble_matrix, create_sparsity_pattern, create_matrix_nest, assemble_matrix_nest
+from dolfinx_mpc.cpp import mpc as _cpp_mpc
+
+from .assemble_matrix import assemble_matrix, create_matrix_nest, create_sparsity_pattern
 from .assemble_vector import apply_lifting, assemble_vector
 from .multipointconstraint import MultiPointConstraint
-from dolfinx_mpc.cpp import mpc as _cpp_mpc
-import numpy.typing as npt
-import numpy as np
-from typing import Sequence
-from functools import partial
 
 
 def assemble_jacobian_mpc(
@@ -74,6 +75,7 @@ def assemble_jacobian_mpc(
         P.zeroEntries()
         assemble_matrix(mpc, preconditioner, bcs, diagval=1.0, A=P)  # type: ignore
         P.assemble()
+
 
 def assemble_residual_mpc(
     u: typing.Union[_fem.Function, Sequence[_fem.Function]],
@@ -139,7 +141,6 @@ def assemble_residual_mpc(
     _fem.petsc._ghostUpdate(F, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
 
 
-
 class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
     def __init__(
         self,
@@ -153,7 +154,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         jit_options: typing.Optional[dict] = None,
         petsc_options: typing.Optional[dict] = None,
         entity_maps: typing.Optional[dict[dolfinx.mesh.Mesh, npt.NDArray[np.int32]]] = None,
-        mpc: typing.Optional[MultiPointConstraint|Sequence[MultiPointConstraint]] = None,
+        mpc: typing.Optional[MultiPointConstraint | Sequence[MultiPointConstraint]] = None,
     ):
         """Class for solving nonlinear problems with SNES.
 
@@ -246,18 +247,14 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             if kind == "nest":
                 self._P_mat = create_matrix_nest(self.P, mpc)
             else:
-                self._P_mat =  _cpp_mpc.create_matrix(self.P, kind=kind)
+                self._P_mat = _cpp_mpc.create_matrix(self.P, kind=kind)
         else:
             self._P_mat = None
-
-
 
         # Create the SNES solver and attach the corresponding Jacobian and
         # residual computation functions
         self._snes = PETSc.SNES().create(comm=self.A.comm)  # type: ignore
-        self.solver.setJacobian(
-            partial(assemble_jacobian_mpc, u, self.J, self.P, bcs, mpc), self._A, self.P_mat
-        )
+        self.solver.setJacobian(partial(assemble_jacobian_mpc, u, self.J, self.P, bcs, mpc), self._A, self.P_mat)
         self.solver.setFunction(partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc), self.b)
 
         # Set PETSc options
@@ -297,7 +294,6 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
 
         converged_reason = self.solver.getConvergedReason()
         return self._u.x.array, converged_reason, self.solver.getIterationNumber()
-
 
 
 class LinearProblem(dolfinx.fem.petsc.LinearProblem):
