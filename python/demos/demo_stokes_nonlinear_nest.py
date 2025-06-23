@@ -205,7 +205,7 @@ F -= ufl.inner(g_tau, v) * ds
 u, p = ufl.TrialFunctions(W)
 P = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
 P -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
-P += p * q * ufl.dx
+P += ufl.inner(p, q) * ufl.dx
 
 tol = 1e-7
 problem = dolfinx_mpc.NonlinearProblem(
