@@ -206,9 +206,6 @@ def generate_tet_boxes(
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
     mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
@@ -264,9 +261,6 @@ def generate_hex_boxes(
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
     MPI.COMM_WORLD.barrier()
@@ -380,9 +374,6 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(2)
         gmsh.model.mesh.setOrder(1)
     MPI.COMM_WORLD.Barrier()

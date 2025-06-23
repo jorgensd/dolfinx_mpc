@@ -1,8 +1,13 @@
 # Changelog
 
 ## Main
+- **New feature**: Use of a preconditioner for `dolfinx_mpc.LinearProblem`, as well as allowing for `NEST` systems. See [demo_stokes.py](./python/demos/demo_stokes.py)
+- **New demo**: How to use SNES with fieldsplitting for non-linear problems, see [demo_stokes_nonlinear_nest.py](./python/demos/demo_stokes_nonlinear_nest.py) for an example.
+- **API**
+  - Update how to use assembly into PETSc NEST matrices, see [test_rectangular_assembly.py](./python/tests/test_rectangular_assembly.py)
+- **Bugs**
+  - Fix backsubstitution [PR #155](https://github.com/jorgensd/dolfinx_mpc/pull/155)
 
-- No changes
 
 ## v0.9.0
 

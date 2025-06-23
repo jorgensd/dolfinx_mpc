@@ -148,9 +148,6 @@ def generate_hex_boxes():
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
     MPI.COMM_WORLD.barrier()

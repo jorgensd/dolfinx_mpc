@@ -24,7 +24,7 @@ import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
-from dolfinx.fem import Constant, dirichletbc, form, functionspace, locate_dofs_geometrical
+from dolfinx.fem import Constant, Function, dirichletbc, form, functionspace, locate_dofs_geometrical
 from dolfinx.fem.petsc import apply_lifting, assemble_matrix, assemble_vector, set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.log import LogLevel, set_log_level
@@ -161,6 +161,7 @@ def demo_stacked_cubes(
     null_space = rigid_motions_nullspace(mpc.function_space)
     problem.A.setNearNullSpace(null_space)
     u_h = problem.solve()
+    assert isinstance(u_h, Function)
 
     it = problem.solver.getIterationNumber()
     if MPI.COMM_WORLD.rank == 0:

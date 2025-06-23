@@ -128,6 +128,7 @@ jobs:
 
       - name: Run demos (serial)
         run: |
+          coverage run --rcfile=.coveragerc python/demos/demo_stokes_nest.py
           coverage run --rcfile=.coveragerc python/demos/demo_elasticity.py
           coverage run --rcfile=.coveragerc python/demos/demo_periodic_geometrical.py
           coverage run --rcfile=.coveragerc python/demos/demo_stokes.py
@@ -138,6 +139,7 @@ jobs:
 
       - name: Run demos (parallel)
         run: |
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_stokes_nest.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_elasticity.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_periodic_geometrical.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_stokes.py

@@ -15,12 +15,10 @@ from pathlib import Path
 from typing import Union
 
 from mpi4py import MPI
-from petsc4py import PETSc
 
 import basix.ufl
 import gmsh
 import numpy as np
-import scipy.sparse.linalg
 from dolfinx import common, default_real_type, default_scalar_type, fem, io
 from dolfinx.io import gmshio
 from numpy.typing import NDArray
@@ -28,11 +26,13 @@ from ufl import (
     FacetNormal,
     Identity,
     Measure,
+    MixedFunctionSpace,
     TestFunctions,
     TrialFunctions,
     div,
     dot,
     dx,
+    extract_blocks,
     grad,
     inner,
     outer,
@@ -118,11 +118,6 @@ def create_mesh_gmsh(
         gmsh.model.addPhysicalGroup(1, outlets, outlet_marker)
         gmsh.model.setPhysicalName(1, outlet_marker, "Fluid outlet")
 
-        # Set number of threads used for mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
-
         # Set uniform mesh size
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", res)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", res)
@@ -145,8 +140,9 @@ fdim = mesh.topology.dim - 1
 P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
 P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, dtype=default_real_type)
 
-TH = basix.ufl.mixed_element([P2, P1])
-W = fem.functionspace(mesh, TH)
+V = fem.functionspace(mesh, P2)
+Q = fem.functionspace(mesh, P1)
+W = MixedFunctionSpace(V, Q)
 # -
 
 # ## Boundary conditions
@@ -158,8 +154,6 @@ W = fem.functionspace(mesh, TH)
 # Note that we therefore can use vectorized Numpy operations to compute the inlet values for a sequence of points
 # with a single function call
 
-V, _ = W.sub(0).collapse()
-Q, _ = W.sub(1).collapse()
 inlet_velocity = fem.Function(V)
 
 
@@ -178,13 +172,11 @@ inlet_velocity.interpolate(inlet_velocity_expression)
 inlet_velocity.x.scatter_forward()
 
 # Next, we have to create the Dirichlet boundary condition. As the function is in the collapsed space,
-# we send in the un-collapsed space and the collapsed space to locate dofs topological to find the
-# appropriate dofs and the mapping from `V` to `W0`.
+# we send in the function space `V` of the velocity
 
 # +
-W0 = W.sub(0)
-dofs = fem.locate_dofs_topological((W0, V), 1, mt.find(3))
-bc1 = fem.dirichletbc(inlet_velocity, dofs, W0)
+dofs = fem.locate_dofs_topological(V, 1, mt.find(3))
+bc1 = fem.dirichletbc(inlet_velocity, dofs)
 bcs = [bc1]
 # -
 
@@ -204,10 +196,16 @@ n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
 
 # +
 with common.Timer("~Stokes: Create slip constraint"):
-    mpc = MultiPointConstraint(W)
-    mpc.create_slip_constraint(W.sub(0), (mt, 1), n, bcs=bcs)
-mpc.finalize()
+    mpc_u = MultiPointConstraint(V)
+    mpc_u.create_slip_constraint(V, (mt, 1), n, bcs=bcs)
+mpc_u.finalize()
+
 # -
+
+# +
+# As we will not have an multipoint constraint for the pressure, we create an empty constraint.
+mpc_p = MultiPointConstraint(Q)
+mpc_p.finalize()
 
 # ## Variational formulation
 # We start by creating some convenience functions, including the tangential projection of a vector,
@@ -244,7 +242,7 @@ f = fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = TrialFunctions(W)
 (v, q) = TestFunctions(W)
 a = (2 * mu * inner(sym_grad(u), sym_grad(v)) - inner(p, div(v)) - inner(div(u), q)) * dx
-L = inner(f, v) * dx
+L = inner(f, v) * dx + inner(fem.Constant(mesh, default_scalar_type(0.0)), q) * dx
 # -
 
 # We could prescibe some shear stress at the slip boundaries. However, in this demo, we set it to `0`,
@@ -264,9 +262,16 @@ L += inner(g_tau, v) * ds
 # We use the MUMPS solver provided through the DOLFINX_MPC PETSc interface to solve the variational problem
 
 # +
-petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
-problem = LinearProblem(a, L, mpc, bcs=bcs, petsc_options=petsc_options)
-U = problem.solve()
+tol = np.finfo(mesh.geometry.x.dtype).eps * 1000
+petsc_options = {
+    "ksp_type": "preonly",
+    "pc_type": "lu",
+    "pc_factor_mat_solver_type": "mumps",
+    "ksp_error_if_not_converged": True,
+    "ksp_monitor": None,
+}
+problem = LinearProblem(extract_blocks(a), extract_blocks(L), [mpc_u, mpc_p], bcs=bcs, petsc_options=petsc_options)
+uh, ph = problem.solve()
 # -
 
 # ## Visualization
@@ -274,60 +279,15 @@ U = problem.solve()
 # `ADIOS2VTXReader` in Paraview
 
 # +
-u = U.sub(0).collapse()
-p = U.sub(1).collapse()
-u.name = "u"
-p.name = "p"
+
+uh.name = "u"
+ph.name = "p"
 
 outdir = Path("results").absolute()
 outdir.mkdir(exist_ok=True, parents=True)
 
-with io.VTXWriter(mesh.comm, outdir / "demo_stokes_u.bp", u, engine="BP4") as vtx:
+with io.VTXWriter(mesh.comm, outdir / "demo_stokes_u.bp", uh, engine="BP4") as vtx:
     vtx.write(0.0)
-with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", p, engine="BP4") as vtx:
+with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", ph, engine="BP4") as vtx:
     vtx.write(0.0)
 # -
-
-# ## Verification
-# We verify that the MPC implementation is correct by creating the global reduction matrix
-# and performing global matrix-matrix-matrix multiplication using numpy
-
-# +
-with common.Timer("~Stokes: Verification of problem by global matrix reduction"):
-    # Solve the MPC problem using a global transformation matrix
-    # and numpy solvers to get reference values
-    # Generate reference matrices and unconstrained solution
-    bilinear_form = fem.form(a)
-    A_org = fem.petsc.assemble_matrix(bilinear_form, bcs)
-    A_org.assemble()
-    linear_form = fem.form(L)
-    L_org = fem.petsc.assemble_vector(linear_form)
-
-    fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
-    L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
-    fem.petsc.set_bc(L_org, bcs)
-    root = 0
-    dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem.A, mpc, root=root)
-    dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem.b, mpc, root=root)
-
-    # Gather LHS, RHS and solution on one process
-    A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_org, root=root)
-    K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
-    L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
-    u_mpc = dolfinx_mpc.utils.gather_PETScVector(U.x.petsc_vec, root=root)
-    is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
-    scipy_dtype = np.complex128 if is_complex else np.float64
-    if MPI.COMM_WORLD.rank == root:
-        KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
-        reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
-        # Solve linear system
-        d = scipy.sparse.linalg.spsolve(KTAK.astype(scipy_dtype), reduced_L.astype(scipy_dtype))
-        # Back substitution to full solution vector
-        uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
-        assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(5e2 * np.finfo(u_mpc.dtype).resolution))
-# -
-
-# ## Timings
-# Finally, we list the execution time of various operations used in the demo
-
-common.list_timings(MPI.COMM_WORLD)
