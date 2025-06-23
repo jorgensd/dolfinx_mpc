@@ -82,7 +82,7 @@ def test_nonlinear_poisson(poly_order):
 
         assert num_slaves_global > 0
         assert num_masters_global == num_slaves_global
-        tol = (1e1 * np.finfo(u.x.array.dtype).resolution,)
+        tol = 1e1 * np.finfo(u.x.array.dtype).resolution
         petsc_options = {
             "snes_type": "newtonls",
             "ksp_type": "preonly",
