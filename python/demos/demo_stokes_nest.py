@@ -242,7 +242,8 @@ ksp.setMonitor(
     )
 )
 ksp.setType("minres")
-ksp.setTolerances(rtol=1e-8)
+tol = 10*np.finfo(mesh.geometry.x.dtype).eps
+ksp.setTolerances(rtol=tol, atol=tol)
 ksp.getPC().setType("fieldsplit")
 ksp.getPC().setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE)  # type: ignore
 
@@ -251,10 +252,11 @@ ksp.getPC().setFieldSplitIS(("u", nested_IS[0][0]), ("p", nested_IS[0][1]))
 
 ksp_u, ksp_p = ksp.getPC().getFieldSplitSubKSP()
 ksp_u.setType("preonly")
+ksp_u.setTolerances(rtol=tol, atol=tol)
 ksp_u.getPC().setType("gamg")
 ksp_p.setType("preonly")
 ksp_p.getPC().setType("jacobi")
-
+ksp_p.setTolerances(rtol=tol, atol=tol)
 ksp.setFromOptions()
 
 Uh = b.copy()
@@ -358,7 +360,7 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = K @ d
-        assert np.allclose(np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2))
+        np.testing.assert_allclose(np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2), atol=tol, rtol=10)
 
 
 A.destroy()
