@@ -96,11 +96,6 @@ def create_mesh_gmsh(
         gmsh.model.addPhysicalGroup(1, outlets, outlet_marker)
         gmsh.model.setPhysicalName(1, outlet_marker, "Fluid outlet")
 
-        # Set number of threads used for mesh
-        # gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        # gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
-
         # Set uniform mesh size
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", res)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", res)
