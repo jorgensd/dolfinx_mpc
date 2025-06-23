@@ -253,7 +253,6 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         else:
             raise ValueError("Unsupported kind for matrix: {}".format(kind))
 
-        # FIXME: Add support for nest here
         kind = "nest" if self._A.getType() == "nest" else kind
         if kind == "nest":
             assert isinstance(mpc, Sequence)
