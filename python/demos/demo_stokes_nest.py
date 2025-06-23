@@ -229,7 +229,7 @@ bcs0 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(L), bcs)
 dolfinx.fem.petsc.set_bc(b, bcs0)
 
 # Preconditioner
-P11 = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(ufl.inner(p , q) * ufl.dx))
+P11 = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(ufl.inner(p, q) * ufl.dx))
 P = PETSc.Mat().createNest([[A.getNestSubMatrix(0, 0), None], [None, P11]])  # type: ignore
 P.assemble()
 
@@ -242,7 +242,7 @@ ksp.setMonitor(
     )
 )
 ksp.setType("minres")
-tol = 10*np.finfo(mesh.geometry.x.dtype).eps
+tol = 10 * np.finfo(mesh.geometry.x.dtype).eps
 ksp.setTolerances(rtol=tol, atol=tol)
 ksp.getPC().setType("fieldsplit")
 ksp.getPC().setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE)  # type: ignore

@@ -212,6 +212,7 @@ problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 null_space = rigid_motions_nullspace(mpc.function_space)
 problem.A.setNearNullSpace(null_space)
 u_h = problem.solve()
+assert isinstance(u_h, Function)
 
 it = problem.solver.getIterationNumber()
 

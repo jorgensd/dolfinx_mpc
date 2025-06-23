@@ -23,6 +23,7 @@ import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, list_timings
+from dolfinx.fem import Function
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
 from ufl import (
@@ -130,6 +131,8 @@ solver.setFromOptions()
 
 with Timer("~PERIODIC: Assemble and solve MPC problem"):
     uh = problem.solve()
+    assert isinstance(uh, Function)
+
     # solver.view()
     it = solver.getIterationNumber()
     print("Constrained solver iterations {0:d}".format(it))

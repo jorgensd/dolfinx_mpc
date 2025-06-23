@@ -26,6 +26,7 @@ import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, list_timings
+from dolfinx.fem import Function
 from dolfinx.io import VTXWriter
 from dolfinx.mesh import CellType, create_unit_cube, locate_entities_boundary, meshtags
 from numpy.typing import NDArray
@@ -131,6 +132,7 @@ def demo_periodic3D(celltype: CellType):
 
     problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)
     u_h = problem.solve()
+    assert isinstance(u_h, Function)
 
     # --------------------VERIFICATION-------------------------
     print("----Verification----")
