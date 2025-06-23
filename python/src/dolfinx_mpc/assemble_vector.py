@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 from petsc4py import PETSc as _PETSc
 
@@ -27,8 +27,8 @@ def apply_lifting(
     b: _PETSc.Vec,  # type: ignore
     form: List[_fem.Form],
     bcs: List[List[_fem.DirichletBC]],
-    constraint: MultiPointConstraint,
-    x0: List[_PETSc.Vec] = [],  # type: ignore
+    constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    x0: List[_PETSc.Vec] = None,  # type: ignore
     scale: _float_classes = default_scalar_type(1.0),
 ):  # type: ignore
     """
@@ -43,16 +43,28 @@ def apply_lifting(
         x0: List of vectors
         scale: Scaling for lifting
     """
+    t = Timer("~MPC: Apply lifting (C++)")
     if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
         scale = scale.item()  # type: ignore
-    t = Timer("~MPC: Apply lifting (C++)")
-    with contextlib.ExitStack() as stack:
-        x0 = [stack.enter_context(x.localForm()) for x in x0]
-        x0_r = [x.array_r for x in x0]
-        b_local = stack.enter_context(b.localForm())
-        _forms = [f._cpp_object for f in form]
-        _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]
-        dolfinx_mpc.cpp.mpc.apply_lifting(b_local.array_w, _forms, _bcs, x0_r, scale, constraint._cpp_object)
+
+    if b.getType() == "nest":
+        try:
+            bcs = _fem.bcs_by_block(_fem.extract_function_spaces(form, 1), bcs)
+        except AttributeError:
+            pass
+        x0 = [] if x0 is None else x0.getNestSubVecs()
+        for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
+            _a = [None if form is None else form._cpp_object for form in a_sub]
+            _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]
+            dolfinx_mpc.cpp.mpc.apply_lifting(b_sub.array_w, _a, _bcs, x0, scale, mpc_i._cpp_object)
+    else:
+        with contextlib.ExitStack() as stack:
+            x0 = [stack.enter_context(x.localForm()) for x in x0]
+            x0_r = [x.array_r for x in x0]
+            b_local = stack.enter_context(b.localForm())
+            _forms = [f._cpp_object for f in form]
+            _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]
+            dolfinx_mpc.cpp.mpc.apply_lifting(b_local.array_w, _forms, _bcs, x0_r, scale, constraint._cpp_object)
     t.stop()
 
 

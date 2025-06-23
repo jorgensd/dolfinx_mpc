@@ -214,14 +214,14 @@ with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
     dolfinx_mpc.assemble_vector_nest(b, L, [mpc, mpc_q])
 
 # Set Dirichlet boundary condition values in the RHS
-dolfinx.fem.petsc.apply_lifting_nest(b, a, bcs)
+dolfinx_mpc.apply_lifting(b, a, bcs, [mpc, mpc_q])
 for b_sub in b.getNestSubVecs():
     b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
 
 # bcs0 = dolfinx.cpp.fem.bcs_rows(
 #     dolfinx.fem.assemble._create_cpp_form(L), bcs)
 bcs0 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(L), bcs)
-dolfinx.fem.petsc.set_bc_nest(b, bcs0)
+dolfinx.fem.petsc.set_bc(b, bcs0)
 
 # Preconditioner
 P11 = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(p * q * ufl.dx))
@@ -284,7 +284,6 @@ outdir.mkdir(exist_ok=True, parents=True)
 with dolfinx.io.XDMFFile(mesh.comm, outdir / "demo_stokes_nest.xdmf", "w") as outfile:
     outfile.write_mesh(mesh)
     outfile.write_meshtags(mt, mesh.geometry)
-    outfile.write_function(uh)
     outfile.write_function(ph)
 
 with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh, engine="BP4") as vtx:

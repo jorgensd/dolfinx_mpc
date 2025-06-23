@@ -452,16 +452,24 @@ void apply_lifting(
     throw std::runtime_error(
         "Mismatch in size between a and bcs in assembler.");
   }
+  // If all forms are null, there is nothing to do
+  if (std::ranges::all_of(a, [](auto ai) { return !ai; }))
+    return;
+
   for (std::size_t j = 0; j < a.size(); ++j)
   {
-    if (x0.empty())
+    if (a[j] and !bcs1[j].empty())
     {
-      impl::apply_lifting<double>(b, a[j], bcs1[j], std::span<const double>(),
-                                  scale, mpc);
-    }
-    else
-    {
-      impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc);
+
+      if (x0.empty())
+      {
+        impl::apply_lifting<double>(b, a[j], bcs1[j], std::span<const double>(),
+                                    scale, mpc);
+      }
+      else
+      {
+        impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc);
+      }
     }
   }
 }
