@@ -518,20 +518,24 @@ void apply_lifting(
         "Mismatch in size between a and bcs in assembler.");
   }
   for (std::size_t j = 0; j < a.size(); ++j)
-  {
+  { 
+    if (a[j] and !bcs1[j].empty())
+    {
     if (x0.empty())
-    {
-      impl::apply_lifting<std::complex<double>>(
-          b, a[j], bcs1[j], std::span<const std::complex<double>>(), scale,
-          mpc);
-    }
-    else
-    {
-      impl::apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j], scale,
-                                                mpc);
+      {
+        impl::apply_lifting<std::complex<double>>(
+            b, a[j], bcs1[j], std::span<const std::complex<double>>(), scale,
+            mpc);
+      }
+      else
+      {
+        impl::apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j], scale,
+                                                  mpc);
+      }
     }
   }
 }
+
 
 /// Modify b such that:
 ///
@@ -575,14 +579,17 @@ void apply_lifting(
   }
   for (std::size_t j = 0; j < a.size(); ++j)
   {
-    if (x0.empty())
+    if (a[j] and !bcs1[j].empty())
     {
-      impl::apply_lifting<float>(b, a[j], bcs1[j], std::span<const float>(),
-                                 scale, mpc);
-    }
-    else
-    {
-      impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc);
+      if (x0.empty())
+      {
+        impl::apply_lifting<float>(b, a[j], bcs1[j], std::span<const float>(),
+                                  scale, mpc);
+      }
+      else
+      {
+        impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc);
+      }
     }
   }
 }
@@ -633,15 +640,18 @@ void apply_lifting(
   }
   for (std::size_t j = 0; j < a.size(); ++j)
   {
-    if (x0.empty())
+    if (a[j] and !bcs1[j].empty())
     {
-      impl::apply_lifting<std::complex<float>>(
-          b, a[j], bcs1[j], std::span<const std::complex<float>>(), scale, mpc);
-    }
-    else
-    {
-      impl::apply_lifting<std::complex<float>>(b, a[j], bcs1[j], x0[j], scale,
-                                               mpc);
+      if (x0.empty())
+      {
+        impl::apply_lifting<std::complex<float>>(
+            b, a[j], bcs1[j], std::span<const std::complex<float>>(), scale, mpc);
+      }
+      else
+      {
+        impl::apply_lifting<std::complex<float>>(b, a[j], bcs1[j], x0[j], scale,
+                                                mpc);
+      }
     }
   }
 }
