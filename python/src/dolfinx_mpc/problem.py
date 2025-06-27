@@ -453,10 +453,10 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             self._b = create_vector_nest(self._L, mpc)
             self._x = create_vector_nest(self._L, mpc)
             if self._preconditioner is None:
-                self._P = None
+                self._P_mat = None
             else:
                 assert isinstance(self._preconditioner, Sequence)
-                self._P = create_matrix_nest(self._preconditioner, mpc)
+                self._P_mat = create_matrix_nest(self._preconditioner, mpc)
         else:
             assert isinstance(mpc, MultiPointConstraint)
             assert isinstance(self._L, _fem.Form)
@@ -465,10 +465,10 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
             self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
             if self._preconditioner is None:
-                self._P = None
+                self._P_mat = None
             else:
                 assert isinstance(self._preconditioner, _fem.Form)
-                self._P = _cpp_mpc.create_matrix(self._preconditioner._cpp_object, mpc._cpp_object)
+                self._P_mat = _cpp_mpc.create_matrix(self._preconditioner._cpp_object, mpc._cpp_object)
 
         self.bcs = [] if bcs is None else bcs
 
@@ -480,7 +480,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             comm = self.u.function_space.mesh.comm
 
         self._solver = PETSc.KSP().create(comm)  # type: ignore
-        self._solver.setOperators(self._A, self._P)
+        self._solver.setOperators(self._A, self._P_mat)
 
         # Give PETSc solver options a unique prefix
         solver_prefix = "dolfinx_mpc_solve_{}".format(id(self))
@@ -513,15 +513,15 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         assert self._A.assembled
 
         # Assemble the preconditioner if provided
-        if self._P is not None:
-            self._P.zeroEntries()
-            if self._P.getType() == "nest":
+        if self._P_mat is not None:
+            self._P_mat.zeroEntries()
+            if self._P_mat.getType() == "nest":
                 assert isinstance(self._preconditioner, typing.Sequence)
-                assemble_matrix_nest(self._P, self._preconditioner, self._mpc, self.bcs)  # type: ignore
+                assemble_matrix_nest(self._P_mat, self._preconditioner, self._mpc, self.bcs)  # type: ignore
             else:
                 assert isinstance(self._preconditioner, _fem.Form)
-                assemble_matrix(self._preconditioner, self._mpc, bcs=self.bcs, A=self._P)
-            self._P.assemble()
+                assemble_matrix(self._preconditioner, self._mpc, bcs=self.bcs, A=self._P_mat)
+            self._P_mat.assemble()
 
         # Assemble the residual
         _fem.petsc._zero_vector(self._b)
