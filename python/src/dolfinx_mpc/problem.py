@@ -228,14 +228,14 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         )
 
         if P is not None:
-            self._P = _fem.form(
+            self._preconditioner = _fem.form(
                 P,
                 form_compiler_options=form_compiler_options,
                 jit_options=jit_options,
                 entity_maps=entity_maps,
             )
         else:
-            self._P = None
+            self._preconditioner = None
 
         self._u = u
         # Set default values if not supplied
@@ -265,21 +265,21 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
 
         # Create PETSc structure for preconditioner if provided
-        if self._P is not None:
+        if self.preconditioner is not None:
             if kind == "nest":
-                assert isinstance(self.P, Sequence)
+                assert isinstance(self.preconditioner, Sequence)
                 assert isinstance(self.mpc, Sequence)
-                self._P_mat = create_matrix_nest(self.P, self.mpc)
+                self._P_mat = create_matrix_nest(self.preconditioner, self.mpc)
             else:
                 assert isinstance(self._P, _fem.Form)
-                self._P_mat = _cpp_mpc.create_matrix(self.P, kind=kind)
+                self._P_mat = _cpp_mpc.create_matrix(self.preconditioner, kind=kind)
         else:
             self._P_mat = None
 
         # Create the SNES solver and attach the corresponding Jacobian and
         # residual computation functions
         self._snes = PETSc.SNES().create(comm=self.A.comm)  # type: ignore
-        self.solver.setJacobian(partial(assemble_jacobian_mpc, u, self.J, self.P, bcs, mpc), self._A, self.P_mat)
+        self.solver.setJacobian(partial(assemble_jacobian_mpc, u, self.J, self.preconditioner, bcs, mpc), self._A, self.P_mat)
         self.solver.setFunction(partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc), self.b)
 
         # Set PETSc options
