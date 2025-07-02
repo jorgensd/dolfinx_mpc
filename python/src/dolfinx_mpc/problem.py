@@ -279,7 +279,9 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         # Create the SNES solver and attach the corresponding Jacobian and
         # residual computation functions
         self._snes = PETSc.SNES().create(comm=self.A.comm)  # type: ignore
-        self.solver.setJacobian(partial(assemble_jacobian_mpc, u, self.J, self.preconditioner, bcs, mpc), self._A, self.P_mat)
+        self.solver.setJacobian(
+            partial(assemble_jacobian_mpc, u, self.J, self.preconditioner, bcs, mpc), self._A, self.P_mat
+        )
         self.solver.setFunction(partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc), self.b)
 
         # Set PETSc options
