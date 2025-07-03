@@ -934,6 +934,9 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                           disp_in_masters.data(), dolfinx::MPI::mpi_t<T>,
                           local_to_ghost, &ghost_requests[4]);
 
+  int err = MPI_Comm_free(&local_to_ghost);
+  dolfinx::MPI::check_error(imap.comm(), err);
+
   mpc_data<T> ghost_data;
   ghost_data.slaves = recv_local;
   ghost_data.offsets = recv_num;
