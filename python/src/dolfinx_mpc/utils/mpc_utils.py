@@ -244,10 +244,10 @@ def determine_closest_block(V, point):
         # Get cell geometry
         p = V.mesh.geometry.x
         V.mesh.topology.create_connectivity(tdim, tdim)
-        entities = _cpp.mesh.entities_to_geometry(
-            V.mesh._cpp_object, tdim, np.array([closest_cell], dtype=np.int32), False
+        entities = _mesh.entities_to_geometry(
+            V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False
         )
-        R = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, p[entities[0]]))
+        R = np.linalg.norm(_geometry.compute_distance_gjk(point, p[entities[0]]))
 
     # Find processor with cell closest to point
     global_distances = MPI.COMM_WORLD.allgather(R)
@@ -265,7 +265,7 @@ def determine_closest_block(V, point):
         x = V.tabulate_dof_coordinates()
         cell_blocks = dofmap.cell_dofs(closest_cell)
         for block in cell_blocks:
-            distance = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, x[block]))
+            distance = np.linalg.norm(_geometry.compute_distance_gjk(point, x[block]))
             if distance < min_distance:
                 # If cell owned by processor, but not the closest dof
                 if block < local_max:
@@ -284,7 +284,7 @@ def determine_closest_block(V, point):
         x = V.tabulate_dof_coordinates()
         cell_blocks = dofmap.cell_dofs(closest_cell)
         for block in cell_blocks:
-            distance = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, x[block]))
+            distance = np.linalg.norm(_geometry.compute_distance_gjk(point, x[block]))
             if distance < min_distance:
                 # If cell owned by processor, but not the closest dof
                 if block < local_max:
