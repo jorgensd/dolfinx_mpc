@@ -583,6 +583,9 @@ mpc_data<T> create_contact_slip_condition(
                           num_slaves_recv3.data(), disp3.data(),
                           dolfinx::MPI::mpi_t<U>, neighborhood_comms[0]);
 
+  int err0 = MPI_Comm_free(&neighborhood_comms[0]);
+  dolfinx::MPI::check_error(comm, err0);
+
   // Compute off-process contributions
   mpc_data<T> remote_data;
   {
@@ -733,6 +736,9 @@ mpc_data<T> create_contact_slip_condition(
 
   /// Wait for all communication to finish
   MPI_Waitall(4, requests.data(), status.data());
+
+  int err1 = MPI_Comm_free(&neighborhood_comms[1]);
+  dolfinx::MPI::check_error(comm, err1);
 
   // Move the masters, coeffs and owners from the input adjacency list
   // to one where each node corresponds to an entry in slave_indices_remote
@@ -952,10 +958,6 @@ mpc_data<T> create_contact_inelastic_condition(
   std::array<MPI_Comm, 2> neighborhood_comms
       = create_neighborhood_comms(comm, meshtags, has_slave, master_marker);
 
-  // Create communicator local_blocks -> ghost_block
-  MPI_Comm slave_to_ghost
-      = create_owner_to_ghost_comm(local_blocks, ghost_blocks, imap);
-
   /// Compute which rank (relative to neighbourhood) to send each ghost to
   std::span<const int> ghost_owners = imap->owners();
 
@@ -1168,6 +1170,9 @@ mpc_data<T> create_contact_inelastic_condition(
       distribute_coordinates.data(), (int)distribute_coordinates.size(),
       dolfinx::MPI::mpi_t<U>, recv_coords.data(), num_block_coordinates.data(),
       coordinate_disp.data(), dolfinx::MPI::mpi_t<U>, neighborhood_comms[0]);
+
+  int err0 = MPI_Comm_free(&neighborhood_comms[0]);
+  dolfinx::MPI::check_error(comm, err0);
 
   // Vector for processes with slaves, mapping slaves with
   // collision on this process
@@ -1391,6 +1396,9 @@ mpc_data<T> create_contact_inelastic_condition(
       recv_num_found_blocks.data(), inc_block_disp.data(),
       dolfinx::MPI::mpi_t<std::int32_t>, neighborhood_comms[1]);
 
+  int err1 = MPI_Comm_free(&neighborhood_comms[1]);
+  dolfinx::MPI::check_error(comm, err1);
+
   // Iterate through the processors
   for (std::size_t i = 0; i < src_ranks_rev.size(); ++i)
   {
@@ -1473,6 +1481,8 @@ mpc_data<T> create_contact_inelastic_condition(
       ghost_slaves[i * tdim + j] = ghost_blocks[i] * block_size + j;
 
   // Compute source and dest ranks of communicator
+  MPI_Comm slave_to_ghost
+      = create_owner_to_ghost_comm(local_blocks, ghost_blocks, imap);
   auto neighbour_ranks = dolfinx_mpc::compute_neighborhood(slave_to_ghost);
   const std::vector<int>& src_ranks_ghost = neighbour_ranks.first;
   const std::vector<int>& dest_ranks_ghost = neighbour_ranks.second;
@@ -1636,6 +1646,9 @@ mpc_data<T> create_contact_inelastic_condition(
                          in_ghost_owners.data(), inc_num_masters.data(),
                          disp_recv_ghost_masters.data(),
                          dolfinx::MPI::mpi_t<std::int32_t>, slave_to_ghost);
+
+  int err3 = MPI_Comm_free(&slave_to_ghost);
+  dolfinx::MPI::check_error(comm, err3);
 
   // Accumulate offsets of masters from different processors
   std::vector<std::int32_t> ghost_offsets = {0};

@@ -247,7 +247,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Slave block owners -> Process with possible masters
   std::vector<int> s_to_m_weights(s_to_m_ranks.size(), 1);
   std::vector<int> m_to_s_weights(m_to_s_ranks.size(), 1);
-  auto slave_to_master = MPI_COMM_NULL;
+  MPI_Comm slave_to_master = MPI_COMM_NULL;
   MPI_Dist_graph_create_adjacent(
       mesh->comm(), (int)m_to_s_ranks.size(), m_to_s_ranks.data(),
       m_to_s_weights.data(), (int)s_to_m_ranks.size(), s_to_m_ranks.data(),
@@ -335,6 +335,9 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       coords_out.data(), num_out_slaves.data(), disp_out.data(),
       dolfinx::MPI::mpi_t<U>, coords_recvb.data(), num_recv_slaves.data(),
       disp_in.data(), dolfinx::MPI::mpi_t<U>, slave_to_master);
+
+  int err = MPI_Comm_free(&slave_to_master);
+  dolfinx::MPI::check_error(mesh->comm(), err);
 
   // Reset in_displacements to be per block for later usage
   auto d_3 = [](auto& num) { num /= 3; };
@@ -427,7 +430,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Create inverse communicator
   // Procs with possible masters -> slave block owners
-  auto master_to_slave = MPI_COMM_NULL;
+  MPI_Comm master_to_slave = MPI_COMM_NULL;
   MPI_Dist_graph_create_adjacent(
       mesh->comm(), (int)s_to_m_ranks.size(), s_to_m_ranks.data(),
       s_to_m_weights.data(), (int)m_to_s_ranks.size(), m_to_s_ranks.data(),
@@ -438,6 +441,9 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       master_to_slave, num_remote_masters, num_remote_slaves, num_out_slaves,
       num_masters_per_slave_remote, masters_remote, coeffs_remote,
       owners_remote);
+
+  err = MPI_Comm_free(&master_to_slave);
+  dolfinx::MPI::check_error(mesh->comm(), err);
 
   // Append found slaves/master pairs
   dolfinx_mpc::append_master_data<T>(
