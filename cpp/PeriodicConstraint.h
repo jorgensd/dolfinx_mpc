@@ -442,7 +442,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       num_masters_per_slave_remote, masters_remote, coeffs_remote,
       owners_remote);
 
-  int err = MPI_Comm_free(&master_to_slave);
+  err = MPI_Comm_free(&master_to_slave);
   dolfinx::MPI::check_error(mesh->comm(), err);
 
   // Append found slaves/master pairs
