@@ -119,20 +119,21 @@ def demo_stacked_cubes(
     # + inner(g, v) * ds
     bilinear_form = fem.form(a)
     linear_form = fem.form(rhs)
-
     mpc = MultiPointConstraint(V)
-    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
+    tol = float(5e3* np.finfo(default_scalar_type).resolution)
     if noslip:
         with Timer("~~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=tol)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=tol, allow_missing_masters=True)
+
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = create_normal_approximation(V, mt, 4)
             mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=tol)
 
+
     with Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()
-
+    num_slaves = MPI.COMM_WORLD.allreduce(mpc.num_local_slaves, op=MPI.SUM)
     # Create null-space
     null_space = rigid_motions_nullspace(mpc.function_space)
     num_dofs = V.dofmap.index_map.size_global * V.dofmap.index_map_bs
@@ -144,18 +145,20 @@ def demo_stacked_cubes(
     apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     fem.petsc.set_bc(b, bcs)
-
     # Solve Linear problem
     opts = PETSc.Options()  # type: ignore
-    opts["ksp_rtol"] = 1.0e-8
-    opts["pc_type"] = "gamg"
-    opts["pc_gamg_type"] = "agg"
-    opts["pc_gamg_coarse_eq_limit"] = 1000
-    opts["pc_gamg_sym_graph"] = True
-    opts["mg_levels_ksp_type"] = "chebyshev"
-    opts["mg_levels_pc_type"] = "jacobi"
-    opts["mg_levels_esteig_ksp_type"] = "cg"
-    opts["matptap_via"] = "scalable"
+    opts["ksp_type"] = "preonly"
+    opts["pc_type"] = "lu"
+    opts["pc_factor_mat_solver_type"] = "mumps"
+    # opts["ksp_rtol"] = 1.0e-8
+    # opts["pc_type"] = "gamg"
+    # opts["pc_gamg_type"] = "agg"
+    # opts["pc_gamg_coarse_eq_limit"] = 1000
+    # opts["pc_gamg_sym_graph"] = True
+    # opts["mg_levels_ksp_type"] = "chebyshev"
+    # opts["mg_levels_pc_type"] = "jacobi"
+    # opts["mg_levels_esteig_ksp_type"] = "cg"
+    # opts["matptap_via"] = "scalable"
     # opts["pc_gamg_square_graph"] = 2
     # opts["pc_gamg_threshold"] = 1e-2
     # opts["help"] = None # List all available options
@@ -169,11 +172,6 @@ def demo_stacked_cubes(
 
     u_h = fem.Function(mpc.function_space)
     with Timer("~~Contact: Solve"):
-        # Temporary fix while:
-        # https://gitlab.com/petsc/petsc/-/issues/1339
-        # gets sorted
-        A.convert("baij", A)
-        A.convert("aij", A)
         solver.solve(b, u_h.x.petsc_vec)
         u_h.x.scatter_forward()
 
