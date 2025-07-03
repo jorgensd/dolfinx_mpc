@@ -116,7 +116,8 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
                                  source_weights.data(), dest_edges.size(),
                                  dest_edges.data(), dest_weights.data(),
                                  MPI_INFO_NULL, false, &comm_loc);
-
+  int err = MPI_Comm_free(&comm);
+  dolfinx::MPI::check_error(index_map->comm(), err);
   return comm_loc;
 }
 
