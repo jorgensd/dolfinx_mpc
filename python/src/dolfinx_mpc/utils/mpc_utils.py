@@ -244,9 +244,7 @@ def determine_closest_block(V, point):
         # Get cell geometry
         p = V.mesh.geometry.x
         V.mesh.topology.create_connectivity(tdim, tdim)
-        entities = _mesh.entities_to_geometry(
-            V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False
-        )
+        entities = _mesh.entities_to_geometry(V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False)
         R = np.linalg.norm(_geometry.compute_distance_gjk(point, p[entities[0]]))
 
     # Find processor with cell closest to point

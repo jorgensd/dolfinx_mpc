@@ -100,22 +100,22 @@ def tag_cube_model(
     bottom_surfaces = model.getBoundary([volumes[bottom_index]], oriented=False, recursive=False)
     for entity in bottom_surfaces:
         com = model.occ.getCenterOfMass(entity[0], entity[1])
-        if np.allclose(com, [(x1 - x0) / 2+offset, y1, (z1 - z0) / 2]):
+        if np.allclose(com, [(x1 - x0) / 2 + offset, y1, (z1 - z0) / 2]):
             entities["Bottom"]["Back"][0].append(entity[1])
             entities["Bottom"]["Back"][1] = [facet_markers[0][0]]
-        elif np.allclose(com, [(x1 - x0) / 2+offset, (y1 - y0) / 2, z0]):
+        elif np.allclose(com, [(x1 - x0) / 2 + offset, (y1 - y0) / 2, z0]):
             entities["Bottom"]["Bottom"][0].append(entity[1])
             entities["Bottom"]["Bottom"][1] = [facet_markers[0][1]]
-        elif np.allclose(com, [x1+offset, (y1 - y0) / 2, (z1 - z0) / 2]):
+        elif np.allclose(com, [x1 + offset, (y1 - y0) / 2, (z1 - z0) / 2]):
             entities["Bottom"]["Right"][0].append(entity[1])
             entities["Bottom"]["Right"][1] = [facet_markers[0][2]]
-        elif np.allclose(com, [x0+offset, (y1 - y0) / 2, (z1 - z0) / 2]):
+        elif np.allclose(com, [x0 + offset, (y1 - y0) / 2, (z1 - z0) / 2]):
             entities["Bottom"]["Left"][0].append(entity[1])
             entities["Bottom"]["Left"][1] = [facet_markers[0][3]]
-        elif np.allclose(com, [(x1 - x0) / 2 +offset, (y1 - y0) / 2, z1]):
+        elif np.allclose(com, [(x1 - x0) / 2 + offset, (y1 - y0) / 2, z1]):
             entities["Bottom"]["Top"][0].append(entity[1])
             entities["Bottom"]["Top"][1] = [facet_markers[0][4]]
-        elif np.allclose(com, [(x1 - x0) / 2 +offset, y0, (z1 - z0) / 2]):
+        elif np.allclose(com, [(x1 - x0) / 2 + offset, y0, (z1 - z0) / 2]):
             entities["Bottom"]["Front"][0].append(entity[1])
             entities["Bottom"]["Front"][1] = [facet_markers[0][5]]
     # Physical markers for top
@@ -186,7 +186,7 @@ def generate_tet_boxes(
         # Added tolerance to ensure that gmsh separates boxes
         offset = 0.235
         tol = 1e-12
-        gmsh.model.occ.addBox(x0+offset, y0, z0, x1 - x0, y1 - y0, z1 - z0)
+        gmsh.model.occ.addBox(x0 + offset, y0, z0, x1 - x0, y1 - y0, z1 - z0)
         gmsh.model.occ.addBox(x0, y0, z1 + tol, x1 - x0, y1 - y0, z2 - z1)
 
         # Syncronize to be able to fetch entities
@@ -273,7 +273,9 @@ def generate_hex_boxes(
     return mesh_data.mesh, mesh_data.facet_tags
 
 
-def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False, offset: float=0.435) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
+def gmsh_2D_stacked(
+    celltype: str, theta: float, verbose: bool = False, offset: float = 0.435
+) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     res = 0.1
     x0, y0, z0 = 0, 0, 0
     x1, y1 = 1, 1
@@ -295,8 +297,8 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False, offset: 
         points = [
             gmsh.model.occ.addPoint(x0, y0, z0),
             gmsh.model.occ.addPoint(x1, y0, z0),
-            gmsh.model.occ.addPoint(x0+offset, y2, z0),
-            gmsh.model.occ.addPoint(x1+offset, y2, z0),
+            gmsh.model.occ.addPoint(x0 + offset, y2, z0),
+            gmsh.model.occ.addPoint(x1 + offset, y2, z0),
         ]
         bottom = gmsh.model.occ.addLine(points[0], points[1])
         top = gmsh.model.occ.addLine(points[2], points[3])
@@ -346,16 +348,16 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False, offset: 
         for entity in top_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], abs(entity[1]))
             print(com)
-            if np.allclose(com, [(x1 - x0) / 2+offset, y1, z0]):
+            if np.allclose(com, [(x1 - x0) / 2 + offset, y1, z0]):
                 entities["Top"]["Bottom"][0].append(entity[1])
                 entities["Top"]["Bottom"][1] = [facet_markers[1][2]]
-            elif np.allclose(com, [x1+offset, y1 + (y2 - y1) / 2, z0]):
+            elif np.allclose(com, [x1 + offset, y1 + (y2 - y1) / 2, z0]):
                 entities["Top"]["Right"][0].append(entity[1])
                 entities["Top"]["Right"][1] = [facet_markers[1][1]]
-            elif np.allclose(com, [x0+offset, y1 + (y2 - y1) / 2, z0]):
+            elif np.allclose(com, [x0 + offset, y1 + (y2 - y1) / 2, z0]):
                 entities["Top"]["Left"][0].append(entity[1])
                 entities["Top"]["Left"][1] = [facet_markers[1][3]]
-            elif np.allclose(com, [(x1 - x0) / 2+offset, y2, z0]):
+            elif np.allclose(com, [(x1 - x0) / 2 + offset, y2, z0]):
                 entities["Top"]["Top"][0].append(entity[1])
                 entities["Top"]["Top"][1] = [facet_markers[1][0]]
 

@@ -36,7 +36,6 @@ from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (
     compare_mpc_lhs,
     compare_mpc_rhs,
-    create_normal_approximation,
     facet_normal_approximation,
     gather_PETScMatrix,
     gather_PETScVector,

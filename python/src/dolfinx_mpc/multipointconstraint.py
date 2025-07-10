@@ -464,8 +464,9 @@ class MultiPointConstraint:
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
             eps2: The tolerance for the squared distance between cells to be considered as a collision
-            allow_missing_masters: If true, the function will not throw an error if a degree of freedom in the closure of the master
-                entities does not have a corresponding set of slave degrees of freedom.
+            allow_missing_masters: If true, the function will not throw an error if a degree of freedom
+                in the closure of the master entities does not have a corresponding set of slave degree
+                of freedom.
         """
         if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             eps2 = eps2.item()  # type: ignore
