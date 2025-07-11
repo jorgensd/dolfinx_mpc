@@ -490,7 +490,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
 
         # Set options on KSP only
         if petsc_options is not None:
-            opts = PETSc.Options()
+            opts = PETSc.Options()  # type: ignore
             opts.prefixPush(self.solver.getOptionsPrefix())
 
             for k, v in petsc_options.items():
