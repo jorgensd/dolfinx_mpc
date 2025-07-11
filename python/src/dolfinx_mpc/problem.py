@@ -17,7 +17,7 @@ import numpy as np
 import numpy.typing as npt
 import ufl
 from dolfinx import fem as _fem
-from dolfinx.la.petsc import create_vector
+from dolfinx.la.petsc import _ghost_update, _zero_vector, create_vector
 
 from dolfinx_mpc.cpp import mpc as _cpp_mpc
 
@@ -59,11 +59,7 @@ def assemble_jacobian_mpc(
     """
     # Copy existing soultion into the function used in the residual and
     # Jacobian
-    try:
-        x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
-    except PETSc.Error:  # type: ignore
-        for x_sub in x.getNestSubVecs():
-            x_sub.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)  # type: ignore
+    _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
     _fem.petsc.assign(x, u)
 
     # Assemble Jacobian
@@ -113,8 +109,7 @@ def assemble_residual_mpc(
         F: Vector to assemble the residual into.
     """
     # Update input vector before assigning
-    _fem.petsc._ghostUpdate(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
-
+    _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)
     # Assign the input vector to the unknowns
     _fem.petsc.assign(x, u)
     if isinstance(u, Sequence):
@@ -128,7 +123,7 @@ def assemble_residual_mpc(
         mpc.homogenize(u)
         mpc.backsubstitution(u)
     # Assemble the residual
-    _fem.petsc._zero_vector(F)
+    _zero_vector(F)
     if x.getType() == "nest":
         assemble_vector_nest(F, residual, mpc)  # type: ignore
     else:
@@ -142,15 +137,15 @@ def assemble_residual_mpc(
         bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(jacobian, 1), bcs)  # type: ignore
         _fem.petsc._assign_block_data(residual, x)  # type: ignore
         apply_lifting(F, jacobian, bcs=bcs1, constraint=mpc, x0=x, scale=-1.0)  # type: ignore
-        _fem.petsc._ghostUpdate(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
+        _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(residual), bcs)  # type: ignore
         _fem.petsc.set_bc(F, bcs0, x0=x, alpha=-1.0)
     except RuntimeError:
         # Single form lifting
         apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0)  # type: ignore
-        _fem.petsc._ghostUpdate(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
+        _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         _fem.petsc.set_bc(F, bcs, x0=x, alpha=-1.0)
-    _fem.petsc._ghostUpdate(F, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
+    _ghost_update(F, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
 
 
 class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
@@ -526,7 +521,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             self._P_mat.assemble()
 
         # Assemble the residual
-        _fem.petsc._zero_vector(self._b)
+        _zero_vector(self._b)
         if self._x.getType() == "nest":
             assemble_vector_nest(self._b, self._L, self._mpc)  # type: ignore
         else:
@@ -539,19 +534,19 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             # Nest and blocked lifting
             bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(self._a, 1), self.bcs)  # type: ignore
             apply_lifting(self._b, self._a, bcs=bcs1, constraint=self._mpc)  # type: ignore
-            _fem.petsc._ghostUpdate(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
+            _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
             bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(self._L), self.bcs)  # type: ignore
             _fem.petsc.set_bc(self._b, bcs0)
         except RuntimeError:
             # Single form lifting
             apply_lifting(self._b, [self._a], bcs=[self.bcs], constraint=self._mpc)  # type: ignore
-            _fem.petsc._ghostUpdate(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
+            _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
             _fem.petsc.set_bc(self._b, self.bcs)
-        _fem.petsc._ghostUpdate(self._b, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
+        _ghost_update(self._b, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
 
         # Solve linear system and update ghost values in the solution
         self._solver.solve(self._b, self._x)
-        _fem.petsc._ghostUpdate(self._x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
+        _ghost_update(self._x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
         _fem.petsc.assign(self._x, self.u)
 
         if isinstance(self.u, Sequence):
