@@ -55,7 +55,12 @@ def demo_stacked_cubes(
 
     # Read in mesh
     if gmsh:
-        mesh, mt = gmsh_3D_stacked(celltype, theta, res)
+        # Offset one box for partial contact
+        if noslip:
+            offset = 0.235
+        else:
+            offset = 0.0
+        mesh, mt = gmsh_3D_stacked(celltype, theta, res, offset=offset)
         tdim = mesh.topology.dim
         fdim = tdim - 1
         mesh.topology.create_connectivity(tdim, tdim)
@@ -146,20 +151,17 @@ def demo_stacked_cubes(
     fem.petsc.set_bc(b, bcs)
     # Solve Linear problem
     opts = PETSc.Options()  # type: ignore
-    opts["ksp_type"] = "preonly"
-    opts["pc_type"] = "lu"
-    opts["pc_factor_mat_solver_type"] = "mumps"
-    # opts["ksp_rtol"] = 1.0e-8
-    # opts["pc_type"] = "gamg"
-    # opts["pc_gamg_type"] = "agg"
-    # opts["pc_gamg_coarse_eq_limit"] = 1000
-    # opts["pc_gamg_sym_graph"] = True
-    # opts["mg_levels_ksp_type"] = "chebyshev"
-    # opts["mg_levels_pc_type"] = "jacobi"
-    # opts["mg_levels_esteig_ksp_type"] = "cg"
-    # opts["matptap_via"] = "scalable"
-    # opts["pc_gamg_square_graph"] = 2
-    # opts["pc_gamg_threshold"] = 1e-2
+    opts["ksp_rtol"] = 1.0e-8
+    opts["pc_type"] = "gamg"
+    opts["pc_gamg_type"] = "agg"
+    opts["pc_gamg_coarse_eq_limit"] = 1000
+    opts["pc_gamg_sym_graph"] = True
+    opts["mg_levels_ksp_type"] = "chebyshev"
+    opts["mg_levels_pc_type"] = "jacobi"
+    opts["mg_levels_esteig_ksp_type"] = "cg"
+    opts["matptap_via"] = "scalable"
+    opts["pc_gamg_square_graph"] = 2
+    opts["pc_gamg_threshold"] = 1e-2
     # opts["help"] = None # List all available options
     # opts["ksp_view"] = None # List progress of solver
 

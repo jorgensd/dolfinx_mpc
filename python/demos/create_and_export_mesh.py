@@ -21,7 +21,7 @@ import dolfinx_mpc.utils as _utils
 
 
 def gmsh_3D_stacked(
-    celltype: str, theta: float, res: float = 0.1, verbose: bool = False
+    celltype: str, theta: float, res: float = 0.1, verbose: bool = False, offset: float = 0.0
 ) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     if celltype == "tetrahedron":
         mesh, ft = generate_tet_boxes(
@@ -36,6 +36,7 @@ def gmsh_3D_stacked(
             facet_markers=[[11, 5, 12, 13, 4, 14], [21, 9, 22, 23, 3, 24]],
             volume_markers=[1, 2],
             verbose=verbose,
+            offset=offset,
         )
     else:
         mesh, ft = generate_hex_boxes(
@@ -166,6 +167,7 @@ def generate_tet_boxes(
     facet_markers: Sequence[Sequence[int]],
     volume_markers: Sequence[int],
     verbose: bool = False,
+    offset: float = 0.235,
 ) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
@@ -184,7 +186,6 @@ def generate_tet_boxes(
         gmsh.option.setNumber("Mesh.RecombineAll", 0)
 
         # Added tolerance to ensure that gmsh separates boxes
-        offset = 0.235
         tol = 1e-12
         gmsh.model.occ.addBox(x0 + offset, y0, z0, x1 - x0, y1 - y0, z1 - z0)
         gmsh.model.occ.addBox(x0, y0, z1 + tol, x1 - x0, y1 - y0, z2 - z1)
@@ -347,7 +348,6 @@ def gmsh_2D_stacked(
         top_surfaces = gmsh.model.getBoundary([volumes[top_index]], oriented=False, recursive=False)
         for entity in top_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], abs(entity[1]))
-            print(com)
             if np.allclose(com, [(x1 - x0) / 2 + offset, y1, z0]):
                 entities["Top"]["Bottom"][0].append(entity[1])
                 entities["Top"]["Bottom"][1] = [facet_markers[1][2]]
