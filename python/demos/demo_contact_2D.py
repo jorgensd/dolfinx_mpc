@@ -36,7 +36,6 @@ from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (
     compare_mpc_lhs,
     compare_mpc_rhs,
-    create_normal_approximation,
     facet_normal_approximation,
     gather_PETScMatrix,
     gather_PETScVector,
@@ -123,9 +122,7 @@ def demo_stacked_cubes(
     mpc = MultiPointConstraint(V)
 
     with Timer("~Contact: Create contact constraint"):
-        nh = create_normal_approximation(V, mt, 4)
-        mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=tol)
-
+        mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=tol, allow_missing_masters=True)
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
         mpc.create_slip_constraint(V, (mt, 5), bottom_normal, bcs=bcs)
@@ -142,6 +139,7 @@ def demo_stacked_cubes(
     petsc_options = {
         "ksp_rtol": tol,
         "ksp_atol": tol,
+        "ksp_error_if_not_converged": True,
         "pc_type": "gamg",
         "pc_gamg_type": "agg",
         "pc_gamg_square_graph": 2,
@@ -170,7 +168,6 @@ def demo_stacked_cubes(
     unorm = u_h.x.petsc_vec.norm()
     if MPI.COMM_WORLD.rank == 0:
         print(f"Norm of u: {unorm}")
-
     # Write solution to file
     ext = "_gmsh" if gmsh else ""
     u_h.name = "u_mpc_{0:s}_{1:.2f}{2:s}".format(celltype, theta, ext)
@@ -209,7 +206,7 @@ def demo_stacked_cubes(
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
             uh_numpy = K @ d
-            assert np.allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
+            np.testing.assert_allclose(uh_numpy, u_mpc, rtol=tol, atol=tol)
     L_org.destroy()
     A_org.destroy()
 

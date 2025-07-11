@@ -21,7 +21,7 @@ import dolfinx_mpc.utils as _utils
 
 
 def gmsh_3D_stacked(
-    celltype: str, theta: float, res: float = 0.1, verbose: bool = False
+    celltype: str, theta: float, res: float = 0.1, verbose: bool = False, offset: float = 0.0
 ) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     if celltype == "tetrahedron":
         mesh, ft = generate_tet_boxes(
@@ -36,6 +36,7 @@ def gmsh_3D_stacked(
             facet_markers=[[11, 5, 12, 13, 4, 14], [21, 9, 22, 23, 3, 24]],
             volume_markers=[1, 2],
             verbose=verbose,
+            offset=offset,
         )
     else:
         mesh, ft = generate_hex_boxes(
@@ -68,6 +69,7 @@ def tag_cube_model(
     z2: float,
     facet_markers: Sequence[Sequence[int]],
     volume_markers: Sequence[int],
+    offset: float = 0.0,
 ):
     """
     Helper function to tag a cube and its faces
@@ -99,22 +101,22 @@ def tag_cube_model(
     bottom_surfaces = model.getBoundary([volumes[bottom_index]], oriented=False, recursive=False)
     for entity in bottom_surfaces:
         com = model.occ.getCenterOfMass(entity[0], entity[1])
-        if np.allclose(com, [(x1 - x0) / 2, y1, (z1 - z0) / 2]):
+        if np.allclose(com, [(x1 - x0) / 2 + offset, y1, (z1 - z0) / 2]):
             entities["Bottom"]["Back"][0].append(entity[1])
             entities["Bottom"]["Back"][1] = [facet_markers[0][0]]
-        elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z0]):
+        elif np.allclose(com, [(x1 - x0) / 2 + offset, (y1 - y0) / 2, z0]):
             entities["Bottom"]["Bottom"][0].append(entity[1])
             entities["Bottom"]["Bottom"][1] = [facet_markers[0][1]]
-        elif np.allclose(com, [x1, (y1 - y0) / 2, (z1 - z0) / 2]):
+        elif np.allclose(com, [x1 + offset, (y1 - y0) / 2, (z1 - z0) / 2]):
             entities["Bottom"]["Right"][0].append(entity[1])
             entities["Bottom"]["Right"][1] = [facet_markers[0][2]]
-        elif np.allclose(com, [x0, (y1 - y0) / 2, (z1 - z0) / 2]):
+        elif np.allclose(com, [x0 + offset, (y1 - y0) / 2, (z1 - z0) / 2]):
             entities["Bottom"]["Left"][0].append(entity[1])
             entities["Bottom"]["Left"][1] = [facet_markers[0][3]]
-        elif np.allclose(com, [(x1 - x0) / 2, (y1 - y0) / 2, z1]):
+        elif np.allclose(com, [(x1 - x0) / 2 + offset, (y1 - y0) / 2, z1]):
             entities["Bottom"]["Top"][0].append(entity[1])
             entities["Bottom"]["Top"][1] = [facet_markers[0][4]]
-        elif np.allclose(com, [(x1 - x0) / 2, y0, (z1 - z0) / 2]):
+        elif np.allclose(com, [(x1 - x0) / 2 + offset, y0, (z1 - z0) / 2]):
             entities["Bottom"]["Front"][0].append(entity[1])
             entities["Bottom"]["Front"][1] = [facet_markers[0][5]]
     # Physical markers for top
@@ -165,6 +167,7 @@ def generate_tet_boxes(
     facet_markers: Sequence[Sequence[int]],
     volume_markers: Sequence[int],
     verbose: bool = False,
+    offset: float = 0.235,
 ) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     """
     Generate the stacked boxes [x0,y0,z0]x[y1,y1,z1] and
@@ -184,13 +187,13 @@ def generate_tet_boxes(
 
         # Added tolerance to ensure that gmsh separates boxes
         tol = 1e-12
-        gmsh.model.occ.addBox(x0, y0, z0, x1 - x0, y1 - y0, z1 - z0)
+        gmsh.model.occ.addBox(x0 + offset, y0, z0, x1 - x0, y1 - y0, z1 - z0)
         gmsh.model.occ.addBox(x0, y0, z1 + tol, x1 - x0, y1 - y0, z2 - z1)
 
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
-        tag_cube_model(gmsh.model, x0, y0, z0, x1, y1, z1, z2, facet_markers, volume_markers)
+        tag_cube_model(gmsh.model, x0, y0, z0, x1, y1, z1, z2, facet_markers, volume_markers, offset=offset)
 
         gmsh.model.mesh.field.add("Box", 1)
         gmsh.model.mesh.field.setNumber(1, "VIn", res)
@@ -271,7 +274,9 @@ def generate_hex_boxes(
     return mesh_data.mesh, mesh_data.facet_tags
 
 
-def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
+def gmsh_2D_stacked(
+    celltype: str, theta: float, verbose: bool = False, offset: float = 0.435
+) -> Tuple[_mesh.Mesh, _mesh.MeshTags]:
     res = 0.1
     x0, y0, z0 = 0, 0, 0
     x1, y1 = 1, 1
@@ -293,8 +298,8 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple
         points = [
             gmsh.model.occ.addPoint(x0, y0, z0),
             gmsh.model.occ.addPoint(x1, y0, z0),
-            gmsh.model.occ.addPoint(x0, y2, z0),
-            gmsh.model.occ.addPoint(x1, y2, z0),
+            gmsh.model.occ.addPoint(x0 + offset, y2, z0),
+            gmsh.model.occ.addPoint(x1 + offset, y2, z0),
         ]
         bottom = gmsh.model.occ.addLine(points[0], points[1])
         top = gmsh.model.occ.addLine(points[2], points[3])
@@ -343,16 +348,16 @@ def gmsh_2D_stacked(celltype: str, theta: float, verbose: bool = False) -> Tuple
         top_surfaces = gmsh.model.getBoundary([volumes[top_index]], oriented=False, recursive=False)
         for entity in top_surfaces:
             com = gmsh.model.occ.getCenterOfMass(entity[0], abs(entity[1]))
-            if np.allclose(com, [(x1 - x0) / 2, y1, z0]):
+            if np.allclose(com, [(x1 - x0) / 2 + offset, y1, z0]):
                 entities["Top"]["Bottom"][0].append(entity[1])
                 entities["Top"]["Bottom"][1] = [facet_markers[1][2]]
-            elif np.allclose(com, [x1, y1 + (y2 - y1) / 2, z0]):
+            elif np.allclose(com, [x1 + offset, y1 + (y2 - y1) / 2, z0]):
                 entities["Top"]["Right"][0].append(entity[1])
                 entities["Top"]["Right"][1] = [facet_markers[1][1]]
-            elif np.allclose(com, [x0, y1 + (y2 - y1) / 2, z0]):
+            elif np.allclose(com, [x0 + offset, y1 + (y2 - y1) / 2, z0]):
                 entities["Top"]["Left"][0].append(entity[1])
                 entities["Top"]["Left"][1] = [facet_markers[1][3]]
-            elif np.allclose(com, [(x1 - x0) / 2, y2, z0]):
+            elif np.allclose(com, [(x1 - x0) / 2 + offset, y2, z0]):
                 entities["Top"]["Top"][0].append(entity[1])
                 entities["Top"]["Top"][1] = [facet_markers[1][0]]
 
