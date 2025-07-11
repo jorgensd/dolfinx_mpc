@@ -109,7 +109,7 @@ def assemble_residual_mpc(
         F: Vector to assemble the residual into.
     """
     # Update input vector before assigning
-    _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)
+    _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
     # Assign the input vector to the unknowns
     _fem.petsc.assign(x, u)
     if isinstance(u, Sequence):
