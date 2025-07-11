@@ -382,6 +382,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         mpc: typing.Union[MultiPointConstraint, typing.Sequence[MultiPointConstraint]],
         bcs: typing.Optional[typing.List[_fem.DirichletBC]] = None,
         u: typing.Optional[typing.Union[_fem.Function, typing.Sequence[_fem.Function]]] = None,
+        petsc_options_prefix: str = "dolfinx_mpc_linear_problem_",
         petsc_options: typing.Optional[dict] = None,
         form_compiler_options: typing.Optional[dict] = None,
         jit_options: typing.Optional[dict] = None,
@@ -479,18 +480,28 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         self._solver = PETSc.KSP().create(comm)  # type: ignore
         self._solver.setOperators(self._A, self._P_mat)
 
-        # Give PETSc solver options a unique prefix
-        solver_prefix = "dolfinx_mpc_solve_{}".format(id(self))
-        self._solver.setOptionsPrefix(solver_prefix)
+        self._petsc_options_prefix = petsc_options_prefix
+        self.solver.setOptionsPrefix(petsc_options_prefix)
+        self.A.setOptionsPrefix(f"{petsc_options_prefix}A_")
+        self.b.setOptionsPrefix(f"{petsc_options_prefix}b_")
+        self.x.setOptionsPrefix(f"{petsc_options_prefix}x_")
+        if self.P_mat is not None:
+            self.P_mat.setOptionsPrefix(f"{petsc_options_prefix}P_mat_")
 
-        # Set PETSc options
-        opts = PETSc.Options()  # type: ignore
-        opts.prefixPush(solver_prefix)
+        # Set options on KSP only
         if petsc_options is not None:
+            opts = PETSc.Options()
+            opts.prefixPush(self.solver.getOptionsPrefix())
+
             for k, v in petsc_options.items():
                 opts[k] = v
-        opts.prefixPop()
-        self._solver.setFromOptions()
+
+            self.solver.setFromOptions()
+
+            # Tidy up global options
+            for k in petsc_options.keys():
+                del opts[k]
+            opts.prefixPop()
 
     def solve(self) -> typing.Union[list[_fem.Function], _fem.Function]:
         """Solve the problem.
