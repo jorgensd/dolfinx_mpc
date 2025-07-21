@@ -451,6 +451,7 @@ class MultiPointConstraint:
         slave_marker: int,
         master_marker: int,
         eps2: float = 1e-20,
+        allow_missing_masters: bool = False,
     ):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
@@ -463,11 +464,14 @@ class MultiPointConstraint:
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
             eps2: The tolerance for the squared distance between cells to be considered as a collision
+            allow_missing_masters: If true, the function will not throw an error if a degree of freedom
+                in the closure of the master entities does not have a corresponding set of slave degree
+                of freedom.
         """
         if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             eps2 = eps2.item()  # type: ignore
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
-            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, eps2
+            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, eps2, allow_missing_masters
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
