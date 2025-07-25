@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "dolfinx_mpc"
-version = "0.9.2"
+version = "0.9.3"
 description = "DOLFINx_MPC Python interface"
 readme = "README.md"
 requires-python = ">=3.8.0"
