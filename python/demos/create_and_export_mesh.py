@@ -451,7 +451,7 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
 
         cells = np.vstack([cells0, cells1]).astype(np.int64)
         domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],)))
-        mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
+        mesh = _mesh.create_mesh(comm=MPI.COMM_SELF, cells=cells, x=points, e=domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
 
@@ -584,7 +584,7 @@ def mesh_3D_dolfin(
 
         cells = np.vstack([cells0, cells1])
         domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],)))
-        mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
+        mesh = _mesh.create_mesh(comm=MPI.COMM_SELF, cells=cells, x=points, e=domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
         # Find information about facets to be used in meshtags

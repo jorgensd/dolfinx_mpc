@@ -112,7 +112,11 @@ def test_mixed_element(cell_type, ghost_mode):
     b_nest = dolfinx_mpc.create_vector_nest(L_nest, [mpc_v, mpc_q])
     dolfinx_mpc.assemble_vector_nest(b_nest, L_nest, [mpc_v, mpc_q])
     # FIXME: This should be a DOLFINx_MPC operation
-    dolfinx.fem.petsc.apply_lifting(b_nest, a_nest, bcs)
+    bcs1 = dolfinx.fem.bcs_by_block(
+                    dolfinx.fem.extract_function_spaces(a_nest, 1),
+                    bcs
+                )
+    dolfinx.fem.petsc.apply_lifting(b_nest, a_nest, bcs1)
 
     for b_sub in b_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
@@ -122,7 +126,7 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # Original dolfinx rhs
     b_org_nest = dolfinx.fem.petsc.assemble_vector(L_nest, kind="nest")
-    dolfinx.fem.petsc.apply_lifting(b_org_nest, a_nest, bcs)
+    dolfinx.fem.petsc.apply_lifting(b_org_nest, a_nest, bcs1)
 
     for b_sub in b_org_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
