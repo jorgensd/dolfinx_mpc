@@ -113,7 +113,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         # Rotate mesh
         points = np.dot(r_matrix, points.T).T.astype(default_real_type)
 
-        mesh = create_mesh(MPI.COMM_SELF, cells, points, domain)
+        mesh = create_mesh(comm=MPI.COMM_SELF, cells=cells, x=points, e=domain)
         with XDMFFile(MPI.COMM_SELF, tmp_mesh_name, "w") as xdmf:
             xdmf.write_mesh(mesh)
 
