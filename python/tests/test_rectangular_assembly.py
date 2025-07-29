@@ -126,7 +126,7 @@ def test_mixed_element(cell_type, ghost_mode):
 
     # Original dolfinx rhs
     b_org_nest = dolfinx.fem.petsc.assemble_vector(L_nest, kind="nest")
-    dolfinx.fem.petsc.apply_lifting(b_org_nest, a_nest, bcs)
+    dolfinx.fem.petsc.apply_lifting(b_org_nest, a_nest, bcs1)
 
     for b_sub in b_org_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
