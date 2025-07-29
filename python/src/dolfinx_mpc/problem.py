@@ -17,8 +17,7 @@ import numpy as np
 import numpy.typing as npt
 import ufl
 from dolfinx import fem as _fem
-from dolfinx.fem.petsc import _zero_vector
-from dolfinx.la.petsc import _ghost_update, create_vector
+from dolfinx.la.petsc import _ghost_update, _zero_vector, create_vector
 
 from dolfinx_mpc.cpp import mpc as _cpp_mpc
 
