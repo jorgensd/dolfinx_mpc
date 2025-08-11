@@ -60,7 +60,7 @@ jobs:
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # - name: Install clang
       #   if: ${{ matrix.CC }} == "clang"
