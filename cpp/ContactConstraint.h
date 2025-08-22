@@ -858,7 +858,7 @@ mpc_data<T> create_contact_slip_condition(
   // Distribute ghost data
   dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
       local_slaves, local_masters, local_coeffs, local_owners,
-      num_masters_per_slave, *imap, block_size);
+      num_masters_per_slave, imap, block_size);
 
   // Add ghost data to existing arrays
   const std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
