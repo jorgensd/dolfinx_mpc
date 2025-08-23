@@ -713,7 +713,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     // Propagate local slave information to ghost processes
     dolfinx::la::Vector<std::int8_t> indicator(imap, 1);
     std::ranges::fill(indicator.mutable_array(), 0);
-    auto indicator_array = indicator.mutable_array();
+    std::vector<std::int8_t>& indicator_array = indicator.array();
     std::ranges::for_each(blocks, [&indicator_array](auto& block)
                           { indicator_array[block] = 1; });
 
@@ -722,12 +722,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     // Insert ghosts blocks with constraints into blocks
     const std::int32_t local_size = imap->size_local();
     for (std::size_t i = 0; i < imap->num_ghosts(); ++i)
-    {
       if (indicator_array[local_size + i] == 1)
-      {
         blocks.push_back(local_size + i);
-      }
-    }
 
     // Sort and delete duplicates
     std::ranges::sort(blocks);
