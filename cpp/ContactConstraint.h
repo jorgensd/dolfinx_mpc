@@ -858,7 +858,7 @@ mpc_data<T> create_contact_slip_condition(
   // Distribute ghost data
   dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
       local_slaves, local_masters, local_coeffs, local_owners,
-      num_masters_per_slave, *imap, block_size);
+      num_masters_per_slave, imap, block_size);
 
   // Add ghost data to existing arrays
   const std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
@@ -898,13 +898,15 @@ mpc_data<T> create_contact_slip_condition(
 /// @param[in] master_marker Tag for the other interface
 /// @param[in] eps2 The tolerance for the squared distance to be considered a
 /// collision
-/// @param[in] allow_missing_masters If true, the function will not throw an error if
-/// a degree of freedom in the closure of the master entities does not have a corresponding set of slave degrees of freedom.
+/// @param[in] allow_missing_masters If true, the function will not throw an
+/// error if a degree of freedom in the closure of the master entities does not
+/// have a corresponding set of slave degrees of freedom.
 template <typename T, std::floating_point U>
 mpc_data<T> create_contact_inelastic_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
-    std::int32_t master_marker, const U eps2 = 1e-20, bool allow_missing_masters = false)
+    std::int32_t master_marker, const U eps2 = 1e-20,
+    bool allow_missing_masters = false)
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
 
@@ -1108,51 +1110,56 @@ mpc_data<T> create_contact_inelastic_condition(
     {
       int counter = 0;
       std::ranges::for_each(
-        local_blocks,
-        [block_size, tdim, &masters_out, &local_masters, &coeffs_out,
-         &local_coeffs, &offsets_out, &slaves, &counter, &collision_to_local](const std::int32_t block)
-        {
-          if (std::find(collision_to_local.begin(), collision_to_local.end(), counter++) != collision_to_local.end())
+          local_blocks,
+          [block_size, tdim, &masters_out, &local_masters, &coeffs_out,
+           &local_coeffs, &offsets_out, &slaves, &counter,
+           &collision_to_local](const std::int32_t block)
           {
-            std::cout << "Skipping block " << block << " without local collision." << counter << std::endl;
-            return; // Skip blocks without local collision
-          }
-          else
-          {
+            if (std::find(collision_to_local.begin(), collision_to_local.end(),
+                          counter++)
+                != collision_to_local.end())
+            {
+              std::cout << "Skipping block " << block
+                        << " without local collision." << counter << std::endl;
+              return; // Skip blocks without local collision
+            }
+            else
+            {
 
-          for (std::int32_t j = 0; j < block_size; ++j)
-          {
-            const std::int32_t slave = block * block_size + j;
-            slaves.push_back(slave);
-            masters_out.insert(masters_out.end(), local_masters[slave].begin(),
-                               local_masters[slave].end());
-            coeffs_out.insert(coeffs_out.end(), local_coeffs[slave].begin(),
-                              local_coeffs[slave].end());
-            offsets_out.push_back((std::int32_t)masters_out.size());
-          }
-        }
-        });
-
+              for (std::int32_t j = 0; j < block_size; ++j)
+              {
+                const std::int32_t slave = block * block_size + j;
+                slaves.push_back(slave);
+                masters_out.insert(masters_out.end(),
+                                   local_masters[slave].begin(),
+                                   local_masters[slave].end());
+                coeffs_out.insert(coeffs_out.end(), local_coeffs[slave].begin(),
+                                  local_coeffs[slave].end());
+                offsets_out.push_back((std::int32_t)masters_out.size());
+              }
+            }
+          });
     }
     else
     {
       std::ranges::for_each(
-        local_blocks,
-        [block_size, tdim, &masters_out, &local_masters, &coeffs_out,
-         &local_coeffs, &offsets_out, &slaves](const std::int32_t block)
-        {
-          for (std::int32_t j = 0; j < block_size; ++j)
+          local_blocks,
+          [block_size, tdim, &masters_out, &local_masters, &coeffs_out,
+           &local_coeffs, &offsets_out, &slaves](const std::int32_t block)
           {
-            const std::int32_t slave = block * block_size + j;
-            slaves.push_back(slave);
-            masters_out.insert(masters_out.end(), local_masters[slave].begin(),
-                               local_masters[slave].end());
-            coeffs_out.insert(coeffs_out.end(), local_coeffs[slave].begin(),
-                              local_coeffs[slave].end());
-            offsets_out.push_back((std::int32_t)masters_out.size());
-          }
-        });
-      }
+            for (std::int32_t j = 0; j < block_size; ++j)
+            {
+              const std::int32_t slave = block * block_size + j;
+              slaves.push_back(slave);
+              masters_out.insert(masters_out.end(),
+                                 local_masters[slave].begin(),
+                                 local_masters[slave].end());
+              coeffs_out.insert(coeffs_out.end(), local_coeffs[slave].begin(),
+                                local_coeffs[slave].end());
+              offsets_out.push_back((std::int32_t)masters_out.size());
+            }
+          });
+    }
     std::vector<std::int32_t> owners(masters_out.size());
     std::ranges::fill(owners, 0);
     mpc.slaves = slaves;
@@ -1500,7 +1507,8 @@ mpc_data<T> create_contact_inelastic_condition(
   {
     for (int d = 0; d < block_size; d++)
     {
-      if ((local_masters[block * block_size + d].empty()) and (!allow_missing_masters))
+      if ((local_masters[block * block_size + d].empty())
+          and (!allow_missing_masters))
       {
         throw std::runtime_error(
             "No masters found on contact surface for slave. Please run in "
@@ -1748,7 +1756,7 @@ mpc_data<T> create_contact_inelastic_condition(
       = map_dofs_global_to_local<U>(V, in_ghost_slaves);
   for (std::int32_t i = 0; i < num_ghost_slaves; i++)
   {
-    if (ghost_offsets[i+1]  - ghost_offsets[i] == 0)
+    if (ghost_offsets[i + 1] - ghost_offsets[i] == 0)
       continue; // Skip if no masters for ghost slave
     slaves.push_back(local_ghosts[i]);
     for (std::int32_t j = ghost_offsets[i]; j < ghost_offsets[i + 1]; j++)

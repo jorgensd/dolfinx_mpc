@@ -692,7 +692,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     std::span<const std::int32_t> slaves, std::span<const std::int64_t> masters,
     std::span<const T> coeffs, std::span<const std::int32_t> owners,
     std::span<const std::int32_t> num_masters_per_slave,
-    const dolfinx::common::IndexMap& imap, const int bs)
+    std::shared_ptr<const dolfinx::common::IndexMap> imap, const int bs)
 {
   std::shared_ptr<const dolfinx::common::IndexMap> slave_to_ghost;
   std::vector<int> parent_to_sub;
@@ -711,22 +711,19 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                            [bs](auto& dof) { return dof / bs; });
 
     // Propagate local slave information to ghost processes
-    std::vector<std::int8_t> indicator(imap.size_local(), 0);
-    std::ranges::for_each(blocks,
-                          [&indicator](auto& block) { indicator[block] = 1; });
-    dolfinx::common::Scatterer ghost_scatterer(imap, 1);
-    std::vector<std::int8_t> recieve_indicator(imap.num_ghosts());
-    ghost_scatterer.scatter_fwd(std::span<const std::int8_t>(indicator),
-                                std::span<std::int8_t>(recieve_indicator));
+    dolfinx::la::Vector<std::int8_t> indicator(imap, 1);
+    std::ranges::fill(indicator.mutable_array(), 0);
+    std::vector<std::int8_t>& indicator_array = indicator.array();
+    std::ranges::for_each(blocks, [&indicator_array](auto& block)
+                          { indicator_array[block] = 1; });
+
+    indicator.scatter_fwd();
 
     // Insert ghosts blocks with constraints into blocks
-    for (std::size_t i = 0; i < imap.num_ghosts(); ++i)
-    {
-      if (recieve_indicator[i] == 1)
-      {
-        blocks.push_back(imap.size_local() + i);
-      }
-    }
+    const std::int32_t local_size = imap->size_local();
+    for (std::size_t i = 0; i < imap->num_ghosts(); ++i)
+      if (indicator_array[local_size + i] == 1)
+        blocks.push_back(local_size + i);
 
     // Sort and delete duplicates
     std::ranges::sort(blocks);
@@ -735,7 +732,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     // Create submap
     std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
         = dolfinx::common::create_sub_index_map(
-            imap, blocks, dolfinx::common::IndexMapOrder::any, false);
+            *imap, blocks, dolfinx::common::IndexMapOrder::any, false);
     slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
         std::move(compressed_map.first));
 
@@ -858,7 +855,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       blocks[i] = pos.quot;
       rems[i] = pos.rem;
     }
-    imap.local_to_global(blocks, slaves_out);
+    imap->local_to_global(blocks, slaves_out);
     std::ranges::transform(slaves_out, rems, slaves_out.begin(),
                            [bs](auto dof, auto rem) { return dof * bs + rem; });
   }
@@ -908,7 +905,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                           recv_block.push_back(dof / bs);
                         });
   std::vector<std::int32_t> recv_local(recv_slaves.size());
-  imap.global_to_local(recv_block, recv_local);
+  imap->global_to_local(recv_block, recv_local);
   for (std::size_t i = 0; i < recv_local.size(); i++)
     recv_local[i] = recv_local[i] * bs + recv_rem[i];
 
@@ -935,7 +932,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                           local_to_ghost, &ghost_requests[4]);
 
   int err = MPI_Comm_free(&local_to_ghost);
-  dolfinx::MPI::check_error(imap.comm(), err);
+  dolfinx::MPI::check_error(imap->comm(), err);
 
   mpc_data<T> ghost_data;
   ghost_data.slaves = recv_local;
