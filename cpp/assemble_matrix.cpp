@@ -610,7 +610,7 @@ void assemble_matrix_impl(
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
     cell_info1 = std::span(mesh1->topology()->get_cell_permutation_info());
   }
-  for (int i : a.integral_ids(dolfinx::fem::IntegralType::cell))
+  for (int i = 0; i < a.num_integrals(dolfinx::fem::IntegralType::cell, 0); ++i)
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i, 0);
     const auto& [coeffs, cstride]
@@ -628,7 +628,9 @@ void assemble_matrix_impl(
         cstride, constants, cell_info0, cell_info1, mpc0, mpc1);
   }
 
-  for (int i : a.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
+  for (int i = 0;
+       i < a.num_integrals(dolfinx::fem::IntegralType::exterior_facet, 0); ++i)
+
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i, 0);
     const auto& [coeffs, cstride]
@@ -646,7 +648,7 @@ void assemble_matrix_impl(
         cstride, constants, cell_info0, cell_info1, mpc0, mpc1);
   }
 
-  if (a.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
+  if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0) > 0)
     throw std::runtime_error("Not implemented yet");
 }
 //-----------------------------------------------------------------------------

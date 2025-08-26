@@ -235,7 +235,8 @@ void apply_lifting(
 
   const auto fetch_cells
       = [&](std::span<const std::int32_t> entity) { return entity.front(); };
-  for (int i : a->integral_ids(dolfinx::fem::IntegralType::cell))
+  for (int i = 0; i < a->num_integrals(dolfinx::fem::IntegralType::cell, 0);
+       ++i)
   {
     const auto& coeffs = coefficients.at({dolfinx::fem::IntegralType::cell, i});
     const auto& kernel = a->kernel(dolfinx::fem::IntegralType::cell, i, 0);
@@ -307,7 +308,8 @@ void apply_lifting(
   }
 
   // Get number of cells per facet to be able to get the facet permutation
-  for (int i : a->integral_ids(dolfinx::fem::IntegralType::exterior_facet))
+  for (int i = 0;
+       i < a->num_integrals(dolfinx::fem::IntegralType::exterior_facet, 0); ++i)
   {
     const auto& coeffs
         = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
@@ -388,7 +390,7 @@ void apply_lifting(
         b, active_facets, active_facets0, active_facets1, *dofmap0, *dofmap1,
         bc_values1, bc_markers1, *mpc0, fetch_cells, lift_bc_exterior_facet);
   }
-  if (a->integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
+  if (a->num_integrals(dolfinx::fem::IntegralType::interior_facet, 0) > 0)
   {
 
     throw std::runtime_error(
@@ -518,10 +520,10 @@ void apply_lifting(
         "Mismatch in size between a and bcs in assembler.");
   }
   for (std::size_t j = 0; j < a.size(); ++j)
-  { 
+  {
     if (a[j] and !bcs1[j].empty())
     {
-    if (x0.empty())
+      if (x0.empty())
       {
         impl::apply_lifting<std::complex<double>>(
             b, a[j], bcs1[j], std::span<const std::complex<double>>(), scale,
@@ -529,13 +531,12 @@ void apply_lifting(
       }
       else
       {
-        impl::apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j], scale,
-                                                  mpc);
+        impl::apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j],
+                                                  scale, mpc);
       }
     }
   }
 }
-
 
 /// Modify b such that:
 ///
@@ -584,7 +585,7 @@ void apply_lifting(
       if (x0.empty())
       {
         impl::apply_lifting<float>(b, a[j], bcs1[j], std::span<const float>(),
-                                  scale, mpc);
+                                   scale, mpc);
       }
       else
       {
@@ -645,12 +646,13 @@ void apply_lifting(
       if (x0.empty())
       {
         impl::apply_lifting<std::complex<float>>(
-            b, a[j], bcs1[j], std::span<const std::complex<float>>(), scale, mpc);
+            b, a[j], bcs1[j], std::span<const std::complex<float>>(), scale,
+            mpc);
       }
       else
       {
         impl::apply_lifting<std::complex<float>>(b, a[j], bcs1[j], x0[j], scale,
-                                                mpc);
+                                                 mpc);
       }
     }
   }
