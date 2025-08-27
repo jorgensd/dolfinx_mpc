@@ -95,9 +95,6 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
     if e0.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
     # Assemble over cells
-    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.cell)
-    num_cell_integrals = len(subdomain_ids)
-
     if _PETSc.ScalarType == numpy.float32:  # type: ignore
         nptype = "float32"
     elif _PETSc.ScalarType == numpy.float64:  # type: ignore
@@ -109,15 +106,15 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
     else:
         raise RuntimeError(f"Unsupported scalar type {_PETSc.ScalarType}.")  # type: ignore
     ufcx_form = form.ufcx_form
-    if num_cell_integrals > 0:
+    if (num_cell_integrals := form.num_integrals(_fem.IntegralType.cell, 0)) > 0:
         V.mesh.topology.create_entity_permutations()
 
         # NOTE: This depends on enum ordering in ufcx.h
         cell_form_pos = ufcx_form.form_integral_offsets[0]
-        for i, id in enumerate(subdomain_ids):
+        for i in range(num_cell_integrals):
             cell_kernel = getattr(ufcx_form.form_integrals[cell_form_pos + i], f"tabulate_tensor_{nptype}")
-            active_cells = form._cpp_object.domains(_fem.IntegralType.cell, id)
-            coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
+            active_cells = form._cpp_object.domains(_fem.IntegralType.cell, i)
+            coeffs_i = form_coeffs[(_fem.IntegralType.cell, i)]
             with vector.localForm() as b:
                 assemble_cells(
                     numpy.asarray(b),
@@ -134,9 +131,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
                 )
 
     # Assemble exterior facet integrals
-    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.exterior_facet)
-    num_exterior_integrals = len(subdomain_ids)
-    if num_exterior_integrals > 0:
+    if (num_exterior_integrals := form.num_integrals(_fem.IntegralType.exterior_facet, 0)) > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
         # Get facet permutations if required
@@ -146,10 +141,10 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
         perm = (cell_perms, form._cpp_object.needs_facet_permutations, facet_perms)
         # NOTE: This depends on enum ordering in ufcx.h
         ext_facet_pos = ufcx_form.form_integral_offsets[1]
-        for i, id in enumerate(subdomain_ids):
+        for i in range(num_exterior_integrals):
             facet_kernel = getattr(ufcx_form.form_integrals[ext_facet_pos + i], f"tabulate_tensor_{nptype}")
-            coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
-            facets = form._cpp_object.domains(_fem.IntegralType.exterior_facet, id)
+            coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, i)]
+            facets = form._cpp_object.domains(_fem.IntegralType.exterior_facet, i)
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             with vector.localForm() as b:

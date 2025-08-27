@@ -313,35 +313,33 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 
   for (auto type : types)
   {
-    std::vector<int> ids = a.integral_ids(type);
     switch (type)
     {
     case dolfinx::fem::IntegralType::cell:
-      for (int id : ids)
+      for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::cells(
-            pattern,
-            {a.domain_arg(type, 0, id, 0), a.domain_arg(type, 1, id, 0)},
+            pattern, {a.domain_arg(type, 0, i, 0), a.domain_arg(type, 1, i, 0)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
-      for (int id : ids)
+      for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::interior_facets(
             pattern,
-            {extract_cells(a.domain_arg(type, 0, id, 0)),
-             extract_cells(a.domain_arg(type, 1, id, 0))},
+            {extract_cells(a.domain_arg(type, 0, i, 0)),
+             extract_cells(a.domain_arg(type, 1, i, 0))},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
-      for (int id : ids)
+      for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::cells(
             pattern,
-            {extract_cells(a.domain_arg(type, 0, id, 0)),
-             extract_cells(a.domain_arg(type, 1, id, 0))},
+            {extract_cells(a.domain_arg(type, 0, i, 0)),
+             extract_cells(a.domain_arg(type, 1, i, 0))},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;

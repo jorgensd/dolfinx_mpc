@@ -145,7 +145,7 @@ void _assemble_vector(
 
   const auto fetch_cell
       = [&](std::span<const std::int32_t> entity) { return entity.front(); };
-  for (int i : L.integral_ids(dolfinx::fem::IntegralType::cell))
+  for (int i = 0; i < L.num_integrals(dolfinx::fem::IntegralType::cell, 0); ++i)
   {
     const auto& coeffs = coefficients.at({dolfinx::fem::IntegralType::cell, i});
 
@@ -189,7 +189,8 @@ void _assemble_vector(
   // Prepare permutations for exterior and interior facet integrals
 
   // Assemble exterior facet integral kernels
-  for (int i : L.integral_ids(dolfinx::fem::IntegralType::exterior_facet))
+  for (int i = 0;
+       i < L.num_integrals(dolfinx::fem::IntegralType::exterior_facet, 0); ++i)
   {
     const auto& fn = L.kernel(dolfinx::fem::IntegralType::exterior_facet, i, 0);
     const auto& coeffs
@@ -234,7 +235,7 @@ void _assemble_vector(
                                      assemble_local_exterior_facet_vector);
   }
 
-  if (L.integral_ids(dolfinx::fem::IntegralType::interior_facet).size() > 0)
+  if (L.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0) > 0)
   {
     throw std::runtime_error(
         "Interior facet integrals currently not supported");

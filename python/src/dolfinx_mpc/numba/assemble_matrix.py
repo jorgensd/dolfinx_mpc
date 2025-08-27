@@ -104,8 +104,7 @@ def assemble_matrix(
     tdim = V.mesh.topology.dim
 
     # Assemble over cells
-    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.cell)
-    num_cell_integrals = len(subdomain_ids)
+    num_cell_integrals = form._cpp_object.num_integrals(_fem.IntegralType.cell, 0)
 
     e0 = form.function_spaces[0].element
     e1 = form.function_spaces[1].element
@@ -139,11 +138,10 @@ def assemble_matrix(
         # NOTE: This depends on enum ordering in ufcx.h
         cell_form_pos = ufcx_form.form_integral_offsets[0]
         V.mesh.topology.create_entity_permutations()
-        for i, id in enumerate(subdomain_ids):
-            coeffs_i = form_coeffs[(_fem.IntegralType.cell, id)]
-
+        for i in range(num_cell_integrals):
+            coeffs_i = form_coeffs[(_fem.IntegralType.cell, i)]
             cell_kernel = getattr(ufcx_form.form_integrals[cell_form_pos + i], f"tabulate_tensor_{nptype}")
-            active_cells = form._cpp_object.domains(_fem.IntegralType.cell, id)
+            active_cells = form._cpp_object.domains(_fem.IntegralType.cell, i)
             assemble_slave_cells(
                 A.handle,
                 cell_kernel,
@@ -160,8 +158,7 @@ def assemble_matrix(
             )
 
     # Assemble over exterior facets
-    subdomain_ids = form._cpp_object.integral_ids(_fem.IntegralType.exterior_facet)
-    num_exterior_integrals = len(subdomain_ids)
+    num_exterior_integrals = form.num_integrals(_fem.IntegralType.exterior_facet, 0)
 
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
@@ -175,10 +172,10 @@ def assemble_matrix(
         perm = (cell_perms, form._cpp_object.needs_facet_permutations, facet_perms)
         # NOTE: This depends on enum ordering in ufcx.h
         ext_facet_pos = ufcx_form.form_integral_offsets[1]
-        for i, id in enumerate(subdomain_ids):
+        for i in range(num_exterior_integrals):
             facet_kernel = getattr(ufcx_form.form_integrals[ext_facet_pos + i], f"tabulate_tensor_{nptype}")
-            facets = form._cpp_object.domains(_fem.IntegralType.exterior_facet, id)
-            coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, id)]
+            facets = form._cpp_object.domains(_fem.IntegralType.exterior_facet, i)
+            coeffs_i = form_coeffs[(_fem.IntegralType.exterior_facet, i)]
             facet_info = pack_slave_facet_info(facets, slave_cells)
             num_facets_per_cell = len(V.mesh.topology.connectivity(tdim, tdim - 1).links(0))
             assemble_exterior_slave_facets(
