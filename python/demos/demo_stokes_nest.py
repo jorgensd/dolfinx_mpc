@@ -198,10 +198,12 @@ a00 -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
 a01 -= ufl.inner(ufl.outer(n, n) * ufl.dot(-p * ufl.Identity(u.ufl_shape[0]), n), v) * ds
 L0 += ufl.inner(g_tau, v) * ds
 
-a: list[list[dolfinx.fem.Form]] = dolfinx.fem.form([
-    [a00, a01],
-    [a10, a11],
-])
+a: list[list[dolfinx.fem.Form]] = dolfinx.fem.form(
+    [
+        [a00, a01],
+        [a10, a11],
+    ]
+)
 L: list[dolfinx.fem.Form] = dolfinx.fem.form([L0, L1])
 
 # Assemble LHS matrix and RHS vector
@@ -214,10 +216,7 @@ with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
     dolfinx_mpc.assemble_vector_nest(b, L, [mpc, mpc_q])
 
 # Set Dirichlet boundary condition values in the RHS
-bcs1 = dolfinx.fem.bcs_by_block(
-                    dolfinx.fem.extract_function_spaces(a, 1),
-                    bcs
-                )
+bcs1 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(a, 1), bcs)
 dolfinx_mpc.apply_lifting(b, a, bcs1, constraint=[mpc, mpc_q])
 for b_sub in b.getNestSubVecs():
     b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)  # type: ignore

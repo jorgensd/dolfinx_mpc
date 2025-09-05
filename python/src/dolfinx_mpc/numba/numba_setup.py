@@ -22,7 +22,7 @@ import numba.core.typing.cffi_utils as cffi_support
 import numpy as np
 
 
-def initialize_petsc() -> typing.Tuple[cffi.FFI, typing.Any]:
+def initialize_petsc() -> tuple[cffi.FFI, typing.Any]:
     """
     Initialize petsc and CFFI for usage in numba
     """
