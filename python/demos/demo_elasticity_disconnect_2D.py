@@ -168,19 +168,20 @@ for i, pair in enumerate(pairs):
 mpc.finalize()
 
 # Add back once PETSc release has added fix for
-petsc_options = {"ksp_rtol": 1.0e-8,
-                 "ksp_type": "cg",
-                 "pc_type": "gamg",
-                 "pc_gamg_type": "agg",
-                 "pc_gamg_coarse_eq_limit": 1000,
-                 "pc_gamg_square_graph": 2,
-                 "pc_gamg_threshold": 0.02,
-                 "mg_levels_ksp_type": "chebyshev",
-                 "mg_levels_pc_type": "jacobi",
-                #  "ksp_view": None,
-                #  "help": None,
-                #  "ksp_monitor": None
-                 }
+petsc_options = {
+    "ksp_rtol": 1.0e-8,
+    "ksp_type": "cg",
+    "pc_type": "gamg",
+    "pc_gamg_type": "agg",
+    "pc_gamg_coarse_eq_limit": 1000,
+    "pc_gamg_square_graph": 2,
+    "pc_gamg_threshold": 0.02,
+    "mg_levels_ksp_type": "chebyshev",
+    "mg_levels_pc_type": "jacobi",
+    #  "ksp_view": None,
+    #  "help": None,
+    #  "ksp_monitor": None
+}
 
 problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
@@ -203,4 +204,3 @@ outdir.mkdir(exist_ok=True, parents=True)
 with XDMFFile(mesh.comm, outdir / "demo_elasticity_disconnect_2D.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_function(u_h)
-

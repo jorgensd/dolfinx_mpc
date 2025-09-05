@@ -14,7 +14,7 @@ from dolfinx import default_scalar_type
 
 
 def close_to(
-    point: np.typing.NDArray[typing.Union[np.float64, np.float32]],
+    point: np.typing.NDArray[np.float64 | np.float32],
     atol=1000 * np.finfo(dolfinx.default_real_type).resolution,
 ):
     """
@@ -30,9 +30,9 @@ def close_to(
 @typing.no_type_check
 def create_dictionary_constraint(
     V: fem.functionspace,
-    slave_master_dict: typing.Dict[bytes, typing.Dict[bytes, float]],
-    subspace_slave: typing.Optional[int] = None,
-    subspace_master: typing.Optional[int] = None,
+    slave_master_dict: dict[bytes, dict[bytes, float]],
+    subspace_slave: int | None = None,
+    subspace_master: int | None = None,
 ):
     """
     Returns a multi point constraint for a given function space

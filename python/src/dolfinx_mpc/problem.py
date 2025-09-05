@@ -6,15 +6,12 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
-import typing
+from collections.abc import Iterable, Sequence
 from functools import partial
-from typing import Iterable, Sequence
 
 from petsc4py import PETSc
 
 import dolfinx.fem.petsc
-import numpy as np
-import numpy.typing as npt
 import ufl
 from dolfinx import fem as _fem
 from dolfinx.la.petsc import _ghost_update, _zero_vector, create_vector
@@ -27,11 +24,11 @@ from .multipointconstraint import MultiPointConstraint
 
 
 def assemble_jacobian_mpc(
-    u: typing.Union[Sequence[_fem.Function], _fem.Function],
-    jacobian: typing.Union[_fem.Form, typing.Iterable[typing.Iterable[_fem.Form]]],
-    preconditioner: typing.Optional[typing.Union[_fem.Form, typing.Iterable[typing.Iterable[_fem.Form]]]],
-    bcs: typing.Iterable[_fem.DirichletBC],
-    mpc: typing.Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    u: Sequence[_fem.Function] | _fem.Function,
+    jacobian: _fem.Form | Sequence[Sequence[_fem.Form]],
+    preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None,
+    bcs: Iterable[_fem.DirichletBC],
+    mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
     _snes: PETSc.SNES,  # type: ignore
     x: PETSc.Vec,  # type: ignore
     J: PETSc.Mat,  # type: ignore
@@ -80,11 +77,11 @@ def assemble_jacobian_mpc(
 
 
 def assemble_residual_mpc(
-    u: typing.Union[_fem.Function, Sequence[_fem.Function]],
-    residual: typing.Union[_fem.Form, typing.Iterable[_fem.Form]],
-    jacobian: typing.Union[_fem.Form, typing.Iterable[typing.Iterable[_fem.Form]]],
-    bcs: typing.Iterable[_fem.DirichletBC],
-    mpc: typing.Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    u: _fem.Function | Sequence[_fem.Function],
+    residual: _fem.Form | Sequence[_fem.Form],
+    jacobian: _fem.Form | Sequence[Sequence[_fem.Form]],
+    bcs: Sequence[_fem.DirichletBC],
+    mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
     _snes: PETSc.SNES,  # type: ignore
     x: PETSc.Vec,  # type: ignore
     F: PETSc.Vec,  # type: ignore
@@ -151,17 +148,17 @@ def assemble_residual_mpc(
 class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
     def __init__(
         self,
-        F: typing.Union[ufl.form.Form, Sequence[ufl.form.Form]],
-        u: typing.Union[_fem.Function, Sequence[_fem.Function]],
-        mpc: typing.Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
-        bcs: typing.Optional[Sequence[_fem.DirichletBC]] = None,
-        J: typing.Optional[typing.Union[ufl.form.Form, Iterable[Iterable[ufl.form.Form]]]] = None,
-        P: typing.Optional[typing.Union[ufl.form.Form, Iterable[Iterable[ufl.form.Form]]]] = None,
-        kind: typing.Optional[typing.Union[str, typing.Iterable[typing.Iterable[str]]]] = None,
-        form_compiler_options: typing.Optional[dict] = None,
-        jit_options: typing.Optional[dict] = None,
-        petsc_options: typing.Optional[dict] = None,
-        entity_maps: typing.Optional[dict[dolfinx.mesh.Mesh, npt.NDArray[np.int32]]] = None,
+        F: ufl.form.Form | Sequence[ufl.form.Form],
+        u: _fem.Function | Sequence[_fem.Function],
+        mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
+        bcs: Sequence[_fem.DirichletBC] | None = None,
+        J: ufl.form.Form | Sequence[Sequence[ufl.form.Form]] | None = None,
+        P: ufl.form.Form | Sequence[Sequence[ufl.form.Form]] | None = None,
+        kind: str | Sequence[Sequence[str]] | None = None,
+        form_compiler_options: dict | None = None,
+        jit_options: dict | None = None,
+        petsc_options: dict | None = None,
+        entity_maps: Sequence[dolfinx.mesh.EntityMap] | None = None,
     ):
         """Class for solving nonlinear problems with SNES.
 
@@ -266,7 +263,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
                 assert isinstance(self.mpc, Sequence)
                 self._P_mat = create_matrix_nest(self.preconditioner, self.mpc)
             else:
-                assert isinstance(self._P, _fem.Form)
+                assert isinstance(self._preconditioner, _fem.Form)
                 self._P_mat = _cpp_mpc.create_matrix(self.preconditioner, kind=kind)
         else:
             self._P_mat = None
@@ -362,31 +359,31 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
 
     """
 
-    u: typing.Union[_fem.Function, list[_fem.Function]]
-    _a: typing.Union[_fem.Form, typing.Sequence[typing.Sequence[_fem.Form]]]
-    _L: typing.Union[_fem.Form, typing.Sequence[_fem.Form]]
-    _preconditioner: typing.Optional[typing.Union[_fem.Form, typing.Sequence[typing.Sequence[_fem.Form]]]]
-    _mpc: typing.Union[MultiPointConstraint, typing.Sequence[MultiPointConstraint]]
+    u: _fem.Function | list[_fem.Function]
+    _a: _fem.Form | Sequence[Sequence[_fem.Form]]
+    _L: _fem.Form | Sequence[_fem.Form]
+    _preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None
+    _mpc: MultiPointConstraint | Sequence[MultiPointConstraint]
     _A: PETSc.Mat  # type: ignore
-    _P: typing.Optional[PETSc.Mat]  # type: ignore
+    _P: PETSc.Mat | None  # type: ignore
     _b: PETSc.Vec  # type: ignore
     _solver: PETSc.KSP  # type: ignore
     _x: PETSc.Vec  # type: ignore
-    bcs: typing.List[_fem.DirichletBC]
+    bcs: list[_fem.DirichletBC]
     __slots__ = tuple(__annotations__)
 
     def __init__(
         self,
-        a: typing.Union[ufl.Form, typing.Iterable[typing.Iterable[ufl.Form]]],
-        L: typing.Union[ufl.Form, typing.Iterable[ufl.Form]],
-        mpc: typing.Union[MultiPointConstraint, typing.Sequence[MultiPointConstraint]],
-        bcs: typing.Optional[typing.List[_fem.DirichletBC]] = None,
-        u: typing.Optional[typing.Union[_fem.Function, typing.Sequence[_fem.Function]]] = None,
+        a: ufl.Form | Sequence[Sequence[ufl.Form]],
+        L: ufl.Form | Sequence[ufl.Form],
+        mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
+        bcs: list[_fem.DirichletBC] | None = None,
+        u: _fem.Function | Sequence[_fem.Function] | None = None,
         petsc_options_prefix: str = "dolfinx_mpc_linear_problem_",
-        petsc_options: typing.Optional[dict] = None,
-        form_compiler_options: typing.Optional[dict] = None,
-        jit_options: typing.Optional[dict] = None,
-        P: typing.Optional[typing.Union[ufl.Form, typing.Iterable[ufl.Form]]] = None,
+        petsc_options: dict | None = None,
+        form_compiler_options: dict | None = None,
+        jit_options: dict | None = None,
+        P: ufl.Form | Sequence[Sequence[ufl.Form]] | None = None,
     ):
         # Compile forms
         form_compiler_options = {} if form_compiler_options is None else form_compiler_options
@@ -503,7 +500,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                 del opts[k]
             opts.prefixPop()
 
-    def solve(self) -> typing.Union[list[_fem.Function], _fem.Function]:
+    def solve(self) -> _fem.Function | list[_fem.Function]:
         """Solve the problem.
 
         Returns:
@@ -524,7 +521,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         if self._P_mat is not None:
             self._P_mat.zeroEntries()
             if self._P_mat.getType() == "nest":
-                assert isinstance(self._preconditioner, typing.Sequence)
+                assert isinstance(self._preconditioner, Sequence)
                 assemble_matrix_nest(self._P_mat, self._preconditioner, self._mpc, self.bcs)  # type: ignore
             else:
                 assert isinstance(self._preconditioner, _fem.Form)
