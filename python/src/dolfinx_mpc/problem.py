@@ -137,7 +137,7 @@ def assemble_residual_mpc(
         _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(residual), bcs)  # type: ignore
         _fem.petsc.set_bc(F, bcs0, x0=x, alpha=-1.0)
-    except RuntimeError:
+    except TypeError:
         # Single form lifting
         apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0)  # type: ignore
         _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
@@ -253,8 +253,8 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             self._x = create_vector_nest(self._F, mpc)
         else:
             assert isinstance(mpc, MultiPointConstraint)
-            self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
-            self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
+            self._b = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
+            self._x = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
 
         # Create PETSc structure for preconditioner if provided
         if self.preconditioner is not None:
@@ -457,8 +457,8 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             assert isinstance(self._L, _fem.Form)
             assert isinstance(self._a, _fem.Form)
             self._A = _cpp_mpc.create_matrix(self._a._cpp_object, mpc._cpp_object)
-            self._b = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
-            self._x = create_vector(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)
+            self._b = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
+            self._x = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
             if self._preconditioner is None:
                 self._P_mat = None
             else:
@@ -545,7 +545,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
             bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(self._L), self.bcs)  # type: ignore
             _fem.petsc.set_bc(self._b, bcs0)
-        except RuntimeError:
+        except TypeError:
             # Single form lifting
             apply_lifting(self._b, [self._a], bcs=[self.bcs], constraint=self._mpc)  # type: ignore
             _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
