@@ -69,7 +69,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
     # Get index map and ghost info
     if b is None:
         index_map = constraint.function_space.dofmap.index_map
-        vector = create_vector(index_map, block_size)
+        vector = create_vector([(index_map, block_size)])
     else:
         vector = b
 
