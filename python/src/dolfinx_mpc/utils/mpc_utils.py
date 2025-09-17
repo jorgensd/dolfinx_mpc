@@ -230,7 +230,7 @@ def determine_closest_block(V, point):
     cell_imap = V.mesh.topology.index_map(tdim)
     boundary_cells = np.array(np.unique(boundary_cells), dtype=np.int32)
     boundary_cells = boundary_cells[boundary_cells < cell_imap.size_local]
-    bb_tree = _geometry.bb_tree(V.mesh, tdim, entitites=boundary_cells, padding=0.0)
+    bb_tree = _geometry.bb_tree(V.mesh, tdim, entities=boundary_cells, padding=0.0)
     midpoint_tree = _geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest
