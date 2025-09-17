@@ -42,7 +42,7 @@ create_boundingbox_tree(const dolfinx::mesh::Mesh<U>& mesh,
   std::vector<std::int32_t> cells = dolfinx::mesh::compute_incident_entities(
       *mesh.topology(), facets, dim, tdim);
 
-  dolfinx::geometry::BoundingBoxTree<U> bb_tree(mesh, tdim, cells, padding);
+  dolfinx::geometry::BoundingBoxTree<U> bb_tree(mesh, tdim, padding, cells);
   return bb_tree;
 }
 

@@ -130,7 +130,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Create bounding-box tree over owned cells
   std::vector<std::int32_t> r(num_cells_local);
   std::iota(r.begin(), r.end(), 0);
-  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, r, tol);
+  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, tol, r);
   auto process_tree = tree.create_global_tree(mesh->comm());
   auto colliding_bbox_processes
       = dolfinx::geometry::compute_collisions<U>(process_tree, mapped_T_b);
