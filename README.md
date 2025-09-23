@@ -62,7 +62,16 @@ Find the compilers on the system
 spack compiler find
 ```
 
-and install the relevant packages
+and install the relevant package
+
+### C++
+```bash
+spack add dolfinx-mpc@v0.9.3 ^mpich ^petsc+mumps+hypre
+spack concretize
+spack install
+```
+
+### Python
 ```bash
 spack add py-dolfinx-mpc@v0.9.3 ^mpich ^petsc+mumps+hypre ^py-fenics-dolfinx+petsc4py
 spack concretize
