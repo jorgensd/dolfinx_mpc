@@ -15,7 +15,7 @@ import numpy.typing as npt
 import ufl
 from basix.ufl import element
 from dolfinx import default_real_type
-from dolfinx.io import gmshio
+from dolfinx.io import gmsh as gmshio
 
 import dolfinx_mpc.utils as _utils
 

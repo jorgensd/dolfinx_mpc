@@ -20,7 +20,7 @@ import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, list_timings
-from dolfinx.io import gmshio
+from dolfinx.io import gmsh as gmshio
 
 import dolfinx_mpc
 import dolfinx_mpc.utils

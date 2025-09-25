@@ -16,7 +16,8 @@ import gmsh
 import numpy as np
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.fem import Constant, Function, dirichletbc, functionspace, locate_dofs_topological
-from dolfinx.io import XDMFFile, gmshio
+from dolfinx.io import XDMFFile
+from dolfinx.io import gmsh as gmshio
 from ufl import (
     Identity,
     Measure,
