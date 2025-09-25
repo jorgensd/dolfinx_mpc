@@ -20,7 +20,7 @@ import basix.ufl
 import gmsh
 import numpy as np
 from dolfinx import common, default_real_type, default_scalar_type, fem, io
-from dolfinx.io import gmshio
+from dolfinx.io import gmsh as gmshio
 from numpy.typing import NDArray
 from ufl import (
     FacetNormal,

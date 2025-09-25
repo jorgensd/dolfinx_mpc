@@ -23,7 +23,8 @@ from dolfinx.fem import (
     locate_dofs_geometrical,
     locate_dofs_topological,
 )
-from dolfinx.io import XDMFFile, gmshio
+from dolfinx.io import XDMFFile
+from dolfinx.io import gmsh as gmshio
 from dolfinx.mesh import locate_entities_boundary
 from ufl import (
     Identity,

@@ -23,7 +23,7 @@ import numpy as np
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_real_type, default_scalar_type
-from dolfinx.io import gmshio
+from dolfinx.io import gmsh as gmshio
 from ufl.core.expr import Expr
 
 import dolfinx_mpc
