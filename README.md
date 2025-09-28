@@ -35,6 +35,55 @@ Documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.githu
 
 # Installation
 
+## Spack
+DOLFINx MPC is on spack as both a [C++ package](https://packages.spack.io/package.html?name=dolfinx-mpc) (dolfinx-mpc) and a [Python package](https://packages.spack.io/package.html?name=py-dolfinx-mpc) (py-dolfinx-mpc).
+First, clone the spack repository and enable spack
+
+```bash
+git clone --depth=2 https://github.com/spack/spack.git
+# For bash/zsh/sh
+. spack/share/spack/setup-env.sh
+
+# For tcsh/csh
+source spack/share/spack/setup-env.csh
+
+# For fish
+. spack/share/spack/setup-env.fish
+```
+
+Next create an environment:
+
+```bash
+spack env create mpc_env
+spack env activate mpc_env
+```
+Find the compilers on the system
+```bash
+spack compiler find
+```
+
+and install the relevant package
+
+### C++
+```bash
+spack add dolfinx-mpc@v0.9.3 ^mpich ^petsc+mumps+hypre
+spack concretize
+spack install
+```
+
+### Python
+```bash
+spack add py-dolfinx-mpc@v0.9.3 ^mpich ^petsc+mumps+hypre ^py-fenics-dolfinx+petsc4py
+spack add py-scipy py-pytest py-gmsh
+spack concretize
+spack install
+```
+
+Finally, note that spack needs some packages already installed on your system. On a clean ubuntu container for example one need to install the following packages before running spack
+```bash
+apt update && apt install gcc unzip git python3-dev g++ gfortran xz-utils libzip2 -y
+```
+
 ## Conda
 The DOLFINx MPC package is now on Conda.
 The C++ library can be found under [libdolfinx_mpc](https://anaconda.org/conda-forge/libdolfinx_mpc) and the Python library under
