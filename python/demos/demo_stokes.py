@@ -217,7 +217,7 @@ inlet_velocity.x.scatter_forward()
 # we send in the function space `V` of the velocity
 
 # +
-dofs = fem.locate_dofs_topological(V, 1, mt.find(3))
+dofs = fem.locate_dofs_topological(V, 1, mt.find(inlet_marker))
 bc1 = fem.dirichletbc(inlet_velocity, dofs)
 bcs = [bc1]
 # -
@@ -299,7 +299,7 @@ L = inner(f, v) * dx + inner(fem.Constant(mesh, default_scalar_type(0.0)), q) * 
 # +
 n = FacetNormal(mesh)
 g_tau = tangential_proj(fem.Constant(mesh, default_scalar_type(((0, 0), (0, 0)))) * n, n)
-ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
+ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=wall_marker)
 
 a -= inner(outer(n, n) * dot(sigma(u, p, mu), n), v) * ds
 L += inner(g_tau, v) * ds
