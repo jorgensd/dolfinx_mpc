@@ -91,10 +91,7 @@ def assemble_vector(
     """
 
     if b is None:
-        b = create_vector([(
-            constraint.function_space.dofmap.index_map,
-            constraint.function_space.dofmap.index_map_bs)]
-        )
+        b = create_vector([(constraint.function_space.dofmap.index_map, constraint.function_space.dofmap.index_map_bs)])
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)
