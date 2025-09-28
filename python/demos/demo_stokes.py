@@ -23,12 +23,12 @@
 # \sigma \cdot \mathbf{n} &= \mathbf{0}&&\text{on } \partial \Omega_N,
 # \end{align*}
 # $$
-# where 
+# where
 #
 # $$
 # \begin{align*}
 # \sigma(\mathbf{u}, p, \mu)&=2\mu \epsilon(\mathbf{u}) - p\mathbb{I}\\
-# \epsilon(\mathbf{u}) &= \frac{1}{2}\left(\nabla \mathbf{u} + \nabla \mathbf{u}^T\right) 
+# \epsilon(\mathbf{u}) &= \frac{1}{2}\left(\nabla \mathbf{u} + \nabla \mathbf{u}^T\right)
 # \end{align*}
 # $$
 #
