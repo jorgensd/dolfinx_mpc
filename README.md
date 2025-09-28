@@ -26,9 +26,11 @@ If we include boundary conditions on the form $u=g$, we
 assemble the system
 ${K^TAK\hat{u} = K^T(b-A\hat{g})}$ where ${A\hat{g}}$ is an extension of the boundary condition $g$ to all degrees of freedom.
 
-The library performs custom matrix and vector assembly adding the extra constraints to the set of linear equations. All assemblies are local to the process, and no MPI communication except when setting up the multi point constraints.
+The library performs custom matrix and vector assembly adding the extra constraints to the set of linear equations.
+All assemblies are local to the process, and no MPI communication except when setting up the multi point constraints.
 
-These assemblers are written in C++, but have equivalent Python assemblers in the optional `dolfinx_mpc.numba` module.
+These assemblers are written in C++, but have a Python interface.
+There are also pure Python-based assemblers in the optional {py:mod}`dolfinx_mpc.numba` module.
 
 # Documentation
 Documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.github.io/dolfinx_mpc)

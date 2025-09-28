@@ -5,6 +5,36 @@
 #
 # This demo illustrates how to apply a slip condition on an
 # interface not aligned with the coordiante axis.
+#
+# ## Mathematical formulation
+#
+# We start with the general, mathematical formulation of this problem, similar
+# to the formulation presented in {cite}`Knobloch2000`.
+#
+# Find the fluid velocity and pressure, $(\mathbf{u}, p)\in V(\Omega) \times Q(\Omega)$ such that
+#
+# $$
+# \begin{align*}
+# -\nabla \cdot \sigma(\mathbf{u}, p, \mu) &= \mathbf{f}&&\text{in }\Omega,\\
+# \nabla \cdot \mathbf{u} &= 0 &&\text{in }\Omega,\\
+# \mathbf{u} &= \mathbf{u}_{in}&&\text{on }\partial\Omega_D,\\
+# \mathbf{u}\cdot\mathbf{n}&= \mathbf{0}&&\text{on } \partial\Omega_S,\\
+# (\mathbb{I}-\mathbf{n}\otimes\mathbf{n})2\mu\epsilon(\mathbf{u}) &= \mathbf{g}_\tau&&\text{on }\partial\Omega_S,\\
+# \sigma \cdot \mathbf{n} &= \mathbf{0}&&\text{on } \partial \Omega_N,
+# \end{align*}
+# $$
+# where 
+#
+# $$
+# \begin{align*}
+# \sigma(\mathbf{u}, p, \mu)&=2\mu \epsilon(\mathbf{u}) - p\mathbb{I}\\
+# \epsilon(\mathbf{u}) &= \frac{1}{2}\left(\nabla \mathbf{u} + \nabla \mathbf{u}^T\right) 
+# \end{align*}
+# $$
+#
+# is the stress-tensor for incompressible fluid.
+# We have denoted the inlet boundary as $\partial\Omega_D$, the slip boundary
+# as $\partial\Omega_S$ and the outlet as $\partial\Omega_N$.
 
 # We start by the various modules required for this demo
 
@@ -48,6 +78,9 @@ from dolfinx_mpc import LinearProblem, MultiPointConstraint
 #
 # Next we create the computational domain, a channel titled with respect to the coordinate axis.
 # We use GMSH and the DOLFINx GMSH-IO to convert the GMSH model into a DOLFINx mesh
+
+# We mark the walls ($\partial\Omega_S$) where we want to impose slip conditions with `1``,
+# the outlet ($\partial\Omega_N$) with `2` and the inlet ($\partial\Omega_D$) with `3`.
 
 # +
 
@@ -131,19 +164,28 @@ def create_mesh_gmsh(
     return mesh_data.mesh, mesh_data.facet_tags
 
 
-mesh, mt = create_mesh_gmsh(res=0.1)
-fdim = mesh.topology.dim - 1
+wall_marker = 1
+outlet_marker = 2
+inlet_marker = 3
+mesh, mt = create_mesh_gmsh(res=0.1, wall_marker=wall_marker, outlet_marker=outlet_marker, inlet_marker=inlet_marker)
 
+# -
+
+# ## Creation of the mixed function space
 # The next step is the create the function spaces for the fluid velocit and pressure.
 # We will use a mixed-formulation, and we use `basix.ufl` to create the Taylor-Hood finite element pair
 
 P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
 P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, dtype=default_real_type)
 
+# We use the class [`ufl.MixedFunctionSpace`](https://docs.fenicsproject.org/ufl/main/api-doc/ufl.html#ufl.MixedFunctionSpace)
+# to create the mixed space, as opposed to using
+# [`basix.ufl.mixed_element`](https://docs.fenicsproject.org/basix/main/python/_autosummary/basix.ufl.html#basix.ufl.mixed_element)
+# as it makes it easier to specify multi-point constraints for the velocity space.
+
 V = fem.functionspace(mesh, P2)
 Q = fem.functionspace(mesh, P1)
 W = MixedFunctionSpace(V, Q)
-# -
 
 # ## Boundary conditions
 # Next we want to prescribe an inflow condition on a set of facets, those marked by 3 in GMSH
@@ -182,28 +224,34 @@ bcs = [bc1]
 
 # Next, we want to create the slip conditions at the side walls of the channel.
 # To do so, we compute an approximation of the normal at all the degrees of freedom that
-# are associated with the facets marked with `1`, either by being on one of the vertices of a
-# facet marked with `1`, or on the facet itself (for instance at a midpoint).
+# are associated with the facets marked with `wall_marker`, either by being on one of the vertices of a
+# facet marked with `wall_marker`, or on the facet itself (for instance at a midpoint).
 # If a dof is associated with a vertex that is connected to mutliple facets marked with `1`,
 # we define the normal as the average between the normals at the vertex viewed from each facet.
+# We use {py:func}`create_normal_approixmation<dolfinx_mpc.utils.create_normal_approximation>`
+# to approximate the facet at each degree of freedom by the average at the neighbouring facets.
 
-# +
-n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
-# -
+n = dolfinx_mpc.utils.create_normal_approximation(V, mt, wall_marker)
 
 # Next, we can create the multipoint-constraint, enforcing that $\mathbf{u}\cdot\mathbf{n}=0$,
-# except where we have already enforced a Dirichlet boundary condition
+# except where we have already enforced a Dirichlet boundary condition.
+# We start by initializing the class {py:class}`dolfinx_mpc.MultiPointConstraint`, then we
+# call {py:meth}`create_slip_constraint<dolfinx_mpc.MultiPointConstraint.create_slip_constraint>`.
+# This method takes in the function space, the
+# [`dolfinx.mesh.MeshTags`](https://docs.fenicsproject.org/dolfinx/main/python/generated/dolfinx.mesh.html#dolfinx.mesh.MeshTags)
+# object with the facets, the markers of the facets to constrain, the normal vector and the boundary
+# conditions.
+# Once we have added all constraints to the `mpc_u` object, we call
+# {py:meth}`finalize<dolfinx_mpc.MultiPointConstraint.finalize>`, which sets up a constrained
+# function space with a smaller set of degrees of freedom.
 
-# +
 with common.Timer("~Stokes: Create slip constraint"):
     mpc_u = MultiPointConstraint(V)
-    mpc_u.create_slip_constraint(V, (mt, 1), n, bcs=bcs)
+    mpc_u.create_slip_constraint(V, (mt, wall_marker), n, bcs=bcs)
 mpc_u.finalize()
 
-# -
-
-# +
 # As we will not have an multipoint constraint for the pressure, we create an empty constraint.
+
 mpc_p = MultiPointConstraint(Q)
 mpc_p.finalize()
 
@@ -216,18 +264,17 @@ mpc_p.finalize()
 
 def tangential_proj(u: Expr, n: Expr):
     """
-    See for instance:
-    https://link.springer.com/content/pdf/10.1023/A:1022235512626.pdf
+    See for instance [Knobloch, 2000](https://doi.org/10.1023/A:1022235512626).
     """
     return (Identity(u.ufl_shape[0]) - outer(n, n)) * u
 
 
-def sym_grad(u: Expr):
+def epsilon(u: Expr):
     return sym(grad(u))
 
 
-def T(u: Expr, p: Expr, mu: Expr):
-    return 2 * mu * sym_grad(u) - p * Identity(u.ufl_shape[0])
+def sigma(u: Expr, p: Expr, mu: Expr):
+    return 2 * mu * epsilon(u) - p * Identity(u.ufl_shape[0])
 
 
 # -
@@ -241,27 +288,35 @@ mu = fem.Constant(mesh, default_scalar_type(1.0))
 f = fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = TrialFunctions(W)
 (v, q) = TestFunctions(W)
-a = (2 * mu * inner(sym_grad(u), sym_grad(v)) - inner(p, div(v)) - inner(div(u), q)) * dx
+a = (2 * mu * inner(epsilon(u), epsilon(v)) - inner(p, div(v)) - inner(div(u), q)) * dx
 L = inner(f, v) * dx + inner(fem.Constant(mesh, default_scalar_type(0.0)), q) * dx
 # -
 
 # We could prescibe some shear stress at the slip boundaries. However, in this demo, we set it to `0`,
 # but include it in the variational formulation. We add the appropriate terms due to the slip condition,
-# as explained in https://arxiv.org/pdf/2001.10639.pdf
+# as explained in {cite}`sime2020automaticweakimpositionfree`.
 
 # +
 n = FacetNormal(mesh)
 g_tau = tangential_proj(fem.Constant(mesh, default_scalar_type(((0, 0), (0, 0)))) * n, n)
 ds = Measure("ds", domain=mesh, subdomain_data=mt, subdomain_id=1)
 
-a -= inner(outer(n, n) * dot(T(u, p, mu), n), v) * ds
+a -= inner(outer(n, n) * dot(sigma(u, p, mu), n), v) * ds
 L += inner(g_tau, v) * ds
 # -
 
 # ## Solve the variational problem
-# We use the MUMPS solver provided through the DOLFINX_MPC PETSc interface to solve the variational problem
+# We use the MUMPS solver provided through the {py:class}`dolfinx_mpc.LinearProblem`
+# interface to solve the variational problem.
+#
+# ````{admonition} Usage of extract blocks
+# As we have used `ufl.MixedFunctionSpace` to create the monolitic variational formulation,
+# we split it into the appropriate blocks prior to passing them into
+# {py:class}`LinearProblem<dolfinx_mpc.LinearProblem>` using
+# [`ufl.extract_blocks`](https://docs.fenicsproject.org/ufl/main/api-doc/ufl.html#ufl.extract_blocks)
+# ````
+# We pass in the two multi-point constraints in the order the spaces are placed in `W`.
 
-# +
 tol = np.finfo(mesh.geometry.x.dtype).eps * 1000
 petsc_options = {
     "ksp_type": "preonly",
@@ -272,7 +327,6 @@ petsc_options = {
 }
 problem = LinearProblem(extract_blocks(a), extract_blocks(L), [mpc_u, mpc_p], bcs=bcs, petsc_options=petsc_options)
 uh, ph = problem.solve()
-# -
 
 # ## Visualization
 # We store the solution to the `VTX` file format, which can be opend with the
@@ -291,3 +345,8 @@ with io.VTXWriter(mesh.comm, outdir / "demo_stokes_u.bp", uh, engine="BP4") as v
 with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", ph, engine="BP4") as vtx:
     vtx.write(0.0)
 # -
+
+
+# ```{bibliography}
+#    :filter: cited and ({"python/demos/demo_stokes"} >= docnames)
+# ```

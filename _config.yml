@@ -16,6 +16,9 @@ repository:
   path_to_book: docs # Optional path to your book, relative to the repository root
   branch: main  # Which branch of the repository should be used when creating links (optional)
 
+bibtex_bibfiles:
+  - references.bib
+
 launch_buttons:
   notebook_interface: "jupyterlab" # The interface interactive links will activate ["classic", "jupyterlab"]
   binderhub_url: "https://mybinder.org"
@@ -30,6 +33,7 @@ parse:
     - amsmath
     - dollarmath
     - linkify
+    - html_admonition
 
 sphinx:
   extra_extensions:

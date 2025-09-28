@@ -1,5 +1,5 @@
 format: jb-book
-root: index
+root: README.md
 
 parts:
   - caption: "Demos"
