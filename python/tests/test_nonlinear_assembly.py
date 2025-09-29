@@ -28,8 +28,9 @@ def test_nonlinear_poisson(poly_order):
     # our numerical approximation. We do not impose any constraints at the
     # rotationally degenerate point (x, y) = (0.5, 0.5).
 
-    N_vals = np.array([4, 8, 16], dtype=np.int32)
+    N_vals = np.array([4, 8, 10], dtype=np.int32)
     l2_error = np.zeros_like(N_vals, dtype=np.double)
+    hs = 1.0 / N_vals
     for run_no, N in enumerate(N_vals):
         mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N)
         V = dolfinx.fem.functionspace(mesh, ("Lagrange", poly_order))
@@ -82,7 +83,7 @@ def test_nonlinear_poisson(poly_order):
 
         assert num_slaves_global > 0
         assert num_masters_global == num_slaves_global
-        tol = 1e1 * np.finfo(u.x.array.dtype).resolution
+        tol = np.finfo(u.x.array.dtype).resolution
         petsc_options = {
             "snes_type": "newtonls",
             "ksp_type": "preonly",
@@ -108,7 +109,7 @@ def test_nonlinear_poisson(poly_order):
 
         l2_error[run_no] = l2_error_global**0.5
 
-    rates = np.log(l2_error[:-1] / l2_error[1:]) / np.log(2.0)
+    rates = np.log(l2_error[:-1] / l2_error[1:]) / np.log(hs[:-1] / hs[1:])
 
     assert np.all(rates > poly_order + 0.9)
 
