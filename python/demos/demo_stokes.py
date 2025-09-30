@@ -74,12 +74,13 @@ import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 
 # -
+
 # ## Mesh generation
 #
 # Next we create the computational domain, a channel titled with respect to the coordinate axis.
 # We use GMSH and the DOLFINx GMSH-IO to convert the GMSH model into a DOLFINx mesh
 
-# We mark the walls ($\partial\Omega_S$) where we want to impose slip conditions with `1``,
+# We mark the walls ($\partial\Omega_S$) where we want to impose slip conditions with `1`,
 # the outlet ($\partial\Omega_N$) with `2` and the inlet ($\partial\Omega_D$) with `3`.
 
 # +
@@ -173,15 +174,13 @@ mesh, mt = create_mesh_gmsh(res=0.1, wall_marker=wall_marker, outlet_marker=outl
 
 # ## Creation of the mixed function space
 # The next step is the create the function spaces for the fluid velocit and pressure.
-# We will use a mixed-formulation, and we use `basix.ufl` to create the Taylor-Hood finite element pair
+# We will use a mixed-formulation, and we use {py:mod}`basix.ufl` to create the Taylor-Hood finite element pair
 
 P2 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
 P1 = basix.ufl.element("Lagrange", mesh.topology.cell_name(), 1, dtype=default_real_type)
 
-# We use the class [`ufl.MixedFunctionSpace`](https://docs.fenicsproject.org/ufl/main/api-doc/ufl.html#ufl.MixedFunctionSpace)
-# to create the mixed space, as opposed to using
-# [`basix.ufl.mixed_element`](https://docs.fenicsproject.org/basix/main/python/_autosummary/basix.ufl.html#basix.ufl.mixed_element)
-# as it makes it easier to specify multi-point constraints for the velocity space.
+# We use the class {py:class}`ufl.MixedFunctionSpace` to create the mixed space, as opposed to using
+# {py:func}`basix.ufl.mixed_element` as it makes it easier to specify multi-point constraints for the velocity space.
 
 V = fem.functionspace(mesh, P2)
 Q = fem.functionspace(mesh, P1)
@@ -216,11 +215,9 @@ inlet_velocity.x.scatter_forward()
 # Next, we have to create the Dirichlet boundary condition. As the function is in the collapsed space,
 # we send in the function space `V` of the velocity
 
-# +
 dofs = fem.locate_dofs_topological(V, 1, mt.find(inlet_marker))
 bc1 = fem.dirichletbc(inlet_velocity, dofs)
 bcs = [bc1]
-# -
 
 # Next, we want to create the slip conditions at the side walls of the channel.
 # To do so, we compute an approximation of the normal at all the degrees of freedom that
@@ -238,9 +235,8 @@ n = dolfinx_mpc.utils.create_normal_approximation(V, mt, wall_marker)
 # We start by initializing the class {py:class}`dolfinx_mpc.MultiPointConstraint`, then we
 # call {py:meth}`create_slip_constraint<dolfinx_mpc.MultiPointConstraint.create_slip_constraint>`.
 # This method takes in the function space, the
-# [`dolfinx.mesh.MeshTags`](https://docs.fenicsproject.org/dolfinx/main/python/generated/dolfinx.mesh.html#dolfinx.mesh.MeshTags)
-# object with the facets, the markers of the facets to constrain, the normal vector and the boundary
-# conditions.
+# {py:class}`dolfinx.mesh.MeshTags` object with the facets, the markers of the facets to constrain,
+# the normal vector and the boundary conditions.
 # Once we have added all constraints to the `mpc_u` object, we call
 # {py:meth}`finalize<dolfinx_mpc.MultiPointConstraint.finalize>`, which sets up a constrained
 # function space with a smaller set of degrees of freedom.
@@ -283,14 +279,12 @@ def sigma(u: Expr, p: Expr, mu: Expr):
 # Next, we define the classical terms of the bilinear form `a` and linear form `L`.
 # We note that we use the symmetric formulation after integration by parts.
 
-# +
 mu = fem.Constant(mesh, default_scalar_type(1.0))
 f = fem.Constant(mesh, default_scalar_type((0, 0)))
 (u, p) = TrialFunctions(W)
 (v, q) = TestFunctions(W)
 a = (2 * mu * inner(epsilon(u), epsilon(v)) - inner(p, div(v)) - inner(div(u), q)) * dx
 L = inner(f, v) * dx + inner(fem.Constant(mesh, default_scalar_type(0.0)), q) * dx
-# -
 
 # We could prescibe some shear stress at the slip boundaries. However, in this demo, we set it to `0`,
 # but include it in the variational formulation. We add the appropriate terms due to the slip condition,
@@ -310,10 +304,10 @@ L += inner(g_tau, v) * ds
 # interface to solve the variational problem.
 #
 # ````{admonition} Usage of extract blocks
-# As we have used `ufl.MixedFunctionSpace` to create the monolitic variational formulation,
+# As we have used {py:class}`ufl.MixedFunctionSpace` to create the monolitic variational formulation,
 # we split it into the appropriate blocks prior to passing them into
 # {py:class}`LinearProblem<dolfinx_mpc.LinearProblem>` using
-# [`ufl.extract_blocks`](https://docs.fenicsproject.org/ufl/main/api-doc/ufl.html#ufl.extract_blocks)
+# {py:func}`ufl.extract_blocks`
 # ````
 # We pass in the two multi-point constraints in the order the spaces are placed in `W`.
 

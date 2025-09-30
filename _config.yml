@@ -40,6 +40,9 @@ sphinx:
   - 'sphinx.ext.autodoc'
   - 'sphinx.ext.napoleon'
   - 'sphinx.ext.viewcode'
+  - 'sphinx.ext.intersphinx'
+  - sphinx_codeautolink
+
 
   config:
     html_theme_options:
@@ -49,3 +52,9 @@ sphinx:
         - jupytext.reads
         - fmt: py
 
+    codeautolink_concat_default: True
+    intersphinx_mapping:
+      basix : [https://docs.fenicsproject.org/basix/main/python/, null]
+      ffcx : [https://docs.fenicsproject.org/ffcx/main/, null]
+      ufl : [https://docs.fenicsproject.org/ufl/main/, null]
+      dolfinx : [https://docs.fenicsproject.org/dolfinx/main/python, null]
