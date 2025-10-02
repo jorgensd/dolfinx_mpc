@@ -13,7 +13,7 @@ version = "0.10.0.dev0"
 description = "DOLFINx_MPC Python interface"
 readme = "README.md"
 requires-python = ">=3.10.0"
-license = { file = "LICENSE" }
+license = "MIT"
 authors = [{ email = "dokken@simula.no", name = "Jørgen S. Dokken" }]
 dependencies = [
       "numpy>=1.21",
