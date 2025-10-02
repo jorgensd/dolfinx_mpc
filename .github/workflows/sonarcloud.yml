@@ -17,7 +17,7 @@ jobs:
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
     env:
-      SONAR_SCANNER_VERSION: 6.1.0.4477 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
+      SONAR_SCANNER_VERSION: 7.2.0.5079 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
       SONAR_SERVER_URL: "https://sonarcloud.io"
       BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       PETSC_ARCH: linux-gnu-real64-32
