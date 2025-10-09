@@ -53,6 +53,8 @@
 # We start by the various modules required for this demo
 
 # +
+import typing
+
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -93,7 +95,7 @@ from dolfinx_mpc import (
 
 
 def create_gif(
-    plotfunc: dolfinx.fem.Function, filename: str, fps: int
+    plotfunc: dolfinx.fem.Function, filename: str, fps: float
 ) -> tuple[pyvista.UnstructuredGrid, pyvista.Plotter]:
     """
     Create a GIF animation from a given plotting function and function space.
@@ -119,7 +121,7 @@ def create_gif(
     plotter = pyvista.Plotter(off_screen=True)
 
     plotter.open_gif(filename, fps=fps)
-    plotter.show_axes()
+    plotter.show_axes()  # type: ignore[call-arg]
     grid.point_data["uh1"] = plotfunc.x.array
 
     return grid, plotter
@@ -131,7 +133,7 @@ def update_gif(
     plotfunc: dolfinx.fem.Function,
     warp_gif: bool,
     clip_gif: bool,
-    clip_normal: str = "y",
+    clip_normal: typing.Literal["x", "y", "z", "-x", "-y", "-z"] = "y",
 ):
     """
     Update the plotter with the given grid and plot function, and optionally warp or clip the grid.
@@ -152,7 +154,7 @@ def update_gif(
     grid.point_data["uh"] = plotfunc.x.array
 
     if warp_gif and clip_gif:
-        PETSc.Sys.Print("warp and clip not possible at the same time")
+        PETSc.Sys.Print("warp and clip not possible at the same time")  # type: ignore
         plotter.clear()
         plotter.add_mesh(grid, clim=[-maxval, maxval], show_edges=True)
     elif warp_gif:
@@ -169,7 +171,7 @@ def update_gif(
         plotter.add_mesh(grid, clim=[-maxval, maxval], show_edges=True)
 
     plotter.write_frame()
-    plotter.show_axes()
+    plotter.show_axes()  # type: ignore[call-arg]
     return plotter
 
 
@@ -279,7 +281,7 @@ facets = locate_entities_boundary(
     msh, dim=1, marker=lambda x: np.logical_or.reduce((np.isclose(x[1], 1.0), np.isclose(x[1], 0.0)))
 )
 dofs = fem.locate_dofs_topological(V=Xp, entity_dim=1, entities=facets)
-bcs = [fem.dirichletbc(0.0, dofs=dofs, V=Xp)]
+bcs = [fem.dirichletbc(np.array(0.0), dofs=dofs, V=Xp)]
 
 # ## Periodic BC
 # Along the left and right wall, we set periodic boundary conditions
@@ -371,10 +373,10 @@ A.assemble()
 # We define the Krylov subspace solver using {py:class}`petsc4py.PETSc.KSP`
 # and use a direct LU solver as preconditioner.
 
-solver = PETSc.KSP().create(msh.comm)
+solver = PETSc.KSP().create(msh.comm)  # type: ignore
 solver.setOperators(A)
-solver.setType(PETSc.KSP.Type.PREONLY)
-solver.getPC().setType(PETSc.PC.Type.LU)
+solver.setType(PETSc.KSP.Type.PREONLY)  # type: ignore
+solver.getPC().setType(PETSc.PC.Type.LU)  # type: ignore
 
 # As we did for the bilinear form, we define the linear form, extract the block structure, and create the
 # {py:class}`petsc4py.PETSc.Vec` that we will assemble into at each time step.
@@ -404,14 +406,22 @@ for i in range(num_steps):
 
     # Dirichlet BC values in RHS
     apply_lifting(b, a_blocked, bcs, [mpc_V, mpc_p])
-    dolfinx.la.petsc._ghost_update(b, insert_mode=PETSc.InsertMode.ADD_VALUES, scatter_mode=PETSc.ScatterMode.REVERSE)
+    dolfinx.la.petsc._ghost_update(
+        b,
+        insert_mode=PETSc.InsertMode.ADD_VALUES,  # type: ignore
+        scatter_mode=PETSc.ScatterMode.REVERSE,  # type: ignore
+    )
     bcs0 = fem.bcs_by_block(fem.extract_function_spaces(L_blocked), bcs)
     fem.petsc.set_bc(b, bcs0)
 
     # solve
     Vp_vec = b.copy()
     solver.solve(b, Vp_vec)
-    dolfinx.la.petsc._ghost_update(Vp_vec, insert_mode=PETSc.InsertMode.INSERT, scatter_mode=PETSc.ScatterMode.FORWARD)
+    dolfinx.la.petsc._ghost_update(
+        Vp_vec,
+        insert_mode=PETSc.InsertMode.INSERT,  # type: ignore
+        scatter_mode=PETSc.ScatterMode.FORWARD,  # type: ignore
+    )  # type: ignore
     dolfinx.fem.petsc.assign(Vp_vec, [V_new, p_new])
 
     # update MPC slave dofs
@@ -424,7 +434,7 @@ for i in range(num_steps):
         progress_0 = progress
         E_local = assemble_scalar(form(inner(V_new, V_new) * dx + inner(p_new, p_new) * dx))
         E = msh.comm.allreduce(E_local, op=MPI.SUM)
-        PETSc.Sys.Print("|--progress:", progress, f"% \t time: {t:6.5f}", f"\t {E=:.15e}:")
+        PETSc.Sys.Print(f"|--progress: {progress}% \t time: {t:6.5f} \t {E=:.15e}:")  # type: ignore
 
     # Update solution at previous time step
     V_old.x.array[:] = V_new.x.array
@@ -444,7 +454,7 @@ Vp_vec.destroy()
 
 finalize_gif(plotterV)
 finalize_gif(plotterp)
-PETSc.Sys.Print("gifs saved as", filename_gifV, filename_gifp)
+PETSc.Sys.Print(f"gifs saved as {filename_gifV}, {filename_gifp}")  # type: ignore
 
 
 # <img src="./testV.gif" alt="gifV" width="800px">
