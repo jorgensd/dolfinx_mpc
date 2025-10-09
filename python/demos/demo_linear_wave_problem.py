@@ -18,7 +18,8 @@
 # \end{cases}
 # $$
 #
-# where the given vectorfield satisfies $(\operatorname{div} b = 0)$, that dictates the advection direction, and $(f,g)$ are given functions.
+# where the given vectorfield satisfies $(\operatorname{div} b = 0)$, that dictates the advection direction,
+# and $(f,g)$ are given functions.
 #
 # Smooth solutions of the above system also satisfy a decoupled version of the above system,
 #
@@ -185,7 +186,8 @@ def finalize_gif(plotter: pyvista.Plotter):
 # $$
 # \begin{cases}
 # \displaystyle \int_\Omega  \partial_{t}u v + \int_\Omega  b\cdot\nabla\phi v=0 \quad  \forall v \in X^r(\Omega)\\
-# \displaystyle\int_\Omega  \partial_{t} \phi \psi  - \int_\Omega   u b\cdot\nabla\psi = 0 \quad  \forall \psi\in X^r_0(\Omega)
+# \displaystyle\int_\Omega  \partial_{t} \phi \psi  - \int_\Omega   u b\cdot\nabla\psi =
+# 0 \quad  \forall \psi\in X^r_0(\Omega)
 # \end{cases}
 # $$
 #
@@ -231,7 +233,8 @@ def finalize_gif(plotter: pyvista.Plotter):
 # $$
 #
 #
-# It turns out the continuous problem, as well as the fully discrete version is stable, and one can show, that solutions $(u,\phi)$ conserve the energy
+# It turns out the continuous problem, as well as the fully discrete version is stable, and one can show,
+# that solutions $(u,\phi)$ conserve the energy
 #
 # $$\mathcal{E} := \int_\Omega u^2 +\phi^2.$$
 #
@@ -302,7 +305,8 @@ def periodic_relation(x):
 
 
 # For each of the sapces `Xp`, `XV`, we create a {py:class}`dolfinx_mpc.MultiPointConstraint`
-# and use {py:meth}`create_periodic_constraint_geometrical<dolfinx_mpc.MultiPointConstraint.create_periodic_constraint_geometrical>`
+# and use {py:meth}`create_periodic_constraint_geometrical<
+# dolfinx_mpc.MultiPointConstraint.create_periodic_constraint_geometrical>`
 # to create the periodic constraints
 
 # +
@@ -318,9 +322,11 @@ mpc_V.finalize()
 
 # -
 
-# We can now define the {py:class}`dolfinx.fem.Function` for the new time step values, as well as the trial and test functions
+# We can now define the {py:class}`dolfinx.fem.Function` for the new time step values,
+# as well as the trial and test functions
 # ```{note}
-# Note that we use the {py:attr}`mpc.function_space<dolfinx_mpc.MultiPointConstraint.function_space>` as input for the functions.
+# Note that we use the {py:attr}`mpc.function_space<dolfinx_mpc.MultiPointConstraint.function_space>`
+# as input for the functions.
 # ```
 
 # +
@@ -362,7 +368,8 @@ A = create_matrix_nest(a_blocked, [mpc_V, mpc_p])
 assemble_matrix_nest(A, a_blocked, [mpc_V, mpc_p], bcs)
 A.assemble()
 
-# We define the Krylov subspace solver using {py:class}`petsc4py.PETSc.KSP` and use a direct LU solver as preconditioner.
+# We define the Krylov subspace solver using {py:class}`petsc4py.PETSc.KSP`
+# and use a direct LU solver as preconditioner.
 
 solver = PETSc.KSP().create(msh.comm)
 solver.setOperators(A)
@@ -383,7 +390,8 @@ b = create_vector_nest(L_blocked, [mpc_V, mpc_p])
 
 # We perform the time dependent solve in a temporal loop.
 # Note that we use {py:func}`assemble_vector_nest<dolfinx_mpc.assemble_vector_nest>`,
-# {py:func}`apply_lifting<dolfinx_mpc.apply_lifting>`, and {py:meth}`backsubstitution<dolfinx_mpc.MultiPointConstraint.backsubstitution>`
+# {py:func}`apply_lifting<dolfinx_mpc.apply_lifting>`, and
+# {py:meth}`backsubstitution<dolfinx_mpc.MultiPointConstraint.backsubstitution>`
 # to handle the periodic conditions.
 
 # +
@@ -442,5 +450,3 @@ PETSc.Sys.Print("gifs saved as", filename_gifV, filename_gifp)
 # <img src="./testV.gif" alt="gifV" width="800px">
 #
 # <img src="./testp.gif" alt="gifp" width="800px">
-
-print("HELLO")
