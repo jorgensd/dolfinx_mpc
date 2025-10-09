@@ -5,6 +5,7 @@ parts:
   - caption: "Demos"
     chapters:
     - file: "python/demos/demo_stokes.py"
+    - file: "python/demos/demo_linear_wave_problem.py"
   - caption: "Python API"
     chapters:
     - file: "docs/api"
