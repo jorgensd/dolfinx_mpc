@@ -20,7 +20,7 @@ dependencies = [
       "cffi",
       "petsc4py",
       "mpi4py",
-      "fenics-dolfinx>0.9.0",
+      "fenics-dolfinx>=0.10.0",
 ]
 
 [project.optional-dependencies]
