@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-docs = ['jupyter-book', 'jupytext', "scipy", "sphinx-codeautolink"]
+docs = ['jupyter-book', 'jupytext', "scipy", "sphinx-codeautolink", "pyvista"]
 lint = ["ruff", "mypy"]
 optional = ["numba"]
 test = ["pytest", "coverage", "scipy"]

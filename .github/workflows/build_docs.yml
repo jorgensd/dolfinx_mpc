@@ -15,7 +15,9 @@ jobs:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./_build/html
       PETSC_ARCH: "linux-gnu-real64-32"
-
+      PYVISTA_OFF_SCREEN: false
+      PYVISTA_JUPYTER_BACKEND: "html"
+  
     steps:
       - uses: actions/checkout@v5
         with:
@@ -24,7 +26,7 @@ jobs:
       - name: Install libbost for backwards compatibility
         run: |
           apt-get update
-          apt-get install -y libboost-dev libboost-timer-dev
+          apt-get install -y libboost-dev libboost-timer-dev libgl1-mesa-dev mesa-utils curl
 
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
