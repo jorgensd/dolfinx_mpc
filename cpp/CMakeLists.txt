@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.21)
 
 #------------------------------------------------------------------------------
 # Set project name and version number
-project(DOLFINX_MPC VERSION "0.10.0.0")
+project(DOLFINX_MPC VERSION "0.10.0")
 
 #------------------------------------------------------------------------------
 # General configuration

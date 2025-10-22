@@ -37,10 +37,10 @@ jobs:
         #   - CC: clang
         #     CXX: c++
     env:
-      DOLFINX_BRANCH: main
-      BASIX_BRANCH: main
-      UFL_BRANCH: main
-      FFCX_BRANCH: main
+      DOLFINX_BRANCH: v0.10.0
+      BASIX_BRANCH: v0.10.0
+      UFL_BRANCH: 2025.2.0
+      FFCX_BRANCH: v0.10.0
 
       CC: ${{ matrix.CC }}
       CXX: ${{ matrix.CXX }}
