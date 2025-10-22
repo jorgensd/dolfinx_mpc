@@ -17,13 +17,12 @@ from petsc4py import PETSc
 from petsc4py import get_config as PETSc_get_config
 
 import cffi
-import numpy as np
-
 import numba
 import numba.core.typing.cffi_utils as cffi_support
+import numpy as np
 
 
-def initialize_petsc() -> typing.Tuple[cffi.FFI, typing.Any]:
+def initialize_petsc() -> tuple[cffi.FFI, typing.Any]:
     """
     Initialize petsc and CFFI for usage in numba
     """

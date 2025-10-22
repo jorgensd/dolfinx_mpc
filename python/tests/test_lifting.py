@@ -14,12 +14,11 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import fem
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import CellType, create_unit_square
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.skipif(MPI.COMM_WORLD.size > 1, reason="This test should only be run in serial.")
@@ -117,7 +116,7 @@ def test_lifting(get_assemblers):  # noqa: F811
             uh_numpy = K @ (d)  # + constants)
             nt.assert_allclose(uh_numpy, u_mpc, rtol=1e-5, atol=1e-8)
 
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)
     L_org.destroy()
     b.destroy()
     solver.destroy()

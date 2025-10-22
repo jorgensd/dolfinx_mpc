@@ -25,7 +25,8 @@ import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
+from dolfinx.fem import Function
 from dolfinx.io import VTXWriter
 from dolfinx.mesh import CellType, create_unit_cube, locate_entities_boundary, meshtags
 from numpy.typing import NDArray
@@ -129,14 +130,22 @@ def demo_periodic3D(celltype: CellType):
             "pc_hypre_boomeramg_print_statistics": 1,
         }
 
-    problem = LinearProblem(a, rhs, mpc, bcs, petsc_options=petsc_options)
+    problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
     u_h = problem.solve()
+    assert isinstance(u_h, Function)
 
     # --------------------VERIFICATION-------------------------
     print("----Verification----")
     u_ = fem.Function(V)
     u_.x.array[:] = 0
-    org_problem = fem.petsc.LinearProblem(a, rhs, u=u_, bcs=bcs, petsc_options=petsc_options)
+    org_problem = fem.petsc.LinearProblem(
+        a,
+        rhs,
+        u=u_,
+        bcs=bcs,
+        petsc_options=petsc_options,
+        petsc_options_prefix="dolfinx_linear_problem",
+    )
     with Timer("~Periodic: Unconstrained solve"):
         org_problem.solve()
         it = org_problem.solver.getIterationNumber()
@@ -185,4 +194,4 @@ def demo_periodic3D(celltype: CellType):
 if __name__ == "__main__":
     for celltype in [CellType.hexahedron, CellType.tetrahedron]:
         demo_periodic3D(celltype)
-    list_timings(MPI.COMM_WORLD, [TimingType.wall])
+    list_timings(MPI.COMM_WORLD)

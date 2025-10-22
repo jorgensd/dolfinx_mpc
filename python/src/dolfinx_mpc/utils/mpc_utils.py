@@ -230,7 +230,7 @@ def determine_closest_block(V, point):
     cell_imap = V.mesh.topology.index_map(tdim)
     boundary_cells = np.array(np.unique(boundary_cells), dtype=np.int32)
     boundary_cells = boundary_cells[boundary_cells < cell_imap.size_local]
-    bb_tree = _geometry.bb_tree(V.mesh, tdim, boundary_cells)
+    bb_tree = _geometry.bb_tree(V.mesh, tdim, entities=boundary_cells, padding=0.0)
     midpoint_tree = _geometry.create_midpoint_tree(V.mesh, tdim, boundary_cells)
 
     # Find facet closest
@@ -244,10 +244,8 @@ def determine_closest_block(V, point):
         # Get cell geometry
         p = V.mesh.geometry.x
         V.mesh.topology.create_connectivity(tdim, tdim)
-        entities = _cpp.mesh.entities_to_geometry(
-            V.mesh._cpp_object, tdim, np.array([closest_cell], dtype=np.int32), False
-        )
-        R = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, p[entities[0]]))
+        entities = _mesh.entities_to_geometry(V.mesh, tdim, np.array([closest_cell], dtype=np.int32), False)
+        R = np.linalg.norm(_geometry.compute_distance_gjk(point, p[entities[0]]))
 
     # Find processor with cell closest to point
     global_distances = MPI.COMM_WORLD.allgather(R)
@@ -265,7 +263,7 @@ def determine_closest_block(V, point):
         x = V.tabulate_dof_coordinates()
         cell_blocks = dofmap.cell_dofs(closest_cell)
         for block in cell_blocks:
-            distance = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, x[block]))
+            distance = np.linalg.norm(_geometry.compute_distance_gjk(point, x[block]))
             if distance < min_distance:
                 # If cell owned by processor, but not the closest dof
                 if block < local_max:
@@ -284,7 +282,7 @@ def determine_closest_block(V, point):
         x = V.tabulate_dof_coordinates()
         cell_blocks = dofmap.cell_dofs(closest_cell)
         for block in cell_blocks:
-            distance = np.linalg.norm(_cpp.geometry.compute_distance_gjk(point, x[block]))
+            distance = np.linalg.norm(_geometry.compute_distance_gjk(point, x[block]))
             if distance < min_distance:
                 # If cell owned by processor, but not the closest dof
                 if block < local_max:
@@ -424,7 +422,7 @@ def create_point_to_point_constraint(V, slave_point, master_point, vector=None):
 def create_normal_approximation(V: _fem.FunctionSpace, mt: _cpp.mesh.MeshTags_int32, value: int):
     """
     Creates a normal approximation for the dofs in the closure of the attached entities.
-    Where a dof is attached to entities facets, an average is computed
+    Where a dof is attached to multiple entities, an average is computed.
 
     Args:
         V: The function space

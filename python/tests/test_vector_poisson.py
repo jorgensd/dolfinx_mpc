@@ -15,12 +15,11 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import create_unit_square
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -131,4 +130,4 @@ def test_vector_possion(Nx, Ny, slave_space, master_space, get_assemblers):  # n
     b.destroy()
     L_org.destroy()
     solver.destroy()
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)

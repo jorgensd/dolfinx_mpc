@@ -19,7 +19,7 @@ import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_real_type, default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import CellType
 from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
@@ -231,7 +231,7 @@ def demo_stacked_cubes(
             uh_numpy = K @ d
             assert np.allclose(uh_numpy, u_mpc)
 
-    list_timings(mesh.comm, [TimingType.wall])
+    list_timings(mesh.comm)
     b.destroy()
     L_org.destroy()
     solver.destroy()
@@ -297,4 +297,4 @@ if __name__ == "__main__":
 
     log_info("Simulation finished")
     if args.timing:
-        list_timings(MPI.COMM_WORLD, [TimingType.wall])
+        list_timings(MPI.COMM_WORLD)

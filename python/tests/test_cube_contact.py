@@ -19,12 +19,11 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.io import gmshio
+from dolfinx.common import Timer, list_timings
+from dolfinx.io import gmsh as gmshio
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 theta = np.pi / 5
 
@@ -149,22 +148,21 @@ def generate_hex_boxes():
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
+    MPI.COMM_WORLD.barrier()
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.clear()
     gmsh.finalize()
     # NOTE: Hex mesh must be rotated after generation due to gmsh API
-    mesh.geometry.x[:] = np.dot(r_matrix, mesh.geometry.x.T).T
-    return (mesh, ft)
+    mesh_data.mesh.geometry.x[:] = np.dot(r_matrix, mesh_data.mesh.geometry.x.T).T
+    assert mesh_data.facet_tags is not None
+    return (mesh_data.mesh, mesh_data.facet_tags)
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
 @pytest.mark.parametrize("nonslip", [True, False])
-def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F811
+def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
     assemble_matrix, assemble_vector = get_assemblers
     comm = MPI.COMM_WORLD
     root = 0
@@ -301,4 +299,4 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):  # noqa: F81
     b.destroy()
     solver.destroy()
 
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)

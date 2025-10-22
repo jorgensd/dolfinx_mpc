@@ -290,10 +290,6 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       *a.function_spaces().at(1)->dofmap()};
   std::shared_ptr mesh = a.mesh();
   assert(mesh);
-  std::shared_ptr mesh0 = a.function_spaces().at(0)->mesh();
-  assert(mesh0);
-  std::shared_ptr mesh1 = a.function_spaces().at(1)->mesh();
-  assert(mesh1);
 
   const std::set<dolfinx::fem::IntegralType> types = a.integral_types();
   if (types.find(dolfinx::fem::IntegralType::interior_facet) != types.end()
@@ -317,34 +313,33 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
 
   for (auto type : types)
   {
-    std::vector<int> ids = a.integral_ids(type);
     switch (type)
     {
     case dolfinx::fem::IntegralType::cell:
-      for (int id : ids)
+      for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::cells(
-            pattern, {a.domain(type, id, *mesh0), a.domain(type, id, *mesh1)},
+            pattern, {a.domain_arg(type, 0, i, 0), a.domain_arg(type, 1, i, 0)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
-      for (int id : ids)
+      for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::interior_facets(
             pattern,
-            {extract_cells(a.domain(type, id, *mesh0)),
-             extract_cells(a.domain(type, id, *mesh1))},
+            {extract_cells(a.domain_arg(type, 0, i, 0)),
+             extract_cells(a.domain_arg(type, 1, i, 0))},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
-      for (int id : ids)
+      for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::cells(
             pattern,
-            {extract_cells(a.domain(type, id, *mesh0)),
-             extract_cells(a.domain(type, id, *mesh1))},
+            {extract_cells(a.domain_arg(type, 0, i, 0)),
+             extract_cells(a.domain_arg(type, 1, i, 0))},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
@@ -555,8 +550,8 @@ recv_data<T> send_master_data_to_owner(
   num_remote_masters.push_back(0);
   MPI_Request request_m;
   MPI_Ineighbor_alltoall(
-      num_remote_masters.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
-      num_recv_masters.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
+      num_remote_masters.data(), 1, dolfinx::MPI::mpi_t<std::int32_t>,
+      num_recv_masters.data(), 1, dolfinx::MPI::mpi_t<std::int32_t>,
       master_to_slave, &request_m);
   num_recv_masters.pop_back();
   num_remote_masters.pop_back();
@@ -571,10 +566,9 @@ recv_data<T> send_master_data_to_owner(
   std::vector<std::int32_t> recv_num_masters_per_slave(slave_disp_in.back());
   MPI_Neighbor_alltoallv(
       num_masters_per_slave.data(), num_remote_slaves.data(),
-      remote_slave_disp_out.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
+      remote_slave_disp_out.data(), dolfinx::MPI::mpi_t<std::int32_t>,
       recv_num_masters_per_slave.data(), num_incoming_slaves.data(),
-      slave_disp_in.data(), dolfinx::MPI::mpi_type<std::int32_t>(),
-      master_to_slave);
+      slave_disp_in.data(), dolfinx::MPI::mpi_t<std::int32_t>, master_to_slave);
 
   // Wait for number of remote masters to be received
   MPI_Status status_m;
@@ -597,21 +591,19 @@ recv_data<T> send_master_data_to_owner(
 
   MPI_Ineighbor_alltoallv(
       masters.data(), num_remote_masters.data(), master_send_disp.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), recv_masters.data(),
+      dolfinx::MPI::mpi_t<std::int64_t>, recv_masters.data(),
       num_recv_masters.data(), master_recv_disp.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), master_to_slave,
-      &data_request[0]);
+      dolfinx::MPI::mpi_t<std::int64_t>, master_to_slave, &data_request[0]);
   MPI_Ineighbor_alltoallv(coeffs.data(), num_remote_masters.data(),
-                          master_send_disp.data(), dolfinx::MPI::mpi_type<T>(),
+                          master_send_disp.data(), dolfinx::MPI::mpi_t<T>,
                           recv_coeffs.data(), num_recv_masters.data(),
-                          master_recv_disp.data(), dolfinx::MPI::mpi_type<T>(),
+                          master_recv_disp.data(), dolfinx::MPI::mpi_t<T>,
                           master_to_slave, &data_request[1]);
   MPI_Ineighbor_alltoallv(
       owners.data(), num_remote_masters.data(), master_send_disp.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), recv_owners.data(),
+      dolfinx::MPI::mpi_t<std::int32_t>, recv_owners.data(),
       num_recv_masters.data(), master_recv_disp.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), master_to_slave,
-      &data_request[2]);
+      dolfinx::MPI::mpi_t<std::int32_t>, master_to_slave, &data_request[2]);
 
   /// Wait for all communication to finish
   MPI_Waitall(3, data_request.data(), data_status.data());
@@ -698,7 +690,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     std::span<const std::int32_t> slaves, std::span<const std::int64_t> masters,
     std::span<const T> coeffs, std::span<const std::int32_t> owners,
     std::span<const std::int32_t> num_masters_per_slave,
-    const dolfinx::common::IndexMap& imap, const int bs)
+    std::shared_ptr<const dolfinx::common::IndexMap> imap, const int bs)
 {
   std::shared_ptr<const dolfinx::common::IndexMap> slave_to_ghost;
   std::vector<int> parent_to_sub;
@@ -717,22 +709,19 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                            [bs](auto& dof) { return dof / bs; });
 
     // Propagate local slave information to ghost processes
-    std::vector<std::int8_t> indicator(imap.size_local(), 0);
-    std::ranges::for_each(blocks,
-                          [&indicator](auto& block) { indicator[block] = 1; });
-    dolfinx::common::Scatterer ghost_scatterer(imap, 1);
-    std::vector<std::int8_t> recieve_indicator(imap.num_ghosts());
-    ghost_scatterer.scatter_fwd(std::span<const std::int8_t>(indicator),
-                                std::span<std::int8_t>(recieve_indicator));
+    dolfinx::la::Vector<std::int8_t> indicator(imap, 1);
+    std::ranges::fill(indicator.mutable_array(), 0);
+    std::vector<std::int8_t>& indicator_array = indicator.array();
+    std::ranges::for_each(blocks, [&indicator_array](auto& block)
+                          { indicator_array[block] = 1; });
+
+    indicator.scatter_fwd();
 
     // Insert ghosts blocks with constraints into blocks
-    for (std::size_t i = 0; i < imap.num_ghosts(); ++i)
-    {
-      if (recieve_indicator[i] == 1)
-      {
-        blocks.push_back(imap.size_local() + i);
-      }
-    }
+    const std::int32_t local_size = imap->size_local();
+    for (std::size_t i = 0; i < imap->num_ghosts(); ++i)
+      if (indicator_array[local_size + i] == 1)
+        blocks.push_back(local_size + i);
 
     // Sort and delete duplicates
     std::ranges::sort(blocks);
@@ -741,7 +730,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     // Create submap
     std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
         = dolfinx::common::create_sub_index_map(
-            imap, blocks, dolfinx::common::IndexMapOrder::any, false);
+            *imap, blocks, dolfinx::common::IndexMapOrder::any, false);
     slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
         std::move(compressed_map.first));
 
@@ -864,7 +853,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       blocks[i] = pos.quot;
       rems[i] = pos.rem;
     }
-    imap.local_to_global(blocks, slaves_out);
+    imap->local_to_global(blocks, slaves_out);
     std::ranges::transform(slaves_out, rems, slaves_out.begin(),
                            [bs](auto dof, auto rem) { return dof * bs + rem; });
   }
@@ -889,18 +878,16 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   std::vector<std::int64_t> recv_slaves(disp_in_slaves.back());
   MPI_Ineighbor_alltoallv(
       slaves_out.data(), out_num_slaves.data(), disp_out_slaves.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), recv_slaves.data(),
+      dolfinx::MPI::mpi_t<std::int64_t>, recv_slaves.data(),
       in_num_slaves.data(), disp_in_slaves.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), local_to_ghost,
-      &ghost_requests[0]);
+      dolfinx::MPI::mpi_t<std::int64_t>, local_to_ghost, &ghost_requests[0]);
 
   // Receive number of masters from owner
   std::vector<std::int32_t> recv_num(disp_in_slaves.back());
   MPI_Ineighbor_alltoallv(
       masters_per_slave.data(), out_num_slaves.data(), disp_out_slaves.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), recv_num.data(),
-      in_num_slaves.data(), disp_in_slaves.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), local_to_ghost,
+      dolfinx::MPI::mpi_t<std::int32_t>, recv_num.data(), in_num_slaves.data(),
+      disp_in_slaves.data(), dolfinx::MPI::mpi_t<std::int32_t>, local_to_ghost,
       &ghost_requests[1]);
 
   // Convert slaves to local index
@@ -916,7 +903,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                           recv_block.push_back(dof / bs);
                         });
   std::vector<std::int32_t> recv_local(recv_slaves.size());
-  imap.global_to_local(recv_block, recv_local);
+  imap->global_to_local(recv_block, recv_local);
   for (std::size_t i = 0; i < recv_local.size(); i++)
     recv_local[i] = recv_local[i] * bs + recv_rem[i];
 
@@ -926,26 +913,24 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   std::vector<std::int64_t> recv_masters(disp_in_masters.back());
   MPI_Ineighbor_alltoallv(
       masters_out.data(), out_num_masters.data(), disp_out_masters.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), recv_masters.data(),
+      dolfinx::MPI::mpi_t<std::int64_t>, recv_masters.data(),
       in_num_masters.data(), disp_in_masters.data(),
-      dolfinx::MPI::mpi_type<std::int64_t>(), local_to_ghost,
-      &ghost_requests[2]);
+      dolfinx::MPI::mpi_t<std::int64_t>, local_to_ghost, &ghost_requests[2]);
   std::vector<std::int32_t> recv_owners(disp_in_masters.back());
   MPI_Ineighbor_alltoallv(
       owners_out.data(), out_num_masters.data(), disp_out_masters.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), recv_owners.data(),
+      dolfinx::MPI::mpi_t<std::int32_t>, recv_owners.data(),
       in_num_masters.data(), disp_in_masters.data(),
-      dolfinx::MPI::mpi_type<std::int32_t>(), local_to_ghost,
-      &ghost_requests[3]);
+      dolfinx::MPI::mpi_t<std::int32_t>, local_to_ghost, &ghost_requests[3]);
   std::vector<T> recv_coeffs(disp_in_masters.back());
   MPI_Ineighbor_alltoallv(coeffs_out.data(), out_num_masters.data(),
-                          disp_out_masters.data(), dolfinx::MPI::mpi_type<T>(),
+                          disp_out_masters.data(), dolfinx::MPI::mpi_t<T>,
                           recv_coeffs.data(), in_num_masters.data(),
-                          disp_in_masters.data(), dolfinx::MPI::mpi_type<T>(),
+                          disp_in_masters.data(), dolfinx::MPI::mpi_t<T>,
                           local_to_ghost, &ghost_requests[4]);
 
   int err = MPI_Comm_free(&local_to_ghost);
-  dolfinx::MPI::check_error(imap.comm(), err);
+  dolfinx::MPI::check_error(imap->comm(), err);
 
   mpc_data<T> ghost_data;
   ghost_data.slaves = recv_local;
@@ -972,13 +957,16 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 /// @param[in,out] u The values at the points. Values are not computed
 /// for points with a negative cell index. This argument must be
 /// passed with the correct size.
+/// @param[in] tol The stopping tolerance for the l2 norm of the Newton update
+/// when pulling back a point on a non-affine cell. For affine cells this value
+/// is not used.
 /// @returns basis values (not unrolled for block size) for each point. shape
 /// (num_points, number_of_dofs, value_size). Flattened row major
 template <std::floating_point U>
 std::pair<std::vector<U>, std::array<std::size_t, 3>>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
                          std::span<const U> x,
-                         std::span<const std::int32_t> cells)
+                         std::span<const std::int32_t> cells, const U tol)
 {
   assert(x.size() % 3 == 0);
   const std::size_t num_points = x.size() / 3;
@@ -1010,8 +998,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   auto element = V.element();
   assert(element);
   const int bs_element = element->block_size();
-  const std::size_t reference_value_size
-      = element->reference_value_size() / bs_element;
+  const std::size_t reference_value_size = element->reference_value_size();
 
   // If the space has sub elements, concatenate the evaluations on the
   // sub elements
@@ -1029,7 +1016,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
 
   assert(basis_shape[2]
          == std::size_t(element->space_dimension() / bs_element));
-  assert(basis_shape[3] == std::size_t(V.value_size() / bs_element));
+  assert(basis_shape[3] == std::size_t(element->reference_value_size()));
   std::array<std::size_t, 3> reference_shape
       = {basis_shape[1], basis_shape[2], basis_shape[3]};
   std::vector<U> output_basis(std::reduce(
@@ -1143,8 +1130,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     else
     {
       // Pull-back physical point xp to reference coordinate Xp
-      cmap.pull_back_nonaffine(Xp, xp, coord_dofs,
-                               5000 * std::numeric_limits<U>::epsilon(), 15);
+      cmap.pull_back_nonaffine(Xp, xp, coord_dofs, tol, 15);
 
       cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,

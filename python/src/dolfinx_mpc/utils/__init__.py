@@ -25,11 +25,9 @@ from .test import (
     gather_PETScMatrix,
     gather_PETScVector,
     gather_transformation_matrix,
-    get_assemblers,
 )
 
 __all__ = [
-    "get_assemblers",
     "gather_PETScVector",
     "gather_PETScMatrix",
     "compare_mpc_lhs",

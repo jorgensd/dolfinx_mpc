@@ -9,22 +9,22 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "dolfinx_mpc"
-version = "0.9.3"
+version = "0.10.0"
 description = "DOLFINx_MPC Python interface"
 readme = "README.md"
-requires-python = ">=3.8.0"
-license = { file = "../LICENSE" }
+requires-python = ">=3.10.0"
+license = "MIT"
 authors = [{ email = "dokken@simula.no", name = "Jørgen S. Dokken" }]
 dependencies = [
       "numpy>=1.21",
       "cffi",
       "petsc4py",
       "mpi4py",
-      "fenics-dolfinx>=0.9.0",
+      "fenics-dolfinx>=0.10.0,<0.11.0",
 ]
 
 [project.optional-dependencies]
-docs = ['jupyter-book', 'jupytext', "scipy"]
+docs = ['jupyter-book', 'jupytext', "scipy", "sphinx-codeautolink"]
 lint = ["ruff", "mypy"]
 optional = ["numba"]
 test = ["pytest", "coverage", "scipy"]
@@ -36,7 +36,6 @@ all = [
 ]
 
 [tool.scikit-build]
-wheel.packages = ["dolfinx_mpc"]
 sdist.exclude = ["*.cpp"]
 cmake.build-type = "Release"
 
@@ -51,7 +50,7 @@ exclude = ["docs/", "build/"]
 files = ["src", "tests"]
 
 [tool.ruff]
-src = ["benchmarks", "demos", "dolfinx_mpc"]
+src = ["benchmarks", "demos", "src"]
 line-length = 120
 indent-width = 4
 

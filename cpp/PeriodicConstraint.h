@@ -20,6 +20,10 @@ namespace impl
 /// not collapsed)
 /// @param[in] parent_space The parent space (The same space as V if not
 /// collapsed)
+/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
+/// contribution that is less than this value is ignored. The tolerance is also
+/// added as padding for the bounding box trees and corresponding collision
+/// searches to determine periodic degrees of freedom.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> _create_periodic_condition(
@@ -27,8 +31,9 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     std::span<std::int32_t> slave_blocks,
     const std::function<std::vector<U>(std::span<const U>)>& relation, T scale,
     const std::function<const std::int32_t(const std::int32_t&)>& parent_map,
-    const dolfinx::fem::FunctionSpace<U>& parent_space)
+    const dolfinx::fem::FunctionSpace<U>& parent_space, const U tol)
 {
+
   // Map a list of indices in collapsed space back to the parent space
   auto sub_to_parent = [&parent_map](const std::vector<std::int32_t>& sub_dofs)
   {
@@ -65,15 +70,11 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       parents_glob[i] = parents_glob[i] * bs + parent_rems[i];
     return parents_glob;
   };
-  if (const std::size_t value_size = V.value_size() / V.element()->block_size();
+  if (const std::size_t value_size = V.element()->reference_value_size();
       value_size > 1)
     throw std::runtime_error(
         "Periodic conditions for vector valued spaces are not "
         "implemented");
-
-  // Tolerance for adding scaled basis values to MPC. Any scaled basis
-  // value with lower absolute value than the tolerance is ignored
-  const U tol = 500 * std::numeric_limits<U>::epsilon();
 
   auto mesh = V.mesh();
   auto dofmap = V.dofmap();
@@ -129,7 +130,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Create bounding-box tree over owned cells
   std::vector<std::int32_t> r(num_cells_local);
   std::iota(r.begin(), r.end(), 0);
-  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, r, tol);
+  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, tol, r);
   auto process_tree = tree.create_global_tree(mesh->comm());
   auto colliding_bbox_processes
       = dolfinx::geometry::compute_collisions<U>(process_tree, mapped_T_b);
@@ -138,7 +139,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, mapped_T_b, tol);
   dolfinx::common::Timer t0("~~Periodic: Local cell and eval basis");
   auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-      V, mapped_T_b, local_cell_collisions);
+      V, mapped_T_b, local_cell_collisions, tol);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
       tabulated_basis_values(basis_values.data(), basis_shape);
@@ -262,10 +263,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 
   // Compute number of receiving slaves
   std::vector<std::int32_t> num_recv_slaves(indegree + 1);
-  MPI_Neighbor_alltoall(
-      num_out_slaves.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
-      num_recv_slaves.data(), 1, dolfinx::MPI::mpi_type<std::int32_t>(),
-      slave_to_master);
+  MPI_Neighbor_alltoall(num_out_slaves.data(), 1,
+                        dolfinx::MPI::mpi_t<std::int32_t>,
+                        num_recv_slaves.data(), 1,
+                        dolfinx::MPI::mpi_t<std::int32_t>, slave_to_master);
   num_out_slaves.pop_back();
   num_recv_slaves.pop_back();
   // Prepare data structures for sending information
@@ -332,8 +333,8 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Communicate coordinates
   MPI_Neighbor_alltoallv(
       coords_out.data(), num_out_slaves.data(), disp_out.data(),
-      dolfinx::MPI::mpi_type<U>(), coords_recvb.data(), num_recv_slaves.data(),
-      disp_in.data(), dolfinx::MPI::mpi_type<U>(), slave_to_master);
+      dolfinx::MPI::mpi_t<U>, coords_recvb.data(), num_recv_slaves.data(),
+      disp_in.data(), dolfinx::MPI::mpi_t<U>, slave_to_master);
 
   int err = MPI_Comm_free(&slave_to_master);
   dolfinx::MPI::check_error(mesh->comm(), err);
@@ -361,7 +362,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb, tol);
   auto [remote_basis_valuesb, r_basis_shape]
       = dolfinx_mpc::evaluate_basis_functions<U>(V, coords_recvb,
-                                                 remote_cell_collisions);
+                                                 remote_cell_collisions, tol);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
       remote_basis_values(remote_basis_valuesb.data(), r_basis_shape);
@@ -453,7 +454,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Distribute ghost data
   dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
       slaves, masters, coeffs, owners, num_masters_per_slave,
-      *parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
+      parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
 
   // Add ghost data to existing arrays
   std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
@@ -496,6 +497,10 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 /// @param[in] scale Scaling of the periodic condition
 /// @param[in] collapse If true, the list of marked dofs is in the collapsed
 /// input space
+/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
+/// contribution that is less than this value is ignored. The tolerance is also
+/// added as padding for the bounding box trees and corresponding collision
+/// searches to determine periodic degrees of freedom.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> geometrical_condition(
@@ -508,7 +513,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
         indicator,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse)
+    T scale, bool collapse, const U tol)
 {
   std::vector<std::int32_t> reduced_blocks;
   if (collapse)
@@ -532,7 +537,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
     auto sub_map
         = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
     return _create_periodic_condition<T>(V_sub, std::span(reduced_blocks),
-                                         relation, scale, sub_map, *V);
+                                         relation, scale, sub_map, *V, tol);
   }
   else
   {
@@ -548,7 +553,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
         reduced_blocks.push_back(slave_blocks[i]);
     auto sub_map = [](const std::int32_t& dof) { return dof; };
     return _create_periodic_condition<T>(*V, std::span(reduced_blocks),
-                                         relation, scale, sub_map, *V);
+                                         relation, scale, sub_map, *V, tol);
   }
 }
 
@@ -564,6 +569,10 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
 /// @param[in] scale Scaling of the periodic condition
 /// @param[in] collapse If true, the list of marked dofs is in the collapsed
 /// input space
+/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
+/// contribution that is less than this value is ignored. The tolerance is also
+/// added as padding for the bounding box trees and corresponding collision
+/// searches to determine periodic degrees of freedom.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> topological_condition(
@@ -572,7 +581,7 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const std::int32_t tag,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse)
+    T scale, bool collapse, const U tol)
 {
   std::vector<std::int32_t> entities = meshtag->find(tag);
   V->mesh()->topology_mutable()->create_connectivity(
@@ -600,7 +609,7 @@ dolfinx_mpc::mpc_data<T> topological_condition(
         = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
     // Create mpc on sub space
     dolfinx_mpc::mpc_data<T> sub_data = _create_periodic_condition<T>(
-        V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V);
+        V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V, tol);
     return sub_data;
   }
   else
@@ -619,7 +628,7 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const auto sub_map = [](const std::int32_t& dof) { return dof; };
 
     return _create_periodic_condition<T, U>(*V, std::span(reduced_blocks),
-                                            relation, scale, sub_map, *V);
+                                            relation, scale, sub_map, *V, tol);
   }
 };
 
@@ -639,10 +648,11 @@ mpc_data<double> create_periodic_condition_geometrical(
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
-    double scale, bool collapse)
+    double scale, bool collapse,
+    const double tol = 500 * std::numeric_limits<double>::epsilon())
 {
   return impl::geometrical_condition<double, double>(V, indicator, relation,
-                                                     bcs, scale, collapse);
+                                                     bcs, scale, collapse, tol);
 }
 
 mpc_data<std::complex<double>> create_periodic_condition_geometrical(
@@ -657,10 +667,11 @@ mpc_data<std::complex<double>> create_periodic_condition_geometrical(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    std::complex<double> scale, bool collapse)
+    std::complex<double> scale, bool collapse,
+    const double tol = 500 * std::numeric_limits<double>::epsilon())
 {
   return impl::geometrical_condition<std::complex<double>, double>(
-      V, indicator, relation, bcs, scale, collapse);
+      V, indicator, relation, bcs, scale, collapse, tol);
 }
 
 mpc_data<double> create_periodic_condition_topological(
@@ -670,10 +681,11 @@ mpc_data<double> create_periodic_condition_topological(
     const std::function<std::vector<double>(std::span<const double>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
-    double scale, bool collapse)
+    double scale, bool collapse,
+    const double tol = 500 * std::numeric_limits<double>::epsilon())
 {
   return impl::topological_condition<double, double>(V, meshtag, tag, relation,
-                                                     bcs, scale, collapse);
+                                                     bcs, scale, collapse, tol);
 }
 
 mpc_data<std::complex<double>> create_periodic_condition_topological(
@@ -684,10 +696,11 @@ mpc_data<std::complex<double>> create_periodic_condition_topological(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    std::complex<double> scale, bool collapse)
+    std::complex<double> scale, bool collapse,
+    const double tol = 500 * std::numeric_limits<double>::epsilon())
 {
   return impl::topological_condition<std::complex<double>, double>(
-      V, meshtag, tag, relation, bcs, scale, collapse);
+      V, meshtag, tag, relation, bcs, scale, collapse, tol);
 }
 
 mpc_data<float> create_periodic_condition_geometrical(
@@ -701,10 +714,11 @@ mpc_data<float> create_periodic_condition_geometrical(
     const std::function<std::vector<float>(std::span<const float>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
         bcs,
-    float scale, bool collapse)
+    float scale, bool collapse,
+    const float tol = 500 * std::numeric_limits<float>::epsilon())
 {
   return impl::geometrical_condition<float, float>(V, indicator, relation, bcs,
-                                                   scale, collapse);
+                                                   scale, collapse, tol);
 }
 
 mpc_data<std::complex<float>> create_periodic_condition_geometrical(
@@ -719,10 +733,11 @@ mpc_data<std::complex<float>> create_periodic_condition_geometrical(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
-    std::complex<float> scale, bool collapse)
+    std::complex<float> scale, bool collapse,
+    const float tol = 500 * std::numeric_limits<float>::epsilon())
 {
   return impl::geometrical_condition<std::complex<float>, float>(
-      V, indicator, relation, bcs, scale, collapse);
+      V, indicator, relation, bcs, scale, collapse, tol);
 }
 
 mpc_data<float> create_periodic_condition_topological(
@@ -732,10 +747,11 @@ mpc_data<float> create_periodic_condition_topological(
     const std::function<std::vector<float>(std::span<const float>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
         bcs,
-    float scale, bool collapse)
+    float scale, bool collapse,
+    const float tol = 500 * std::numeric_limits<float>::epsilon())
 {
   return impl::topological_condition<float, float>(V, meshtag, tag, relation,
-                                                   bcs, scale, collapse);
+                                                   bcs, scale, collapse, tol);
 }
 
 mpc_data<std::complex<float>> create_periodic_condition_topological(
@@ -746,10 +762,11 @@ mpc_data<std::complex<float>> create_periodic_condition_topological(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
-    std::complex<float> scale, bool collapse)
+    std::complex<float> scale, bool collapse,
+    const float tol = 500 * std::numeric_limits<float>::epsilon())
 {
   return impl::topological_condition<std::complex<float>, float>(
-      V, meshtag, tag, relation, bcs, scale, collapse);
+      V, meshtag, tag, relation, bcs, scale, collapse, tol);
 }
 
 } // namespace dolfinx_mpc

@@ -14,7 +14,7 @@ import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 
 import dolfinx_mpc.cpp
 
@@ -230,6 +230,7 @@ class MultiPointConstraint:
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),
+        tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
     ):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
@@ -242,17 +243,20 @@ class MultiPointConstraint:
             relation: Lambda-function describing the geometrical relation
             bcs: Dirichlet boundary conditions for the problem (Periodic constraints will be ignored for these dofs)
             scale: Float for scaling bc
+            tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
+                is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
+                collision searches to determine periodic degrees of freedom.
         """
         bcs_ = [bc._cpp_object for bc in bcs]
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, False
+                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, False, float(tol)
             )
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, True
+                V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, True, float(tol)
             )
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
@@ -265,6 +269,7 @@ class MultiPointConstraint:
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),
+        tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
     ):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies
@@ -278,17 +283,20 @@ class MultiPointConstraint:
             bcs: Dirichlet boundary conditions for the problem
                  (Periodic constraints will be ignored for these dofs)
             scale: Float for scaling bc
+            tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
+                is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
+                collision searches to determine periodic degrees of freedom.
         """
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                self.V._cpp_object, indicator, relation, bcs, scale, False
+                self.V._cpp_object, indicator, relation, bcs, scale, False, float(tol)
             )
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                V._cpp_object, indicator, relation, bcs, scale, True
+                V._cpp_object, indicator, relation, bcs, scale, True, float(tol)
             )
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")

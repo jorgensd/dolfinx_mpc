@@ -15,12 +15,11 @@ import pytest
 import scipy.sparse.linalg
 import ufl
 from dolfinx import default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -142,7 +141,7 @@ def test_surface_integrals(get_assemblers):  # noqa: F811
     b.destroy()
     A_org.destroy()
     solver.destroy()
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -217,4 +216,4 @@ def test_surface_integral_dependency(get_assemblers):  # noqa: F811
     b.destroy()
     A_org.destroy()
     A.destroy()
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)

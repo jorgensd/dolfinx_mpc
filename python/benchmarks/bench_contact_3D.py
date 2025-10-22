@@ -19,7 +19,7 @@ import basix.ufl
 import numpy as np
 from basix.ufl import element
 from dolfinx import default_real_type, default_scalar_type
-from dolfinx.common import Timer, TimingType, list_timings, timing
+from dolfinx.common import Timer, list_timings, timing
 from dolfinx.cpp.mesh import entities_to_geometry
 from dolfinx.fem import (
     Constant,
@@ -113,7 +113,7 @@ def mesh_3D_dolfin(theta=0, ct=CellType.tetrahedron, ext="tetrahedron", num_refi
         # Rotate mesh
         points = np.dot(r_matrix, points.T).T.astype(default_real_type)
 
-        mesh = create_mesh(MPI.COMM_SELF, cells, points, domain)
+        mesh = create_mesh(comm=MPI.COMM_SELF, cells=cells, x=points, e=domain)
         with XDMFFile(MPI.COMM_SELF, tmp_mesh_name, "w") as xdmf:
             xdmf.write_mesh(mesh)
 
@@ -297,7 +297,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     apply_lifting(b, [bilinear_form], [bcs], mpc)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(b, bcs)
-    list_timings(MPI.COMM_WORLD, [TimingType.wall])
+    list_timings(MPI.COMM_WORLD)
 
     # Solve Linear problem
     opts = PETSc.Options()  # type: ignore
@@ -365,13 +365,13 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
         for op in operations:
             op_timing = timing(f"{num_dofs}: {op}")
             num_calls = op_timing[0]
-            wall_time = op_timing[1]
+            wall_time = op_timing[1].total_seconds()
             avg_time = comm.allreduce(wall_time, op=MPI.SUM) / comm.size
             min_time = comm.allreduce(wall_time, op=MPI.MIN)
             max_time = comm.allreduce(wall_time, op=MPI.MAX)
             if comm.rank == 0:
                 print(op, num_calls, avg_time, min_time, max_time, file=results_file)
-        list_timings(MPI.COMM_WORLD, [TimingType.wall])
+        list_timings(MPI.COMM_WORLD)
     b.destroy()
     solver.destroy()
 

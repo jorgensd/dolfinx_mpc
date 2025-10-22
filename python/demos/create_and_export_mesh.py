@@ -11,9 +11,11 @@ import dolfinx.io as _io
 import dolfinx.mesh as _mesh
 import gmsh
 import numpy as np
+import numpy.typing as npt
 import ufl
 from basix.ufl import element
-from dolfinx.io import gmshio
+from dolfinx import default_real_type
+from dolfinx.io import gmsh as gmshio
 
 import dolfinx_mpc.utils as _utils
 
@@ -207,14 +209,12 @@ def generate_tet_boxes(
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.finalize()
-    return mesh, ft
+    assert mesh_data.facet_tags is not None
+    return mesh_data.mesh, mesh_data.facet_tags
 
 
 def generate_hex_boxes(
@@ -264,16 +264,14 @@ def generate_hex_boxes(
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
+    MPI.COMM_WORLD.barrier()
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0)
     gmsh.clear()
     gmsh.finalize()
-    MPI.COMM_WORLD.barrier()
-    return mesh, ft
+    assert mesh_data.facet_tags is not None
+    return mesh_data.mesh, mesh_data.facet_tags
 
 
 def gmsh_2D_stacked(
@@ -381,20 +379,20 @@ def gmsh_2D_stacked(
         # NOTE: Need to synchronize after setting mesh sizes
         gmsh.model.occ.synchronize()
         # Generate mesh
-        gmsh.option.setNumber("Mesh.MaxNumThreads1D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads2D", MPI.COMM_WORLD.size)
-        gmsh.option.setNumber("Mesh.MaxNumThreads3D", MPI.COMM_WORLD.size)
         gmsh.model.mesh.generate(2)
         gmsh.model.mesh.setOrder(1)
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
+    MPI.COMM_WORLD.Barrier()
+    mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
     r_matrix = _utils.rotation_matrix([0, 0, 1], theta)
 
     # NOTE: Hex mesh must be rotated after generation due to gmsh API
+    mesh = mesh_data.mesh
+    assert mesh_data.facet_tags is not None
     mesh.geometry.x[:] = np.dot(r_matrix, mesh.geometry.x.T).T
     gmsh.clear()
     gmsh.finalize()
     MPI.COMM_WORLD.barrier()
-    return mesh, ft
+    return mesh, mesh_data.facet_tags
 
 
 def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = Path("meshes")):
@@ -435,9 +433,10 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
 
         # Stack the two meshes in one mesh
         r_matrix = _utils.rotation_matrix([0, 0, 1], theta)
-        points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
-        points = np.dot(r_matrix, points.T)
-        points = points[:2, :].T
+        _points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
+        _points = np.dot(r_matrix, _points.T)
+        _points = _points[:2, :].T
+        points: npt.NDArray[np.floating] = _points.astype(default_real_type)
 
         # Transform topology info into geometry info
         tdim0 = mesh0.topology.dim
@@ -450,9 +449,9 @@ def mesh_2D_dolfin(celltype: str, theta: float = 0, outdir: Union[str, Path] = P
         cells1 = _cpp.mesh.entities_to_geometry(mesh1._cpp_object, tdim1, np.arange(num_cells1, dtype=np.int32), False)
         cells1 += mesh0.geometry.x.shape[0]
 
-        cells = np.vstack([cells0, cells1])
+        cells = np.vstack([cells0, cells1]).astype(np.int64)
         domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],)))
-        mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
+        mesh = _mesh.create_mesh(comm=MPI.COMM_SELF, cells=cells, x=points, e=domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
 
@@ -568,8 +567,9 @@ def mesh_3D_dolfin(
 
         # Stack the two meshes in one mesh
         r_matrix = _utils.rotation_matrix([1 / np.sqrt(2), 1 / np.sqrt(2), 0], -theta)
-        points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
-        points = np.dot(r_matrix, points.T).T
+        _points = np.vstack([mesh0.geometry.x, mesh1.geometry.x])
+        _points = np.dot(r_matrix, _points.T).T
+        points: npt.NDArray[np.floating] = _points.astype(default_real_type)
 
         # Transform topology info into geometry info
         tdim0 = mesh0.topology.dim
@@ -584,7 +584,7 @@ def mesh_3D_dolfin(
 
         cells = np.vstack([cells0, cells1])
         domain = ufl.Mesh(element("Lagrange", ct.name, 1, shape=(points.shape[1],)))
-        mesh = _mesh.create_mesh(MPI.COMM_SELF, cells, points, domain)
+        mesh = _mesh.create_mesh(comm=MPI.COMM_SELF, cells=cells, x=points, e=domain)
         tdim = mesh.topology.dim
         fdim = tdim - 1
         # Find information about facets to be used in meshtags

@@ -23,7 +23,8 @@ from dolfinx.fem import (
     locate_dofs_geometrical,
     locate_dofs_topological,
 )
-from dolfinx.io import XDMFFile, gmshio
+from dolfinx.io import XDMFFile
+from dolfinx.io import gmsh as gmshio
 from dolfinx.mesh import locate_entities_boundary
 from ufl import (
     Identity,
@@ -67,13 +68,14 @@ if MPI.COMM_WORLD.rank == 0:
     # gmsh.option.setNumber("General.Terminal", 1)
     gmsh.model.mesh.optimize("Netgen")
 
-mesh, ct, _ = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
+MPI.COMM_WORLD.barrier()
+mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=2)
 gmsh.clear()
 gmsh.finalize()
-MPI.COMM_WORLD.barrier()
+mesh = mesh_data.mesh
+assert mesh_data.cell_tags is not None
+ct = mesh_data.cell_tags
 
-with XDMFFile(mesh.comm, "test.xdmf", "w") as xdmf:
-    xdmf.write_mesh(mesh)
 V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 tdim = mesh.topology.dim
 fdim = tdim - 1
@@ -167,24 +169,20 @@ for i, pair in enumerate(pairs):
 mpc.finalize()
 
 # Add back once PETSc release has added fix for
-# https://gitlab.com/petsc/petsc/-/issues/1149
-# petsc_options = {"ksp_rtol": 1.0e-8,
-#                  "ksp_type": "cg",
-#                  "pc_type": "gamg",
-#                  "pc_gamg_type": "agg",
-#                  "pc_gamg_coarse_eq_limit": 1000,
-#                  "pc_gamg_sym_graph": True,
-#                  "pc_gamg_square_graph": 2,
-#                  "pc_gamg_threshold": 0.02,
-#                  "mg_levels_ksp_type": "chebyshev",
-#                  "mg_levels_pc_type": "jacobi",
-#                  "mg_levels_esteig_ksp_type": "cg",
-#                  #  "matptap_via": "scalable",
-#                  "ksp_view": None,
-#                  "help": None,
-#                  "ksp_monitor": None
-#                  }
-petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
+petsc_options = {
+    "ksp_rtol": 1.0e-8,
+    "ksp_type": "cg",
+    "pc_type": "gamg",
+    "pc_gamg_type": "agg",
+    "pc_gamg_coarse_eq_limit": 1000,
+    "pc_gamg_square_graph": 2,
+    "pc_gamg_threshold": 0.02,
+    "mg_levels_ksp_type": "chebyshev",
+    "mg_levels_pc_type": "jacobi",
+    #  "ksp_view": None,
+    #  "help": None,
+    #  "ksp_monitor": None
+}
 
 problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 
@@ -192,6 +190,7 @@ problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 null_space = rigid_motions_nullspace(mpc.function_space)
 problem.A.setNearNullSpace(null_space)
 u_h = problem.solve()
+assert isinstance(u_h, Function)
 
 it = problem.solver.getIterationNumber()
 

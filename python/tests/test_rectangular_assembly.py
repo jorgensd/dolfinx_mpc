@@ -53,9 +53,9 @@ def test_mixed_element(cell_type, ghost_mode):
     )
     Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=dolfinx.default_real_type)
 
-    V = dolfinx.fem.functionspace(mesh, Ve)
-    Q = dolfinx.fem.functionspace(mesh, Qe)
     W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
+    V, _ = W.sub(0).collapse()
+    Q, _create_cpp_form = W.sub(1).collapse()
 
     inlet_velocity = dolfinx.fem.Function(V)
     inlet_velocity.interpolate(
@@ -105,27 +105,29 @@ def test_mixed_element(cell_type, ghost_mode):
     A_nest.assemble()
 
     # Assemble original nest matrix
-    A_org_nest = dolfinx.fem.petsc.assemble_matrix_nest(a_nest, bcs)
+    A_org_nest = dolfinx.fem.petsc.assemble_matrix(a_nest, bcs, kind="nest")
     A_org_nest.assemble()
 
     # MPC nested rhs
     b_nest = dolfinx_mpc.create_vector_nest(L_nest, [mpc_v, mpc_q])
     dolfinx_mpc.assemble_vector_nest(b_nest, L_nest, [mpc_v, mpc_q])
-    dolfinx.fem.petsc.apply_lifting_nest(b_nest, a_nest, bcs)
+    # FIXME: This should be a DOLFINx_MPC operation
+    bcs1 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(a_nest, 1), bcs)
+    dolfinx.fem.petsc.apply_lifting(b_nest, a_nest, bcs1)
 
     for b_sub in b_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 
     bcs0 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(L_nest), bcs)
-    dolfinx.fem.petsc.set_bc_nest(b_nest, bcs0)
+    dolfinx.fem.petsc.set_bc(b_nest, bcs0)
 
     # Original dolfinx rhs
-    b_org_nest = dolfinx.fem.petsc.assemble_vector_nest(L_nest)
-    dolfinx.fem.petsc.apply_lifting_nest(b_org_nest, a_nest, bcs)
+    b_org_nest = dolfinx.fem.petsc.assemble_vector(L_nest, kind="nest")
+    dolfinx.fem.petsc.apply_lifting(b_org_nest, a_nest, bcs1)
 
     for b_sub in b_org_nest.getNestSubVecs():
         b_sub.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.petsc.set_bc_nest(b_org_nest, bcs0)
+    dolfinx.fem.petsc.set_bc(b_org_nest, bcs0)
 
     # -- Monolithic assembly
     dofs = dolfinx.fem.locate_dofs_topological((W.sub(0), V), 1, bc_facets)

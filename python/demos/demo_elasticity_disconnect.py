@@ -16,7 +16,8 @@ import gmsh
 import numpy as np
 from dolfinx import default_real_type, default_scalar_type
 from dolfinx.fem import Constant, Function, dirichletbc, functionspace, locate_dofs_topological
-from dolfinx.io import XDMFFile, gmshio
+from dolfinx.io import XDMFFile
+from dolfinx.io import gmsh as gmshio
 from ufl import (
     Identity,
     Measure,
@@ -111,12 +112,16 @@ if MPI.COMM_WORLD.rank == 0:
     gmsh.model.mesh.optimize("Netgen")
     gmsh.model.mesh.setOrder(2)
 
-
-mesh, ct, ft = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=3)
+MPI.COMM_WORLD.barrier()
+mesh_data = gmshio.model_to_mesh(gmsh.model, MPI.COMM_WORLD, 0, gdim=3)
+mesh = mesh_data.mesh
+assert mesh_data.cell_tags is not None
+ct = mesh_data.cell_tags
+assert mesh_data.facet_tags is not None
+ft = mesh_data.facet_tags
 
 gmsh.clear()
 gmsh.finalize()
-MPI.COMM_WORLD.barrier()
 
 V = functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
 
@@ -208,6 +213,7 @@ problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
 null_space = rigid_motions_nullspace(mpc.function_space)
 problem.A.setNearNullSpace(null_space)
 u_h = problem.solve()
+assert isinstance(u_h, Function)
 
 it = problem.solver.getIterationNumber()
 

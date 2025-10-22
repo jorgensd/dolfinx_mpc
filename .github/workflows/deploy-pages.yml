@@ -33,25 +33,25 @@ jobs:
     steps:
       - name: Download docs artifact
         # docs artifact is uploaded by build-docs job
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: documentation
           path: "./public"
 
       - name: Download docs artifact
         # docs artifact is uploaded by build-docs job
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: code-coverage-report
           path: "./public/code-coverage-report"
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: "./public"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

@@ -12,12 +12,11 @@ import dolfinx.fem as fem
 import numpy as np
 import pytest
 import ufl
-from dolfinx.common import Timer, TimingType, list_timings
+from dolfinx.common import Timer, list_timings
 from dolfinx.mesh import CellType, create_unit_square
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
-from dolfinx_mpc.utils import get_assemblers  # noqa: F401
 
 
 @pytest.mark.parametrize("get_assemblers", ["C++", "numba"], indirect=True)
@@ -59,6 +58,6 @@ def test_mpc_assembly(master_point, degree, celltype, get_assemblers):  # noqa: 
     with Timer("~TEST: Compare"):
         dolfinx_mpc.utils.compare_mpc_rhs(L_org, b, mpc, root=root)
 
-    list_timings(comm, [TimingType.wall])
+    list_timings(comm)
     b.destroy()
     L_org.destroy()
