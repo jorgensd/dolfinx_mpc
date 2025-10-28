@@ -334,7 +334,7 @@ class MultiPointConstraint:
             .. highlight:: python
             .. code-block:: python
 
-                cellname = mesh.ufl_cell().cellname()
+                cellname = mesh.basix_cell()
                 Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
                 Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
                 me = basix.ufl.mixed_element([Ve, Qe])
@@ -350,7 +350,7 @@ class MultiPointConstraint:
             .. highlight:: python
             .. code-block:: python
 
-                cellname = mesh.ufl_cell().cellname()
+                cellname = mesh.basix_cell()
                 Ve = basix.ufl.element(basix.ElementFamily.P, cellname , 2, shape=(mesh.geometry.dim,))
                 Qe = basix.ufl.element(basix.ElementFamily.P, cellname , 1)
                 me = basix.ufl.mixed_element([Ve, Qe])

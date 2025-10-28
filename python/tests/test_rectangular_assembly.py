@@ -47,7 +47,7 @@ def test_mixed_element(cell_type, ghost_mode):
     mesh.geometry.x[:, :gdim] = (rot @ mesh.geometry.x[:, :gdim].T).T
 
     # Create the function space
-    cellname = mesh.ufl_cell().cellname()
+    cellname = mesh.basix_cell()
     Ve = basix.ufl.element(
         basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,), dtype=dolfinx.default_real_type
     )
