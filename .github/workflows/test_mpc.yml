@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload coverage report as artifact
         if: matrix.build_mode == 'Release' && matrix.petsc_arch == 'linux-gnu-real64-32' && matrix.CC == 'cc' && matrix.CXX == 'c++'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: code-coverage-report
           path: htmlcov
