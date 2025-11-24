@@ -19,7 +19,7 @@ jobs:
       PYVISTA_JUPYTER_BACKEND: "html"
   
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: release
 
