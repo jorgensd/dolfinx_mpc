@@ -34,14 +34,14 @@ jobs:
     steps:
       - name: Download docs artifact
         # docs artifact is uploaded by build-docs job
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: documentation
           path: "./public"
 
       - name: Download docs artifact
         # docs artifact is uploaded by build-docs job
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: code-coverage-report
           path: "./public/code-coverage-report"
