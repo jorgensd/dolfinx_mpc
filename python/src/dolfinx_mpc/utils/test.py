@@ -231,8 +231,10 @@ def compare_mpc_lhs(
         # Remove identity rows of MPC matrix
         all_cols = np.arange(V.dofmap.index_map.size_global * V.dofmap.index_map_bs)
 
-        cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
-        mpc_without_slaves = A_mpc_csr[cols_except_slaves[:, None], cols_except_slaves]
+        # Scipy >=1.17.0 requires special way of doing slicing to avoid memory overflow
+        # https://github.com/scipy/scipy/issues/24339
+        free_mask = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
+        mpc_without_slaves = A_mpc_csr[free_mask, :][:, free_mask]
 
         # Compute difference
         compare_CSR(KTAK, mpc_without_slaves, atol=atol)
