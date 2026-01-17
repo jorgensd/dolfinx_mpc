@@ -68,14 +68,14 @@ and install the relevant package
 
 ### C++
 ```bash
-spack add dolfinx-mpc@v0.9.3 ^mpich ^petsc+mumps+hypre
+spack add dolfinx-mpc@0.9.3 ^mpich ^petsc+mumps+hypre
 spack concretize
 spack install
 ```
 
 ### Python
 ```bash
-spack add py-dolfinx-mpc@v0.9.3 ^mpich ^petsc+mumps+hypre ^py-fenics-dolfinx+petsc4py
+spack add py-dolfinx-mpc@0.9.3 ^mpich ^petsc+mumps+hypre ^py-fenics-dolfinx+petsc4py
 spack add py-scipy py-pytest py-gmsh
 spack concretize
 spack install
