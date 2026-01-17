@@ -115,10 +115,9 @@ def demo_periodic3D(celltype: CellType):
     )
 
     rhs = inner(f, v) * dx
-
     petsc_options: Dict[str, Union[str, float, int]]
     if complex_mode or default_scalar_type == np.float32:
-        petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
+        petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
     else:
         petsc_options = {
             "ksp_type": "cg",
