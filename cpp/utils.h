@@ -433,8 +433,8 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
       std::span<const std::int32_t> col_cell_dofs
           = V_off_axis->dofmap()->cell_dofs(i);
       std::vector<std::int32_t> col_slave_dofs;
-      std::copy(col_cell_dofs.begin(), col_cell_dofs.end(),
-                std::back_inserter(col_slave_dofs));
+      std::ranges::copy(col_cell_dofs.begin(), col_cell_dofs.end(),
+                        std::back_inserter(col_slave_dofs));
 
       // Add additional master dofs for that cell
       std::span<const std::int32_t> col_slaves = cell_to_col_slaves->links(i);
