@@ -417,7 +417,6 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     const auto& col_master_map = mpc_off_axis->masters();
     // Data structures used for insert
     std::array<std::int32_t, 1> master_block;
-    std::array<std::int32_t, 1> other_master_block;
 
     // Map from cell index (local to mpc) to slave indices in the cell
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -477,13 +476,6 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
       {
         master_block[0] = flattened_masters[j];
         pattern_inserter(pattern, std::span(master_block), col_slave_dofs);
-        // Add sparsity pattern for all master dofs of any slave on this cell
-        for (std::size_t k = j + 1; k < flattened_masters.size(); ++k)
-        {
-          other_master_block[0] = flattened_masters[k];
-          master_inserter(pattern, std::span(other_master_block),
-                          std::span(master_block));
-        }
       }
     }
   };
