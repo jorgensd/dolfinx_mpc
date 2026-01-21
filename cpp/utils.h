@@ -407,7 +407,7 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
   // up to block-size
 
   auto expand_masters_for_slave
-      = [](std::vector<std::int32_t> master_dofs, std::size_t bs,
+      = [](std::vector<std::int32_t>& master_dofs, std::size_t bs,
            const dolfinx::graph::AdjacencyList<std::int32_t>& master_map,
            std::span<const std::int32_t> slaves)
   {

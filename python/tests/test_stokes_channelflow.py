@@ -8,13 +8,11 @@ from __future__ import annotations
 from mpi4py import MPI
 from petsc4py import PETSc
 
-import dolfinx.fem as fem
-import dolfinx.mesh as mesh
 import numpy as np
 import pytest
 import ufl
 from basix.ufl import element
-from dolfinx import default_scalar_type, la
+from dolfinx import default_real_type, default_scalar_type, fem, la, mesh
 from dolfinx.mesh import CellType, create_unit_cube
 
 import dolfinx_mpc
@@ -32,11 +30,12 @@ def test_stokes_channelflow(cell_type, els, order):
     """
 
     # Cube mesh
-    domain = create_unit_cube(MPI.COMM_WORLD, els, els, els, cell_type=cell_type)
+    rtype = default_real_type
+    domain = create_unit_cube(MPI.COMM_WORLD, els, els, els, cell_type=cell_type, dtype=rtype)
 
     # Function spaces: Taylor-Hood
-    V = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), order, shape=(3,)))
-    Q = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), order - 1))
+    V = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), order, shape=(3,), dtype=rtype))
+    Q = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), order - 1, dtype=rtype))
 
     # Wall BCs (top/bottom y={0,1})
     wall_facets = mesh.locate_entities_boundary(
@@ -108,7 +107,9 @@ def test_stokes_channelflow(cell_type, els, order):
     ksp = PETSc.KSP().create(domain.comm)
     ksp.setOperators(A)
     ksp.setType("minres")
-    ksp.setTolerances(rtol=1e-8, atol=1e-10)
+    rtol = 100 * np.finfo(rtype).eps
+    atol = np.finfo(rtype).eps
+    ksp.setTolerances(rtol=rtol, atol=atol)
 
     # Setup preconditioning
     pc = ksp.getPC()
@@ -164,7 +165,7 @@ def test_stokes_channelflow(cell_type, els, order):
     error_norm = np.linalg.norm(error_u)
     error_norm_global = domain.comm.allreduce(error_norm**2, op=MPI.SUM) ** 0.5
 
-    assert error_norm_global < 1e-8, f"Velocity error too high: {error_norm_global}"
+    assert error_norm_global < np.sqrt(atol), f"Velocity error too high: {error_norm_global}"
 
     # Cleanup
     ksp.destroy()
