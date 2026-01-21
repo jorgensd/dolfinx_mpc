@@ -75,8 +75,8 @@ def test_stokes_channelflow(cell_type, els, order):
 
     # Weak statement
     a00 = mu * ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    a01 = -ufl.div(v) * p * ufl.dx
-    a10 = -q * ufl.div(u) * ufl.dx
+    a01 = -ufl.inner(p, ufl.div(v)) * ufl.dx
+    a10 = -ufl.inner(ufl.div(u), q) * ufl.dx
     L0 = ufl.inner(f, v) * ufl.dx
     L1 = ufl.ZeroBaseForm((q,))
 
