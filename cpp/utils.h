@@ -402,19 +402,40 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
   ///  Create and build sparsity pattern for original form. Should be
   ///  equivalent to calling create_sparsity_pattern(Form a)
   build_standard_pattern<T>(pattern, a);
-  spdlog::debug("Build new pattern\n");
+
+  // Create a list of all master dofs for a set of slaves,
+  // up to block-size
+
+  auto expand_masters_for_slave
+      = [](std::vector<std::int32_t> master_dofs, std::size_t bs,
+           const dolfinx::graph::AdjacencyList<std::int32_t>& master_map,
+           std::span<const std::int32_t> slaves)
+  {
+    for (auto slave : slaves)
+    {
+      for (auto master : master_map.links(slave))
+      {
+        const std::div_t div = std::div(master, bs);
+        master_dofs.push_back(div.quot);
+      }
+    }
+  };
 
   // Arrays replacing slave dof with master dof in sparsity pattern
-  auto pattern_populator =
-      [](dolfinx::la::SparsityPattern& pattern,
-         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc_row,
-         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc_col)
+  auto pattern_populator
+      = [expand_masters_for_slave](
+            dolfinx::la::SparsityPattern& pattern,
+            const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>
+                mpc_row,
+            const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>
+                mpc_col)
   {
     const auto& V_row = mpc_row->function_space();
     const auto& V_col = mpc_col->function_space();
+    const auto& row_master_map = mpc_row->masters();
     const auto& col_master_map = mpc_col->masters();
-    // Data structures used for insert
-    std::array<std::int32_t, 1> master_block;
+    std::size_t bs_row = V_row->dofmap()->index_map_bs();
+    std::size_t bs_col = V_col->dofmap()->index_map_bs();
 
     // Map from cell index (local to mpc_row) to slave indices in the cell
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -425,55 +446,41 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
 
     // For each cell (local to process) having a slave, get all slaves in main
     // constraint, and all dofs in off-axis constraint in the cell
-    for (std::int32_t i = 0; i < cell_to_row_slaves->num_nodes(); ++i)
+    for (std::int32_t c = 0; c < cell_to_row_slaves->num_nodes(); ++c)
     {
       // Get column cell dofs
       std::span<const std::int32_t> col_cell_dofs
-          = V_col->dofmap()->cell_dofs(i);
+          = V_col->dofmap()->cell_dofs(c);
       std::vector<std::int32_t> col_slave_dofs;
-      std::ranges::copy(col_cell_dofs.begin(), col_cell_dofs.end(),
-                        std::back_inserter(col_slave_dofs));
+      col_slave_dofs.reserve(col_cell_dofs.size());
+      std::ranges::copy(col_cell_dofs, std::back_inserter(col_slave_dofs));
 
       // Add additional master dofs for that cell
-      std::span<const std::int32_t> col_slaves = cell_to_col_slaves->links(i);
-      for (auto cs : col_slaves)
-      {
-        for (auto col_master : mpc_col->masters()->links(cs))
-        {
-          const std::div_t div
-              = std::div(col_master, V_col->dofmap()->index_map_bs());
-          col_slave_dofs.push_back(div.quot);
-        }
-      }
+      std::span<const std::int32_t> col_slaves = cell_to_col_slaves->links(c);
+
+      expand_masters_for_slave(col_slave_dofs, bs_col, *col_master_map,
+                               col_slaves);
 
       // Insert modified columns for non-slave rows
       // Here we insert abit broad for now
       // FIXME: Could remove dofs that are slaves
       std::span<const std::int32_t> row_cell_dofs
-          = V_row->dofmap()->cell_dofs(i);
+          = V_row->dofmap()->cell_dofs(c);
       pattern.insert(row_cell_dofs, col_slave_dofs);
 
       // Map slave dofs
-      std::span<const std::int32_t> slaves = cell_to_row_slaves->links(i);
+      std::span<const std::int32_t> slaves = cell_to_row_slaves->links(c);
 
       // Arrays for flattened master slave data
       std::vector<std::int32_t> flattened_masters;
       flattened_masters.reserve(slaves.size());
-
-      // For each slave find all master degrees of freedom and flatten them
-      for (auto slave : slaves)
-      {
-        for (auto master : mpc_row->masters()->links(slave))
-        {
-          const std::div_t div
-              = std::div(master, V_row->dofmap()->index_map_bs());
-          flattened_masters.push_back(div.quot);
-        }
-      }
+      expand_masters_for_slave(flattened_masters, bs_row, *row_master_map,
+                               slaves);
       pattern.insert(flattened_masters, col_slave_dofs);
     }
   };
 
+  spdlog::debug("Build new pattern\n");
   pattern_populator(pattern, mpc0, mpc1);
 
   return pattern;
