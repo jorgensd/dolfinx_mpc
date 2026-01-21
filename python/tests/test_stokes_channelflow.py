@@ -107,6 +107,7 @@ def test_stokes_channelflow(cell_type, els, order):
     # Setup Minres solver
     ksp = PETSc.KSP().create(domain.comm)
     ksp.setOperators(A)
+    ksp.setErrorIfNotConverged(True)
     ksp.setType("minres")
     ksp.setTolerances(rtol=1e-8, atol=1e-10)
 
