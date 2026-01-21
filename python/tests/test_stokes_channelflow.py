@@ -166,7 +166,7 @@ def test_stokes_channelflow(cell_type, els, order):
     error_norm = np.linalg.norm(error_u)
     error_norm_global = domain.comm.allreduce(error_norm**2, op=MPI.SUM) ** 0.5
 
-    assert error_norm_global < np.sqrt(atol), f"Velocity error too high: {error_norm_global}"
+    assert error_norm_global < np.sqrt(rtol), f"Velocity error too high: {error_norm_global}"
 
     # Cleanup
     ksp.destroy()
