@@ -144,14 +144,6 @@ def test_stokes_channelflow(cell_type, els, order):
     mpc_u.backsubstitution(uh)
     mpc_p.backsubstitution(ph)
 
-    # Export solution
-    uh.name = "velocity"
-    ph.name = "pressure"
-    with io.VTXWriter(domain.comm, "/app/stokes_channelflow_u.bp", uh, engine="BP4") as vtx:
-        vtx.write(0.0)
-    with io.VTXWriter(domain.comm, "/app/stokes_channelflow_p.bp", ph, engine="BP4") as vtx:
-        vtx.write(0.0)
-
     # Verify solution: Poiseuille flow u_x = (dp/dx) * (1/(2*mu)) * y * (H - y)
     # For our parameters: mu=1, dp/dx=-1, H=1
     # u_x = -(-1) * (1/2) * y * (1 - y) = 0.5 * y * (1 - y)
