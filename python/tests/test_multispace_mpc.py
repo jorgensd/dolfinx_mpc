@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import ufl
 from basix.ufl import element
-from dolfinx import fem, mesh
+from dolfinx import default_real_type, fem, mesh
 
 import dolfinx_mpc
 
@@ -27,7 +27,7 @@ def test_multiple_mpc_spaces_sparsity(cell_type, deg, N):
         mesh_constructor = mesh.create_unit_cube
     domain = mesh_constructor(MPI.COMM_WORLD, *Ns, cell_type=cell_type)
 
-    V = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), deg))
+    V = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), deg, dtype=default_real_type))
     Q = V.clone()
 
     def periodic_boundary(x):

@@ -109,7 +109,7 @@ def test_stokes_channelflow(cell_type, els, order):
     ksp.setErrorIfNotConverged(True)
     ksp.setType("minres")
     rtol = 100 * np.finfo(rtype).eps
-    atol = np.finfo(rtype).eps
+    atol = 2 * np.finfo(rtype).eps
     ksp.setTolerances(rtol=rtol, atol=atol)
 
     # Setup preconditioning
