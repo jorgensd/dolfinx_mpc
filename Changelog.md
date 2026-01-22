@@ -1,6 +1,11 @@
 # Changelog
 
+## v0.10.1
+
+- **Bugs**: Insertion in non-square matrices fixed. No change to user API.
+
 ## v0.10.0
+
 - **New demo**: Periodic conditions for a linear wave, see [demo_linear_wave_problem.py](./python/demos/demo_linear_wave_problem.py)
 - **New feature**: Use of a preconditioner for `dolfinx_mpc.LinearProblem`, as well as allowing for `NEST` systems. See [demo_stokes.py](./python/demos/demo_stokes.py)
 - **New demo**: How to use SNES with fieldsplitting for non-linear problems, see [demo_stokes_nonlinear_nest.py](./python/demos/demo_stokes_nonlinear_nest.py) for an example.
@@ -8,7 +13,6 @@
   - Update how to use assembly into PETSc NEST matrices, see [test_rectangular_assembly.py](./python/tests/test_rectangular_assembly.py)
 - **Bugs**
   - Fix backsubstitution [PR #155](https://github.com/jorgensd/dolfinx_mpc/pull/155)
-
 
 ## v0.9.0
 
@@ -73,7 +77,6 @@
 ## v0.4.0 (30.04.2022)
 
 - **API**:
-
   - **New feature**: Support for nonlinear problems (by @nate-sime) for mpc, see `test_nonlinear_assembly.py` for usage
   - Updated user interface for `dolfinx_mpc.create_slip_constraint`. See documentation for details.
   - **New feature**: Support for periodic constraints on sub-spaces. See `dolfinx_mpc.create_periodic_constraint` for details.
@@ -92,13 +95,11 @@
     - `slave_cells` does now longer exist as it can be gotten implicitly from `cell_to_slaves`.
 
 - **Performance**:
-
   - Major rewrite of periodic boundary conditions. On average at least a 5 x performance speed-up.
   - The C++ assembler has been fully rewritten.
   - Various improvements to `ContactConstraint`.
 
 - **Bugs**
-
   - Resolved issue where `create_facet_normal_approximation` would give you a 0 normal for a surface dof it was not owned by any of the cells with facets on the surface.
 
 - **DOLFINX API-changes**:
@@ -121,7 +122,6 @@
   This demo illustrates the usage of the new `diagval` keyword argument in the `assemble_matrix` class.
 
 - **API**:
-
   - Renaming and clean-up of `assemble_matrix` in C++
   - Renaming of Periodic constraint due to additional geometrical constraint, `mpc.create_periodic_constraint` -> `mpc.create_periodic_constraint_geometrical/topological`.
   - Introduce new class `dolfinx_mpc.LinearProblem` mimicking the DOLFINx class (Usage illustrated in `demo_periodic_geometrical.py`)
