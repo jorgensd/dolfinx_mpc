@@ -145,6 +145,8 @@ def test_stokes_channelflow(cell_type, els, order):
     # Apply backsubstitution for MPCs
     mpc_u.backsubstitution(uh)
     mpc_p.backsubstitution(ph)
+    uh.x.scatter_forward()
+    ph.x.scatter_forward()
 
     # Verify solution: Poiseuille flow u_x = (dp/dx) * (1/(2*mu)) * y * (H - y)
     # For our parameters: mu=1, dp/dx=-1, H=1
@@ -158,11 +160,13 @@ def test_stokes_channelflow(cell_type, els, order):
         values[0] = 0.5 * x[1] * (1.0 - x[1])  # u_x component
         return values
 
-    u_exact = fem.Function(V)
+    u_exact = fem.Function(mpc_u.function_space)
     u_exact.interpolate(u_exact_expr)
+    u_exact.x.scatter_forward()
 
     # Compute error
     error_u = uh.x.array - u_exact.x.array
+
     error_norm = np.linalg.norm(error_u)
     error_norm_global = domain.comm.allreduce(error_norm**2, op=MPI.SUM) ** 0.5
 
