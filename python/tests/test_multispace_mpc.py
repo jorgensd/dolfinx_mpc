@@ -52,7 +52,7 @@ def test_multiple_mpc_spaces_sparsity(cell_type, deg, N):
     v, q = ufl.TestFunction(V), ufl.TestFunction(Q)
 
     # Weak statementmpc_u,
-    a01 = v * p * ufl.dx
+    a01 = ufl.inner(p, v) * ufl.dx
     form_01 = fem.form(a01)
     mpcs_01 = [mpc_u, mpc_p]
 
@@ -64,7 +64,7 @@ def test_multiple_mpc_spaces_sparsity(cell_type, deg, N):
 
     assert p0.num_nonzeros == p1.num_nonzeros
 
-    a10 = u * q * ufl.dx
+    a10 = ufl.inner(u, q) * ufl.dx
     form_10 = fem.form(a10)
 
     mpcs_10 = [mpc_p, mpc_u]
