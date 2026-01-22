@@ -5,7 +5,6 @@
 // SPDX-License-Identifier:    MIT
 
 #pragma once
-
 #include "mpc_helpers.h"
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
@@ -67,35 +66,19 @@ public:
 
     // Create adjacency list with all local dofs, where the slave dofs maps to
     // its masters
-    std::vector<std::int32_t> _num_masters(num_dofs_local);
-    std::ranges::fill(_num_masters, 0);
-    for (std::int32_t i = 0; i < slaves.size(); i++)
-      _num_masters[slaves[i]] = offsets[i + 1] - offsets[i];
-    std::vector<std::int32_t> masters_offsets(num_dofs_local + 1);
-    masters_offsets[0] = 0;
-    std::inclusive_scan(_num_masters.begin(), _num_masters.end(),
-                        masters_offsets.begin() + 1);
+    std::vector<std::int64_t> _master_data;
+    _master_data.reserve(masters.size());
+    std::ranges::copy(masters, std::back_inserter(_master_data));
+    std::vector<T> _coeff_data;
+    _coeff_data.reserve(coeffs.size());
+    std::ranges::copy(coeffs, std::back_inserter(_coeff_data));
+    std::vector<std::int32_t> masters_offsets;
+    masters_offsets.reserve(offsets.size());
+    std::ranges::copy(offsets, std::back_inserter(masters_offsets));
+    std::vector<std::int32_t> _owner_data;
+    _owner_data.reserve(owners.size());
+    std::ranges::copy(owners, std::back_inserter(_owner_data));
 
-    // Reuse num masters as fill position array
-    std::ranges::fill(_num_masters, 0);
-    std::vector<std::int64_t> _master_data(masters.size());
-    std::vector<T> _coeff_data(masters.size());
-    std::vector<std::int32_t> _owner_data(masters.size());
-    /// Create adjacency lists spanning all local dofs mapping to master dofs,
-    /// its owner and the corresponding coefficient
-    for (std::size_t i = 0; i < slaves.size(); i++)
-    {
-      for (std::int32_t j = 0; j < offsets[i + 1] - offsets[i]; j++)
-      {
-        _master_data[masters_offsets[slaves[i]] + _num_masters[slaves[i]]]
-            = masters[offsets[i] + j];
-        _coeff_data[masters_offsets[slaves[i]] + _num_masters[slaves[i]]]
-            = coeffs[offsets[i] + j];
-        _owner_data[masters_offsets[slaves[i]] + _num_masters[slaves[i]]]
-            = owners[offsets[i] + j];
-        _num_masters[slaves[i]]++;
-      }
-    }
     _coeff_map = std::make_shared<dolfinx::graph::AdjacencyList<T>>(
         _coeff_data, masters_offsets);
     _owner_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
@@ -115,9 +98,10 @@ public:
     _num_local_slaves = std::distance(_slaves.begin(), it);
 
     // Create new function space with extended index map
+    std::cout << "Hllo\n";
     _V = std::make_shared<const dolfinx::fem::FunctionSpace<U>>(
         create_extended_functionspace(*V, _master_data, _owner_data));
-
+    std::cout << "HELLO" << "\n";
     // Map global masters to local index in extended function space
     std::vector<std::int32_t> masters_local
         = map_dofs_global_to_local<U>(*_V, _master_data);

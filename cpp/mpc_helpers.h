@@ -202,7 +202,7 @@ create_extended_functionspace(const dolfinx::fem::FunctionSpace<U>& V,
     std::vector<std::int64_t> all_ghosts(num_ghosts + additional_ghosts.size());
     std::ranges::copy(ghosts, all_ghosts.begin());
     std::ranges::copy(additional_ghosts, all_ghosts.begin() + num_ghosts);
-
+    std::cout << "Hello in construct\n";
     std::vector<int> all_owners(all_ghosts.size());
     std::ranges::copy(ghost_owners, all_owners.begin());
     std::ranges::copy(additional_owners, all_owners.begin() + num_ghosts);

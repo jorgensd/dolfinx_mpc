@@ -174,6 +174,8 @@ class MultiPointConstraint:
         """
         self._already_finalized()
         self._coeffs.astype(numpy.dtype(self._dtype))
+        print(self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
+
         # Initialize C++ object and create slave->cell maps
         if self._dtype == numpy.float32:
             self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_float(
@@ -214,11 +216,11 @@ class MultiPointConstraint:
             )
         else:
             raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
-
         # Replace function space
         self.V = _fem.FunctionSpace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
 
         self.finalized = True
+
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
 
