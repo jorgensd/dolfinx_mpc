@@ -29,9 +29,10 @@ def test_multiple_mpc_spaces_sparsity(cell_type, deg, N):
 
     V = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), deg, dtype=default_real_type))
     Q = V.clone()
+    atol = 10 * np.finfo(default_real_type).eps
 
     def periodic_boundary(x):
-        return np.logical_or(np.isclose(x[0], 1), np.isclose(x[2], 1))
+        return np.logical_or(np.isclose(x[0], 1, atol=atol), np.isclose(x[2], 1, atol=atol))
 
     def periodic_map(x):
         out = x.copy()
