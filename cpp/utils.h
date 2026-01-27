@@ -319,27 +319,36 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::cells(
-            pattern, {a.domain_arg(type, 0, i, 0), a.domain_arg(type, 1, i, 0)},
+            pattern,
+            std::pair{a.domain_arg(type, 0, i, 0), a.domain_arg(type, 1, i, 0)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
+        std::vector<std::int32_t> cells0
+            = extract_cells(a.domain_arg(type, 0, i, 0));
+        std::vector<std::int32_t> cells1
+            = extract_cells(a.domain_arg(type, 1, i, 0));
         dolfinx::fem::sparsitybuild::interior_facets(
             pattern,
-            {extract_cells(a.domain_arg(type, 0, i, 0)),
-             extract_cells(a.domain_arg(type, 1, i, 0))},
+            {std::span<const std::int32_t>(cells0),
+             std::span<const std::int32_t>(cells1)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
+        std::vector<std::int32_t> cells0
+            = extract_cells(a.domain_arg(type, 0, i, 0));
+        std::vector<std::int32_t> cells1
+            = extract_cells(a.domain_arg(type, 1, i, 0));
         dolfinx::fem::sparsitybuild::cells(
             pattern,
-            {extract_cells(a.domain_arg(type, 0, i, 0)),
-             extract_cells(a.domain_arg(type, 1, i, 0))},
+            std::pair{std::span<const std::int32_t>(cells0),
+                      std::span<const std::int32_t>(cells1)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
