@@ -111,8 +111,8 @@ jobs:
       # - name: Run tests (serial)
       #   run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
-      # - name: Run tests (2 processes)
-      #   run: mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
+      - name: Run tests (2 processes)
+        run: mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
       - name: Run tests (3 processes)
         run: mpirun -n 3 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
