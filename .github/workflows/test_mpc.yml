@@ -109,10 +109,10 @@ jobs:
         run: python3 -m pip -v install  --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test,optional]
  
       - name: Run tests (serial)
-        run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/test_multispace_mpc.py -xvs
+        run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
       - name: Run tests (2 processes)
-        run: mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/test_multispace_mpc.py -xvs
+        run: mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
       - name: Run tests (3 processes)
         run: mpirun -n 3 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/test_multispace_mpc.py -xvs
