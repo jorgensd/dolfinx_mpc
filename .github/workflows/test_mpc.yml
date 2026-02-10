@@ -118,7 +118,7 @@ jobs:
         run: mpirun -n 3 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
       - name: Run tests (4 processes)
-        run: mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/test_multispace_mpc.py -xvs
+        run: mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -xvs
 
 
       # - name: Run tests (serial)
