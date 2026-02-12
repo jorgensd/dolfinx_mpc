@@ -64,18 +64,25 @@ Find the compilers on the system
 spack compiler find
 ```
 
+Get the relevant packages repos (FEniCS and Scientific Computing)
+```bash
+spack repo add https://github.com/FEniCS/spack-fenics.git
+spack repo add https://github.com/scientificcomputing/spack_repos.git
+```
+
 and install the relevant package
 
 ### C++
 ```bash
-spack add dolfinx-mpc@0.9.3 ^mpich ^petsc+mumps+hypre
+
+spack add dolfinx-mpc@0.10 ^mpich ^petsc+mumps+hypre
 spack concretize
 spack install
 ```
 
 ### Python
 ```bash
-spack add py-dolfinx-mpc@0.9.3 ^mpich ^petsc+mumps+hypre ^py-fenics-dolfinx+petsc4py
+spack add py-dolfinx-mpc@0.10 ^mpich ^petsc+mumps+hypre ^py-fenics-dolfinx+petsc4py
 spack add py-scipy py-pytest py-gmsh
 spack concretize
 spack install
@@ -93,10 +100,10 @@ The C++ library can be found under [libdolfinx_mpc](https://anaconda.org/conda-f
 
 ## Docker
 
-Version 0.9.0 is available as an docker image at [Github Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc)
+Version 0.10.1 is available as an docker image at [Github Packages](https://github.com/jorgensd/dolfinx_mpc/pkgs/container/dolfinx_mpc)
 and can be ran using
 ```bash
-docker run -ti -v $(pwd):/root/shared -w /root/shared ghcr.io/jorgensd/dolfinx_mpc:v0.9.0
+docker run -ti -v $(pwd):/root/shared -w /root/shared ghcr.io/jorgensd/dolfinx_mpc:v0.10.1
 ```
 To change to complex mode run `source dolfinx-complex-mode`.
 Similarly, to change back to real mode, call `source dolfinx-real-mode`.
