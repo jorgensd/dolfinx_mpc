@@ -36,8 +36,8 @@ def test_multiple_mpc_spaces_sparsity(cell_type, deg, N):
 
     def periodic_map(x):
         out = x.copy()
-        out[0][np.isclose(x[0], 1).nonzero()] -= 1
-        out[domain.geometry.dim - 1][np.isclose(x[2], 1).nonzero()] -= 1
+        out[0][np.isclose(x[0], 1, atol=atol).nonzero()] -= 1
+        out[domain.geometry.dim - 1][np.isclose(x[2], 1, atol=atol).nonzero()] -= 1
         return out
 
     mpc_u = dolfinx_mpc.MultiPointConstraint(V)
