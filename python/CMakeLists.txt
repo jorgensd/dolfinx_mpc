@@ -70,11 +70,12 @@ endif()
 
 # Get python include-dirs
 execute_process(
-  COMMAND ${MPI_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS} ${Python3_EXECUTABLE} ${MPIEXEC_POSTFLAGS} -c "from mpi4py import MPI; import dolfinx, sys; sys.stdout.write(str(dolfinx.get_include()))"
+  COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS} ${Python3_EXECUTABLE} -c "from mpi4py import MPI; import dolfinx, sys; sys.stdout.write(str(dolfinx.get_include()))"
   OUTPUT_VARIABLE DOLFINX_PY_DIR
   RESULT_VARIABLE DOLFINX_PY_COMMAND_RESULT
   OUTPUT_STRIP_TRAILING_WHITESPACE
-  COMMAND_ERROR_IS_FATAL ANY)
+  COMMAND_ERROR_IS_FATAL ANY
+)
 
 if (DOLFINX_PY_DIR)
   message(STATUS "Adding ${DOLFINX_PY_DIR} to include directories")
