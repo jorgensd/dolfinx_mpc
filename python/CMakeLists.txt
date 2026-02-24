@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 PROJECT(dolfinx_mpc_nanobind)
 
-
+find_package(MPI 3 REQUIRED)
 find_package(Python COMPONENTS Interpreter Development REQUIRED)
 
 # Detect the installed nanobind package and import it into CMake
@@ -69,7 +69,7 @@ endif()
 
 # Get python include-dirs
 execute_process(
-  COMMAND ${Python3_EXECUTABLE} -c "import dolfinx, sys; sys.stdout.write(str(dolfinx.get_include()))"
+  COMMAND ${MPI_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1 ${MPIEXEC_PREFLAGS} ${Python3_EXECUTABLE} ${MPIEXEC_POSTFLAGS} -c "from mpi4py import MPI; import dolfinx, sys; sys.stdout.write(str(dolfinx.get_include()))"
   OUTPUT_VARIABLE DOLFINX_PY_DIR
   RESULT_VARIABLE DOLFINX_PY_COMMAND_RESULT OUTPUT_STRIP_TRAILING_WHITESPACE)
 
