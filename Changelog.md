@@ -1,5 +1,9 @@
 # Changelog
 
+## V0.10.2
+
+- **Installation**: Improved installation of Python interface by @jhale
+
 ## v0.10.1
 
 - **Bugs**: Insertion in non-square matrices fixed. No change to user API.
