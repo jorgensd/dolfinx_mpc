@@ -5,7 +5,7 @@ PROJECT(dolfinx_mpc_nanobind)
 find_package(Python COMPONENTS Interpreter Development REQUIRED)
 
 # Detect the installed nanobind package and import it into CMake
-option(DETECT_NANOBIND_DIR "Disable if python3 -mnanobind doesn't work (e.g. cross compilation). If OFF, nanobind must be on CMAKE_PREFIX_PATH." ON)
+option(DETECT_NANOBIND_DIR "Disable if python3 -m nanobind doesn't work (e.g. cross compilation). If OFF, nanobind must be on CMAKE_PREFIX_PATH." ON)
 if (DETECT_NANOBIND_DIR)
   execute_process(
     COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
