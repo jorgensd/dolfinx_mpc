@@ -519,10 +519,12 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
   if (collapse)
   {
     // Locate dofs in sub and parent space
-    std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<int32_t>> sub_space
-        = V->collapse();
+    std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<std::vector<int32_t>>>
+        sub_space = V->collapse();
     const dolfinx::fem::FunctionSpace<U>& V_sub = sub_space.first;
-    const std::vector<std::int32_t>& parent_map = sub_space.second;
+    const std::vector<std::vector<std::int32_t>>& parent_map = sub_space.second;
+    if (parent_map.size() != 1)
+      throw std::runtime_error("Mixed topology not supported");
     std::array<std::vector<std::int32_t>, 2> slave_blocks
         = dolfinx::fem::locate_dofs_geometrical<U>({*V.get(), V_sub},
                                                    indicator);
@@ -534,8 +536,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
       if (!bc_marker[i])
         reduced_blocks.push_back(slave_blocks[1][i]);
     // Create sub space to parent map
-    auto sub_map
-        = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
+    auto sub_map = [&parent_map](const std::int32_t& i)
+    { return parent_map.front()[i]; };
     return _create_periodic_condition<T>(V_sub, std::span(reduced_blocks),
                                          relation, scale, sub_map, *V, tol);
   }
@@ -589,10 +591,12 @@ dolfinx_mpc::mpc_data<T> topological_condition(
   if (collapse)
   {
     // Locate dofs in sub and parent space
-    std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<int32_t>> sub_space
-        = V->collapse();
+    std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<std::vector<int32_t>>>
+        sub_space = V->collapse();
     const dolfinx::fem::FunctionSpace<U>& V_sub = sub_space.first;
-    const std::vector<std::int32_t>& parent_map = sub_space.second;
+    const std::vector<std::vector<std::int32_t>>& parent_map = sub_space.second;
+    if (parent_map.size() != 1)
+      throw std::runtime_error("Mixed topology mesh not supported");
     std::array<std::vector<std::int32_t>, 2> slave_blocks
         = dolfinx::fem::locate_dofs_topological(*V->mesh()->topology_mutable(),
                                                 {*V->dofmap(), *V_sub.dofmap()},
@@ -605,8 +609,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
       if (!bc_marker[i])
         reduced_blocks.push_back(slave_blocks[1][i]);
     // Create sub space to parent map
-    const auto sub_map
-        = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
+    const auto sub_map = [&parent_map](const std::int32_t& i)
+    { return parent_map.front()[i]; };
     // Create mpc on sub space
     dolfinx_mpc::mpc_data<T> sub_data = _create_periodic_condition<T>(
         V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V, tol);
