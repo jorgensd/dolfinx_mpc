@@ -53,12 +53,12 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     std::vector<std::int32_t> parent_rems;
     parent_blocks.reserve(dofs.size());
     parent_rems.reserve(dofs.size());
-    const auto bs = parent_dofmap->index_map_bs();
+    const auto parent_bs = parent_dofmap->index_map_bs();
     // Split parent dofs into blocks and rems
     std::ranges::for_each(dofs,
-                          [&parent_blocks, &parent_rems, &bs](auto dof)
+                          [&parent_blocks, &parent_rems, &parent_bs](auto dof)
                           {
-                            std::div_t div = std::div(dof, bs);
+                            std::div_t div = std::div(dof, parent_bs);
                             parent_blocks.push_back(div.quot);
                             parent_rems.push_back(div.rem);
                           });
@@ -67,7 +67,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     parent_dofmap->index_map->local_to_global(parent_blocks, parents_glob);
     // Unroll block size
     for (std::size_t i = 0; i < dofs.size(); i++)
-      parents_glob[i] = parents_glob[i] * bs + parent_rems[i];
+      parents_glob[i] = parents_glob[i] * parent_bs + parent_rems[i];
     return parents_glob;
   };
   if (const std::size_t value_size = V.element()->reference_value_size();
@@ -522,17 +522,27 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
     std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<int32_t>> sub_space
         = V->collapse();
     const dolfinx::fem::FunctionSpace<U>& V_sub = sub_space.first;
-    const std::vector<std::int32_t>& parent_map = sub_space.second;
-    std::array<std::vector<std::int32_t>, 2> slave_blocks
+    const sstd::vector<std::int32_t>& parent_map = sub_space.second;
+
+    // If sub-space is collapsed and has a block size (vector space) these are
+    // not blocks, but the dofs
+    std::array<std::vector<std::int32_t>, 2> slave_dofs
         = dolfinx::fem::locate_dofs_geometrical<U>({*V.get(), V_sub},
                                                    indicator);
-    reduced_blocks.reserve(slave_blocks[0].size());
-    // Remove blocks in Dirichlet bcs
+    reduced_blocks.reserve(slave_dofs[0].size());
+    // Remove dofs in Dirichlet bcs
     std::vector<std::int8_t> bc_marker
-        = dolfinx_mpc::is_bc<T>(*V, slave_blocks[0], bcs);
+        = dolfinx_mpc::is_bc<T>(*V, slave_dofs[0], bcs);
+    const int sub_bs = V_sub.dofmap()->bs();
     for (std::size_t i = 0; i < bc_marker.size(); i++)
       if (!bc_marker[i])
-        reduced_blocks.push_back(slave_blocks[1][i]);
+        reduced_blocks.push_back(slave_dofs[1][i] / sub_bs);
+    // As block spaces will have duplicates, sort and remove
+    std::ranges::sort(reduced_blocks);
+    auto [unique_end, range_end] = std::ranges::unique(reduced_blocks);
+    reduced_blocks.erase(unique_end, range_end);
+    reduced_blocks.shrink_to_fit();
+
     // Create sub space to parent map
     auto sub_map
         = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
@@ -593,17 +603,27 @@ dolfinx_mpc::mpc_data<T> topological_condition(
         = V->collapse();
     const dolfinx::fem::FunctionSpace<U>& V_sub = sub_space.first;
     const std::vector<std::int32_t>& parent_map = sub_space.second;
-    std::array<std::vector<std::int32_t>, 2> slave_blocks
+
+    // If sub-space is collapsed and has a block size (vector space) these are
+    // not blocks, but the dofs
+    std::array<std::vector<std::int32_t>, 2> slave_dofs
         = dolfinx::fem::locate_dofs_topological(*V->mesh()->topology_mutable(),
                                                 {*V->dofmap(), *V_sub.dofmap()},
                                                 meshtag->dim(), entities);
     // Remove DirichletBC dofs from sub space
     std::vector<std::int8_t> bc_marker
-        = dolfinx_mpc::is_bc<T>(*V, slave_blocks[0], bcs);
+        = dolfinx_mpc::is_bc<T>(*V, slave_dofs[0], bcs);
     std::vector<std::int32_t> reduced_blocks;
+    const int sub_bs = V_sub.dofmap()->bs();
     for (std::size_t i = 0; i < bc_marker.size(); i++)
       if (!bc_marker[i])
-        reduced_blocks.push_back(slave_blocks[1][i]);
+        reduced_blocks.push_back(slave_dofs[1][i] / sub_bs);
+
+    std::ranges::sort(reduced_blocks);
+    auto [unique_end, range_end] = std::ranges::unique(reduced_blocks);
+    reduced_blocks.erase(unique_end, range_end);
+    reduced_blocks.shrink_to_fit();
+
     // Create sub space to parent map
     const auto sub_map
         = [&parent_map](const std::int32_t& i) { return parent_map[i]; };
