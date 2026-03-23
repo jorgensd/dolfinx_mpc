@@ -21,7 +21,7 @@ def test_periodic_mixed_space(cell_type, ghost_mode, geometrical):
         return np.isclose(x[0], 1.0, atol=tol, rtol=tol)
 
     def periodic_map(x):
-        out = np.zeros((3, x.shape[1]), dtype=dolfinx.default_scalar_type)
+        out = np.zeros((3, x.shape[1]), dtype=x.dtype)
         out[0] = 1 - x[0]
         out[1:] = x[1:]
         return out
