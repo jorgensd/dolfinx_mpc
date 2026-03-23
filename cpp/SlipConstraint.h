@@ -27,13 +27,16 @@ mpc_data<T> create_slip_condition(
   std::shared_ptr<dolfinx::fem::Function<T>> n;
   if (sub_space)
   {
-    std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<int32_t>>
+    std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<std::vector<int32_t>>>
         collapsed_space = space->collapse();
     auto V_ptr = std::make_shared<dolfinx::fem::FunctionSpace<U>>(
         std::move(collapsed_space.first));
     n = std::make_shared<dolfinx::fem::Function<T>>(V_ptr);
     n->interpolate(v);
-    parent_map = [sub_map = collapsed_space.second](const std::int32_t dof)
+    if (collapsed_space.second.size() != 1)
+      throw std::runtime_error("Mixed topology mesh not supported");
+    parent_map
+        = [sub_map = collapsed_space.second.front()](const std::int32_t dof)
     { return sub_map[dof]; };
   }
   else
