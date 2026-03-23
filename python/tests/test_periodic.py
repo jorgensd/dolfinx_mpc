@@ -1,8 +1,10 @@
 from mpi4py import MPI
+
+import basix.ufl
 import dolfinx
 import numpy as np
-import basix.ufl
 import pytest
+
 import dolfinx_mpc
 
 
