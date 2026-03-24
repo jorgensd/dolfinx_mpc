@@ -522,7 +522,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
     std::pair<dolfinx::fem::FunctionSpace<U>, std::vector<int32_t>> sub_space
         = V->collapse();
     const dolfinx::fem::FunctionSpace<U>& V_sub = sub_space.first;
-    const sstd::vector<std::int32_t>& parent_map = sub_space.second;
+    const std::vector<std::int32_t>& parent_map = sub_space.second;
 
     // If sub-space is collapsed and has a block size (vector space) these are
     // not blocks, but the dofs
