@@ -279,12 +279,12 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         # Set PETSc options
         problem_prefix = f"dolfinx_nonlinearproblem_{id(self)}"
         self.solver.setOptionsPrefix(problem_prefix)
-        opts = PETSc.Options()  # type: ignore
+        opts = PETSc.Options()
         opts.prefixPush(problem_prefix)
 
         if petsc_options is not None:
             for k, v in petsc_options.items():
-                opts[k] = v
+                opts.setValue(k, v)
             self.solver.setFromOptions()
 
             for k in petsc_options.keys():
@@ -364,11 +364,11 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
     _L: _fem.Form | Sequence[_fem.Form]
     _preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None
     _mpc: MultiPointConstraint | Sequence[MultiPointConstraint]
-    _A: PETSc.Mat  # type: ignore
-    _P: PETSc.Mat | None  # type: ignore
-    _b: PETSc.Vec  # type: ignore
-    _solver: PETSc.KSP  # type: ignore
-    _x: PETSc.Vec  # type: ignore
+    _A: PETSc.Mat
+    _P: PETSc.Mat | None
+    _b: PETSc.Vec
+    _solver: PETSc.KSP
+    _x: PETSc.Vec
     bcs: list[_fem.DirichletBC]
     __slots__ = tuple(__annotations__)
 
@@ -474,7 +474,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             assert isinstance(self.u, _fem.Function)
             comm = self.u.function_space.mesh.comm
 
-        self._solver = PETSc.KSP().create(comm)  # type: ignore
+        self._solver = PETSc.KSP().create(comm)
         self._solver.setOperators(self._A, self._P_mat)
 
         self._petsc_options_prefix = petsc_options_prefix
@@ -487,17 +487,17 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
 
         # Set options on KSP only
         if petsc_options is not None:
-            opts = PETSc.Options()  # type: ignore
+            opts = PETSc.Options()
             opts.prefixPush(self.solver.getOptionsPrefix())
 
             for k, v in petsc_options.items():
-                opts[k] = v
+                opts.setValue(k, v)
 
             self.solver.setFromOptions()
 
             # Tidy up global options
             for k in petsc_options.keys():
-                del opts[k]
+                opts.delValue(k)
             opts.prefixPop()
 
     def solve(self) -> _fem.Function | list[_fem.Function]:
