@@ -13,7 +13,6 @@ from petsc4py import PETSc as _PETSc
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import numpy
-import ufl
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer
 from dolfinx.la.petsc import create_vector
@@ -24,12 +23,12 @@ from .multipointconstraint import MultiPointConstraint, _float_classes
 
 
 def apply_lifting(
-    b: _PETSc.Vec,  # type: ignore
+    b: _PETSc.Vec,
     form: Union[Iterable[Sequence[_fem.Form]], Iterable[_fem.Form]],  # type: ignore
     bcs: Union[Sequence[_fem.DirichletBC], Sequence[Sequence[_fem.DirichletBC]]],
     constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
-    x0: Optional[Sequence[_PETSc.Vec]] = None,  # type: ignore
-    scale: _float_classes = default_scalar_type(1.0),
+    x0: Optional[Sequence[_PETSc.Vec]] = None,
+    scale: _float_classes = default_scalar_type(1.0),  # type: ignore
 ):  # type: ignore
     """
     Apply lifting to vector b, i.e.
@@ -74,7 +73,7 @@ def apply_lifting(
 
 
 def assemble_vector(
-    form: ufl.form.Form,
+    form: _fem.Form,
     constraint: MultiPointConstraint,
     b: Optional[_PETSc.Vec] = None,  # type: ignore
 ) -> _PETSc.Vec:  # type: ignore

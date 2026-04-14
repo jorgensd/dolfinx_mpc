@@ -189,7 +189,7 @@ def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:  # type: ignore
     numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
-    numpy_vec[l_min:l_max] += vector.array
+    numpy_vec[l_min:l_max] += vector.array.astype(numpy_vec.dtype)
     return np.asarray(sum(MPI.COMM_WORLD.allgather(numpy_vec)))
 
 

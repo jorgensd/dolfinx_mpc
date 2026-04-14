@@ -102,10 +102,10 @@ class MultiPointConstraint:
     V: _fem.FunctionSpace
     finalized: bool
     _cpp_object: _mpc_classes
-    _dtype: numpy.floating
+    _dtype: npt.DTypeLike
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, V: _fem.FunctionSpace, dtype: numpy.floating = default_scalar_type):
+    def __init__(self, V: _fem.FunctionSpace, dtype: npt.DTypeLike = default_scalar_type):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=dtype)  # type: ignore
@@ -149,7 +149,7 @@ class MultiPointConstraint:
             self._offsets = numpy.append(self._offsets, offsets[1:] + len(self._masters))
             self._slaves = numpy.append(self._slaves, slaves)
             self._masters = numpy.append(self._masters, masters)
-            self._coeffs = numpy.append(self._coeffs, coeffs)
+            self._coeffs = numpy.array(numpy.append(self._coeffs, coeffs), dtype=self._dtype)
             self._owners = numpy.append(self._owners, owners)
 
     def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace, mpc_data: Union[_mpc_data_classes, MPCData]):
@@ -229,7 +229,7 @@ class MultiPointConstraint:
         tag: int,
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),
+        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
         tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
     ):
         """
@@ -268,7 +268,7 @@ class MultiPointConstraint:
         indicator: Callable[[numpy.ndarray], numpy.ndarray],
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),
+        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
         tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
     ):
         """
@@ -571,9 +571,11 @@ class MultiPointConstraint:
             u: The input function
         """
         try:
-            self._cpp_object.backsubstitution(u.x.array)
+            self._cpp_object.backsubstitution(u.x.array)  # type: ignore
+            assert isinstance(u, _fem.Function)
             u.x.scatter_forward()
         except AttributeError:
+            assert isinstance(u, _PETSc.Vec)
             with u.localForm() as vector_local:
                 self._cpp_object.backsubstitution(vector_local.array_w)
             u.ghostUpdate(addv=_PETSc.InsertMode.INSERT, mode=_PETSc.ScatterMode.FORWARD)  # type: ignore

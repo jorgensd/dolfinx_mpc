@@ -171,7 +171,7 @@ def assemble_cells(
     b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     kernel: cffi.FFI.CData,
     active_cells: npt.NDArray[numpy.int32],
-    mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[dolfinx.default_real_type]],
+    mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.float32 | numpy.float64]],
     coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     constants: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     permutation_info: npt.NDArray[numpy.uint32],
