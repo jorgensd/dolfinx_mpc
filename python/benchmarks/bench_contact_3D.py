@@ -302,7 +302,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     # Solve Linear problem
     opts = PETSc.Options()
     # opts.setValue("ksp_rtol",1.0e-8)
-    opts.setValue("pc_type","gamg")
+    opts.setValue("pc_type", "gamg")
     # opts.setValue("pc_gamg_type","agg")
     # opts.setValue("pc_gamg_coarse_eq_limit",1000)
     # opts.setValue("pc_gamg_sym_graph",True)
@@ -314,7 +314,7 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     # opts.setValue("pc_gamg_threshold",1e-2)
     # opts.setValue("help",None  # List all available options)
     if timings:
-        opts.setValue("ksp_view",None  # List progress of solver)
+        opts.setValue("ksp_view", None)  # List progress of solver)
     # Create functionspace and build near nullspace
 
     A.setNearNullSpace(null_space)
