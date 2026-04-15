@@ -57,7 +57,7 @@ def assemble_jacobian_mpc(
     # Copy existing soultion into the function used in the residual and
     # Jacobian
     _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
-    _fem.petsc.assign(x, u)
+    _fem.petsc.assign(x, u)  # type: ignore
 
     # Assemble Jacobian
     J.zeroEntries()
@@ -108,7 +108,7 @@ def assemble_residual_mpc(
     # Update input vector before assigning
     _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
     # Assign the input vector to the unknowns
-    _fem.petsc.assign(x, u)
+    _fem.petsc.assign(x, u)  # type: ignore
     if isinstance(u, Sequence):
         assert isinstance(mpc, Sequence)
         for i in range(len(u)):
@@ -209,8 +209,12 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         )
 
         if J is None:
-            dus = [ufl.TrialFunction(Fi.arguments()[0].ufl_function_space()) for Fi in F]
-            J = _fem.forms.derivative_block(F, u, dus)
+            if isinstance(F, ufl.form.Form):
+                du = ufl.TrialFunction(self._F.arguments()[0].ufl_function_space())
+                J = ufl.derivative(F, du)
+            else:
+                dus = [ufl.TrialFunction(Fi.arguments()[0].ufl_function_space()) for Fi in F]
+                J = _fem.forms.derivative_block(F, u, dus)
 
         self._J = _fem.form(
             J,
@@ -257,7 +261,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             self._x = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
 
         # Create PETSc structure for preconditioner if provided
-        if self.preconditioner is not None:
+        if self.preconditioner is not None:  # type: ignore
             if kind == "nest":
                 assert isinstance(self.preconditioner, Sequence)
                 assert isinstance(self.mpc, Sequence)
@@ -266,7 +270,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
                 assert isinstance(self._preconditioner, _fem.Form)
                 self._P_mat = _cpp_mpc.create_matrix(self.preconditioner, kind=kind)
         else:
-            self._P_mat = None
+            self._P_mat = None  # type: ignore
 
         # Create the SNES solver and attach the corresponding Jacobian and
         # residual computation functions
@@ -279,20 +283,20 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         # Set PETSc options
         problem_prefix = f"dolfinx_nonlinearproblem_{id(self)}"
         self.solver.setOptionsPrefix(problem_prefix)
-        opts = PETSc.Options()  # type: ignore
+        opts = PETSc.Options()
         opts.prefixPush(problem_prefix)
 
         if petsc_options is not None:
             for k, v in petsc_options.items():
-                opts[k] = v
+                opts.setValue(k, v)
             self.solver.setFromOptions()
 
             for k in petsc_options.keys():
-                del opts[k]
+                opts.delValue(k)
 
         opts.prefixPop()
 
-    def solve(self) -> tuple[PETSc.Vec, int, int]:  # type: ignore
+    def solve(self) -> tuple[_fem.Function | Sequence[_fem.Function], PETSc.ConvergedReason, int]:  # type: ignore
         """Solve the problem and update the solution in the problem
         instance.
 
@@ -307,7 +311,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         self.solver.solve(None, self.x)
 
         # Move solution back to function
-        dolfinx.fem.petsc.assign(self.x, self._u)
+        dolfinx.fem.petsc.assign(self.x, self._u)  # type: ignore
         if isinstance(self.mpc, Sequence):
             for i in range(len(self._u)):
                 self.mpc[i].backsubstitution(self._u[i])
@@ -318,7 +322,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             self.mpc.backsubstitution(self._u)
 
         converged_reason = self.solver.getConvergedReason()
-        return self._u, converged_reason, self.solver.getIterationNumber()
+        return self._u, converged_reason, self.solver.getIterationNumber()  # type: ignore
 
 
 class LinearProblem(dolfinx.fem.petsc.LinearProblem):
@@ -364,11 +368,11 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
     _L: _fem.Form | Sequence[_fem.Form]
     _preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None
     _mpc: MultiPointConstraint | Sequence[MultiPointConstraint]
-    _A: PETSc.Mat  # type: ignore
-    _P: PETSc.Mat | None  # type: ignore
-    _b: PETSc.Vec  # type: ignore
-    _solver: PETSc.KSP  # type: ignore
-    _x: PETSc.Vec  # type: ignore
+    _A: PETSc.Mat
+    _P: PETSc.Mat | None
+    _b: PETSc.Vec
+    _solver: PETSc.KSP
+    _x: PETSc.Vec
     bcs: list[_fem.DirichletBC]
     __slots__ = tuple(__annotations__)
 
@@ -438,7 +442,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                     )
 
         # Create MPC matrix and vector
-        self._preconditioner = _fem.form(P, jit_options=jit_options, form_compiler_options=form_compiler_options)
+        self._preconditioner = _fem.form(P, jit_options=jit_options, form_compiler_options=form_compiler_options)  # type: ignore
 
         if is_nest:
             assert isinstance(mpc, Sequence)
@@ -474,7 +478,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             assert isinstance(self.u, _fem.Function)
             comm = self.u.function_space.mesh.comm
 
-        self._solver = PETSc.KSP().create(comm)  # type: ignore
+        self._solver = PETSc.KSP().create(comm)
         self._solver.setOperators(self._A, self._P_mat)
 
         self._petsc_options_prefix = petsc_options_prefix
@@ -487,17 +491,17 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
 
         # Set options on KSP only
         if petsc_options is not None:
-            opts = PETSc.Options()  # type: ignore
+            opts = PETSc.Options()
             opts.prefixPush(self.solver.getOptionsPrefix())
 
             for k, v in petsc_options.items():
-                opts[k] = v
+                opts.setValue(k, v)
 
             self.solver.setFromOptions()
 
             # Tidy up global options
             for k in petsc_options.keys():
-                del opts[k]
+                opts.delValue(k)
             opts.prefixPop()
 
     def solve(self) -> _fem.Function | list[_fem.Function]:
@@ -555,7 +559,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         # Solve linear system and update ghost values in the solution
         self._solver.solve(self._b, self._x)
         _ghost_update(self._x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
-        _fem.petsc.assign(self._x, self.u)
+        _fem.petsc.assign(self._x, self.u)  # type: ignore
 
         if isinstance(self.u, Sequence):
             assert isinstance(self._mpc, Sequence)

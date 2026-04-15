@@ -152,29 +152,29 @@ def bench_elasticity_edge(
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
     set_bc(b, bcs)
 
-    opts = PETSc.Options()  # type: ignore
+    opts = PETSc.Options()
     if boomeramg:
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-5
-        opts["pc_type"] = "hypre"
-        opts["pc_hypre_type"] = "boomeramg"
-        opts["pc_hypre_boomeramg_max_iter"] = 1
-        opts["pc_hypre_boomeramg_cycle_type"] = "v"
-        # opts["pc_hypre_boomeramg_print_statistics"] = 1
+        opts.setValue("ksp_type", "cg")
+        opts.setValue("ksp_rtol", 1.0e-5)
+        opts.setValue("pc_type", "hypre")
+        opts.setValue("pc_hypre_type", "boomeramg")
+        opts.setValue("pc_hypre_boomeramg_max_iter", 1)
+        opts.setValue("pc_hypre_boomeramg_cycle_type", "v")
+        # opts.setValue("pc_hypre_boomeramg_print_statistics",1)
     else:
-        opts["ksp_rtol"] = 1.0e-8
-        opts["pc_type"] = "gamg"
-        opts["pc_gamg_type"] = "agg"
-        opts["pc_gamg_coarse_eq_limit"] = 1000
-        opts["pc_gamg_sym_graph"] = True
-        opts["mg_levels_ksp_type"] = "chebyshev"
-        opts["mg_levels_pc_type"] = "jacobi"
-        opts["mg_levels_esteig_ksp_type"] = "cg"
-        opts["matptap_via"] = "scalable"
-        opts["pc_gamg_square_graph"] = 2
-        opts["pc_gamg_threshold"] = 0.02
-    # opts["help"] = None # List all available options
-    # opts["ksp_view"] = None # List progress of solver
+        opts.setValue("ksp_rtol", 1.0e-8)
+        opts.setValue("pc_type", "gamg")
+        opts.setValue("pc_gamg_type", "agg")
+        opts.setValue("pc_gamg_coarse_eq_limit", 1000)
+        opts.setValue("pc_gamg_sym_graph", True)
+        opts.setValue("mg_levels_ksp_type", "chebyshev")
+        opts.setValue("mg_levels_pc_type", "jacobi")
+        opts.setValue("mg_levels_esteig_ksp_type", "cg")
+        opts.setValue("matptap_via", "scalable")
+        opts.setValue("pc_gamg_square_graph", 2)
+        opts.setValue("pc_gamg_threshold", 0.02)
+    # opts.setValue("help",None # List all available options)
+    # opts.setValue("ksp_view",None # List progress of solver)
 
     # Setup PETSc solver
     solver = PETSc.KSP().create(mesh.comm)  # type: ignore

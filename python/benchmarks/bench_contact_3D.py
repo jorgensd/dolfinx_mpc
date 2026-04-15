@@ -300,21 +300,21 @@ def demo_stacked_cubes(theta, ct, noslip, num_refinements, N0, timings=False):
     list_timings(MPI.COMM_WORLD)
 
     # Solve Linear problem
-    opts = PETSc.Options()  # type: ignore
-    # opts["ksp_rtol"] = 1.0e-8
-    opts["pc_type"] = "gamg"
-    # opts["pc_gamg_type"] = "agg"
-    # opts["pc_gamg_coarse_eq_limit"] = 1000
-    # opts["pc_gamg_sym_graph"] = True
-    # opts["mg_levels_ksp_type"] = "chebyshev"
-    # opts["mg_levels_pc_type"] = "jacobi"
-    # opts["mg_levels_esteig_ksp_type"] = "cg"
-    # opts["matptap_via"] = "scalable"
-    # opts["pc_gamg_square_graph"] = 2
-    # opts["pc_gamg_threshold"] = 1e-2
-    # opts["help"] = None  # List all available options
+    opts = PETSc.Options()
+    # opts.setValue("ksp_rtol",1.0e-8)
+    opts.setValue("pc_type", "gamg")
+    # opts.setValue("pc_gamg_type","agg")
+    # opts.setValue("pc_gamg_coarse_eq_limit",1000)
+    # opts.setValue("pc_gamg_sym_graph",True)
+    # opts.setValue("mg_levels_ksp_type","chebyshev")
+    # opts.setValue("mg_levels_pc_type","jacobi")
+    # opts.setValue("mg_levels_esteig_ksp_type","cg")
+    # opts.setValue("matptap_via","scalable")
+    # opts.setValue("pc_gamg_square_graph",2)
+    # opts.setValue("pc_gamg_threshold",1e-2)
+    # opts.setValue("help",None  # List all available options)
     if timings:
-        opts["ksp_view"] = None  # List progress of solver
+        opts.setValue("ksp_view", None)  # List progress of solver)
     # Create functionspace and build near nullspace
 
     A.setNearNullSpace(null_space)

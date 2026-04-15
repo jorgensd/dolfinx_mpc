@@ -1469,7 +1469,7 @@ mpc_data<T> create_contact_inelastic_condition(
                        num_dofs_per_block.begin() + (j + 1) * tdim,
                        block_offsets.begin() + 1);
 
-      for (std::int32_t k = 0; k < tdim; ++k)
+      for (std::int32_t k = 0; k < block_size; ++k)
       {
         std::int32_t local_slave = local_block * block_size + k;
 
@@ -1519,10 +1519,10 @@ mpc_data<T> create_contact_inelastic_condition(
   }
 
   // Distribute data for ghosted slaves (the coeffs, owners and offsets)
-  std::vector<std::int32_t> ghost_slaves(tdim * ghost_blocks.size());
+  std::vector<std::int32_t> ghost_slaves(block_size * ghost_blocks.size());
   for (std::size_t i = 0; i < ghost_blocks.size(); ++i)
-    for (std::int32_t j = 0; j < tdim; ++j)
-      ghost_slaves[i * tdim + j] = ghost_blocks[i] * block_size + j;
+    for (std::int32_t j = 0; j < block_size; ++j)
+      ghost_slaves[i * block_size + j] = ghost_blocks[i] * block_size + j;
 
   // Compute source and dest ranks of communicator
   MPI_Comm slave_to_ghost
@@ -1569,7 +1569,7 @@ mpc_data<T> create_contact_inelastic_condition(
        &proc_to_ghost_masters, &proc_to_ghost_coeffs, &proc_to_ghost_owners,
        &proc_to_ghost_offsets, tdim](const auto block)
       {
-        for (std::int32_t j = 0; j < tdim; ++j)
+        for (std::int32_t j = 0; j < block_size; ++j)
         {
           const std::int32_t slave = block * block_size + j;
           const std::vector<std::int64_t>& masters_i = local_masters[slave];
@@ -1726,7 +1726,7 @@ mpc_data<T> create_contact_inelastic_condition(
       [block_size, tdim, &masters, &local_masters, &coeffs_out, &local_coeffs,
        &owners_out, &local_owners, &offsets, &slaves](const std::int32_t block)
       {
-        for (std::int32_t j = 0; j < tdim; ++j)
+        for (std::int32_t j = 0; j < block_size; ++j)
         {
           // Add the slave if it has masters
           const std::int32_t slave = block * block_size + j;
