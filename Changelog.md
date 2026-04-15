@@ -1,8 +1,12 @@
 # Changelog
 
-## V0.10.4
+## V0.10.5
 
 - **BUGFIX**: Fix inelastic contact conditions for scalar spaces, see [PR 241](https://github.com/jorgensd/dolfinx_mpc/pull/241).
+
+## V0.10.4
+
+- **BUGFIX**: Fix typo in 0.10.3 release
 
 ## V0.10.3
 
