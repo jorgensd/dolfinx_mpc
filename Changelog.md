@@ -1,5 +1,9 @@
 # Changelog
 
+## V0.10.4
+
+- **BUGFIX**: Fix inelastic contact conditions for scalar spaces, see [PR 241](https://github.com/jorgensd/dolfinx_mpc/pull/241).
+
 ## V0.10.3
 
 - **BUGFIX**: Fixing periodic conditions for mixed spaces with block size !=1, see [PR 237](https://github.com/jorgensd/dolfinx_mpc/pull/237).
