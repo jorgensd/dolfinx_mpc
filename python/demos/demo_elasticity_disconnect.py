@@ -227,8 +227,8 @@ V_out = functionspace(
     basix.ufl.element(
         "Lagrange",
         mesh.topology.cell_name(),
-        mesh.geometry.cmap.degree,
-        lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmap.variant),
+        mesh.geometry.cmap().degree,
+        lagrange_variant=basix.LagrangeVariant(mesh.geometry.cmap().variant),
         shape=(V.dofmap.bs,),
         dtype=default_real_type,
     ),
