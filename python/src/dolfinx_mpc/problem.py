@@ -57,7 +57,18 @@ def assemble_jacobian_mpc(
     # Copy existing soultion into the function used in the residual and
     # Jacobian
     _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
+    # Assign the input vector to the unknowns
     _fem.petsc.assign(x, u)  # type: ignore
+    if isinstance(u, Sequence):
+        assert isinstance(mpc, Sequence)
+        for i in range(len(u)):
+            mpc[i].homogenize(u[i])
+            mpc[i].backsubstitution(u[i])
+    else:
+        assert isinstance(u, _fem.Function)
+        assert isinstance(mpc, MultiPointConstraint)
+        mpc.homogenize(u)
+        mpc.backsubstitution(u)
 
     # Assemble Jacobian
     J.zeroEntries()
