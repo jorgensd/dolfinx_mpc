@@ -81,7 +81,7 @@ def assemble_matrix(
             is_bc[bc.dof_indices()[0]] = True
 
     # Get data from mesh
-    x_dofs = V.mesh.geometry.dofmap
+    x_dofs = V.mesh.geometry.dofmaps[0]
     x = V.mesh.geometry.x
 
     # Pack constants and coefficients
