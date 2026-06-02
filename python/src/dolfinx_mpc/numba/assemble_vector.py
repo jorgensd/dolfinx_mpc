@@ -44,7 +44,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
 
     # Unpack Function space data
     V = form.function_spaces[0]
-    x_dofs = V.mesh.geometry.dofmap
+    x_dofs = V.mesh.geometry.dofmaps[0]
     x = V.mesh.geometry.x
     dofs = V.dofmap.map()
     block_size = V.dofmap.index_map_bs
