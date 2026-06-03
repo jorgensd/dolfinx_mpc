@@ -194,10 +194,13 @@ void apply_lifting(
 
   auto mesh = a->mesh();
   assert(mesh);
+  if (mesh->geometry().dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = mesh->geometry().dofmap();
+      x_dofmap = mesh->geometry().dofmaps().front();
   std::span<const U> x_g = mesh->geometry().x();
   const int tdim = mesh->topology()->dim();
   const std::size_t num_dofs_g = x_dofmap.extent(1);

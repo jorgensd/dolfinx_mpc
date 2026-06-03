@@ -115,10 +115,13 @@ void _assemble_vector(
   auto coefficients = dolfinx::fem::make_coefficients_span(coeff_vec);
 
   // Prepare cell geometry
+  if (mesh->geometry().dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = mesh->geometry().dofmap();
+      x_dofmap = mesh->geometry().dofmaps().front();
   std::span<const U> x_g = mesh->geometry().x();
 
   // Prepare dof tranformation data
