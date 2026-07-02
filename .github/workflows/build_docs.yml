@@ -31,10 +31,10 @@ jobs:
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
         with:
-          dolfinx: main
-          ufl: main
-          ffcx: main
-          basix: main
+          dolfinx: v0.11.0.post0
+          ufl: 2026.1.0
+          ffcx: v0.11.0
+          basix: v0.11.0
           petsc_arch: ${PETSC_ARCH}
 
       - name: Install DOLFINx-MPC (C++)
