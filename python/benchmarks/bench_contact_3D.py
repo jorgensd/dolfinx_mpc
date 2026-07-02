@@ -28,8 +28,8 @@ from dolfinx.fem import (
     form,
     functionspace,
     locate_dofs_topological,
-    set_bc,
 )
+from dolfinx.fem.petsc import set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (
     CellType,
