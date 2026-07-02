@@ -1,5 +1,30 @@
 # Changelog
 
+## V0.11.0
+
+- Make MPC Nonlinearproblem prefix deterministic. See [PR 245](https://github.com/jorgensd/dolfinx_mpc/pull/245)
+- Fix Jacobian in `dolfinx_mpc.NonlinearProblem` by enforcing the constraint prior to assembly. See [PR 246](https://github.com/jorgensd/dolfinx_mpc/pull/246)
+
+## V0.10.5
+
+- **BUGFIX**: Fix inelastic contact conditions for scalar spaces, see [PR 241](https://github.com/jorgensd/dolfinx_mpc/pull/241).
+
+## V0.10.4
+
+- **BUGFIX**: Fix typo in 0.10.3 release
+
+## V0.10.3
+
+- **BUGFIX**: Fixing periodic conditions for mixed spaces with block size !=1, see [PR 237](https://github.com/jorgensd/dolfinx_mpc/pull/237).
+
+## V0.10.2
+
+- **Installation**: Improved installation of Python interface by @jhale
+
+## v0.10.1
+
+- **Bugs**: Insertion in non-square matrices fixed. No change to user API.
+
 ## v0.10.0
 - **New demo**: Periodic conditions for a linear wave, see [demo_linear_wave_problem.py](./python/demos/demo_linear_wave_problem.py)
 - **New feature**: Use of a preconditioner for `dolfinx_mpc.LinearProblem`, as well as allowing for `NEST` systems. See [demo_stokes.py](./python/demos/demo_stokes.py)
