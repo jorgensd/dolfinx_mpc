@@ -28,7 +28,6 @@ from dolfinx.fem import (
     form,
     functionspace,
     locate_dofs_topological,
-    set_bc,
 )
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import (
@@ -40,6 +39,7 @@ from dolfinx.mesh import (
     meshtags,
     refine,
 )
+from dolfinx.fem.petsc import set_bc
 from ufl import Identity, Mesh, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
 from dolfinx_mpc import MultiPointConstraint, apply_lifting, assemble_matrix, assemble_vector

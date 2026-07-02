@@ -26,8 +26,8 @@ from dolfinx.fem import (
     form,
     functionspace,
     locate_dofs_topological,
-    set_bc,
 )
+from dolfinx.fem.petsc import set_bc
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import GhostMode, create_unit_cube, locate_entities_boundary, meshtags, refine
 from ufl import Identity, TestFunction, TrialFunction, ds, dx, grad, inner, sym, tr
