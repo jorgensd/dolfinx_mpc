@@ -311,10 +311,13 @@ void assemble_exterior_facets(
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
   // Get mesh data
+  if (mesh.geometry().dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = mesh.geometry().dofmap();
+      x_dofmap = mesh.geometry().dofmaps().front();
 
   const int num_dofs_g = x_dofmap.extent(1);
   std::span<const U> x_g = mesh.geometry().x();
@@ -456,10 +459,13 @@ void assemble_cells_impl(
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
   // Prepare cell geometry
+  if (geometry.dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = geometry.dofmap();
+      x_dofmap = geometry.dofmaps().front();
   const std::size_t num_dofs_g = x_dofmap.extent(1);
   std::span<const U> x_g = geometry.x();
 

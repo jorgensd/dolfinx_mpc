@@ -96,7 +96,7 @@ def create_matrix_nest(a: Sequence[Sequence[_fem.Form]], constraints: Sequence[M
     """
     assert len(constraints) == len(a)
 
-    A_ = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
+    A_: list[list[_PETSc.Mat | None]] = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
 
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):
@@ -106,8 +106,9 @@ def create_matrix_nest(a: Sequence[Sequence[_fem.Form]], constraints: Sequence[M
                 a[i][j]._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object
             )
 
-    A = _PETSc.Mat().createNest(  # type: ignore
-        A_, comm=constraints[0].function_space.mesh.comm
+    A = _PETSc.Mat().createNest(
+        A_,  # type: ignore
+        comm=constraints[0].function_space.mesh.comm,
     )
     return A
 

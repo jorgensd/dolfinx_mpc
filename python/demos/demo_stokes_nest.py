@@ -116,7 +116,7 @@ mesh, mt = create_mesh_gmsh(res=0.1)
 fdim = mesh.topology.dim - 1
 
 # Create the function space
-cellname = mesh.ufl_cell().cellname()
+cellname = mesh.basix_cell()
 Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
 Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=default_real_type)
 

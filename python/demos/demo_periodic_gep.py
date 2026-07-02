@@ -108,7 +108,7 @@ def EPS_print_results(EPS: SLEPc.EPS):
 
 def EPS_get_spectrum(
     EPS: SLEPc.EPS, mpc: MultiPointConstraint
-) -> Tuple[List[complex], List[PETSc.Vec], List[PETSc.Vec]]:  # type: ignore
+) -> Tuple[List[complex], List[fem.Function], List[fem.Function]]:
     """Retrieve eigenvalues and eigenfunctions from SLEPc EPS object.
     Parameters
     ----------

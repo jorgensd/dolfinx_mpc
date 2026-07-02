@@ -51,7 +51,7 @@ def reference_periodic(
         # Tet setup
         N = 3
         gmode = GhostMode.shared_facet
-        partitioner = create_cell_partitioner(gmode)
+        partitioner = create_cell_partitioner(gmode, max_facet_to_cell_links=2)
         mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, ghost_mode=gmode)
         for i in range(r_lvl):
             mesh.topology.create_entities(mesh.topology.dim - 2)
@@ -105,27 +105,27 @@ def reference_periodic(
     PETSc.Mat.setNearNullSpace(A_org, nullspace)  # type: ignore
 
     # Set PETSc options
-    opts = PETSc.Options()  # type: ignore
+    opts = PETSc.Options()
     if boomeramg:
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-5
-        opts["pc_type"] = "hypre"
-        opts["pc_hypre_type"] = "boomeramg"
-        opts["pc_hypre_boomeramg_max_iter"] = 1
-        opts["pc_hypre_boomeramg_cycle_type"] = "v"
-        # opts["pc_hypre_boomeramg_print_statistics"] = 1
+        opts.setValue("ksp_type", "cg")
+        opts.setValue("ksp_rtol", 1.0e-5)
+        opts.setValue("pc_type", "hypre")
+        opts.setValue("pc_hypre_type", "boomeramg")
+        opts.setValue("pc_hypre_boomeramg_max_iter", 1)
+        opts.setValue("pc_hypre_boomeramg_cycle_type", "v")
+        # opts.setValue("pc_hypre_boomeramg_print_statistics",1)
     else:
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-12
-        opts["pc_type"] = "gamg"
-        opts["pc_gamg_type"] = "agg"
-        opts["pc_gamg_sym_graph"] = True
+        opts.setValue("ksp_type", "cg")
+        opts.setValue("ksp_rtol", 1.0e-12)
+        opts.setValue("pc_type", "gamg")
+        opts.setValue("pc_gamg_type", "agg")
+        opts.setValue("pc_gamg_sym_graph", True)
 
         # Use Chebyshev smoothing for multigrid
-        opts["mg_levels_ksp_type"] = "richardson"
-        opts["mg_levels_pc_type"] = "sor"
-    # opts["help"] = None # List all available options
-    # opts["ksp_view"] = None # List progress of solver
+        opts.setValue("mg_levels_ksp_type", "richardson")
+        opts.setValue("mg_levels_pc_type", "sor")
+    # opts.setValue("help",None # List all available options)
+    # opts.setValue("ksp_view",None # List progress of solver)
 
     # Initialize PETSc solver, set options and operator
     solver = PETSc.KSP().create(mesh.comm)  # type: ignore

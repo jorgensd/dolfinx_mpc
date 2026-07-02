@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
+    container: ghcr.io/fenics/dolfinx/dev-env:stable
     env:
       # Directory that will be published on github pages
       PUBLISH_DIR: ./_build/html
@@ -19,7 +19,7 @@ jobs:
       PYVISTA_JUPYTER_BACKEND: "html"
   
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: release
 
@@ -31,10 +31,10 @@ jobs:
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
         with:
-          dolfinx: v0.10.0
-          ufl: 2025.2.0
-          ffcx: v0.10.0
-          basix: v0.10.0
+          dolfinx: v0.11.0
+          ufl: 2026.1.0
+          ffcx: v0.11.0
+          basix: v0.11.0
           petsc_arch: ${PETSC_ARCH}
 
       - name: Install DOLFINx-MPC (C++)
@@ -50,7 +50,7 @@ jobs:
         run: jupyter book build .
 
       - name: Upload documentation as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: documentation
           path: ${{ env.PUBLISH_DIR }}

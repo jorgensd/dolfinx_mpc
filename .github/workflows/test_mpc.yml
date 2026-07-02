@@ -60,7 +60,7 @@ jobs:
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # - name: Install clang
       #   if: ${{ matrix.CC }} == "clang"
@@ -107,18 +107,18 @@ jobs:
 
       - name: Install DOLFINx-MPC (Python)
         run: python3 -m pip -v install  --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test,optional]
-
+ 
       - name: Run tests (serial)
-        run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -vs
+        run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
       - name: Run tests (2 processes)
-        run: mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -vs
+        run: mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
       - name: Run tests (3 processes)
-        run: mpirun -n 3 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/
+        run: mpirun -n 3 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
 
       - name: Run tests (4 processes)
-        run: mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/
+        run: mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -xvs
 
       - name: Run benchmarks
         run: |
@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload coverage report as artifact
         if: matrix.build_mode == 'Release' && matrix.petsc_arch == 'linux-gnu-real64-32' && matrix.CC == 'cc' && matrix.CXX == 'c++'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: code-coverage-report
           path: htmlcov

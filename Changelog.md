@@ -1,5 +1,10 @@
 # Changelog
 
+## V0.11.0
+
+- Make MPC Nonlinearproblem prefix deterministic. See [PR 245](https://github.com/jorgensd/dolfinx_mpc/pull/245)
+- Fix Jacobian in `dolfinx_mpc.NonlinearProblem` by enforcing the constraint prior to assembly. See [PR 246](https://github.com/jorgensd/dolfinx_mpc/pull/246)
+
 ## V0.10.5
 
 - **BUGFIX**: Fix inelastic contact conditions for scalar spaces, see [PR 241](https://github.com/jorgensd/dolfinx_mpc/pull/241).

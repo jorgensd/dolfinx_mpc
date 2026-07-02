@@ -120,11 +120,11 @@ else:
     }
 
 # Set PETSc options
-opts = PETSc.Options()  # type: ignore
+opts = PETSc.Options()
 opts.prefixPush(solver_prefix)
 if petsc_options is not None:
     for k, v in petsc_options.items():
-        opts[k] = v
+        opts.setValue(k, v)
 opts.prefixPop()
 solver.setFromOptions()
 

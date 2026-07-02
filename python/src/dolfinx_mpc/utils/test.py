@@ -189,7 +189,7 @@ def gather_PETScVector(vector: PETSc.Vec, root=0) -> np.ndarray:  # type: ignore
     numpy_vec = np.zeros(vector.size, dtype=vector.array.dtype)
     l_min = vector.owner_range[0]
     l_max = vector.owner_range[1]
-    numpy_vec[l_min:l_max] += vector.array
+    numpy_vec[l_min:l_max] += vector.array.astype(numpy_vec.dtype)
     return np.asarray(sum(MPI.COMM_WORLD.allgather(numpy_vec)))
 
 
@@ -231,8 +231,10 @@ def compare_mpc_lhs(
         # Remove identity rows of MPC matrix
         all_cols = np.arange(V.dofmap.index_map.size_global * V.dofmap.index_map_bs)
 
-        cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
-        mpc_without_slaves = A_mpc_csr[cols_except_slaves[:, None], cols_except_slaves]
+        # Scipy >=1.17.0 requires special way of doing slicing to avoid memory overflow
+        # https://github.com/scipy/scipy/issues/24339
+        free_mask = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
+        mpc_without_slaves = A_mpc_csr[free_mask, :][:, free_mask]
 
         # Compute difference
         compare_CSR(KTAK, mpc_without_slaves, atol=atol)

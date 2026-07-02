@@ -29,30 +29,28 @@ def test_multiple_mpc_spaces_sparsity(cell_type, deg, N):
 
     V = fem.functionspace(domain, element("Lagrange", domain.basix_cell(), deg, dtype=default_real_type))
     Q = V.clone()
-    atol = 10 * np.finfo(default_real_type).eps
+    atol = 5000 * np.finfo(default_real_type).eps
 
     def periodic_boundary(x):
         return np.logical_or(np.isclose(x[0], 1, atol=atol), np.isclose(x[2], 1, atol=atol))
 
     def periodic_map(x):
         out = x.copy()
-        out[0][np.isclose(x[0], 1).nonzero()] -= 1
-        out[domain.geometry.dim - 1][np.isclose(x[2], 1).nonzero()] -= 1
+        out[0][np.isclose(x[0], 1, atol=atol).nonzero()] -= 1
+        out[domain.geometry.dim - 1][np.isclose(x[2], 1, atol=atol).nonzero()] -= 1
         return out
 
     mpc_u = dolfinx_mpc.MultiPointConstraint(V)
-    mpc_u.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_map, [])
+    mpc_u.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_map, [], tol=atol)
     mpc_u.finalize()
 
     mpc_p = dolfinx_mpc.MultiPointConstraint(Q)
-    mpc_p.create_periodic_constraint_geometrical(Q, periodic_boundary, periodic_map, [])
+    mpc_p.create_periodic_constraint_geometrical(Q, periodic_boundary, periodic_map, [], tol=atol)
     mpc_p.finalize()
 
     # Stokes weak form
     u, p = ufl.TrialFunction(V), ufl.TrialFunction(Q)
     v, q = ufl.TestFunction(V), ufl.TestFunction(Q)
-
-    # Weak statementmpc_u,
     a01 = ufl.inner(p, v) * ufl.dx
     form_01 = fem.form(a01)
     mpcs_01 = [mpc_u, mpc_p]

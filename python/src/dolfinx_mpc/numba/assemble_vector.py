@@ -44,7 +44,7 @@ def assemble_vector(form: _forms, constraint: MultiPointConstraint, b: Optional[
 
     # Unpack Function space data
     V = form.function_spaces[0]
-    x_dofs = V.mesh.geometry.dofmap
+    x_dofs = V.mesh.geometry.dofmaps[0]
     x = V.mesh.geometry.x
     dofs = V.dofmap.map()
     block_size = V.dofmap.index_map_bs
@@ -171,7 +171,7 @@ def assemble_cells(
     b: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     kernel: cffi.FFI.CData,
     active_cells: npt.NDArray[numpy.int32],
-    mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[dolfinx.default_real_type]],
+    mesh: Tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.float32 | numpy.float64]],
     coeffs: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     constants: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     permutation_info: npt.NDArray[numpy.uint32],

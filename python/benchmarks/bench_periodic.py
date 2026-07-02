@@ -114,25 +114,25 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
     # Set PETSc solver options
     opts = PETSc.Options()
     if boomeramg:
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-5
-        opts["pc_type"] = "hypre"
-        opts["pc_hypre_type"] = "boomeramg"
-        opts["pc_hypre_boomeramg_max_iter"] = 1
-        opts["pc_hypre_boomeramg_cycle_type"] = "v"
-        # opts["pc_hypre_boomeramg_print_statistics"] = 1
+        opts.setValue("ksp_type", "cg")
+        opts.setValue("ksp_rtol", 1.0e-5)
+        opts.setValue("pc_type", "hypre")
+        opts.setValue("pc_hypre_type", "boomeramg")
+        opts.setValue("pc_hypre_boomeramg_max_iter", 1)
+        opts.setValue("pc_hypre_boomeramg_cycle_type", "v")
+        # opts.setValue("pc_hypre_boomeramg_print_statistics",1)
     else:
-        opts["ksp_type"] = "cg"
-        opts["ksp_rtol"] = 1.0e-12
-        opts["pc_type"] = "gamg"
-        opts["pc_gamg_type"] = "agg"
-        opts["pc_gamg_sym_graph"] = True
+        opts.setValue("ksp_type", "cg")
+        opts.setValue("ksp_rtol", 1.0e-12)
+        opts.setValue("pc_type", "gamg")
+        opts.setValue("pc_gamg_type", "agg")
+        opts.setValue("pc_gamg_sym_graph", True)
 
         # Use Chebyshev smoothing for multigrid
-        opts["mg_levels_ksp_type"] = "richardson"
-        opts["mg_levels_pc_type"] = "sor"
-    # opts["help"] = None # List all available options
-    # opts["ksp_view"] = None # List progress of solver
+        opts.setValue("mg_levels_ksp_type", "richardson")
+        opts.setValue("mg_levels_pc_type", "sor")
+    # opts.setValue("help",None # List all available options)
+    # opts.setValue("ksp_view",None # List progress of solver)
 
     # Solve linear problem
     log_info(f"Run {r_lvl}: Solving")

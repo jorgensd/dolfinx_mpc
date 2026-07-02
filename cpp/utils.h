@@ -319,27 +319,36 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         dolfinx::fem::sparsitybuild::cells(
-            pattern, {a.domain_arg(type, 0, i, 0), a.domain_arg(type, 1, i, 0)},
+            pattern,
+            std::pair{a.domain_arg(type, 0, i, 0), a.domain_arg(type, 1, i, 0)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
+        std::vector<std::int32_t> cells0
+            = extract_cells(a.domain_arg(type, 0, i, 0));
+        std::vector<std::int32_t> cells1
+            = extract_cells(a.domain_arg(type, 1, i, 0));
         dolfinx::fem::sparsitybuild::interior_facets(
             pattern,
-            {extract_cells(a.domain_arg(type, 0, i, 0)),
-             extract_cells(a.domain_arg(type, 1, i, 0))},
+            {std::span<const std::int32_t>(cells0),
+             std::span<const std::int32_t>(cells1)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
+        std::vector<std::int32_t> cells0
+            = extract_cells(a.domain_arg(type, 0, i, 0));
+        std::vector<std::int32_t> cells1
+            = extract_cells(a.domain_arg(type, 1, i, 0));
         dolfinx::fem::sparsitybuild::cells(
             pattern,
-            {extract_cells(a.domain_arg(type, 0, i, 0)),
-             extract_cells(a.domain_arg(type, 1, i, 0))},
+            std::pair{std::span<const std::int32_t>(cells0),
+                      std::span<const std::int32_t>(cells1)},
             {{dofmaps[0], dofmaps[1]}});
       }
       break;
@@ -697,7 +706,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 
     // Propagate local slave information to ghost processes
     dolfinx::la::Vector<std::int8_t> indicator(imap, 1);
-    std::ranges::fill(indicator.mutable_array(), 0);
+    std::ranges::fill(indicator.array(), 0);
     std::vector<std::int8_t>& indicator_array = indicator.array();
     std::ranges::for_each(blocks, [&indicator_array](auto& block)
                           { indicator_array[block] = 1; });
@@ -971,13 +980,16 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   auto map = mesh->topology()->index_map(tdim);
 
   // Get geometry data
-
+  if (mesh->geometry().dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = mesh->geometry().dofmap();
+      x_dofmap = mesh->geometry().dofmaps().front();
 
-  const dolfinx::fem::CoordinateElement<U>& cmap = mesh->geometry().cmap();
+  const dolfinx::fem::CoordinateElement<U>& cmap
+      = mesh->geometry().cmaps().front();
   const std::size_t num_dofs_g = cmap.dim();
   std::span<const U> x_g = mesh->geometry().x();
 
@@ -1238,13 +1250,17 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   auto [X_b, X_shape] = element->interpolation_points();
 
   // Get coordinate map
-  const dolfinx::fem::CoordinateElement<U>& cmap = mesh->geometry().cmap();
+  const dolfinx::fem::CoordinateElement<U>& cmap
+      = mesh->geometry().cmaps().front();
 
   // Prepare cell geometry
+  if (mesh->geometry().dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const std::int32_t,
       MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = mesh->geometry().dofmap();
+      x_dofmap = mesh->geometry().dofmaps().front();
   std::span<const U> x_g = mesh->geometry().x();
   const std::size_t num_dofs_g = x_dofmap.extent(1);
 
