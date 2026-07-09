@@ -40,7 +40,7 @@ target_compile_features(dolfinx_mpc PUBLIC cxx_std_20)
 
 # dolfinx gives us transitive dependency on mpi, petsc, basix, ufcx
 # without us needing to reimplement detection/dependency
-target_link_libraries(dolfinx_mpc PUBLIC dolfinx)
+target_link_libraries(dolfinx_mpc PUBLIC dolfinx::dolfinx)
 
 
 #------------------------------------------------------------------------------

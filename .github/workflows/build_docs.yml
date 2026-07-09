@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     container: ghcr.io/fenics/dolfinx/dev-env:stable
     env:
       # Directory that will be published on github pages
