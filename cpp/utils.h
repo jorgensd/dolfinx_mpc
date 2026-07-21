@@ -958,11 +958,13 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
 /// is not used.
 /// @returns basis values (not unrolled for block size) for each point. shape
 /// (num_points, number_of_dofs, value_size). Flattened row major
+/// @param[in] num_threads The number of threads to use for certain operations.
 template <std::floating_point U>
 std::pair<std::vector<U>, std::array<std::size_t, 3>>
 evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
                          std::span<const U> x,
-                         std::span<const std::int32_t> cells, const U tol)
+                         std::span<const std::int32_t> cells, const U tol,
+                         const std::size_t num_threads)
 {
   assert(x.size() % 3 == 0);
   const std::size_t num_points = x.size() / 3;
@@ -1027,7 +1029,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
-    mesh->topology_mutable()->create_entity_permutations();
+    mesh->topology_mutable()->create_entity_permutations(num_threads);
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 
@@ -1206,11 +1208,13 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
 /// of a cell that contains dofs[i]
 /// @param[in] transposed If true return coordiantes in xxyyzz format. Else
 /// xyzxzyxzy
+/// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The dof coordinates flattened in the appropriate format
 template <std::floating_point U>
 std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
     const dolfinx::fem::FunctionSpace<U>& V, std::span<const std::int32_t> dofs,
-    std::span<const std::int32_t> cells, bool transposed = false)
+    std::span<const std::int32_t> cells, bool transposed = false,
+    const std::size_t num_threads = 1)
 {
   if (!V.component().empty())
   {
@@ -1287,7 +1291,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
-    mesh->topology_mutable()->create_entity_permutations();
+    mesh->topology_mutable()->create_entity_permutations(num_threads);
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 

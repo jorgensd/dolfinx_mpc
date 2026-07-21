@@ -147,12 +147,14 @@ void lift_bc_entities(
 /// @param[in] x0 The function to subtract
 /// @param[in] scale Scale of lifting
 /// @param[in] mpc0 The multi point constraints
+/// @param[in] num_threads The number of threads to use for certain operations.
 template <typename T, std::floating_point U>
 void apply_lifting(
     std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
     const std::span<const T>& x0, T scale,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    std::size_t num_threads = 1)
 {
   const std::vector<T> constants = pack_constants(*a);
   auto coeff_vec = dolfinx::fem::allocate_coefficient_storage(*a);
@@ -215,9 +217,9 @@ void apply_lifting(
 
   if (needs_transformation_data)
   {
-    mesh0->topology_mutable()->create_entity_permutations();
+    mesh0->topology_mutable()->create_entity_permutations(num_threads);
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
-    mesh1->topology_mutable()->create_entity_permutations();
+    mesh1->topology_mutable()->create_entity_permutations(num_threads);
     cell_info1 = std::span(mesh1->topology()->get_cell_permutation_info());
   }
 
@@ -444,7 +446,8 @@ void apply_lifting(
         bcs1,
     const std::vector<std::span<const double>>& x0, double scale,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc)
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc,
+    std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -469,11 +472,11 @@ void apply_lifting(
       if (x0.empty())
       {
         impl::apply_lifting<double>(b, a[j], bcs1[j], std::span<const double>(),
-                                    scale, mpc);
+                                    scale, mpc, num_threads);
       }
       else
       {
-        impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc);
+        impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc, num_threads);
       }
     }
   }
@@ -497,6 +500,7 @@ void apply_lifting(
 /// @param[in] x0 The vectors used in the lifitng.
 /// @param[in] scale Scaling to apply
 /// @param[in] mpc The multi point constraints
+/// @param[in] num_threads The number of threads to use for certain operations.
 void apply_lifting(
     std::span<std::complex<double>> b,
     const std::vector<
@@ -509,7 +513,8 @@ void apply_lifting(
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
-        mpc)
+        mpc,
+      std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -530,12 +535,12 @@ void apply_lifting(
       {
         impl::apply_lifting<std::complex<double>>(
             b, a[j], bcs1[j], std::span<const std::complex<double>>(), scale,
-            mpc);
+            mpc, num_threads);
       }
       else
       {
         impl::apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j],
-                                                  scale, mpc);
+                                                  scale, mpc, num_threads);
       }
     }
   }
@@ -560,6 +565,7 @@ void apply_lifting(
 /// @param[in] x0 The vectors used in the lifitng.
 /// @param[in] scale Scaling to apply
 /// @param[in] mpc The multi point constraints
+/// @param[in] num_threads The number of threads to use for certain operations.
 void apply_lifting(
     std::span<float> b,
     const std::vector<std::shared_ptr<const dolfinx::fem::Form<float>>> a,
@@ -568,7 +574,8 @@ void apply_lifting(
         bcs1,
     const std::vector<std::span<const float>>& x0, float scale,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc)
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc,
+      std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -588,11 +595,11 @@ void apply_lifting(
       if (x0.empty())
       {
         impl::apply_lifting<float>(b, a[j], bcs1[j], std::span<const float>(),
-                                   scale, mpc);
+                                   scale, mpc, num_threads);
       }
       else
       {
-        impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc);
+        impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc, num_threads);
       }
     }
   }
@@ -616,6 +623,7 @@ void apply_lifting(
 /// @param[in] x0 The vectors used in the lifitng.
 /// @param[in] scale Scaling to apply
 /// @param[in] mpc The multi point constraints
+/// @param[in] num_threads The number of threads to use for certain operations.
 void apply_lifting(
     std::span<std::complex<float>> b,
     const std::vector<
@@ -629,7 +637,7 @@ void apply_lifting(
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
-        mpc)
+        mpc, std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -650,12 +658,12 @@ void apply_lifting(
       {
         impl::apply_lifting<std::complex<float>>(
             b, a[j], bcs1[j], std::span<const std::complex<float>>(), scale,
-            mpc);
+            mpc, num_threads);
       }
       else
       {
         impl::apply_lifting<std::complex<float>>(b, a[j], bcs1[j], x0[j], scale,
-                                                 mpc);
+                                                 mpc, num_threads);
       }
     }
   }

@@ -29,6 +29,7 @@ def apply_lifting(
     constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
     x0: Optional[Sequence[_PETSc.Vec]] = None,
     scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+    num_threads: Optional[int] = 1,
 ):  # type: ignore
     """
     Apply lifting to vector b, i.e.
@@ -41,6 +42,7 @@ def apply_lifting(
         constraint: The multi point constraint
         x0: List of vectors
         scale: Scaling for lifting
+        num_threads: The number of threads to use for certain operations
     """
     t = Timer("~MPC: Apply lifting (C++)")
     if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
@@ -56,7 +58,7 @@ def apply_lifting(
         for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
             _a = [None if form is None else form._cpp_object for form in a_sub]  # type:ignore
             _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]  # type: ignore
-            dolfinx_mpc.cpp.mpc.apply_lifting(b_sub.array_w, _a, _bcs, x0, scale, mpc_i._cpp_object)
+            dolfinx_mpc.cpp.mpc.apply_lifting(b_sub.array_w, _a, _bcs, x0, scale, mpc_i._cpp_object, num_threads)
     else:
         with contextlib.ExitStack() as stack:
             if x0 is None:
@@ -68,7 +70,9 @@ def apply_lifting(
             _forms = [f._cpp_object for f in form]  # type: ignore
             _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]  # type: ignore
             assert isinstance(constraint, MultiPointConstraint)
-            dolfinx_mpc.cpp.mpc.apply_lifting(b_local.array_w, _forms, _bcs, x0_r, scale, constraint._cpp_object)
+            dolfinx_mpc.cpp.mpc.apply_lifting(
+                b_local.array_w, _forms, _bcs, x0_r, scale, constraint._cpp_object, num_threads
+            )
     t.stop()
 
 
@@ -76,6 +80,7 @@ def assemble_vector(
     form: _fem.Form,
     constraint: MultiPointConstraint,
     b: Optional[_PETSc.Vec] = None,  # type: ignore
+    num_threads: Optional[int] = 1,
 ) -> _PETSc.Vec:  # type: ignore
     """
     Assemble a linear form into vector `b` with corresponding multi point constraint
@@ -94,7 +99,7 @@ def assemble_vector(
     t = Timer("~MPC: Assemble vector (C++)")
     with b.localForm() as b_local:
         b_local.set(0.0)
-        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object)
+        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object, num_threads)
     t.stop()
     return b
 
@@ -124,6 +129,7 @@ def assemble_vector_nest(
     b: _PETSc.Vec,  # type: ignore
     L: Sequence[_fem.Form],
     constraints: Sequence[MultiPointConstraint],
+    num_threads: Optional[int] = 1,
 ):
     """
     Assemble a linear form into a PETSc vector of type "nest"
@@ -138,4 +144,4 @@ def assemble_vector_nest(
 
     b_sub_vecs = b.getNestSubVecs()
     for i, L_row in enumerate(L):
-        assemble_vector(L_row, constraints[i], b=b_sub_vecs[i])
+        assemble_vector(L_row, constraints[i], b=b_sub_vecs[i], num_threads=num_threads)

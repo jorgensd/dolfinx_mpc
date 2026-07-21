@@ -73,10 +73,12 @@ void modify_mpc_vec(
 /// assembly.
 /// @param[in] L The linear forms to assemble into b
 /// @param[in] mpc The multi-point constraint
+/// @param[in] num_threads The number of threads to use for certain operations.
 void assemble_vector(
     std::span<double> b, const dolfinx::fem::Form<double>& L,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc);
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc,
+    std::size_t num_threads=1);
 
 /// Assemble a linear form into a vector
 /// @param[in] b The vector to be assembled. It will not be zeroed before
@@ -88,7 +90,8 @@ void assemble_vector(
     const dolfinx::fem::Form<std::complex<double>>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
-        mpc);
+        mpc,
+    std::size_t num_threads=1);
 
 /// Assemble a linear form into a vector
 /// @param[in] b The vector to be assembled. It will not be zeroed before
@@ -98,7 +101,8 @@ void assemble_vector(
 void assemble_vector(
     std::span<float> b, const dolfinx::fem::Form<float>& L,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc);
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc,
+    std::size_t num_threads=1);
 
 /// Assemble a linear form into a vector
 /// @param[in] b The vector to be assembled. It will not be zeroed before
@@ -110,6 +114,7 @@ void assemble_vector(
     const dolfinx::fem::Form<std::complex<float>>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
-        mpc);
+        mpc,
+    std::size_t num_threads=1);
 
 } // namespace dolfinx_mpc
