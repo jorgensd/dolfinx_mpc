@@ -36,6 +36,7 @@ def assemble_matrix(
     bcs: Optional[List[_bcs]] = None,
     diagval: _PETSc.ScalarType = 1.0,  # type: ignore
     A: Optional[_PETSc.Mat] = None,  # type: ignore
+    num_threads: int = 1,
 ):
     """
     Assembles a compiled DOLFINx form with given a multi point constraint and possible
@@ -48,6 +49,7 @@ def assemble_matrix(
         bcs: List of Dirichlet boundary conditions
         diagval: Value to set on the diagonal of the matrix
         A: PETSc matrix to assemble into (optional)
+        num_threads: The number of threads to use for certain operations
     """
     timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 
@@ -115,7 +117,7 @@ def assemble_matrix(
     )
     cell_perms = numpy.array([], dtype=numpy.uint32)
     if needs_transformation_data:
-        V.mesh.topology.create_entity_permutations()
+        V.mesh.topology.create_entity_permutations(num_threads)
         cell_perms = V.mesh.topology.get_cell_permutation_info()
     # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
     # to support more exotic elements
@@ -137,7 +139,7 @@ def assemble_matrix(
     if num_cell_integrals > 0:
         # NOTE: This depends on enum ordering in ufcx.h
         cell_form_pos = ufcx_form.form_integral_offsets[0]
-        V.mesh.topology.create_entity_permutations()
+        V.mesh.topology.create_entity_permutations(num_threads)
         for i in range(num_cell_integrals):
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, i)]
             cell_kernel = getattr(ufcx_form.form_integrals[cell_form_pos + i], f"tabulate_tensor_{nptype}")

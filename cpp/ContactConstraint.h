@@ -354,12 +354,14 @@ namespace dolfinx_mpc
 /// @param[in] nh Function containing the normal at the slave marker interface
 /// @param[in] eps2 The tolerance for the squared distance to be considered a
 /// collision
+/// @param[in] num_threads The number of threads to use for certain operations.
 template <typename T, std::floating_point U>
 mpc_data<T> create_contact_slip_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
     std::int32_t slave_marker, std::int32_t master_marker,
-    const dolfinx::fem::Function<T, U>& nh, const U eps2 = 1e-20)
+    const dolfinx::fem::Function<T, U>& nh, const U eps2 = 1e-20,
+    std::size_t num_threads=1)
 {
 
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
@@ -380,7 +382,7 @@ mpc_data<T> create_contact_slip_condition(
 
   mesh->topology_mutable()->create_connectivity(fdim, tdim);
   mesh->topology_mutable()->create_connectivity(tdim, tdim);
-  mesh->topology_mutable()->create_entity_permutations();
+  mesh->topology_mutable()->create_entity_permutations(num_threads);
 
   // Find all slave dofs and split them into locally owned and ghosted blocks
   std::vector<std::int32_t> local_slave_blocks;
@@ -469,7 +471,7 @@ mpc_data<T> create_contact_slip_condition(
                                                 slave_coordinates, eps2);
 
     auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, slave_coordinates, local_cell_collisions, eps2);
+        V, slave_coordinates, local_cell_collisions, eps2, num_threads);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -593,7 +595,7 @@ mpc_data<T> create_contact_slip_condition(
         = dolfinx_mpc::find_local_collisions<U>(*mesh, bb_tree, recv_coords,
                                                 eps2);
     auto [recv_basis_values, shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, recv_coords, remote_cell_collisions, eps2);
+        V, recv_coords, remote_cell_collisions, eps2, num_threads);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
         basis_span(recv_basis_values.data(), shape[0], shape[1]);
@@ -902,11 +904,12 @@ mpc_data<T> create_contact_slip_condition(
 /// error if a degree of freedom in the closure of the master entities does not
 /// have a corresponding set of slave degrees of freedom.
 template <typename T, std::floating_point U>
+/// @param[in] num_threads The number of threads to use for certain operations.
 mpc_data<T> create_contact_inelastic_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
     dolfinx::mesh::MeshTags<std::int32_t> meshtags, std::int32_t slave_marker,
     std::int32_t master_marker, const U eps2 = 1e-20,
-    bool allow_missing_masters = false)
+    bool allow_missing_masters = false, std::size_t num_threads = 1)
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
 
@@ -923,7 +926,7 @@ mpc_data<T> create_contact_inelastic_condition(
   std::int32_t size_local = V.dofmap()->index_map->size_local();
 
   // Create entity permutations needed in evaluate_basis_functions
-  V.mesh()->topology_mutable()->create_entity_permutations();
+  V.mesh()->topology_mutable()->create_entity_permutations(num_threads);
   // Create connectivities needed for evaluate_basis_functions and
   // select_colliding cells
   V.mesh()->topology_mutable()->create_connectivity(fdim, tdim);
@@ -1006,7 +1009,7 @@ mpc_data<T> create_contact_inelastic_condition(
         = dolfinx_mpc::find_local_collisions<U>(*V.mesh(), bb_tree,
                                                 slave_coordinates, eps2);
     auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, slave_coordinates, colliding_cells, eps2);
+        V, slave_coordinates, colliding_cells, eps2, num_threads);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -1233,7 +1236,7 @@ mpc_data<T> create_contact_inelastic_condition(
         = dolfinx_mpc::find_local_collisions<U>(*V.mesh(), bb_tree, recv_coords,
                                                 eps2);
     auto [basis, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-        V, recv_coords, remote_cell_collisions, eps2);
+        V, recv_coords, remote_cell_collisions, eps2, num_threads);
     assert(basis_shape.back() == 1);
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>

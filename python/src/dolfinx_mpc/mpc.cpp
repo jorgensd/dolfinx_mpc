@@ -152,7 +152,7 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, const U tol)
+         T scale, bool collapse, const U tol, std::size_t num_threads)
       {
         auto _indicator
             = [&indicator](MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -180,10 +180,10 @@ void declare_functions(nb::module_& m)
           return output;
         };
         return dolfinx_mpc::create_periodic_condition_geometrical(
-            V, _indicator, _relation, bcs, scale, collapse, tol);
+            V, _indicator, _relation, bcs, scale, collapse, tol, num_threads);
       },
       "V"_a, "indicator"_a, "relation"_a, "bcs"_a, nb::arg("scale").noconvert(),
-      nb::arg("collapse").noconvert(), nb::arg("tol").noconvert());
+      nb::arg("collapse").noconvert(), nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert());
   m.def(
       "create_periodic_constraint_topological",
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
@@ -193,7 +193,7 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, const U tol)
+         T scale, bool collapse, const U tol, std::size_t num_threads)
       {
         auto _relation = [&relation](std::span<const U> x) -> std::vector<U>
         {
@@ -204,11 +204,11 @@ void declare_functions(nb::module_& m)
           return output;
         };
         return dolfinx_mpc::create_periodic_condition_topological(
-            V, meshtags, dim, _relation, bcs, scale, collapse, tol);
+            V, meshtags, dim, _relation, bcs, scale, collapse, tol, num_threads);
       },
       "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a,
       nb::arg("scale").noconvert(), nb::arg("collapse").noconvert(),
-      nb::arg("tol").noconvert());
+      nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert());
 }
 
 template <typename T, std::floating_point U>
@@ -279,21 +279,22 @@ void declare_petsc_functions(nb::module_& m)
              mpc1,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         const T diagval)
+         const T diagval, std::size_t num_threads)
       {
         dolfinx_mpc::assemble_matrix(
             dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES),
             dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, mpc0, mpc1,
-            bcs, diagval);
+            bcs, diagval, num_threads);
       });
   m.def(
       "assemble_vector",
       [](nb::ndarray<T, nb::ndim<1>, nb::c_contig> b,
          const dolfinx::fem::Form<T>& L,
          const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&
-             mpc)
-      { dolfinx_mpc::assemble_vector(std::span(b.data(), b.size()), L, mpc); },
-      "b"_a, "L"_a, "mpc"_a, "Assemble linear form into an existing vector");
+             mpc,
+         std::size_t num_threads)
+      { dolfinx_mpc::assemble_vector(std::span(b.data(), b.size()), L, mpc, num_threads); },
+      "b"_a, "L"_a, "mpc"_a, nb::arg("num_threads"), "Assemble linear form into an existing vector");
 
   m.def(
       "apply_lifting",
@@ -303,17 +304,18 @@ void declare_petsc_functions(nb::module_& m)
              std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>>>& bcs1,
          const std::vector<nb::ndarray<const T, nb::ndim<1>, nb::c_contig>>& x0,
          T scale,
-         std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
+         std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
+         std::size_t num_threads)
       {
         std::vector<std::span<const T>> _x0;
         for (const auto& x : x0)
           _x0.emplace_back(x.data(), x.size());
 
         dolfinx_mpc::apply_lifting(std::span(b.data(), b.size()), a, bcs1, _x0,
-                                   scale, mpc);
+                                   scale, mpc, num_threads);
       },
       nb::arg("b"), nb::arg("a"), nb::arg("bcs"), nb::arg("x0"),
-      nb::arg("scale"), nb::arg("mpc"),
+      nb::arg("scale"), nb::arg("mpc"), nb::arg("num_threads"),
       "Assemble apply lifting from form a on vector b");
 
   m.def(

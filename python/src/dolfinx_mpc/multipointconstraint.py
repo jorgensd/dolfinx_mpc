@@ -231,6 +231,7 @@ class MultiPointConstraint:
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),  # type: ignore
         tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
+        num_threads: Optional[int] = 1,
     ):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
@@ -246,17 +247,34 @@ class MultiPointConstraint:
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
                 collision searches to determine periodic degrees of freedom.
+            num_threads: The number of threads to use for certain operations
         """
         bcs_ = [bc._cpp_object for bc in bcs]
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, False, float(tol)
+                self.V._cpp_object,
+                meshtag._cpp_object,
+                tag,
+                relation,
+                bcs_,
+                scale,
+                False,
+                float(tol),
+                num_threads=num_threads,
             )
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object, meshtag._cpp_object, tag, relation, bcs_, scale, True, float(tol)
+                V._cpp_object,
+                meshtag._cpp_object,
+                tag,
+                relation,
+                bcs_,
+                scale,
+                True,
+                float(tol),
+                num_threads=num_threads,
             )
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
@@ -270,6 +288,7 @@ class MultiPointConstraint:
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),  # type: ignore
         tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
+        num_threads: Optional[int] = 1,
     ):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies
@@ -286,17 +305,18 @@ class MultiPointConstraint:
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
                 collision searches to determine periodic degrees of freedom.
+            num_threads: The number of threads to use for certain operations.
         """
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                self.V._cpp_object, indicator, relation, bcs, scale, False, float(tol)
+                self.V._cpp_object, indicator, relation, bcs, scale, False, float(tol), num_threads
             )
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                V._cpp_object, indicator, relation, bcs, scale, True, float(tol)
+                V._cpp_object, indicator, relation, bcs, scale, True, float(tol), num_threads
             )
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
@@ -419,6 +439,7 @@ class MultiPointConstraint:
         master_marker: int,
         normal: _fem.Function,
         eps2: float = 1e-20,
+        num_threads: Optional[int] = 1,
     ):
         """
         Create a slip condition between two sets of facets marker with individual markers.
@@ -432,16 +453,12 @@ class MultiPointConstraint:
             master_marker: The marker of the master facets
             normal: The function used in the dot-product of the constraint
             eps2: The tolerance for the squared distance between cells to be considered as a collision
+            num_threads: The number of threads to use for certain operations
         """
         if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             eps2 = eps2.item()  # type: ignore
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-            self.V._cpp_object,
-            meshtags._cpp_object,
-            slave_marker,
-            master_marker,
-            normal._cpp_object,
-            eps2,
+            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, normal._cpp_object, eps2, num_threads
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
@@ -452,6 +469,7 @@ class MultiPointConstraint:
         master_marker: int,
         eps2: float = 1e-20,
         allow_missing_masters: bool = False,
+        num_threads: Optional[int] = 1,
     ):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
@@ -467,11 +485,18 @@ class MultiPointConstraint:
             allow_missing_masters: If true, the function will not throw an error if a degree of freedom
                 in the closure of the master entities does not have a corresponding set of slave degree
                 of freedom.
+            num_threads: The number of threads to use for certain operations
         """
         if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             eps2 = eps2.item()  # type: ignore
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
-            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, eps2, allow_missing_masters
+            self.V._cpp_object,
+            meshtags._cpp_object,
+            slave_marker,
+            master_marker,
+            eps2,
+            allow_missing_masters,
+            num_threads,
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 

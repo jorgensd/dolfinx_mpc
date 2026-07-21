@@ -93,7 +93,8 @@ void _assemble_entities_impl(
 template <typename T, std::floating_point U>
 void _assemble_vector(
     std::span<T> b, const dolfinx::fem::Form<T>& L,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
+  std::size_t num_threads)
 {
 
   const auto mesh = L.mesh();
@@ -136,7 +137,7 @@ void _assemble_vector(
   std::span<const std::uint32_t> cell_info0;
   if (needs_transformation_data)
   {
-    mesh0->topology_mutable()->create_entity_permutations();
+    mesh0->topology_mutable()->create_entity_permutations(num_threads);
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
   }
 
@@ -262,9 +263,9 @@ void _assemble_vector(
 void dolfinx_mpc::assemble_vector(
     std::span<double> b, const dolfinx::fem::Form<double>& L,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc)
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc, std::size_t num_threads)
 {
-  _assemble_vector<double>(b, L, mpc);
+  _assemble_vector<double>(b, L, mpc, num_threads);
 }
 
 void dolfinx_mpc::assemble_vector(
@@ -272,17 +273,17 @@ void dolfinx_mpc::assemble_vector(
     const dolfinx::fem::Form<std::complex<double>>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
-        mpc)
+        mpc, std::size_t num_threads)
 {
-  _assemble_vector<std::complex<double>>(b, L, mpc);
+  _assemble_vector<std::complex<double>>(b, L, mpc, num_threads);
 }
 
 void dolfinx_mpc::assemble_vector(
     std::span<float> b, const dolfinx::fem::Form<float>& L,
     const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc)
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc, std::size_t num_threads)
 {
-  _assemble_vector<float>(b, L, mpc);
+  _assemble_vector<float>(b, L, mpc, num_threads);
 }
 
 void dolfinx_mpc::assemble_vector(
@@ -290,8 +291,8 @@ void dolfinx_mpc::assemble_vector(
     const dolfinx::fem::Form<std::complex<float>>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
-        mpc)
+        mpc, std::size_t num_threads)
 {
-  _assemble_vector<std::complex<float>>(b, L, mpc);
+  _assemble_vector<std::complex<float>>(b, L, mpc, num_threads);
 }
 //-----------------------------------------------------------------------------

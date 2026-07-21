@@ -24,6 +24,7 @@ def assemble_matrix(
     bcs: Optional[Sequence[_fem.DirichletBC]] = None,
     diagval: _PETSc.ScalarType = 1,  # type: ignore
     A: Optional[_PETSc.Mat] = None,  # type: ignore
+    num_threads: Optional[int] = 1,
 ) -> _PETSc.Mat:  # type: ignore
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
@@ -35,7 +36,7 @@ def assemble_matrix(
         bcs: Sequence of Dirichlet boundary conditions
         diagval: Value to set on the diagonal of the matrix
         A: PETSc matrix to assemble into
-
+        num_threads: The number of threads to use for certain operations
     Returns:
         _PETSc.Mat: The matrix with the assembled bi-linear form  #type: ignore
     """
@@ -50,7 +51,9 @@ def assemble_matrix(
     A.zeroEntries()
 
     # Assemble matrix in C++
-    cpp.mpc.assemble_matrix(A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs, diagval)
+    cpp.mpc.assemble_matrix(
+        A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs, diagval, num_threads
+    )
 
     # Add one on diagonal for Dirichlet boundary conditions
     if form.function_spaces[0] is form.function_spaces[1]:
@@ -119,6 +122,7 @@ def assemble_matrix_nest(
     constraints: Sequence[MultiPointConstraint],
     bcs: Sequence[_fem.DirichletBC] = [],
     diagval: _PETSc.ScalarType = 1,  # type: ignore
+    num_threads: Optional[int] = 1,
 ):
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
@@ -131,9 +135,12 @@ def assemble_matrix_nest(
         bcs: Sequence of Dirichlet boundary conditions
         diagval: Value to set on the diagonal of the matrix (Default 1)
         A: PETSc matrix to assemble into
+        num_threads: The number of threads to use for certain operations
     """
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):
             if a_block is not None:
                 Asub = A.getNestSubMatrix(i, j)
-                assemble_matrix(a_block, (constraints[i], constraints[j]), bcs=bcs, diagval=diagval, A=Asub)
+                assemble_matrix(
+                    a_block, (constraints[i], constraints[j]), bcs=bcs, diagval=diagval, A=Asub, num_threads=num_threads
+                )

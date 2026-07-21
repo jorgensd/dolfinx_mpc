@@ -24,6 +24,7 @@ class MultiPointConstraint;
 ///  dofs the row and column are zeroed. The diagonal  entry is not set.
 /// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
 /// Dirichlet BC (default=1)
+/// @param[in] num_threads The number of threads to use for certain operations.
 void assemble_matrix(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
@@ -38,7 +39,8 @@ void assemble_matrix(
         const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
-    const double diagval = 1.0);
+    const double diagval = 1.0,
+    std::size_t num_threads=1);
 
 //-----------------------------------------------------------------------------
 /// Assemble bilinear form into a matrix
@@ -50,6 +52,7 @@ void assemble_matrix(
 ///  dofs the row and column are zeroed. The diagonal  entry is not set.
 /// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
 /// Dirichlet BC (default=1)
+/// @param[in] num_threads The number of threads to use for certain operations.
 void assemble_matrix(
     const std::function<
         int(std::span<const std::int32_t>, std::span<const std::int32_t>,
@@ -67,7 +70,8 @@ void assemble_matrix(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    const std::complex<double> diagval = 1.0);
+    const std::complex<double> diagval = 1.0,
+    std::size_t num_threads=1);
 
 /// Assemble bilinear form into a matrix
 /// @param[in] mat_add_block The function for adding block values into the
@@ -78,6 +82,7 @@ void assemble_matrix(
 ///  dofs the row and column are zeroed. The diagonal  entry is not set.
 /// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
 /// Dirichlet BC (default=1)
+/// @param[in] num_threads The number of threads to use for certain operations.
 void assemble_matrix(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
@@ -92,7 +97,8 @@ void assemble_matrix(
         const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
         bcs,
-    const float diagval = 1.0);
+    const float diagval = 1.0,
+    std::size_t num_threads=1);
 
 //-----------------------------------------------------------------------------
 /// Assemble bilinear form into a matrix
@@ -104,6 +110,7 @@ void assemble_matrix(
 ///  dofs the row and column are zeroed. The diagonal  entry is not set.
 /// @param[in] diagval Value to set on diagonal of matrix for slave dofs and
 /// Dirichlet BC (default=1)
+/// @param[in] num_threads The number of threads to use for certain operations.
 void assemble_matrix(
     const std::function<
         int(std::span<const std::int32_t>, std::span<const std::int32_t>,
@@ -121,6 +128,6 @@ void assemble_matrix(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
-    const std::complex<float> diagval = 1.0);
+    const std::complex<float> diagval = 1.0, std::size_t num_threads=1);
 
 } // namespace dolfinx_mpc
