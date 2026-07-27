@@ -17,7 +17,7 @@ import numba
 import numpy
 import numpy.typing as npt
 from dolfinx.common import Timer
-from ffcx.codegeneration.utils import get_void_pointer
+from ffcx.codegeneration.numba.utils import get_void_pointer  # noqa: E402
 
 from dolfinx_mpc.assemble_matrix import create_sparsity_pattern
 from dolfinx_mpc.multipointconstraint import MultiPointConstraint
