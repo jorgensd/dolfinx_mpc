@@ -1068,6 +1068,8 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
       MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
   // Reference coordinates for each point
+  std::vector<U> pull_back_scratch(
+      cmap.is_affine() ? 0 : cmap.pull_back_working_size(gdim));
   std::vector<U> Xb(num_points * tdim);
   mdspan2_t X(Xb.data(), num_points, tdim);
 
@@ -1131,7 +1133,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     else
     {
       // Pull-back physical point xp to reference coordinate Xp
-      cmap.pull_back_nonaffine(Xp, xp, coord_dofs, tol, 15);
+      cmap.pull_back_nonaffine(Xp, xp, coord_dofs, tol, 15, pull_back_scratch);
 
       cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
       dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
