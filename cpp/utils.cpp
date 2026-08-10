@@ -84,9 +84,12 @@ MPI_Comm dolfinx_mpc::create_owner_to_ghost_comm(
 {
   // Get data from IndexMap
   std::span<const int> ghost_owners = index_map->owners();
+
+  // Compute number of outgoing slaves and masters for each process
+  auto [data, offsets] = index_map->index_to_dest_ranks();
   const std::int32_t size_local = index_map->size_local();
-  dolfinx::graph::AdjacencyList<int> shared_indices
-      = index_map->index_to_dest_ranks();
+  dolfinx::graph::AdjacencyList<int> shared_indices(std::move(data),
+                                                    std::move(offsets));
 
   MPI_Comm comm = create_owner_to_ghost_comm(*index_map);
 

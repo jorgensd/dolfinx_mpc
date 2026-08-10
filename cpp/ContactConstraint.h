@@ -361,7 +361,7 @@ mpc_data<T> create_contact_slip_condition(
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
     std::int32_t slave_marker, std::int32_t master_marker,
     const dolfinx::fem::Function<T, U>& nh, const U eps2 = 1e-20,
-    std::size_t num_threads=1)
+    std::size_t num_threads = 1)
 {
 
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
@@ -1549,8 +1549,9 @@ mpc_data<T> create_contact_inelastic_condition(
                           inc_num_slaves[index]++;
                         });
   // Count number of outgoing slaves and masters
-  dolfinx::graph::AdjacencyList<int> shared_indices
-      = slave_index_map->index_to_dest_ranks();
+  auto [im_data, im_offsets] = slave_index_map->index_to_dest_ranks();
+  dolfinx::graph::AdjacencyList<int> shared_indices(std::move(im_data),
+                                                    std::move(im_offsets));
 
   std::vector<std::int32_t> out_num_slaves(dest_ranks_ghost.size(), 0);
   std::vector<std::int32_t> out_num_masters(dest_ranks_ghost.size() + 1, 0);
