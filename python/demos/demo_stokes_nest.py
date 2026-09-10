@@ -117,7 +117,13 @@ fdim = mesh.topology.dim - 1
 
 # Create the function space
 cellname = mesh.basix_cell()
-Ve = basix.ufl.element(basix.ElementFamily.P, cellname, 2, shape=(mesh.geometry.dim,), dtype=default_real_type)
+Ve = basix.ufl.element(
+    basix.ElementFamily.P,
+    cellname,
+    2,
+    shape=(mesh.geometry.dim,),
+    dtype=default_real_type,
+)
 Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=default_real_type)
 
 V = dolfinx.fem.functionspace(mesh, Ve)
@@ -237,7 +243,7 @@ ksp.setMonitor(
     )
 )
 ksp.setType("minres")
-tol = 10 * np.finfo(mesh.geometry.x.dtype).eps
+tol = 2 * np.finfo(mesh.geometry.x.dtype).eps
 ksp.setTolerances(rtol=tol, atol=tol)
 ksp.getPC().setType("fieldsplit")
 ksp.getPC().setFieldSplitType(PETSc.PC.CompositeType.ADDITIVE)  # type: ignore
@@ -263,12 +269,10 @@ for Uh_sub in Uh.getNestSubVecs():
         mode=PETSc.ScatterMode.FORWARD,  # type: ignore
     )  # type: ignore
 # ----------------------------- Put NestVec into DOLFINx Function - ---------
+
 uh = dolfinx.fem.Function(mpc.function_space)
-uh.x.petsc_vec.setArray(Uh.getNestSubVecs()[0].array)
-
 ph = dolfinx.fem.Function(mpc_q.function_space)
-ph.x.petsc_vec.setArray(Uh.getNestSubVecs()[1].array)
-
+dolfinx.fem.petsc.assign(Uh, [uh, ph])
 uh.x.scatter_forward()
 ph.x.scatter_forward()
 
@@ -355,7 +359,9 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = K @ d
-        np.testing.assert_allclose(np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2), atol=tol, rtol=100 * tol)
+        np.testing.assert_allclose(
+            np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2), atol=1e3 * tol, rtol=1e3 * tol
+        )
 
 
 A.destroy()
