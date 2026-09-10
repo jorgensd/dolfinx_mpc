@@ -356,7 +356,7 @@ void apply_lifting(
              nullptr);
       if (transform_set0)
         dof_transform(Ae, cell_info0, cell0, num_cols);
-      if transform_set_1
+      if (transform_set_1)
         dof_transform_to_transpose(Ae, cell_info1, cell1, num_rows);
 
       auto dmap1 = dofmap1->cell_dofs(cell1);
