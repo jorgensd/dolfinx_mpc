@@ -112,7 +112,7 @@ public:
     const std::int32_t num_local
         = dofmap.index_map_bs() * dofmap.index_map->size_local();
     auto it = std::ranges::lower_bound(_slaves, num_local);
-    _num_local_slaves = std::distance(_slaves.begin(), it);
+    _num_local_slaves = std::ranges::distance(_slaves.begin(), it);
 
     // Create new function space with extended index map
     _V = std::make_shared<const dolfinx::fem::FunctionSpace<U>>(

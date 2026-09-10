@@ -235,7 +235,9 @@ void apply_lifting(
       dof_transform_to_transpose
       = element1->template dof_transformation_right_fn<T>(
           dolfinx::fem::doftransform::transpose);
-
+  const bool transform_set0 = dolfinx::fem::is_transform_set(dof_transform);
+  const bool transform_set1
+      = dolfinx::fem::is_transform_set(dof_transform_to_transpose);
   // Loop over cell integrals and lift bc
 
   const auto fetch_cells
@@ -268,8 +270,10 @@ void apply_lifting(
       kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
              constants.data(), coordinate_dofs.data(), nullptr, nullptr,
              nullptr);
-      dof_transform(Ae, cell_info0, cell0, num_cols);
-      dof_transform_to_transpose(Ae, cell_info1, cell1, num_rows);
+      if (transform_set0)
+        dof_transform(Ae, cell_info0, cell0, num_cols);
+      if (transform_set1)
+        dof_transform_to_transpose(Ae, cell_info1, cell1, num_rows);
 
       auto dmap1 = dofmap1->cell_dofs(cell1);
       std::ranges::fill(be, 0);
@@ -476,7 +480,8 @@ void apply_lifting(
       }
       else
       {
-        impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc, num_threads);
+        impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc,
+                                    num_threads);
       }
     }
   }
@@ -514,7 +519,7 @@ void apply_lifting(
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
         mpc,
-      std::size_t num_threads = 1)
+    std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -575,7 +580,7 @@ void apply_lifting(
     const std::vector<std::span<const float>>& x0, float scale,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc,
-      std::size_t num_threads = 1)
+    std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
@@ -599,7 +604,8 @@ void apply_lifting(
       }
       else
       {
-        impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc, num_threads);
+        impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc,
+                                   num_threads);
       }
     }
   }
@@ -637,7 +643,8 @@ void apply_lifting(
 
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
-        mpc, std::size_t num_threads = 1)
+        mpc,
+    std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {

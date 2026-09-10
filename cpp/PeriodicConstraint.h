@@ -301,7 +301,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
         // Find position in neighborhood communicator
         auto it = std::ranges::find(s_to_m_ranks, proc);
         assert(it != s_to_m_ranks.end());
-        auto dist = std::distance(s_to_m_ranks.begin(), it);
+        auto dist = std::ranges::distance(s_to_m_ranks.begin(), it);
         const std::int32_t insert_location
             = disp_out[dist] + out_placement[dist]++;
         // Copy coordinates and dofs to output arrays
@@ -363,8 +363,8 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   std::vector<std::int32_t> remote_cell_collisions
       = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb, tol);
   auto [remote_basis_valuesb, r_basis_shape]
-      = dolfinx_mpc::evaluate_basis_functions<U>(V, coords_recvb,
-                                                 remote_cell_collisions, tol, num_threads);
+      = dolfinx_mpc::evaluate_basis_functions<U>(
+          V, coords_recvb, remote_cell_collisions, tol, num_threads);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
       remote_basis_values(remote_basis_valuesb.data(), r_basis_shape);
@@ -551,7 +551,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
     auto sub_map = [&parent_map](const std::int32_t& i)
     { return parent_map.front()[i]; };
     return _create_periodic_condition<T>(V_sub, std::span(reduced_blocks),
-                                         relation, scale, sub_map, *V, tol, num_threads);
+                                         relation, scale, sub_map, *V, tol,
+                                         num_threads);
   }
   else
   {
@@ -567,7 +568,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
         reduced_blocks.push_back(slave_blocks[i]);
     auto sub_map = [](const std::int32_t& dof) { return dof; };
     return _create_periodic_condition<T>(*V, std::span(reduced_blocks),
-                                         relation, scale, sub_map, *V, tol, num_threads);
+                                         relation, scale, sub_map, *V, tol,
+                                         num_threads);
   }
 }
 
@@ -634,7 +636,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     { return parent_map.front()[i]; };
     // Create mpc on sub space
     dolfinx_mpc::mpc_data<T> sub_data = _create_periodic_condition<T>(
-        V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V, tol, num_threads);
+        V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V, tol,
+        num_threads);
     return sub_data;
   }
   else
@@ -653,7 +656,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const auto sub_map = [](const std::int32_t& dof) { return dof; };
 
     return _create_periodic_condition<T, U>(*V, std::span(reduced_blocks),
-                                            relation, scale, sub_map, *V, tol, num_threads);
+                                            relation, scale, sub_map, *V, tol,
+                                            num_threads);
   }
 };
 
@@ -677,8 +681,8 @@ mpc_data<double> create_periodic_condition_geometrical(
     const double tol = 500 * std::numeric_limits<double>::epsilon(),
     std::size_t num_threads = 1)
 {
-  return impl::geometrical_condition<double, double>(V, indicator, relation,
-                                                     bcs, scale, collapse, tol, num_threads);
+  return impl::geometrical_condition<double, double>(
+      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
 }
 
 mpc_data<std::complex<double>> create_periodic_condition_geometrical(
@@ -712,8 +716,8 @@ mpc_data<double> create_periodic_condition_topological(
     const double tol = 500 * std::numeric_limits<double>::epsilon(),
     std::size_t num_threads = 1)
 {
-  return impl::topological_condition<double, double>(V, meshtag, tag, relation,
-                                                     bcs, scale, collapse, tol, num_threads);
+  return impl::topological_condition<double, double>(
+      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
 }
 
 mpc_data<std::complex<double>> create_periodic_condition_topological(
@@ -747,8 +751,8 @@ mpc_data<float> create_periodic_condition_geometrical(
     const float tol = 500 * std::numeric_limits<float>::epsilon(),
     std::size_t num_threads = 1)
 {
-  return impl::geometrical_condition<float, float>(V, indicator, relation, bcs,
-                                                   scale, collapse, tol, num_threads);
+  return impl::geometrical_condition<float, float>(
+      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
 }
 
 mpc_data<std::complex<float>> create_periodic_condition_geometrical(
@@ -782,8 +786,8 @@ mpc_data<float> create_periodic_condition_topological(
     const float tol = 500 * std::numeric_limits<float>::epsilon(),
     std::size_t num_threads = 1)
 {
-  return impl::topological_condition<float, float>(V, meshtag, tag, relation,
-                                                   bcs, scale, collapse, tol, num_threads);
+  return impl::topological_condition<float, float>(
+      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
 }
 
 mpc_data<std::complex<float>> create_periodic_condition_topological(

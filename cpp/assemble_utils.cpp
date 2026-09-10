@@ -21,7 +21,7 @@ std::vector<std::int32_t> dolfinx_mpc::compute_local_slave_index(
       if (is_slave[dof])
       {
         auto it = std::ranges::find(slaves, dof);
-        const auto slave_index = std::distance(slaves.begin(), it);
+        const auto slave_index = std::ranges::distance(slaves.begin(), it);
         local_index[slave_index] = i * bs + j;
       }
     }

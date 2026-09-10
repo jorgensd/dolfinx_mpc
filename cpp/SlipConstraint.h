@@ -122,7 +122,7 @@ mpc_data<T> create_slip_condition(
     // issues with grids aligned with coordiante system)
     auto max_el = std::ranges::max_element(
         normal, [](T a, T b) { return std::norm(a) < std::norm(b); });
-    auto slave_index = std::distance(normal.begin(), max_el);
+    auto slave_index = std::ranges::distance(normal.begin(), max_el);
     assert(slave_index < num_normal_components);
     std::int32_t parent_slave
         = parent_map(block * num_normal_components + slave_index);
