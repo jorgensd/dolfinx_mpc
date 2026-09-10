@@ -62,7 +62,7 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
     const auto it
         = std::find(cell_entities.begin(), cell_entities.end(), entities[i]);
     assert(it != cell_entities.end());
-    const auto local_entity = std::distance(cell_entities.begin(), it);
+    const auto local_entity = std::ranges::distance(cell_entities.begin(), it);
     local_indices[i] = local_entity;
     auto cell_blocks = dofmap.cell_dofs(cell[0]);
     auto closure_blocks
@@ -741,7 +741,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       slave_rems[i] = div.rem;
       auto it = std::ranges::find(blocks, div.quot);
       assert(it != blocks.end());
-      auto index = std::distance(blocks.begin(), it);
+      auto index = std::ranges::distance(blocks.begin(), it);
       parent_to_sub.push_back((int)index);
     }
   }
@@ -766,7 +766,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     {
       // Find index of process in local MPI communicator
       auto it = std::ranges::find(dest_ranks_ghosts, proc);
-      const auto index = std::distance(dest_ranks_ghosts.begin(), it);
+      const auto index = std::ranges::distance(dest_ranks_ghosts.begin(), it);
       out_num_masters[index] += num_masters_per_slave[i];
       out_num_slaves[index]++;
     }
@@ -820,7 +820,7 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     {
       // Find index of process in local MPI communicator
       auto it = std::ranges::find(dest_ranks_ghosts, proc);
-      const auto index = std::distance(dest_ranks_ghosts.begin(), it);
+      const auto index = std::ranges::distance(dest_ranks_ghosts.begin(), it);
 
       // Insert slave and num masters per slave
       slaves_out_loc[disp_out_slaves[index] + insert_slaves[index]] = slaves[i];
@@ -1176,7 +1176,8 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
 
   auto apply_dof_transformation = element->template dof_transformation_fn<U>(
       dolfinx::fem::doftransform::standard);
-
+  const bool transform_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation);
   mdspan3_t full_basis(output_basis.data(), reference_shape);
   for (std::size_t p = 0; p < cells.size(); ++p)
   {
@@ -1189,8 +1190,11 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
     std::ranges::copy_n(
         std::next(reference_basisb.begin(), num_basis_values * p),
         num_basis_values, basis_valuesb.begin());
-    apply_dof_transformation(basis_valuesb, cell_info, cell_index,
-                             (int)reference_value_size);
+    if (transform_set)
+    {
+      apply_dof_transformation(basis_valuesb, cell_info, cell_index,
+                               (int)reference_value_size);
+    }
 
     auto _U = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
         full_basis, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
@@ -1305,7 +1309,8 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   const auto apply_dof_transformation
       = element->template dof_transformation_fn<U>(
           dolfinx::fem::doftransform::standard);
-
+  const bool transform_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation);
   const std::array<std::size_t, 4> bsize = cmap.tabulate_shape(0, X_shape[0]);
   std::vector<U> phi_b(
       std::reduce(bsize.begin(), bsize.end(), 1, std::multiplies{}));
@@ -1343,17 +1348,19 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
       for (std::size_t j = 0; j < gdim; ++j)
         coordinate_dofs(i, j) = x_g[pos + j];
     }
-
     // Tabulate dof coordinates on cell
     dolfinx::fem::CoordinateElement<U>::push_forward(x, coordinate_dofs, phi);
-    apply_dof_transformation(std::span(xb.data(), x.size()),
-                             std::span(cell_info.data(), cell_info.size()),
-                             (std::int32_t)c, (int)gdim);
+    if (transform_set)
+    {
+      apply_dof_transformation(std::span(xb.data(), x.size()),
+                               std::span(cell_info.data(), cell_info.size()),
+                               (std::int32_t)c, (int)gdim);
+    }
 
     // Get cell dofmap
     auto cell_dofs = dofmap->cell_dofs(cells[c]);
     auto it = std::ranges::find(cell_dofs, dofs[c]);
-    auto loc = std::distance(cell_dofs.begin(), it);
+    auto loc = std::ranges::distance(cell_dofs.begin(), it);
 
     // Copy dof coordinates into vector
     for (std::size_t j = 0; j < gdim; ++j)
@@ -1408,7 +1415,7 @@ dolfinx::graph::AdjacencyList<int> compute_colliding_cells(
     if (auto cell_idx = std::ranges::min_element(distances_sq);
         *cell_idx < eps2)
     {
-      auto pos = std::distance(distances_sq.begin(), cell_idx);
+      auto pos = std::ranges::distance(distances_sq.begin(), cell_idx);
       colliding_cells.push_back(cells[pos]);
     }
     offsets.push_back((std::int32_t)colliding_cells.size());

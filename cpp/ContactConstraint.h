@@ -254,7 +254,7 @@ dolfinx_mpc::mpc_data<T> compute_block_contributions(
     const std::int32_t local_slave = local_slaves[i];
     std::iota(dofs.begin(), dofs.end(), local_slave_blocks[i] * block_size);
     auto local_max = std::ranges::find(dofs, local_slave);
-    const auto max_index = std::distance(dofs.begin(), local_max);
+    const auto max_index = std::ranges::distance(dofs.begin(), local_max);
     for (std::int32_t j = 0; j < block_size; j++)
     {
       if ((dofs[j] != local_slave) && std::abs(normals[3 * i + j]) > 1e-6)
@@ -428,7 +428,7 @@ mpc_data<T> create_contact_slip_condition(
                        + normal[2] * normal[2]);
     std::ranges::for_each(normal,
                           [norm](auto& n) { return std::abs(n / norm); });
-    return std::distance(
+    return std::ranges::distance(
         normal.begin(),
         std::ranges::max_element(normal, [](T a, T b)
                                  { return std::norm(a) < std::norm(b); }));
@@ -911,6 +911,7 @@ mpc_data<T> create_contact_inelastic_condition(
     std::int32_t master_marker, const U eps2 = 1e-20,
     bool allow_missing_masters = false, std::size_t num_threads = 1)
 {
+  std::cout << "Creating contact inelastic condition" << std::endl;
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
 
   MPI_Comm comm = V.mesh()->comm();
@@ -989,6 +990,7 @@ mpc_data<T> create_contact_inelastic_condition(
   // Tabulate slave block coordinates and find colliding cells
   std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
       *V.mesh()->topology(), *V.dofmap(), local_blocks);
+
   std::vector<U> slave_coordinates;
   {
     std::array<std::size_t, 2> c_shape;
@@ -1536,18 +1538,17 @@ mpc_data<T> create_contact_inelastic_condition(
 
   // Count number of incoming slaves
   std::vector<std::int32_t> inc_num_slaves(src_ranks_ghost.size(), 0);
-  std::ranges::for_each(ghost_slaves,
-                        [block_size, size_local, &ghost_owners, &inc_num_slaves,
-                         &src_ranks_ghost](std::int32_t slave)
-                        {
-                          const std::int32_t owner
-                              = ghost_owners[slave / block_size - size_local];
-                          const auto it
-                              = std::ranges::find(src_ranks_ghost, owner);
-                          const auto index
-                              = std::distance(src_ranks_ghost.begin(), it);
-                          inc_num_slaves[index]++;
-                        });
+  std::ranges::for_each(
+      ghost_slaves,
+      [block_size, size_local, &ghost_owners, &inc_num_slaves,
+       &src_ranks_ghost](std::int32_t slave)
+      {
+        const std::int32_t owner
+            = ghost_owners[slave / block_size - size_local];
+        const auto it = std::ranges::find(src_ranks_ghost, owner);
+        const auto index = std::ranges::distance(src_ranks_ghost.begin(), it);
+        inc_num_slaves[index]++;
+      });
   // Count number of outgoing slaves and masters
   auto [im_data, im_offsets] = slave_index_map->index_to_dest_ranks();
   dolfinx::graph::AdjacencyList<int> shared_indices(std::move(im_data),
@@ -1583,7 +1584,8 @@ mpc_data<T> create_contact_inelastic_condition(
           for (auto proc : shared_indices.links(slave / block_size))
           {
             const auto it = std::ranges::find(dest_ranks_ghost, proc);
-            std::int32_t index = std::distance(dest_ranks_ghost.begin(), it);
+            std::int32_t index
+                = std::ranges::distance(dest_ranks_ghost.begin(), it);
             out_num_masters[index] += num_masters;
             out_num_slaves[index]++;
             // Map slaves to global dof to be recognized by recv proc

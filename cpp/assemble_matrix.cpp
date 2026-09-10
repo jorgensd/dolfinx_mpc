@@ -338,7 +338,10 @@ void assemble_exterior_facets(
       T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
       Ae(Aeb.data(), ndim0, ndim1);
   const std::span<T> _Ae(Aeb);
-
+  const bool is_transform0_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation);
+  const bool is_transform1_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
   std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
   for (std::size_t l = 0; l < facets.size(); l += 2)
   {
@@ -360,8 +363,10 @@ void assemble_exterior_facets(
     std::ranges::fill(Aeb, 0);
     kernel(Aeb.data(), coeffs.data() + l / 2 * cstride, constants.data(),
            coordinate_dofs.data(), &local_facet, nullptr, nullptr);
-    apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
-    apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
+    if (is_transform0_set)
+      apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
+    if (is_transform1_set)
+      apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
 
     // Zero rows/columns for essential bcs
     auto dmap0 = dofmap0.cell_dofs(cell0);
@@ -485,6 +490,10 @@ void assemble_cells_impl(
   const std::span<T> _Ae(Aeb);
   std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
 
+  const bool transform0_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation);
+  const bool transform1_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
   for (std::size_t index = 0; index < active_cells0.size(); index++)
   {
     const std::int32_t cell = active_cells[index];
@@ -504,8 +513,14 @@ void assemble_cells_impl(
     std::ranges::fill(Aeb, 0);
     kernel(Aeb.data(), coeffs.data() + index * cstride, constants.data(),
            coordinate_dofs.data(), nullptr, nullptr, nullptr);
-    apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
-    apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
+    if (transform0_set)
+    {
+      apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
+    }
+    if (transform1_set)
+    {
+      apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
+    }
 
     // Zero rows/columns for essential bcs
     std::span<const std::int32_t> dofs0 = dofmap0.cell_dofs(cell0);
@@ -559,7 +574,7 @@ void assemble_matrix_impl(
     const std::vector<std::int8_t>& bc1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
-  std::size_t num_threads)
+    std::size_t num_threads)
 {
   // Integration domain mesh
   std::shared_ptr<const dolfinx::mesh::Mesh<U>> mesh = a.mesh();
@@ -671,8 +686,7 @@ void _assemble_matrix(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    const T diagval,
-    std::size_t num_threads)
+    const T diagval, std::size_t num_threads)
 {
   dolfinx::common::Timer timer("~MPC: Assemble matrix (C++)");
 
@@ -742,7 +756,8 @@ void dolfinx_mpc::assemble_matrix(
         bcs,
     const double diagval, std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval, num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
+                   num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -762,10 +777,10 @@ void dolfinx_mpc::assemble_matrix(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    const std::complex<double> diagval,
-    std::size_t num_threads)
+    const std::complex<double> diagval, std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval, num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
+                   num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -782,10 +797,10 @@ void dolfinx_mpc::assemble_matrix(
         const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
         bcs,
-    const float diagval,
-    std::size_t num_threads)
+    const float diagval, std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval, num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
+                   num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -805,8 +820,8 @@ void dolfinx_mpc::assemble_matrix(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
-    const std::complex<float> diagval,
-    std::size_t num_threads)
+    const std::complex<float> diagval, std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval, num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
+                   num_threads);
 }
