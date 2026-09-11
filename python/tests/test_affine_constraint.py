@@ -372,3 +372,86 @@ def test_slave_that_is_also_dirichlet_is_rejected():
     mpc.create_general_constraint(s_m_c)
     with pytest.raises(Exception, match="both a slave"):
         mpc.finalize()
+
+
+@pytest.mark.parametrize("degree", [1, 2])
+def test_dirichletbc_as_pure_mpc(degree):
+    """A Dirichlet condition expressed entirely as an affine constraint.
+
+    A constrained dof is added as a slave with an *empty* master list and an offset equal
+    to the boundary value, so the relation degenerates to :math:`u_s = g_s`. No
+    `DirichletBC` is given to the assembler at all. The result must match what plain
+    DOLFINx produces for the same problem with an ordinary `DirichletBC`.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 8, 8)
+    V = fem.functionspace(mesh, ("Lagrange", degree))
+
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    x = ufl.SpatialCoordinate(mesh)
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx + ufl.inner(u, v) * ufl.dx
+    rhs = ufl.inner(x[1] * ufl.sin(2 * ufl.pi * x[0]) + 1, v) * ufl.dx
+
+    # A spatially varying condition on x = 0 and x = 1
+    def boundary(x):
+        return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+
+    u_bc = fem.Function(V)
+    u_bc.interpolate(lambda x: 1.0 + x[0] + 2.0 * x[1] ** 2)
+    bc_dofs = fem.locate_dofs_geometrical(V, boundary)
+
+    # Reference: ordinary DOLFINx with a DirichletBC
+    ref = dolfinx.fem.petsc.LinearProblem(
+        a,
+        rhs,
+        bcs=[fem.dirichletbc(u_bc, bc_dofs)],
+        petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+        petsc_options_prefix="dirichlet_as_mpc_reference_",
+    )
+    u_ref = ref.solve()
+
+    # The same condition as a constraint. Ghost slaves must be declared too: a process
+    # that only ghosts a constrained dof still assembles cells touching it, and would
+    # otherwise not eliminate it. `locate_dofs_geometrical` returns owned and ghost dofs,
+    # which is exactly what is needed here.
+    num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    slaves = np.sort(bc_dofs).astype(np.int32)
+
+    g = fem.Function(V)
+    g.x.array[:] = 0.0
+    g.x.array[slaves] = u_bc.x.array[slaves]
+    g.x.scatter_forward()
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V, rhs_coeffs=g)
+    mpc.add_constraint(
+        V,
+        slaves,
+        np.array([], dtype=np.int64),  # no masters
+        np.array([], dtype=default_scalar_type),
+        np.array([], dtype=np.int32),
+        np.zeros(len(slaves) + 1, dtype=np.int32),
+    )
+    mpc.finalize()
+
+    # Every slave is a pure offset, and no Dirichlet condition reaches the assembler
+    assert mpc.has_inhomogeneity
+    for slave in mpc.slaves[: mpc.num_local_slaves]:
+        assert len(mpc.masters.links(slave)) == 0
+
+    problem = dolfinx_mpc.LinearProblem(
+        a,
+        rhs,
+        mpc,
+        bcs=[],
+        petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+    )
+    uh = problem.solve()
+
+    # The constraint must reproduce the boundary data exactly
+    nt.assert_allclose(uh.x.array[slaves], u_bc.x.array[slaves], rtol=1e-10, atol=1e-12)
+
+    # ... and the whole solution must match the ordinary DirichletBC solve. Compare the
+    # owned block only, since the constraint's space carries extra ghosts in parallel,
+    # and reduce before asserting so that every process reaches the same verdict.
+    err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
+    err = mesh.comm.allreduce(float(err), op=MPI.MAX)
+    assert err < 1e-9, f"MPC-as-DirichletBC solution differs from DOLFINx by {err}"

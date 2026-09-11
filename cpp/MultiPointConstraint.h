@@ -242,7 +242,12 @@ public:
   /// values of the Dirichlet conditions supplied at construction change.
   void update_constants()
   {
-    std::ranges::copy(_rhs_coeffs, _mpc_constants.begin());
+    // The offset is only defined for slaves. Zeroing it elsewhere keeps
+    // `constant_values` equal to the g of `x = K x_red + g`, so that a value
+    // supplied for an unconstrained dof cannot silently perturb the lifting.
+    for (std::size_t i = 0; i < _mpc_constants.size(); ++i)
+      _mpc_constants[i] = _is_slave[i] ? _rhs_coeffs[i] : T(0);
+
     if (!_bcs.empty())
     {
       const std::vector<T> g = gather_bc_values();
