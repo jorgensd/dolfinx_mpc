@@ -19,6 +19,7 @@ from .assemble_matrix import (
 )
 from .assemble_vector import (
     apply_lifting,
+    apply_mpc_lifting,
     assemble_vector,
     assemble_vector_nest,
     create_vector_nest,
@@ -32,6 +33,7 @@ __all__ = [
     "assemble_matrix_nest",
     "assemble_vector",
     "apply_lifting",
+    "apply_mpc_lifting",
     "assemble_vector_nest",
     "create_vector_nest",
     "MultiPointConstraint",

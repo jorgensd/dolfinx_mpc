@@ -76,6 +76,60 @@ def apply_lifting(
     t.stop()
 
 
+def apply_mpc_lifting(
+    b: _PETSc.Vec,  # type: ignore
+    form: Sequence[_fem.Form],
+    constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    constraint1: Optional[Sequence[MultiPointConstraint]] = None,
+    scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+    num_threads: Optional[int] = 1,
+):
+    """
+    Lift the inhomogeneity of a multi point constraint into the vector `b`, i.e.
+
+    :math:`b = b - scale \\cdot K^T (A_j g_j)`
+
+    where :math:`g` is the constraint offset of the constraint on the trial space. This is
+    the term arising in :math:`K^T A K x_{red} = K^T (b - A g)` for the affine constraint
+    :math:`x = K x_{red} + g`, and is a no-op for a homogeneous constraint.
+
+    Note:
+        Only required when solving directly for :math:`x_{red}`. A residual assembled at an
+        iterate that already satisfies the constraint contains :math:`K^T A g` already, so
+        the Newton/SNES path must not call this.
+
+    Args:
+        b: PETSc vector to assemble into
+        form: The bilinear forms, one per block column
+        constraint: The multi point constraint for the rows of `b`
+        constraint1: The multi point constraints for the columns, one per block. Defaults
+            to `constraint`, which is correct for a square problem.
+        scale: Scaling for lifting
+        num_threads: The number of threads to use for certain operations
+    """
+    t = Timer("~MPC: Apply MPC lifting (C++)")
+    if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+        scale = scale.item()  # type: ignore
+
+    if b.getType() == "nest":
+        assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
+        cols = constraint if constraint1 is None else constraint1
+        for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
+            _a = [None if f is None else f._cpp_object for f in a_sub]  # type: ignore
+            _mpc1 = [c._cpp_object for c in cols]  # type: ignore
+            dolfinx_mpc.cpp.mpc.apply_mpc_lifting(b_sub.array_w, _a, scale, mpc_i._cpp_object, _mpc1, num_threads)
+    else:
+        assert isinstance(constraint, MultiPointConstraint)
+        cols = [constraint] if constraint1 is None else constraint1
+        with b.localForm() as b_local:
+            _forms = [f._cpp_object for f in form]  # type: ignore
+            _mpc1 = [c._cpp_object for c in cols]  # type: ignore
+            dolfinx_mpc.cpp.mpc.apply_mpc_lifting(
+                b_local.array_w, _forms, scale, constraint._cpp_object, _mpc1, num_threads
+            )
+    t.stop()
+
+
 def assemble_vector(
     form: _fem.Form,
     constraint: MultiPointConstraint,

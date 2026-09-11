@@ -51,6 +51,11 @@ def assemble_matrix(
         A: PETSc matrix to assemble into (optional)
         num_threads: The number of threads to use for certain operations
     """
+    if constraint.has_inhomogeneity:
+        raise NotImplementedError(
+            "The numba assemblers do not support an inhomogeneous multi point constraint "
+            "(x = K x_red + g). Use the C++ assemblers in `dolfinx_mpc` instead."
+        )
     timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 
     V = constraint.function_space

@@ -1,5 +1,18 @@
 # Changelog
 
+## main
+
+- **Affine multi point constraints**: `MultiPointConstraint` now accepts optional `bcs` and
+  `rhs_coeffs` arguments, generalising the constraint from `x = K x_red` to
+  `x = K x_red + g`. A master degree of freedom that is constrained by one of the supplied
+  Dirichlet conditions is removed from the equation of its slave and its contribution folded
+  into `g`, which fixes the previously incorrect assembly for that case. The offset is
+  recomputed from the current values of the conditions by `MultiPointConstraint.update_constants`,
+  so time dependent boundary data is supported. Use the new `dolfinx_mpc.apply_mpc_lifting` to
+  add the resulting `-K^T A g` term when assembling by hand; `LinearProblem` does it for you.
+  The numba assemblers raise `NotImplementedError` for an inhomogeneous constraint. Passing
+  neither `bcs` nor `rhs_coeffs` reproduces the previous behaviour exactly.
+
 ## V0.11.0
 
 - Make MPC Nonlinearproblem prefix deterministic. See [PR 245](https://github.com/jorgensd/dolfinx_mpc/pull/245)

@@ -89,9 +89,23 @@ class MultiPointConstraint:
     Hold data for multi point constraint relation ships,
     including new index maps for local assembly of matrices and vectors.
 
+    The constraint is affine, :math:`x = K x_{red} + g`, where :math:`g` is
+    supplied through `rhs_coeffs` and through the Dirichlet conditions in
+    `bcs`. With neither, :math:`g=0` and the constraint is the usual linear
+    one.
+
     Args:
         V: The function space
         dtype: The dtype of the underlying functions
+        bcs: Dirichlet boundary conditions for the problem. A master degree of
+            freedom that is constrained by one of these is removed from the
+            equation of its slave, and its contribution folded into the
+            constraint offset :math:`g`. As the offset is recomputed from the
+            current values of the conditions by :func:`update_constants`, time
+            dependent boundary data is supported.
+        rhs_coeffs: Function holding an additional inhomogeneity :math:`g_s`
+            for the slave degrees of freedom, i.e.
+            :math:`u_s = \\sum_j c_j u_{m_j} + g_s`.
     """
 
     _slaves: npt.NDArray[numpy.int32]
@@ -99,18 +113,30 @@ class MultiPointConstraint:
     _coeffs: _float_array_types
     _owners: npt.NDArray[numpy.int32]
     _offsets: npt.NDArray[numpy.int32]
+    _bcs: List[_fem.DirichletBC]
+    _rhs_coeffs: Optional[_fem.Function]
     V: _fem.FunctionSpace
     finalized: bool
     _cpp_object: _mpc_classes
     _dtype: npt.DTypeLike
     __slots__ = tuple(__annotations__)
 
-    def __init__(self, V: _fem.FunctionSpace, dtype: npt.DTypeLike = default_scalar_type):
+    def __init__(
+        self,
+        V: _fem.FunctionSpace,
+        dtype: npt.DTypeLike = default_scalar_type,
+        bcs: Optional[List[_fem.DirichletBC]] = None,
+        rhs_coeffs: Optional[_fem.Function] = None,
+    ):
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=dtype)  # type: ignore
         self._owners = numpy.array([], dtype=numpy.int32)
         self._offsets = numpy.array([0], dtype=numpy.int32)
+        self._bcs = [] if bcs is None else list(bcs)
+        if rhs_coeffs is not None and rhs_coeffs.function_space != V:
+            raise ValueError("rhs_coeffs must be a Function in the space of the constraint")
+        self._rhs_coeffs = rhs_coeffs
         self.V = V
         self.finalized = False
         self._dtype = dtype
@@ -174,46 +200,37 @@ class MultiPointConstraint:
         """
         self._already_finalized()
         self._coeffs.astype(numpy.dtype(self._dtype))
-        # Initialize C++ object and create slave->cell maps
-        if self._dtype == numpy.float32:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_float(
-                self.V._cpp_object,
-                self._slaves,
-                self._masters,
-                self._coeffs.astype(self._dtype),
-                self._owners,
-                self._offsets,
-            )
-        elif self._dtype == numpy.float64:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_double(
-                self.V._cpp_object,
-                self._slaves,
-                self._masters,
-                self._coeffs.astype(self._dtype),
-                self._owners,
-                self._offsets,
-            )
-        elif self._dtype == numpy.complex64:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float(
-                self.V._cpp_object,
-                self._slaves,
-                self._masters,
-                self._coeffs.astype(self._dtype),
-                self._owners,
-                self._offsets,
-            )
 
-        elif self._dtype == numpy.complex128:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double(
-                self.V._cpp_object,
-                self._slaves,
-                self._masters,
-                self._coeffs.astype(self._dtype),
-                self._owners,
-                self._offsets,
-            )
+        num_dofs_local = self.V.dofmap.index_map_bs * (
+            self.V.dofmap.index_map.size_local + self.V.dofmap.index_map.num_ghosts
+        )
+        if self._rhs_coeffs is None:
+            rhs_coeffs = numpy.zeros(num_dofs_local, dtype=self._dtype)
         else:
-            raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
+            rhs_coeffs = self._rhs_coeffs.x.array[:num_dofs_local].astype(self._dtype)
+        bcs = [bc._cpp_object for bc in self._bcs]
+
+        try:
+            cpp_class = {
+                numpy.float32: dolfinx_mpc.cpp.mpc.MultiPointConstraint_float,
+                numpy.float64: dolfinx_mpc.cpp.mpc.MultiPointConstraint_double,
+                numpy.complex64: dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float,
+                numpy.complex128: dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double,
+            }[numpy.dtype(self._dtype).type]
+        except KeyError:
+            raise ValueError(f"Unsupported dtype {self._dtype} for coefficients")
+
+        # Initialize C++ object and create slave->cell maps
+        self._cpp_object = cpp_class(
+            self.V._cpp_object,
+            self._slaves,
+            self._masters,
+            self._coeffs.astype(self._dtype),
+            self._owners,
+            self._offsets,
+            rhs_coeffs,
+            bcs,
+        )
 
         # Replace function space
         self.V = _fem.FunctionSpace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
@@ -221,6 +238,43 @@ class MultiPointConstraint:
         self.finalized = True
         # Delete variables that are no longer required
         del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
+
+    def update_constants(self) -> None:
+        """
+        Recompute the constraint offset :math:`g` from the current values of the Dirichlet
+        conditions supplied to the constructor.
+
+        Call this whenever the value of one of those conditions changes, for instance between
+        time steps, before re-assembling. :class:`LinearProblem` calls it automatically.
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._not_finalized()
+        if self._rhs_coeffs is not None:
+            # Re-read the inhomogeneity, so that a change to the Function is picked up.
+            # Its array spans the original space, which is what the constraint stores;
+            # `self.V` has by now been replaced by the extended space with extra ghosts.
+            self._cpp_object.set_rhs_coeffs(self._rhs_coeffs.x.array.astype(self._dtype))
+        self._cpp_object.update_constants()
+
+    @property
+    def constants(self) -> _float_array_types:
+        """
+        The constraint offset :math:`g` for each degree of freedom local to the process,
+        i.e. the affine term in :math:`x = K x_{red} + g`.
+        """
+        self._not_finalized()
+        return self._cpp_object.constants
+
+    @property
+    def has_inhomogeneity(self) -> bool:
+        """
+        Whether any process carries a non-zero constraint offset. The value is globally
+        reduced, so it is identical on every process.
+        """
+        self._not_finalized()
+        return self._cpp_object.has_inhomogeneity
 
     def create_periodic_constraint_topological(
         self,
