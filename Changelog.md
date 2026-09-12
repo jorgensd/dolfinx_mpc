@@ -6,7 +6,39 @@
 - **New feature**: `dolfinx_mpc.create_integral_constraint` and the corresponding `MultiPointConstraint.add_integral_constraint(weight_form, value, bcs=None, rtol=1e-14)` express a scalar integral condition $L(u) = \gamma$, for any linear functional $L$ given as a UFL form, as a single-slave affine constraint: the degree of freedom with the largest coefficient becomes the slave, every other degree of freedom in the support of $L$ becomes a master with coefficient $-w_i/w_s$ ($w=$ the assembled vector of $L$), and $\gamma/w_s$ is written into `rhs_coeffs`. `weight_form`'s test function must be in the function space of the constraint, checked eagerly. Typical uses are a mean-value constraint $\int_\Omega u\,\mathrm{d}x=\gamma$ (removing the null space of a pure Neumann problem) or a boundary/flow-rate constraint $\int_\Gamma u\cdot n\,\mathrm{d}s=\gamma$, both alternatives to a real-space Lagrange multiplier that eliminate an unknown rather than adding one. Collective, and communicates only to the processes holding the chosen slave.
 - **New demos**: `python/demos/demo_mean_value_constraint.py`, `python/demos/demo_boundary_average_constraint.py` and `python/demos/demo_flow_rate_constraint.py` show `create_integral_constraint` used for a mean-value, a boundary-average and a Stokes flow-rate constraint respectively, each verified against a `basix.ufl.real_element` solve and measuring the trade-off: for a cell integral every dof becomes a master, so $K^HAK$ is essentially full and its condition number is inflated by a factor $\sim M$; for a facet integral the master set is only the boundary and the constraint is the cheaper of the two formulations.
 - **New feature**: Affine multi-point constraints: `MultiPointConstraint` now supports affine constraints of the form $x = K x_{\text{red}} + g$ via the new optional bcs and rhs_coeffs arguments. Time-dependent boundary data is supported via `MultiPointConstraint.update_constants()`. For manual linear assembly, use the new `dolfinx_mpc.apply_mpc_lifting` function (handled automatically by `LinearProblem`). NonlinearProblem automatically handles affine constraints and Dirichlet conditions without requiring any API changes. Passing neither of the new arguments reproduces the previous homogeneous behaviour. Note: Numba assemblers currently raise `NotImplementedError` for inhomogeneous constraints. For a full mathematical derivation of the offset $g$ and the linear/nonlinear solver paths, see the [theory document](./docs/nonlinear_mpc.md). 
-- **Error handling**: The `MultiPointConstraint` constructor now throws `invalid_argument` if a dof is both a slave and Dirichlet-constraine. That was previously accepted silently. - **BUGFIX**: `modify_mpc_vec` zeroed the slave entry of the element vector inside the loop
+- **Error handling**: The `MultiPointConstraint` constructor now throws `invalid_argument` if a dof is both a slave and Dirichlet-constraine. That was previously accepted silently.
+- **Forms coupling spaces on different meshes**: a bilinear form whose test and trial spaces
+  live on different meshes — a space on a submesh coupled to one on its parent, as in a
+  mortar or Lagrange multiplier formulation — can now be assembled with a multi point
+  constraint. Two independent defects prevented it. **BUGFIX**: all three exterior facet
+  kernel calls (`assemble_matrix`, `assemble_vector`, `lifting`) passed a null pointer for
+  the facet permutation while building only *cell* permutation info. Such a form reports
+  `needs_facet_permutations() == True` and its generated kernel dereferences that pointer,
+  so assembly segfaulted. **BUGFIX**: the multi point contribution to the sparsity pattern
+  indexed the test and trial dofmaps with the same cell index, which is only valid when both
+  spaces share a mesh; it now walks each axis with its own integration entities, as the
+  assembler already did. Neither was reachable before, since every existing test and demo
+  used same-mesh forms. Creating a multi point sparsity pattern for a form with interior
+  facet integrals now raises, rather than returning a pattern the assembler would refuse
+  to assemble into; such integrals were already unsupported.
+- **Diagonal entries are added per block rather than per form.** `dolfinx_mpc::assemble_matrix`
+  no longer takes `diagval` and no longer writes the slave diagonal; use the new
+  `dolfinx_mpc::insert_slave_diagonal` (bound as `insert_diagonal_slaves`) once per diagonal
+  block after every form has been assembled. The Python `assemble_matrix` and
+  `assemble_matrix_nest` signatures are unchanged. This fixes a block whose diagonal form is
+  `None` receiving no diagonal on its slave rows, and a block appearing in several forms
+  receiving one twice.
+- **The assemblers are additive**, matching the DOLFINx convention: `assemble_matrix`,
+  `assemble_matrix_nest`, `assemble_vector`, `assemble_vector_nest` and the numba matrix
+  assembler no longer zero a matrix or vector supplied by the caller. Zero it yourself
+  first (`A.zeroEntries()`, `dolfinx.la.petsc._zero_vector(b)`) to discard previous
+  contents; every call site in
+  `LinearProblem` and `NonlinearProblem` already did, so the internal zeroing was redundant.
+  When the assembler creates the object itself it is still returned zeroed.
+- **BUGFIX**: `distribute_ghost_data` wrote past the end of two `reserve`d-but-never-`resize`d
+  vectors whose values were never read. Removed. The lookup in the same loop was a linear
+  scan over a sorted array and is now a binary search.
+- **BUGFIX**: `modify_mpc_vec` zeroed the slave entry of the element vector inside the loop
   over that slave's masters, so a slave with an *empty* master list kept its entry. The
   assembled reduced residual then had non-zero slave rows, which left the solution correct
   but made a nonlinear (SNES) solve stagnate at a finite residual norm. A master list is

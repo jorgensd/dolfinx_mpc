@@ -9,6 +9,7 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
+#include <dolfinx/mesh/cell_types.h>
 #include <iostream>
 
 using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -142,6 +143,21 @@ void _assemble_vector(
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
   }
 
+  // Facet permutations of the integration domain. Needed whenever the kernel
+  // asks for them, which happens for instance when an argument space lives on
+  // a different mesh than the integration domain.
+  std::span<const std::uint8_t> perms;
+  int num_facets_per_cell = 0;
+  if (L.needs_facet_permutations())
+  {
+    const dolfinx::mesh::CellType cell_type
+        = mesh->topology()->cell_types().front();
+    num_facets_per_cell = dolfinx::mesh::cell_num_entities(
+        cell_type, mesh->topology()->dim() - 1);
+    mesh->topology_mutable()->create_entity_permutations(num_threads);
+    perms = std::span(mesh->topology()->get_facet_permutations());
+  }
+
   const std::size_t num_dofs_g = x_dofmap.extent(1);
   std::vector<U> coordinate_dofs(3 * num_dofs_g);
   const int num_cell_types = mesh->topology()->cell_types().size();
@@ -221,10 +237,13 @@ void _assemble_vector(
                             std::next(coordinate_dofs.begin(), 3 * i));
       }
 
-      // Tabulate tensor
+      // Tabulate tensor. A kernel that asks for the facet permutation would
+      // dereference a null pointer if it were not supplied.
+      const std::uint8_t perm
+          = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
       std::ranges::fill(be, 0);
       fn(be.data(), coeffs.first.data() + index * coeffs.second,
-         constants.data(), coordinate_dofs.data(), &local_facet, nullptr,
+         constants.data(), coordinate_dofs.data(), &local_facet, &perm,
          nullptr);
 
       // Apply any required transformations
