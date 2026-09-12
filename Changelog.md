@@ -2,6 +2,37 @@
 
 ## main
 
+- **Forms coupling spaces on different meshes**: a bilinear form whose test and trial spaces
+  live on different meshes — a space on a submesh coupled to one on its parent, as in a
+  mortar or Lagrange multiplier formulation — can now be assembled with a multi point
+  constraint. Two independent defects prevented it. **BUGFIX**: all three exterior facet
+  kernel calls (`assemble_matrix`, `assemble_vector`, `lifting`) passed a null pointer for
+  the facet permutation while building only *cell* permutation info. Such a form reports
+  `needs_facet_permutations() == True` and its generated kernel dereferences that pointer,
+  so assembly segfaulted. **BUGFIX**: the multi point contribution to the sparsity pattern
+  indexed the test and trial dofmaps with the same cell index, which is only valid when both
+  spaces share a mesh; it now walks each axis with its own integration entities, as the
+  assembler already did. Neither was reachable before, since every existing test and demo
+  used same-mesh forms. Creating a multi point sparsity pattern for a form with interior
+  facet integrals now raises, rather than returning a pattern the assembler would refuse
+  to assemble into; such integrals were already unsupported.
+- **Diagonal entries are added per block rather than per form.** `dolfinx_mpc::assemble_matrix`
+  no longer takes `diagval` and no longer writes the slave diagonal; use the new
+  `dolfinx_mpc::insert_slave_diagonal` (bound as `insert_diagonal_slaves`) once per diagonal
+  block after every form has been assembled. The Python `assemble_matrix` and
+  `assemble_matrix_nest` signatures are unchanged. This fixes a block whose diagonal form is
+  `None` receiving no diagonal on its slave rows, and a block appearing in several forms
+  receiving one twice.
+- **The assemblers are additive**, matching the DOLFINx convention: `assemble_matrix`,
+  `assemble_matrix_nest`, `assemble_vector`, `assemble_vector_nest` and the numba matrix
+  assembler no longer zero a matrix or vector supplied by the caller. Zero it yourself
+  first (`A.zeroEntries()`, `dolfinx.la.petsc._zero_vector(b)`) to discard previous
+  contents; every call site in
+  `LinearProblem` and `NonlinearProblem` already did, so the internal zeroing was redundant.
+  When the assembler creates the object itself it is still returned zeroed.
+- **BUGFIX**: `distribute_ghost_data` wrote past the end of two `reserve`d-but-never-`resize`d
+  vectors whose values were never read. Removed. The lookup in the same loop was a linear
+  scan over a sorted array and is now a binary search.
 - **Affine multi point constraints**: `MultiPointConstraint` now accepts optional `bcs` and
   `rhs_coeffs` arguments, generalising the constraint from `x = K x_red` to
   `x = K x_red + g`. A master degree of freedom that is constrained by one of the supplied

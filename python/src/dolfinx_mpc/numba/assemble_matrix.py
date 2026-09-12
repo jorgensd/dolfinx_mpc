@@ -95,11 +95,12 @@ def assemble_matrix(
     form_coeffs = _cpp.fem.pack_coefficients(form._cpp_object)
     form_consts = _cpp.fem.pack_constants(form._cpp_object)
     # Create sparsity pattern and matrix if not supplied
+    # A freshly created matrix is already zeroed; an `A` supplied by the caller
+    # is added into, following the additive convention of the DOLFINx assemblers.
     if A is None:
         pattern = create_sparsity_pattern(form, constraint)
         pattern.finalize()
         A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern)
-    A.zeroEntries()
 
     # Assemble the matrix with all entries
     _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, bcs, False)

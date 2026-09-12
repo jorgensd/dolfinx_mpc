@@ -16,6 +16,7 @@
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Geometry.h>
+#include <dolfinx/mesh/cell_types.h>
 #include <format>
 #include <memory>
 #include <span>
@@ -216,6 +217,21 @@ void lift_values(
     cell_info1 = std::span(mesh1->topology()->get_cell_permutation_info());
   }
 
+  // Facet permutations of the integration domain. Needed whenever the kernel
+  // asks for them, which happens for instance when the two argument spaces
+  // live on different meshes.
+  std::span<const std::uint8_t> perms;
+  int num_facets_per_cell = 0;
+  if (a->needs_facet_permutations())
+  {
+    const dolfinx::mesh::CellType cell_type
+        = mesh->topology()->cell_types().front();
+    num_facets_per_cell = dolfinx::mesh::cell_num_entities(
+        cell_type, mesh->topology()->dim() - 1);
+    mesh->topology_mutable()->create_entity_permutations(num_threads);
+    perms = std::span(mesh->topology()->get_facet_permutations());
+  }
+
   // Get dof-transformations for the element matrix
   const std::function<void(const std::span<T>&,
                            const std::span<const std::uint32_t>&, std::int32_t,
@@ -331,10 +347,13 @@ void lift_values(
                             std::next(coordinate_dofs.begin(), 3 * i));
       }
 
-      // Tabulate tensor
+      // Tabulate tensor. A kernel that asks for the facet permutation would
+      // dereference a null pointer if it were not supplied.
+      const std::uint8_t perm
+          = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
       std::ranges::fill(Ae, 0);
       kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
-             constants.data(), coordinate_dofs.data(), &local_facet, nullptr,
+             constants.data(), coordinate_dofs.data(), &local_facet, &perm,
              nullptr);
       if (transform_set0)
         dof_transform(Ae, cell_info0, cell0, num_cols);

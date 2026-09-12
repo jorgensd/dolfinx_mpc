@@ -15,7 +15,7 @@ import dolfinx.fem as _fem
 import numpy
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer
-from dolfinx.la.petsc import create_vector
+from dolfinx.la.petsc import _zero_vector, create_vector
 
 import dolfinx_mpc.cpp
 
@@ -142,7 +142,9 @@ def assemble_vector(
     Args:
         form: The linear form
         constraint: The multi point constraint
-        b: PETSc vector to assemble
+        b: PETSc vector to assemble into. Assembly is additive, so `b` is not
+            zeroed; use `dolfinx.la.petsc._zero_vector` first to discard its
+            contents. If not supplied a new, zeroed vector is created.
 
     Returns:
         The vector with the assembled linear form (`b` if supplied)
@@ -150,12 +152,27 @@ def assemble_vector(
 
     if b is None:
         b = create_vector([(constraint.function_space.dofmap.index_map, constraint.function_space.dofmap.index_map_bs)])
+        _zero_vector(b)
     t = Timer("~MPC: Assemble vector (C++)")
-    with b.localForm() as b_local:
-        b_local.set(0.0)
-        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object, num_threads)
+    _assemble_form(b, form, constraint, num_threads)
     t.stop()
     return b
+
+
+def _assemble_form(
+    b: _PETSc.Vec,  # type: ignore
+    form: _fem.Form,
+    constraint: MultiPointConstraint,
+    num_threads: Optional[int] = 1,
+):
+    """
+    Assemble one compiled linear form into a vector.
+
+    Additive: `b` is not zeroed, following the convention of the DOLFINx
+    assemblers.
+    """
+    with b.localForm() as b_local:
+        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object, num_threads)
 
 
 def create_vector_nest(L: Sequence[_fem.Form], constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
@@ -189,7 +206,9 @@ def assemble_vector_nest(
     Assemble a linear form into a PETSc vector of type "nest"
 
     Args:
-        b: A PETSc vector of type "nest"
+        b: A PETSc vector of type "nest" to assemble into. Assembly is additive,
+            so `b` is not zeroed; use `dolfinx.la.petsc._zero_vector` first to
+            discard its contents.
         L: A sequence of linear forms
         constraints: An ordered list of multi point constraints
     """
@@ -198,4 +217,4 @@ def assemble_vector_nest(
 
     b_sub_vecs = b.getNestSubVecs()
     for i, L_row in enumerate(L):
-        assemble_vector(L_row, constraints[i], b=b_sub_vecs[i], num_threads=num_threads)
+        _assemble_form(b_sub_vecs[i], L_row, constraints[i], num_threads)

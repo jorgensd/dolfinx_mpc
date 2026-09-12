@@ -313,13 +313,23 @@ void declare_petsc_functions(nb::module_& m)
              mpc1,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         const T diagval, std::size_t num_threads)
+         std::size_t num_threads)
       {
         dolfinx_mpc::assemble_matrix(
             dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES),
             dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, mpc0, mpc1,
-            bcs, diagval, num_threads);
+            bcs, num_threads);
       });
+  m.def(
+      "insert_diagonal_slaves",
+      [](Mat A, const dolfinx_mpc::MultiPointConstraint<T, U>& mpc,
+         const T diagval)
+      {
+        dolfinx_mpc::insert_slave_diagonal<T, U>(
+            dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), mpc, diagval);
+      },
+      nb::arg("A"), nb::arg("mpc"), nb::arg("diagval"),
+      "Add a value on the diagonal of each slave row owned by the process");
   m.def(
       "assemble_vector",
       [](nb::ndarray<T, nb::ndim<1>, nb::c_contig> b,
