@@ -5,7 +5,6 @@
 // SPDX-License-Identifier:    MIT
 
 #include <array>
-#include <dolfinx_wrappers/caster_petsc.h>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
@@ -22,6 +21,7 @@
 #include <dolfinx_mpc/assemble_vector.h>
 #include <dolfinx_mpc/lifting.h>
 #include <dolfinx_mpc/utils.h>
+#include <dolfinx_wrappers/caster_petsc.h>
 #include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -68,6 +68,26 @@ void declare_mpc(nb::module_& m, std::string type)
                  std::span<const T>(coeffs.data(), coeffs.size()),
                  std::span<const std::int32_t>(owners.data(), owners.size()),
                  std::span<const std::int32_t>(offsets.data(), offsets.size()));
+           })
+      .def("__init__",
+           [](dolfinx_mpc::MultiPointConstraint<T, U>* mpc,
+              std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
+              nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>& slaves,
+              nb::ndarray<nb::numpy, std::int64_t, nb::ndim<1>>& masters,
+              nb::ndarray<nb::numpy, T, nb::ndim<1>>& coeffs,
+              nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>& owners,
+              nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>& offsets,
+              nb::ndarray<nb::numpy, T, nb::ndim<1>>& rhs_coeffs,
+              const std::vector<std::shared_ptr<
+                  const dolfinx::fem::DirichletBC<T, U>>>& bcs)
+           {
+             new (mpc) dolfinx_mpc::MultiPointConstraint(
+                 V, std::span<const std::int32_t>(slaves.data(), slaves.size()),
+                 std::span<const std::int64_t>(masters.data(), masters.size()),
+                 std::span<const T>(coeffs.data(), coeffs.size()),
+                 std::span<const std::int32_t>(owners.data(), owners.size()),
+                 std::span<const std::int32_t>(offsets.data(), offsets.size()),
+                 std::span<const T>(rhs_coeffs.data(), rhs_coeffs.size()), bcs);
            })
       .def_prop_ro("masters", &dolfinx_mpc::MultiPointConstraint<T, U>::masters)
       .def("coefficients",
@@ -127,7 +147,19 @@ void declare_mpc(nb::module_& m, std::string type)
           [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
              nb::ndarray<T, nb::ndim<1>, nb::c_contig> u)
           { self.homogenize(std::span<T>(u.data(), u.size())); },
-          "u"_a, "Homogenize (set to zero) values at slave DoF indices");
+          "u"_a, "Homogenize (set to zero) values at slave DoF indices")
+      .def(
+          "set_rhs_coeffs",
+          [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
+             nb::ndarray<const T, nb::ndim<1>, nb::c_contig> g)
+          { self.set_rhs_coeffs(std::span<const T>(g.data(), g.size())); },
+          "g"_a, "Replace the user supplied constraint inhomogeneity")
+      .def("update_constants",
+           &dolfinx_mpc::MultiPointConstraint<T, U>::update_constants,
+           "Recompute the constraint offsets from the current Dirichlet data")
+      .def_prop_ro(
+          "has_inhomogeneity",
+          &dolfinx_mpc::MultiPointConstraint<T, U>::has_inhomogeneity);
 
   //   .def("ghost_masters", &dolfinx_mpc::mpc_data::ghost_masters);
 }
@@ -183,7 +215,8 @@ void declare_functions(nb::module_& m)
             V, _indicator, _relation, bcs, scale, collapse, tol, num_threads);
       },
       "V"_a, "indicator"_a, "relation"_a, "bcs"_a, nb::arg("scale").noconvert(),
-      nb::arg("collapse").noconvert(), nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert());
+      nb::arg("collapse").noconvert(), nb::arg("tol").noconvert(),
+      nb::arg("num_threads").noconvert());
   m.def(
       "create_periodic_constraint_topological",
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
@@ -204,7 +237,8 @@ void declare_functions(nb::module_& m)
           return output;
         };
         return dolfinx_mpc::create_periodic_condition_topological(
-            V, meshtags, dim, _relation, bcs, scale, collapse, tol, num_threads);
+            V, meshtags, dim, _relation, bcs, scale, collapse, tol,
+            num_threads);
       },
       "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a,
       nb::arg("scale").noconvert(), nb::arg("collapse").noconvert(),
@@ -293,8 +327,12 @@ void declare_petsc_functions(nb::module_& m)
          const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&
              mpc,
          std::size_t num_threads)
-      { dolfinx_mpc::assemble_vector(std::span(b.data(), b.size()), L, mpc, num_threads); },
-      "b"_a, "L"_a, "mpc"_a, nb::arg("num_threads"), "Assemble linear form into an existing vector");
+      {
+        dolfinx_mpc::assemble_vector(std::span(b.data(), b.size()), L, mpc,
+                                     num_threads);
+      },
+      "b"_a, "L"_a, "mpc"_a, nb::arg("num_threads"),
+      "Assemble linear form into an existing vector");
 
   m.def(
       "apply_lifting",
@@ -317,6 +355,21 @@ void declare_petsc_functions(nb::module_& m)
       nb::arg("b"), nb::arg("a"), nb::arg("bcs"), nb::arg("x0"),
       nb::arg("scale"), nb::arg("mpc"), nb::arg("num_threads"),
       "Assemble apply lifting from form a on vector b");
+  m.def(
+      "apply_mpc_lifting",
+      [](nb::ndarray<T, nb::ndim<1>, nb::c_contig> b,
+         std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a, T scale,
+         std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+         std::vector<std::shared_ptr<
+             const dolfinx_mpc::MultiPointConstraint<T, U>>>& mpc1,
+         std::size_t num_threads)
+      {
+        dolfinx_mpc::apply_mpc_lifting<T, U>(std::span(b.data(), b.size()), a,
+                                             scale, mpc0, mpc1, num_threads);
+      },
+      nb::arg("b"), nb::arg("a"), nb::arg("scale"), nb::arg("mpc0"),
+      nb::arg("mpc1"), nb::arg("num_threads"),
+      "Lift the inhomogeneity of a multi point constraint into vector b");
 
   m.def(
       "create_matrix",

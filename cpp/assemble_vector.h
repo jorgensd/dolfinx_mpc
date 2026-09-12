@@ -63,8 +63,10 @@ void modify_mpc_vec(
         // Use Hermitian transpose for type std::complex<double>
         b[masters_i[j]]
             += std::conj(coeffs_i[j]) * b_local_copy[local_index[i]];
-      b_local[local_index[i]] = 0;
     }
+    // Outside the master loop: a slave whose masters have all been eliminated
+    // by a Dirichlet condition has none left, and its row must still be zeroed
+    b_local[local_index[i]] = 0;
   }
 }
 
@@ -78,7 +80,7 @@ void assemble_vector(
     std::span<double> b, const dolfinx::fem::Form<double>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc,
-    std::size_t num_threads=1);
+    std::size_t num_threads = 1);
 
 /// Assemble a linear form into a vector
 /// @param[in] b The vector to be assembled. It will not be zeroed before
@@ -91,7 +93,7 @@ void assemble_vector(
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
         mpc,
-    std::size_t num_threads=1);
+    std::size_t num_threads = 1);
 
 /// Assemble a linear form into a vector
 /// @param[in] b The vector to be assembled. It will not be zeroed before
@@ -102,7 +104,7 @@ void assemble_vector(
     std::span<float> b, const dolfinx::fem::Form<float>& L,
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc,
-    std::size_t num_threads=1);
+    std::size_t num_threads = 1);
 
 /// Assemble a linear form into a vector
 /// @param[in] b The vector to be assembled. It will not be zeroed before
@@ -115,6 +117,6 @@ void assemble_vector(
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
         mpc,
-    std::size_t num_threads=1);
+    std::size_t num_threads = 1);
 
 } // namespace dolfinx_mpc
