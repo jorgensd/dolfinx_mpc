@@ -455,3 +455,102 @@ def test_dirichletbc_as_pure_mpc(degree):
     err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
     err = mesh.comm.allreduce(float(err), op=MPI.MAX)
     assert err < 1e-9, f"MPC-as-DirichletBC solution differs from DOLFINx by {err}"
+
+
+@pytest.mark.skipif(
+    np.issubdtype(default_scalar_type, np.complexfloating),
+    reason="The nonlinear residual used here is real valued.",
+)
+@pytest.mark.parametrize("degree", [1, 2])
+def test_nonlinear_dirichletbc_as_pure_mpc(degree):
+    """A Dirichlet condition on a *nonlinear* problem, expressed purely as a constraint.
+
+    For :math:`F(u) = 0` the reduced problem is :math:`K^T F(K \\hat{u} + g) = 0` with
+    Jacobian :math:`K^T J K`. Because the residual is assembled at an iterate that already
+    satisfies :math:`u = K \\hat{u} + g`, the offset enters through :math:`F` itself and no
+    separate lifting of :math:`g` is required — unlike the linear path. This test pins that
+    down by solving the same problem with an ordinary `DirichletBC` and comparing.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 8, 8)
+    V = fem.functionspace(mesh, ("Lagrange", degree))
+
+    def boundary(x):
+        return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+
+    u_bc = fem.Function(V)
+    u_bc.interpolate(lambda x: 0.5 + 0.25 * x[1])
+    bc_dofs = fem.locate_dofs_geometrical(V, boundary)
+
+    x = ufl.SpatialCoordinate(mesh)
+    source = 2.0 + ufl.sin(2 * ufl.pi * x[1])
+
+    tol = 1e-10
+    petsc_options = {
+        "snes_type": "newtonls",
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "snes_atol": tol,
+        "snes_rtol": tol,
+        "snes_linesearch_type": "none",
+        "ksp_error_if_not_converged": True,
+        "snes_error_if_not_converged": True,
+    }
+
+    # Reference: ordinary DOLFINx with a DirichletBC
+    u_ref = fem.Function(V)
+    u_ref.interpolate(lambda x: 0.3 * np.ones_like(x[0]))
+    v = ufl.TestFunction(V)
+    F_ref = ufl.inner((1 + u_ref**2) * ufl.grad(u_ref), ufl.grad(v)) * ufl.dx - ufl.inner(source, v) * ufl.dx
+    J_ref = ufl.derivative(F_ref, u_ref, ufl.TrialFunction(V))
+    ref_problem = dolfinx.fem.petsc.NonlinearProblem(
+        F_ref,
+        u_ref,
+        J=J_ref,
+        bcs=[fem.dirichletbc(u_bc, bc_dofs)],
+        petsc_options_prefix="nonlinear_dirichlet_reference_",
+        petsc_options=petsc_options,
+    )
+    # NOTE: DOLFINx returns the Function, dolfinx_mpc returns (u, converged, iterations)
+    ref_problem.solve()
+    assert ref_problem.solver.getConvergedReason() > 0
+
+    # The same condition as a constraint: slaves with no masters, offset = boundary value.
+    # Ghost slaves are declared too, so every process that assembles a cell touching a
+    # constrained dof knows to eliminate it.
+    slaves = np.sort(bc_dofs).astype(np.int32)
+    g = fem.Function(V)
+    g.x.array[:] = 0.0
+    g.x.array[slaves] = u_bc.x.array[slaves]
+    g.x.scatter_forward()
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V, rhs_coeffs=g)
+    mpc.add_constraint(
+        V,
+        slaves,
+        np.array([], dtype=np.int64),
+        np.array([], dtype=default_scalar_type),
+        np.array([], dtype=np.int32),
+        np.zeros(len(slaves) + 1, dtype=np.int32),
+    )
+    mpc.finalize()
+    assert mpc.has_inhomogeneity
+
+    # The unknown lives in the MPC space, the test function in the original space
+    uh = fem.Function(mpc.function_space)
+    uh.interpolate(lambda x: 0.3 * np.ones_like(x[0]))
+    v = ufl.TestFunction(V)
+    F = ufl.inner((1 + uh**2) * ufl.grad(uh), ufl.grad(v)) * ufl.dx - ufl.inner(source, v) * ufl.dx
+    J = ufl.derivative(F, uh, ufl.TrialFunction(V))
+
+    problem = dolfinx_mpc.NonlinearProblem(F, uh, mpc=mpc, bcs=[], J=J, petsc_options=petsc_options)
+    _, converged, _ = problem.solve()
+    assert converged
+
+    # The constraint must reproduce the boundary data exactly
+    nt.assert_allclose(uh.x.array[slaves], u_bc.x.array[slaves], rtol=1e-10, atol=1e-12)
+
+    # ... and the whole solution must match the ordinary DirichletBC solve
+    num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
+    err = mesh.comm.allreduce(float(err), op=MPI.MAX)
+    assert err < 1e-8, f"nonlinear MPC-as-DirichletBC solution differs from DOLFINx by {err}"

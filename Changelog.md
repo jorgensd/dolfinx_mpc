@@ -12,6 +12,12 @@
   add the resulting `-K^T A g` term when assembling by hand; `LinearProblem` does it for you.
   The numba assemblers raise `NotImplementedError` for an inhomogeneous constraint. Passing
   neither `bcs` nor `rhs_coeffs` reproduces the previous behaviour exactly.
+- **BUGFIX**: `modify_mpc_vec` zeroed the slave entry of the element vector inside the loop
+  over that slave's masters, so a slave with an *empty* master list kept its entry. The
+  assembled reduced residual then had non-zero slave rows, which left the solution correct
+  but made a nonlinear (SNES) solve stagnate at a finite residual norm. A master list is
+  empty whenever every master is eliminated by a Dirichlet condition, or when a Dirichlet
+  condition is expressed directly as a constraint.
 
 ## V0.11.0
 
