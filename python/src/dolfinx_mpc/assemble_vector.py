@@ -15,7 +15,7 @@ import dolfinx.fem as _fem
 import numpy
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer
-from dolfinx.la.petsc import create_vector
+from dolfinx.la.petsc import _zero_vector, create_vector
 
 import dolfinx_mpc.cpp
 
@@ -76,6 +76,60 @@ def apply_lifting(
     t.stop()
 
 
+def apply_mpc_lifting(
+    b: _PETSc.Vec,  # type: ignore
+    form: Sequence[_fem.Form],
+    constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    constraint1: Optional[Sequence[MultiPointConstraint]] = None,
+    scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+    num_threads: Optional[int] = 1,
+):
+    """
+    Lift the inhomogeneity of a multi point constraint into the vector `b`, i.e.
+
+    :math:`b = b - scale \\cdot K^T (A_j g_j)`
+
+    where :math:`g` is the constraint offset of the constraint on the trial space. This is
+    the term arising in :math:`K^T A K x_{red} = K^T (b - A g)` for the affine constraint
+    :math:`x = K x_{red} + g`, and is a no-op for a homogeneous constraint.
+
+    Note:
+        Only required when solving directly for :math:`x_{red}`. A residual assembled at an
+        iterate that already satisfies the constraint contains :math:`K^T A g` already, so
+        the Newton/SNES path must not call this.
+
+    Args:
+        b: PETSc vector to assemble into
+        form: The bilinear forms, one per block column
+        constraint: The multi point constraint for the rows of `b`
+        constraint1: The multi point constraints for the columns, one per block. Defaults
+            to `constraint`, which is correct for a square problem.
+        scale: Scaling for lifting
+        num_threads: The number of threads to use for certain operations
+    """
+    t = Timer("~MPC: Apply MPC lifting (C++)")
+    if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+        scale = scale.item()  # type: ignore
+
+    if b.getType() == "nest":
+        assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
+        cols = constraint if constraint1 is None else constraint1
+        for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
+            _a = [None if f is None else f._cpp_object for f in a_sub]  # type: ignore
+            _mpc1 = [c._cpp_object for c in cols]  # type: ignore
+            dolfinx_mpc.cpp.mpc.apply_mpc_lifting(b_sub.array_w, _a, scale, mpc_i._cpp_object, _mpc1, num_threads)
+    else:
+        assert isinstance(constraint, MultiPointConstraint)
+        cols = [constraint] if constraint1 is None else constraint1
+        with b.localForm() as b_local:
+            _forms = [f._cpp_object for f in form]  # type: ignore
+            _mpc1 = [c._cpp_object for c in cols]  # type: ignore
+            dolfinx_mpc.cpp.mpc.apply_mpc_lifting(
+                b_local.array_w, _forms, scale, constraint._cpp_object, _mpc1, num_threads
+            )
+    t.stop()
+
+
 def assemble_vector(
     form: _fem.Form,
     constraint: MultiPointConstraint,
@@ -88,7 +142,9 @@ def assemble_vector(
     Args:
         form: The linear form
         constraint: The multi point constraint
-        b: PETSc vector to assemble
+        b: PETSc vector to assemble into. Assembly is additive, so `b` is not
+            zeroed; use `dolfinx.la.petsc._zero_vector` first to discard its
+            contents. If not supplied a new, zeroed vector is created.
 
     Returns:
         The vector with the assembled linear form (`b` if supplied)
@@ -96,12 +152,27 @@ def assemble_vector(
 
     if b is None:
         b = create_vector([(constraint.function_space.dofmap.index_map, constraint.function_space.dofmap.index_map_bs)])
+        _zero_vector(b)
     t = Timer("~MPC: Assemble vector (C++)")
-    with b.localForm() as b_local:
-        b_local.set(0.0)
-        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object, num_threads)
+    _assemble_form(b, form, constraint, num_threads)
     t.stop()
     return b
+
+
+def _assemble_form(
+    b: _PETSc.Vec,  # type: ignore
+    form: _fem.Form,
+    constraint: MultiPointConstraint,
+    num_threads: Optional[int] = 1,
+):
+    """
+    Assemble one compiled linear form into a vector.
+
+    Additive: `b` is not zeroed, following the convention of the DOLFINx
+    assemblers.
+    """
+    with b.localForm() as b_local:
+        dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object, num_threads)
 
 
 def create_vector_nest(L: Sequence[_fem.Form], constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
@@ -135,7 +206,9 @@ def assemble_vector_nest(
     Assemble a linear form into a PETSc vector of type "nest"
 
     Args:
-        b: A PETSc vector of type "nest"
+        b: A PETSc vector of type "nest" to assemble into. Assembly is additive,
+            so `b` is not zeroed; use `dolfinx.la.petsc._zero_vector` first to
+            discard its contents.
         L: A sequence of linear forms
         constraints: An ordered list of multi point constraints
     """
@@ -144,4 +217,4 @@ def assemble_vector_nest(
 
     b_sub_vecs = b.getNestSubVecs()
     for i, L_row in enumerate(L):
-        assemble_vector(L_row, constraints[i], b=b_sub_vecs[i], num_threads=num_threads)
+        _assemble_form(b_sub_vecs[i], L_row, constraints[i], num_threads)

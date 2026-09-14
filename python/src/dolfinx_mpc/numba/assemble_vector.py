@@ -41,6 +41,11 @@ def assemble_vector(
         b: PETSc vector to assemble into (optional)
         num_threads: The number of threads to use for certain operations
     """
+    if constraint.has_inhomogeneity:
+        raise NotImplementedError(
+            "The numba assemblers do not support an inhomogeneous multi point constraint "
+            "(x = K x_red + g). Use the C++ assemblers in `dolfinx_mpc` instead."
+        )
 
     _log.log(_log.LogLevel.INFO, "Assemble MPC vector")
     timer_vector = Timer("~MPC: Assemble vector (numba)")

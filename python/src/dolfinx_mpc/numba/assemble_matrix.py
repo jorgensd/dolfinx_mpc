@@ -51,6 +51,11 @@ def assemble_matrix(
         A: PETSc matrix to assemble into (optional)
         num_threads: The number of threads to use for certain operations
     """
+    if constraint.has_inhomogeneity:
+        raise NotImplementedError(
+            "The numba assemblers do not support an inhomogeneous multi point constraint "
+            "(x = K x_red + g). Use the C++ assemblers in `dolfinx_mpc` instead."
+        )
     timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 
     V = constraint.function_space
@@ -90,11 +95,12 @@ def assemble_matrix(
     form_coeffs = _cpp.fem.pack_coefficients(form._cpp_object)
     form_consts = _cpp.fem.pack_constants(form._cpp_object)
     # Create sparsity pattern and matrix if not supplied
+    # A freshly created matrix is already zeroed; an `A` supplied by the caller
+    # is added into, following the additive convention of the DOLFINx assemblers.
     if A is None:
         pattern = create_sparsity_pattern(form, constraint)
         pattern.finalize()
         A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern)
-    A.zeroEntries()
 
     # Assemble the matrix with all entries
     _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, bcs, False)
