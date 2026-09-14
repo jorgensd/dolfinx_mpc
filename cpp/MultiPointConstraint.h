@@ -401,13 +401,9 @@ private:
     const int bs = dofmap.index_map_bs();
     const std::int32_t num_owned = bs * dofmap.index_map->size_local();
 
-    std::vector<std::int8_t> local(
-        num_owned + bs * dofmap.index_map->num_ghosts(), 0);
-    for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T>>& bc : _bcs)
-      bc->mark_dofs(local);
-
     dolfinx::la::Vector<std::int8_t> marker(dofmap.index_map, bs);
-    std::ranges::copy_n(local.begin(), num_owned, marker.array().begin());
+    for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T>>& bc : _bcs)
+      bc->mark_dofs(marker.array());
     marker.scatter_fwd();
     return std::vector<std::int8_t>(marker.array().begin(),
                                     marker.array().end());
