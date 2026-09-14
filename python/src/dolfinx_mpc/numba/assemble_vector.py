@@ -140,7 +140,7 @@ def assemble_vector(
 
     # Assemble exterior facet integrals
     if (num_exterior_integrals := form.num_integrals(_fem.IntegralType.exterior_facet, 0)) > 0:
-        V.mesh.topology.create_entities(tdim - 1)
+        V.mesh.topology.create_entities(tdim - 1, num_threads)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
         # Get facet permutations if required
         facet_perms = numpy.array([], dtype=numpy.uint8)
