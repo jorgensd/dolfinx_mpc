@@ -146,26 +146,32 @@ public:
     // contribution is folded into the constraint offset, and those that remain
     std::vector<std::int8_t> bc_marker = gather_bc_markers();
 
-    // A dof cannot be prescribed twice. Checking only the slaves keeps this
-    // O(num_slaves), and the same condition on masters is what the fold below
-    // resolves rather than rejects. The offending dof need not exist on every
-    // process, so the verdict is reduced before throwing: an error raised on
-    // some processes only would leave the rest waiting in a collective.
+    // Prevent double-constrained DoFs. Checking slaves only keeps this O(num_slaves) 
+    // (Dirichlet conditions on masters aren't errors; their values are substituted 
+    // into the equations later). To avoid MPI deadlocks, we globally reduce the 
+    // error verdict before throwing.
+
+    int local = 0;
     if (!bc_marker.empty())
     {
-      int local = std::ranges::any_of(_slaves, [&bc_marker](std::int32_t slave)
-                                      { return bc_marker[slave] != 0; })
-                      ? 1
-                      : 0;
-      int global = 0;
-      MPI_Allreduce(&local, &global, 1, MPI_INT, MPI_LOR, V->mesh()->comm());
-      if (global != 0)
-      {
-        throw std::invalid_argument(
-            "A dof is both a slave of the multi point constraint and "
-            "constrained by a Dirichlet condition. Exclude it from one of the "
-            "two.");
-      }
+      // Compute the local violation flag
+      local = std::ranges::any_of(_slaves, [&bc_marker](std::int32_t slave)
+                                  { 
+                                    assert(slave < static_cast<std::int32_t>(bc_marker.size()));
+                                    return bc_marker[slave] != 0; })
+                  ? 1
+                  : 0;
+    }
+
+    // Perform the MPI collective UNCONDITIONALLY on all ranks
+    int global = 0;
+    MPI_Allreduce(&local, &global, 1, MPI_INT, MPI_LOR, V->mesh()->comm());
+    if (global != 0)
+    {
+      throw std::invalid_argument(
+          "A dof is both a slave of the multi point constraint and "
+          "constrained by a Dirichlet condition. Exclude it from one of the "
+          "two.");
     }
 
     std::vector<std::int32_t> keep_masters, keep_owners, keep_offsets(1, 0);
