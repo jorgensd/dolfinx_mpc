@@ -122,7 +122,7 @@ def facet_normal_approximation(
     # Assemble the matrix with all entries
     form_coeffs = _cpp.fem.pack_coefficients(bilinear_form._cpp_object)
     form_consts = _cpp.fem.pack_constants(bilinear_form._cpp_object)
-    _cpp.fem.petsc.assemble_matrix(A, bilinear_form._cpp_object, form_consts, form_coeffs, [bc_deac._cpp_object])
+    _cpp.fem.petsc.assemble_matrix(A, bilinear_form._cpp_object, form_consts, form_coeffs, [bc_deac._cpp_object], False)
     if bilinear_form.function_spaces[0] is bilinear_form.function_spaces[1]:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
