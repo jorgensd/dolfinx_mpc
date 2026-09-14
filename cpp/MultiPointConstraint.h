@@ -440,13 +440,9 @@ private:
     const dolfinx::fem::DofMap& dofmap = *(_V->dofmap());
     const int bs = dofmap.index_map_bs();
     const std::int32_t num_owned = bs * dofmap.index_map->size_local();
-
-    std::vector<T> local(num_owned + bs * dofmap.index_map->num_ghosts(), 0);
+;    dolfinx::la::Vector<T> g(dofmap.index_map, bs);
     for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T>>& bc : _bcs)
-      bc->set(local, std::nullopt, 1);
-
-    dolfinx::la::Vector<T> g(dofmap.index_map, bs);
-    std::ranges::copy_n(local.begin(), num_owned, g.array().begin());
+      bc->set(g.array(), std::nullopt, 1);
     g.scatter_fwd();
     return std::vector<T>(g.array().begin(), g.array().end());
   }
