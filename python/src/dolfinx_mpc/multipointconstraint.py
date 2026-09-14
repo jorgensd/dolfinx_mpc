@@ -255,9 +255,12 @@ class MultiPointConstraint:
         self._not_finalized()
         if self._rhs_coeffs is not None:
             # Pass the array natively. Zero-copy, zero-allocation.
+            num_dofs_local = self.V.dofmap.index_map_bs * (
+                self.V.dofmap.index_map.size_local + self.V.dofmap.index_map.num_ghosts
+            )
             rhs_coeffs = self._rhs_coeffs.x.array[:num_dofs_local]
             self._cpp_object.set_rhs_coeffs(rhs_coeffs)
-            
+
         self._cpp_object.update_constants()
 
     @property
