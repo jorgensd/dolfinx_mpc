@@ -116,7 +116,7 @@ def facet_normal_approximation(
     u_0.x.petsc_vec.set(0)
 
     bc_deac = _fem.dirichletbc(u_0, deac_blocks)
-    A = _cpp.la.petsc.create_matrix(comm, pattern)
+    A = _cpp.la.petsc.create_matrix(comm, pattern, None)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
