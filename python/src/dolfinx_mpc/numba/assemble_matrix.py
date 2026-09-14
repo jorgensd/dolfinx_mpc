@@ -211,7 +211,7 @@ def assemble_matrix(
     if form.function_spaces[0] is form.function_spaces[1]:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0], bcs, diagval)
+        _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0]._cpp_object, bcs, diagval)
 
     A.assemble()
     timer_matrix.stop()

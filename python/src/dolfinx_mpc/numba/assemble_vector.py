@@ -54,7 +54,7 @@ def assemble_vector(
     V = form.function_spaces[0]
     x_dofs = V.mesh.geometry.dofmaps[0]
     x = V.mesh.geometry.x
-    dofs = V.dofmap.map()
+    dofs = V.dofmap.list
     block_size = V.dofmap.index_map_bs
 
     # Data from multipointconstraint

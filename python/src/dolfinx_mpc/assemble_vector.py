@@ -173,7 +173,7 @@ def create_vector_nest(L: Sequence[_fem.Form], constraints: Sequence[MultiPointC
     assert len(constraints) == len(L)
 
     maps = [
-        (constraint.function_space.dofmap.index_map, constraint.function_space.dofmap.index_map_bs)
+        (constraint.function_space.dofmap.index_map._cpp_object, constraint.function_space.dofmap.index_map_bs)
         for constraint in constraints
     ]
     return _cpp.fem.petsc.create_vector_nest(maps)
