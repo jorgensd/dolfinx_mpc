@@ -727,12 +727,33 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     blocks.erase(std::unique(blocks.begin(), blocks.end()), blocks.end());
 
     // Create submap
-    std::pair<dolfinx::common::IndexMap, std::vector<int32_t>> compressed_map
-        = dolfinx::common::create_sub_index_map(
-            *imap, blocks, dolfinx::common::IndexMapOrder::any, false);
-    slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
-        std::move(compressed_map.first));
+    std::tuple<dolfinx::common::IndexMap, std::vector<int32_t>, bool>
+        compressed_map = dolfinx::common::create_sub_index_map(
+            *imap, blocks, dolfinx::common::IndexMapOrder::any);
 
+    // Copy of function from https://github.com/FEniCS/dolfinx/pull/4479/
+    // by Garth Wells, subject to LGPL-3.0 License.
+    // Throw if any rank saw a dof acquire a new owner when building a
+    // sub-index map. `create_sub_index_map` reports this per rank, so it is
+    // reduced first: throwing on only some ranks would leave the others in
+    // a later collective. Developer builds only, since the check requires
+    // MPI communication.
+    auto reject_owner_change
+        = []([[maybe_unused]] const dolfinx::common::IndexMap& map,
+             [[maybe_unused]] bool owners_changed)
+    {
+      int changed = owners_changed;
+      int changed_any;
+      const int ierr = MPI_Allreduce(&changed, &changed_any, 1, MPI_INT,
+                                     MPI_LOR, map.comm());
+      dolfinx::MPI::check_error(map.comm(), ierr);
+      if (changed_any)
+        throw std::runtime_error("Index owner change detected.");
+    };
+    reject_owner_change(*imap, std::get<2>(compressed_map));
+
+    slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
+        std::move(std::get<0>(compressed_map)));
     // Build map from new index map to slave indices (unrolled)
     for (std::size_t i = 0; i < slaves.size(); i++)
     {
