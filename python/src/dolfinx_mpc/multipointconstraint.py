@@ -134,8 +134,11 @@ class MultiPointConstraint:
         self._owners = numpy.array([], dtype=numpy.int32)
         self._offsets = numpy.array([0], dtype=numpy.int32)
         self._bcs = [] if bcs is None else list(bcs)
-        if rhs_coeffs is not None and rhs_coeffs.function_space != V:
-            raise ValueError("rhs_coeffs must be a Function in the space of the constraint")
+        if rhs_coeffs is not None:
+            if not rhs_coeffs.x.array.dtype == dtype:
+                raise ValueError("rhs_coeffs must have the same dtype as the MPC")
+            if rhs_coeffs.function_space != V:
+                raise ValueError("rhs_coeffs must be a Function in the space of the constraint")
         self._rhs_coeffs = rhs_coeffs
         self.V = V
         self.finalized = False
@@ -199,7 +202,6 @@ class MultiPointConstraint:
         freedom and builds a new index map and function space where unghosted master dofs are added as ghosts.
         """
         self._already_finalized()
-        self._coeffs.astype(numpy.dtype(self._dtype))
 
         num_dofs_local = self.V.dofmap.index_map_bs * (
             self.V.dofmap.index_map.size_local + self.V.dofmap.index_map.num_ghosts
@@ -252,10 +254,10 @@ class MultiPointConstraint:
         """
         self._not_finalized()
         if self._rhs_coeffs is not None:
-            # Re-read the inhomogeneity, so that a change to the Function is picked up.
-            # Its array spans the original space, which is what the constraint stores;
-            # `self.V` has by now been replaced by the extended space with extra ghosts.
-            self._cpp_object.set_rhs_coeffs(self._rhs_coeffs.x.array.astype(self._dtype))
+            # Pass the array natively. Zero-copy, zero-allocation.
+            rhs_coeffs = self._rhs_coeffs.x.array[:num_dofs_local]
+            self._cpp_object.set_rhs_coeffs(rhs_coeffs)
+            
         self._cpp_object.update_constants()
 
     @property
