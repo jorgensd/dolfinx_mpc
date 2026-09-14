@@ -8,6 +8,7 @@
 
 #include "mpc_helpers.h"
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
@@ -80,8 +81,13 @@ public:
     }
     _mpc_constants = std::vector<T>(num_dofs_local, 0);
     _rhs_coeffs = std::vector<T>(num_dofs_local, 0);
+    _has_inhomogeneity = false;
     if (!rhs_coeffs.empty())
+    {
       std::ranges::copy(rhs_coeffs, _rhs_coeffs.begin());
+      _has_inhomogeneity = true;
+    }
+
     std::vector<std::int8_t> _slave_data(num_dofs_local, 0);
     for (auto dof : slaves)
       _slave_data[dof] = 1;
@@ -146,19 +152,21 @@ public:
     // contribution is folded into the constraint offset, and those that remain
     std::vector<std::int8_t> bc_marker = gather_bc_markers();
 
-    // Prevent double-constrained DoFs. Checking slaves only keeps this O(num_slaves) 
-    // (Dirichlet conditions on masters aren't errors; their values are substituted 
-    // into the equations later). To avoid MPI deadlocks, we globally reduce the 
-    // error verdict before throwing.
-
+    // Prevent double-constrained DoFs. Checking slaves only keeps this
+    // O(num_slaves) (Dirichlet conditions on masters aren't errors; their
+    // values are substituted into the equations later). To avoid MPI deadlocks,
+    // we globally reduce the error verdict before throwing.
     int local = 0;
     if (!bc_marker.empty())
     {
       // Compute the local violation flag
-      local = std::ranges::any_of(_slaves, [&bc_marker](std::int32_t slave)
-                                  { 
-                                    assert(slave < static_cast<std::int32_t>(bc_marker.size()));
-                                    return bc_marker[slave] != 0; })
+      local = std::ranges::any_of(
+                  _slaves,
+                  [&bc_marker](std::int32_t slave)
+                  {
+                    assert(slave < static_cast<std::int32_t>(bc_marker.size()));
+                    return bc_marker[slave] != 0;
+                  })
                   ? 1
                   : 0;
     }
@@ -174,36 +182,61 @@ public:
           "two.");
     }
 
-    std::vector<std::int32_t> keep_masters, keep_owners, keep_offsets(1, 0);
+    // Transfer masters that are constrained by a Dirichlet condition to
+    // separate adjacency lists, and keep the rest in the original adjacency
+    // lists
+    std::vector<std::int32_t> keep_masters, keep_owners, keep_offsets;
     std::vector<T> keep_coeffs;
-    std::vector<std::int32_t> bc_masters, bc_offsets(1, 0);
+    std::vector<std::int32_t> bc_masters, bc_offsets;
     std::vector<T> bc_coeffs;
-    keep_masters.reserve(masters_local.size());
-    keep_owners.reserve(masters_local.size());
-    keep_coeffs.reserve(masters_local.size());
-    keep_offsets.reserve(num_dofs_local + 1);
-    bc_offsets.reserve(num_dofs_local + 1);
-    for (std::int32_t dof = 0; dof < num_dofs_local; ++dof)
-    {
-      for (std::int32_t j = masters_offsets[dof]; j < masters_offsets[dof + 1];
-           ++j)
-      {
-        if (!bc_marker.empty() and bc_marker[masters_local[j]])
-        {
-          bc_masters.push_back(masters_local[j]);
-          bc_coeffs.push_back(_coeff_data[j]);
-        }
-        else
-        {
-          keep_masters.push_back(masters_local[j]);
-          keep_coeffs.push_back(_coeff_data[j]);
-          keep_owners.push_back(_owner_data[j]);
-        }
-      }
-      keep_offsets.push_back((std::int32_t)keep_masters.size());
-      bc_offsets.push_back((std::int32_t)bc_masters.size());
-    }
 
+    if (bc_marker.empty())
+    {
+      keep_masters = std::move(masters_local);
+      keep_coeffs = std::move(_coeff_data);
+      keep_owners = std::move(_owner_data);
+      keep_offsets = std::move(masters_offsets);
+      bc_offsets = std::vector<std::int32_t>(num_dofs_local + 1, 0);
+    }
+    else
+    {
+      // FIX 3: Moved reserves here so we don't allocate memory we throw away
+      keep_masters.reserve(masters_local.size());
+      keep_owners.reserve(masters_local.size());
+      keep_coeffs.reserve(masters_local.size());
+      keep_offsets.reserve(num_dofs_local + 1);
+      bc_offsets.reserve(num_dofs_local + 1);
+
+      // FIX 2: Initialize with a single 0 here, instead of (1, 0) in the
+      // constructor
+      keep_offsets.push_back(0);
+      bc_offsets.push_back(0);
+
+      for (std::int32_t dof = 0; dof < num_dofs_local; ++dof)
+      {
+        const std::int32_t start = masters_offsets[dof];
+        const std::int32_t end = masters_offsets[dof + 1];
+
+        for (std::int32_t j = start; j < end; ++j)
+        {
+          const auto master = masters_local[j];
+
+          if (bc_marker[master])
+          {
+            bc_masters.push_back(master);
+            bc_coeffs.push_back(_coeff_data[j]);
+          }
+          else
+          {
+            keep_masters.push_back(master);
+            keep_coeffs.push_back(_coeff_data[j]);
+            keep_owners.push_back(_owner_data[j]);
+          }
+        }
+        keep_offsets.push_back(static_cast<std::int32_t>(keep_masters.size()));
+        bc_offsets.push_back(static_cast<std::int32_t>(bc_masters.size()));
+      }
+    }
     _master_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
         keep_masters, keep_offsets);
     _coeff_map = std::make_shared<dolfinx::graph::AdjacencyList<T>>(
@@ -215,6 +248,21 @@ public:
             bc_masters, bc_offsets);
     _bc_coeff_map = std::make_shared<dolfinx::graph::AdjacencyList<T>>(
         bc_coeffs, bc_offsets);
+
+    // Decide if we have an inhomogeneity, and pass this to all processes once
+    // to avoid repeat calls to MPI_Allreduce.
+    int local_inhom = 0;
+    // If the user supplied an inhomogeneity, we have one
+    if (!rhs_coeffs.empty())
+      local_inhom = 1;
+    // If any of the eliminated masters are constrained by a Dirichlet
+    // condition, we have an inhomogeneity
+    if (!bc_coeffs.empty())
+      local_inhom = 1;
+    int global_inhom = 0;
+    MPI_Allreduce(&local_inhom, &global_inhom, 1, MPI_INT, MPI_LOR,
+                  V->mesh()->comm());
+    _has_inhomogeneity = global_inhom != 0;
 
     update_constants();
   }
@@ -234,57 +282,58 @@ public:
       for (std::size_t k = 0; k < masters.size(); ++k)
         vector[slave] += coeffs[k] * vector[masters[k]];
     }
-  };
+  }
 
-  /// @brief Recompute the constraint offsets from the current Dirichlet data.
-  ///
-  /// The offset of a slave is the user supplied inhomogeneity plus the
-  /// contribution of every master that was eliminated because it is
-  /// constrained by a Dirichlet condition. As `dolfinx::fem::DirichletBC::set`
-  /// reads the current value of the underlying function, calling this picks up
-  /// any change to time dependent boundary data.
-  ///
-  /// @note Collective. Must be called by every process, and again whenever the
-  /// values of the Dirichlet conditions supplied at construction change.
   void update_constants()
   {
-    // The offset is only defined for slaves. Zeroing it elsewhere keeps
-    // `constant_values` equal to the g of `x = K x_red + g`, so that a value
-    // supplied for an unconstrained dof cannot silently perturb the lifting.
-    for (std::size_t i = 0; i < _mpc_constants.size(); ++i)
-      _mpc_constants[i] = _is_slave[i] ? _rhs_coeffs[i] : T(0);
+    if (!_has_inhomogeneity)
+      return;
 
-    if (!_bcs.empty())
+    // Bulk zero is faster even if we only have a few slaves, to avoid
+    // branching.
+    std::ranges::fill(_mpc_constants, T(0));
+
+    // If no BCs, OR if the BCs don't constrain any master DoFs,
+    // use the user supplied inhomogeneity `g`.
+    if (_bcs.empty() || _bc_master_map->offsets().back() == 0)
     {
+      for (auto slave : _slaves)
+        _mpc_constants[slave] = _rhs_coeffs[slave];
+    }
+    else
+    {
+      // Compute g + c_i g_i for every master i that is constrained by a
+      // Dirichlet condition
       const std::vector<T> g = gather_bc_values();
       for (auto slave : _slaves)
       {
+        T val = _rhs_coeffs[slave];
         auto masters = _bc_master_map->links(slave);
         auto coeffs = _bc_coeff_map->links(slave);
         assert(masters.size() == coeffs.size());
+
         for (std::size_t k = 0; k < masters.size(); ++k)
-          _mpc_constants[slave] += coeffs[k] * g[masters[k]];
+          val += coeffs[k] * g[masters[k]];
+
+        _mpc_constants[slave] = val;
       }
     }
-
-    // Reduce whether any process carries a non-zero offset, so that callers
-    // can skip the lifting pass on every process or on none. The pass reaches
-    // collectives, so the decision must not be taken rank-locally.
-    int local
-        = std::ranges::any_of(_mpc_constants, [](T v) { return v != T(0); })
-              ? 1
-              : 0;
-    int global = 0;
-    MPI_Allreduce(&local, &global, 1, MPI_INT, MPI_LOR, _V->mesh()->comm());
-    _has_inhomogeneity = global != 0;
-  };
+  }
 
   /// @brief Replace the user supplied inhomogeneity @f$g@f$.
   ///
   /// Does not recompute the offsets; call `update_constants` afterwards.
+  /// Throws an error if the constraint was originally created as homogeneous.
   /// @param[in] rhs_coeffs Inhomogeneity for all dofs local to the process
   void set_rhs_coeffs(std::span<const T> rhs_coeffs)
   {
+    if (!_has_inhomogeneity)
+    {
+      throw std::logic_error(
+          "Cannot set rhs_coeffs: the multi-point constraint was created "
+          "as homogeneous. You must supply an initial rhs_coeffs at creation "
+          "to update it later.");
+    }
     if (rhs_coeffs.size() != _rhs_coeffs.size())
     {
       throw std::invalid_argument(
@@ -296,10 +345,11 @@ public:
 
   /// @brief Whether any process carries a non-zero constraint offset.
   ///
-  /// The value is globally reduced, so it is identical on every process.
+  /// The value is globally reduced at construction, so it is identical on every
+  /// process.
   bool has_inhomogeneity() const { return _has_inhomogeneity; }
 
-  /// Homogenize slave DoFs (particularly useful for nonlinear problems)
+  /// Homogenize slave DoFs (particularly useful for  nonlinear problems)
   void homogenize(std::span<T> vector) const
   {
     for (auto slave : _slaves)
@@ -416,13 +466,14 @@ private:
   std::vector<std::int32_t> _slaves;
   std::vector<std::int8_t> _is_slave;
 
-  // Constraint offset g (derived: user input plus eliminated Dirichlet masters)
+  // Constraint offset g (derived: user input plus eliminated Dirichlet
+  // masters)
   std::vector<T> _mpc_constants;
 
   // User supplied inhomogeneity, as given at construction
   std::vector<T> _rhs_coeffs;
 
-  // Globally reduced marker for a non-zero constraint offset
+  // Marker for a non-zero constraint offset
   bool _has_inhomogeneity = false;
 
   // Dirichlet conditions whose masters have been eliminated
