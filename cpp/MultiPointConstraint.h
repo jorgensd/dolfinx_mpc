@@ -295,27 +295,39 @@ public:
 
     // If no BCs, OR if the BCs don't constrain any master DoFs,
     // use the user supplied inhomogeneity `g`.
-    if (_bcs.empty() || _bc_master_map->offsets().back() == 0)
+    if (_bcs.empty())
     {
       for (auto slave : _slaves)
         _mpc_constants[slave] = _rhs_coeffs[slave];
     }
     else
     {
-      // Compute g + c_i g_i for every master i that is constrained by a
-      // Dirichlet condition
+      // Collective gathering of BC values
       const std::vector<T> g = gather_bc_values();
-      for (auto slave : _slaves)
+
+      // Local optimization; if this specific rank has no BC-constrained
+      // masters, skip the graph lookups and just apply the rhs_coeffs.
+      if (_bc_master_map->offsets().back() == 0)
       {
-        T val = _rhs_coeffs[slave];
-        auto masters = _bc_master_map->links(slave);
-        auto coeffs = _bc_coeff_map->links(slave);
-        assert(masters.size() == coeffs.size());
+        for (auto slave : _slaves)
+          _mpc_constants[slave] = _rhs_coeffs[slave];
+      }
+      else
+      {
+        // Compute g + c_i g_i for every master i that is constrained by a
+        // Dirichlet condition
+        for (auto slave : _slaves)
+        {
+          T val = _rhs_coeffs[slave];
+          auto masters = _bc_master_map->links(slave);
+          auto coeffs = _bc_coeff_map->links(slave);
+          assert(masters.size() == coeffs.size());
 
-        for (std::size_t k = 0; k < masters.size(); ++k)
-          val += coeffs[k] * g[masters[k]];
+          for (std::size_t k = 0; k < masters.size(); ++k)
+            val += coeffs[k] * g[masters[k]];
 
-        _mpc_constants[slave] = val;
+          _mpc_constants[slave] = val;
+        }
       }
     }
   }
