@@ -93,7 +93,7 @@ def assemble_matrix(
     if A is None:
         pattern = create_sparsity_pattern(form, constraint)
         pattern.finalize()
-        A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern)
+        A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern, None)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
