@@ -1,10 +1,7 @@
 # Multi-point constraints for nonlinear problems
 
-This note derives how an (affine) multi-point constraint is applied to a
-nonlinear problem in DOLFINx_MPC, and explains why the treatment of the
-inhomogeneity $g$ differs between the linear and the nonlinear solver paths.
-
-## The constraint
+The aim of this section is to explain how an (affine) multi-point constraint is applied to a nonlinear problem in DOLFINx_MPC. 
+Furthermore, it explains why the treatment of the inhomogeneity $g$ differs between the linear and the nonlinear solver paths.
 
 A multi-point constraint relates each *slave* degree of freedom $s$ to a set of
 *master* degrees of freedom $m_j$,
@@ -40,7 +37,7 @@ Because $g_{m_j}$ is read from the {py:class}`dolfinx.fem.DirichletBC` each time
 {py:meth}`dolfinx_mpc.MultiPointConstraint.update_constants` is called, time-dependent boundary data
 is supported.
 
-A **Dirichlet condition is itself the degenerate case** of this relation: a dof
+We can rephrase a Dirichlet condition as an MPC
 with an *empty* master list and $g_s$ equal to the prescribed value, so that
 $u_s = g_s$. Its row of $K$ is identically zero.
 
@@ -113,9 +110,7 @@ This is the reason the code keeps two distinct operations:
 | {py:meth}`backsubstitution<dolfinx_mpc.MultiPointConstraint.backsubstitution>` | the **iterate** | $u_s = \sum_j c_{sj} u_{m_j} + g_s$ |
 | {py:meth}`homogenize<dolfinx_mpc.MultiPointConstraint.homogenize>` | an **increment** | $u_s = 0$ |
 
-### Why no lifting of $g$ appears in the residual
-
-This is the key difference from the linear path, and it is easy to get wrong.
+### Residual evaluation without lifting of $g$
 
 In the linear path the unknown solved for is $\hat{u}$ itself, and the
 right-hand side $b$ is assembled from the linear form alone — nothing in it
@@ -138,7 +133,7 @@ $$
 
 and setting $r=0$ recovers exactly the linear system of the previous section.
 
-### Dirichlet conditions passed to the solver
+### Handling of non-MPC Dirichlet conditions
 
 Dirichlet conditions that are *not* folded into the constraint are handled by
 the usual mechanism, phrased on the increment rather than the iterate. Writing
