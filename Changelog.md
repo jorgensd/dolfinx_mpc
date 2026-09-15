@@ -2,9 +2,8 @@
 
 ## main
 
-- Affine multi-point constraints: `MultiPointConstraint` now supports affine constraints of the form $x = K x_{\text{red}} + g$ via the new optional bcs and rhs_coeffs arguments. Time-dependent boundary data is supported via `MultiPointConstraint.update_constants()`. For manual linear assembly, use the new `dolfinx_mpc.apply_mpc_lifting` function (handled automatically by `LinearProblem`). NonlinearProblem automatically handles affine constraints and Dirichlet conditions without requiring any API changes. Passing neither of the new arguments reproduces the previous homogeneous behavior. Note: Numba assemblers currently raise `NotImplementedError` for inhomogeneous constraints.For a full mathematical derivation of the offset $g$ and the linear/nonlinear solver paths, see the theory document. 
-
-- **BUGFIX**: `modify_mpc_vec` zeroed the slave entry of the element vector inside the loop
+- **New feature**: Affine multi-point constraints: `MultiPointConstraint` now supports affine constraints of the form $x = K x_{\text{red}} + g$ via the new optional bcs and rhs_coeffs arguments. Time-dependent boundary data is supported via `MultiPointConstraint.update_constants()`. For manual linear assembly, use the new `dolfinx_mpc.apply_mpc_lifting` function (handled automatically by `LinearProblem`). NonlinearProblem automatically handles affine constraints and Dirichlet conditions without requiring any API changes. Passing neither of the new arguments reproduces the previous homogeneous behaviour. Note: Numba assemblers currently raise `NotImplementedError` for inhomogeneous constraints. For a full mathematical derivation of the offset $g$ and the linear/nonlinear solver paths, see the [theory document](./docs/nonlinear_mpc.md). 
+- **Error handling**: The `MultiPointConstraint` constructor now throws `invalid_argument` if a dof is both a slave and Dirichlet-constraine. That was previously accepted silently. - **BUGFIX**: `modify_mpc_vec` zeroed the slave entry of the element vector inside the loop
   over that slave's masters, so a slave with an *empty* master list kept its entry. The
   assembled reduced residual then had non-zero slave rows, which left the solution correct
   but made a nonlinear (SNES) solve stagnate at a finite residual norm. A master list is
