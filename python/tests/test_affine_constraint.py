@@ -554,3 +554,235 @@ def test_nonlinear_dirichletbc_as_pure_mpc(degree):
     err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
     err = mesh.comm.allreduce(float(err), op=MPI.MAX)
     assert err < 1e-8, f"nonlinear MPC-as-DirichletBC solution differs from DOLFINx by {err}"
+
+
+@pytest.mark.skipif(
+    np.issubdtype(default_scalar_type, np.complexfloating),
+    reason="The nonlinear residual used here is real valued.",
+)
+@pytest.mark.parametrize("degree", [1, 2])
+def test_nonlinear_affine_dirichlet_master(degree):
+    """Nonlinear solve with a *non-empty* master list folded into the offset.
+
+    Complements `test_nonlinear_dirichletbc_as_pure_mpc`, where every slave has an
+    empty master list. Here the slave has a genuine master with a coefficient, and
+    that master is eliminated by a Dirichlet condition passed to the constraint via
+    `bcs`, so the `_bc_master_map` folding in `update_constants` runs inside SNES.
+
+    Because the only master is Dirichlet constrained, the relation collapses to the
+    fixed value :math:`u_s = c\\,u_{bc} + g_s`, which gives an exact reference: the
+    same nonlinear problem with that value stated as an ordinary Dirichlet condition.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 8, 8)
+    V = fem.functionspace(mesh, ("Lagrange", degree))
+
+    # Dirichlet data on x = 1, where the master lives
+    def right(x):
+        return np.isclose(x[0], 1.0)
+
+    u_bc_value = 1.3
+    coeff = 2.0
+    bc_dofs = fem.locate_dofs_geometrical(V, right)
+    bc = fem.dirichletbc(default_scalar_type(u_bc_value), bc_dofs, V)
+
+    x = ufl.SpatialCoordinate(mesh)
+    source = 2.0 + ufl.sin(2 * ufl.pi * x[1])
+
+    tol = 1e-10
+    petsc_options = {
+        "snes_type": "newtonls",
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "snes_atol": tol,
+        "snes_rtol": tol,
+        "snes_linesearch_type": "none",
+        "ksp_error_if_not_converged": True,
+        "snes_error_if_not_converged": True,
+    }
+
+    # The slave at (0, 0) and its master at (1, 0). Both are vertices of the mesh, so
+    # they exist for any degree. Every process that sees them must declare them, hence
+    # `locate_dofs_geometrical`, which returns owned and ghost dofs.
+    def at_slave(x):
+        return np.isclose(x[0], 0.0) & np.isclose(x[1], 0.0)
+
+    slave_dofs = fem.locate_dofs_geometrical(V, at_slave)
+
+    # A non-zero user offset on top of the eliminated master, so that both sources of
+    # inhomogeneity are active at once
+    g_s = 0.4
+    g = fem.Function(V)
+    g.x.array[:] = 0.0
+    g.x.array[slave_dofs] = g_s
+    g.x.scatter_forward()
+
+    # The value the constraint must produce at the slave
+    slave_value = coeff * u_bc_value + g_s
+
+    # Reference: ordinary DOLFINx, with the collapsed relation as a Dirichlet condition
+    u_ref = fem.Function(V)
+    u_ref.interpolate(lambda x: 0.3 * np.ones_like(x[0]))
+    v_ref = ufl.TestFunction(V)
+    F_ref = ufl.inner((1 + u_ref**2) * ufl.grad(u_ref), ufl.grad(v_ref)) * ufl.dx - ufl.inner(source, v_ref) * ufl.dx
+    J_ref = ufl.derivative(F_ref, u_ref, ufl.TrialFunction(V))
+    ref_problem = dolfinx.fem.petsc.NonlinearProblem(
+        F_ref,
+        u_ref,
+        J=J_ref,
+        bcs=[bc, fem.dirichletbc(default_scalar_type(slave_value), slave_dofs, V)],
+        petsc_options_prefix="nonlinear_affine_dirichlet_master_reference_",
+        petsc_options=petsc_options,
+    )
+    ref_problem.solve()
+    assert ref_problem.solver.getConvergedReason() > 0
+
+    # The same problem with the relation as an affine constraint
+    # Build the relation from coordinates, which is parallel safe: every process that
+    # sees the slave or the master resolves the pair itself
+    mpc = dolfinx_mpc.MultiPointConstraint(V, bcs=[bc], rhs_coeffs=g)
+    mpc.create_general_constraint({_l2b([0, 0], mesh): {_l2b([1, 0], mesh): coeff}})
+    mpc.finalize()
+    assert mpc.has_inhomogeneity
+
+    uh = fem.Function(mpc.function_space)
+    uh.interpolate(lambda x: 0.3 * np.ones_like(x[0]))
+    v = ufl.TestFunction(V)
+    F = ufl.inner((1 + uh**2) * ufl.grad(uh), ufl.grad(v)) * ufl.dx - ufl.inner(source, v) * ufl.dx
+    J = ufl.derivative(F, uh, ufl.TrialFunction(V))
+
+    problem = dolfinx_mpc.NonlinearProblem(F, uh, mpc=mpc, bcs=[bc], J=J, petsc_options=petsc_options)
+    _, converged, _ = problem.solve()
+    assert converged
+
+    # The constraint must hold exactly: u_slave = coeff * u_bc + g_s
+    if len(slave_dofs) > 0:
+        nt.assert_allclose(uh.x.array[slave_dofs[0]], slave_value, rtol=1e-10, atol=1e-12)
+
+    # ... and the whole solution must match the reference. Compare the owned block only:
+    # the constraint's space carries extra ghosts for off-process masters. Reduce before
+    # asserting, so every process reaches the same verdict rather than one failing while
+    # the others wait in a collective.
+    num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
+    err = mesh.comm.allreduce(float(err), op=MPI.MAX)
+    assert err < 1e-8, f"nonlinear affine MPC solution differs from the reference by {err}"
+
+
+@pytest.mark.skipif(
+    np.issubdtype(default_scalar_type, np.complexfloating),
+    reason="The nonlinear residual used here is real valued.",
+)
+@pytest.mark.parametrize("degree", [1, 2])
+def test_nonlinear_affine_surviving_master(degree):
+    """Nonlinear solve where the master survives, i.e. K has a genuine non-unit row.
+
+    This is the case the theory document is about: the residual is assembled at an
+    iterate that already satisfies :math:`u = K\\hat{u} + g`, so the SNES path must
+    *not* lift :math:`g` the way the linear path does. With an empty master list
+    :math:`K^T A g` vanishes identically and the rule is vacuous; here it is not.
+
+    There is no closed-form reference solve for this configuration, so the solution is
+    pinned by the two properties that characterise it: the constraint holds exactly in
+    the converged iterate (`backsubstitution` with masters *and* a non-zero offset),
+    and the reduced residual is driven to the SNES tolerance rather than stagnating at
+    a finite norm, which is how an incorrectly handled offset shows up.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 12, 12)
+    V = fem.functionspace(mesh, ("Lagrange", degree))
+
+    # Homogeneous condition on the whole exterior boundary. The periodic masters live on
+    # the interior line y = 0.5, so they survive the Dirichlet elimination and K keeps a
+    # genuine non-unit row, which is the point of this test.
+    mesh.topology.create_connectivity(mesh.topology.dim - 1, mesh.topology.dim)
+    facets = dolfinx.mesh.exterior_facet_indices(mesh.topology)
+    bc_dofs = fem.locate_dofs_topological(V, mesh.topology.dim - 1, facets)
+    bcs = [fem.dirichletbc(default_scalar_type(0.0), bc_dofs, V)]
+
+    # The pi/2 rotational symmetry of test_nonlinear_poisson, but with a non-zero offset
+    def periodic_boundary(x):
+        eps = 1000 * np.finfo(x.dtype).resolution
+        return np.isclose(x[0], 0.5, atol=eps) & ((x[1] < 0.5 - eps) | (x[1] > 0.5 + eps))
+
+    def periodic_relation(x):
+        out_x = np.zeros_like(x)
+        out_x[0] = x[1]
+        out_x[1] = x[0]
+        out_x[2] = x[2]
+        return out_x
+
+    g = fem.Function(V)
+    g.interpolate(lambda x: 0.05 * np.ones_like(x[0]))
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V, rhs_coeffs=g)
+    mpc.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_relation, bcs)
+    mpc.finalize()
+    assert mpc.has_inhomogeneity
+
+    # The masters must survive the Dirichlet elimination, otherwise this test degenerates
+    # into the case already covered by test_nonlinear_affine_dirichlet_master
+    num_slaves = mesh.comm.allreduce(len(mpc.slaves), op=MPI.SUM)
+    num_masters = mesh.comm.allreduce(len(mpc.masters.array), op=MPI.SUM)
+    assert num_slaves > 0
+    assert num_masters == num_slaves
+
+    tol = 1e-10
+    petsc_options = {
+        "snes_type": "newtonls",
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "snes_atol": tol,
+        "snes_rtol": tol,
+        "snes_linesearch_type": "none",
+        "ksp_error_if_not_converged": True,
+        "snes_error_if_not_converged": True,
+    }
+
+    x = ufl.SpatialCoordinate(mesh)
+    u_soln = ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+    f = -ufl.div((1 + u_soln**2) * ufl.grad(u_soln))
+
+    uh = fem.Function(mpc.function_space)
+    uh.interpolate(lambda x: x[0] ** 2 * x[1] ** 2)
+    v = ufl.TestFunction(V)
+    F = ufl.inner((1 + uh**2) * ufl.grad(uh), ufl.grad(v)) * ufl.dx - ufl.inner(f, v) * ufl.dx
+    J = ufl.derivative(F, uh, ufl.TrialFunction(V))
+
+    problem = dolfinx_mpc.NonlinearProblem(F, uh, mpc=mpc, bcs=bcs, J=J, petsc_options=petsc_options)
+    _, converged, _ = problem.solve()
+    assert converged
+    # A stagnating residual is reported as a line-search or iteration-limit failure, not
+    # as convergence, so pin the reason rather than trusting `converged` alone
+    assert problem.solver.getConvergedReason() > 0
+
+    # The affine relation must hold in the converged iterate, offset included: applying
+    # the constraint again must be a no-op. With a surviving master this exercises
+    # `backsubstitution` accumulating masters *on top of* a non-zero offset, the path an
+    # empty master list never reaches.
+    before = uh.x.array.copy()
+    mpc.backsubstitution(uh)
+    slaves = mpc.slaves
+    assert len(slaves) == 0 or np.max(np.abs(uh.x.array[slaves] - before[slaves])) < 1e-9
+    nt.assert_allclose(uh.x.array, before, rtol=1e-9, atol=1e-11)
+
+    # The offset is genuinely present at the slaves: with g = 0 the constrained value is
+    # the master value alone, so the two solves below must differ
+    assert len(slaves) == 0 or np.max(np.abs(uh.x.array[slaves])) > 1e-6
+
+    # The offset actually moved the solution: with g = 0 the same constraint gives a
+    # different answer, so the assertions above are not trivially satisfied
+    mpc_h = dolfinx_mpc.MultiPointConstraint(V)
+    mpc_h.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_relation, bcs)
+    mpc_h.finalize()
+    uh_h = fem.Function(mpc_h.function_space)
+    uh_h.interpolate(lambda x: x[0] ** 2 * x[1] ** 2)
+    v_h = ufl.TestFunction(V)
+    F_h = ufl.inner((1 + uh_h**2) * ufl.grad(uh_h), ufl.grad(v_h)) * ufl.dx - ufl.inner(f, v_h) * ufl.dx
+    J_h = ufl.derivative(F_h, uh_h, ufl.TrialFunction(V))
+    problem_h = dolfinx_mpc.NonlinearProblem(F_h, uh_h, mpc=mpc_h, bcs=bcs, J=J_h, petsc_options=petsc_options)
+    _, converged_h, _ = problem_h.solve()
+    assert converged_h
+
+    num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    diff = np.max(np.abs(uh.x.array[:num_owned] - uh_h.x.array[:num_owned])) if num_owned else 0.0
+    diff = mesh.comm.allreduce(float(diff), op=MPI.MAX)
+    assert diff > 1e-4, "the constraint offset did not change the solution"
