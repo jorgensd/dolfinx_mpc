@@ -81,12 +81,8 @@ public:
     }
     _mpc_constants = std::vector<T>(num_dofs_local, 0);
     _rhs_coeffs = std::vector<T>(num_dofs_local, 0);
-    _has_inhomogeneity = false;
     if (!rhs_coeffs.empty())
-    {
       std::ranges::copy(rhs_coeffs, _rhs_coeffs.begin());
-      _has_inhomogeneity = true;
-    }
 
     std::vector<std::int8_t> _slave_data(num_dofs_local, 0);
     for (auto dof : slaves)
@@ -255,6 +251,7 @@ public:
     // If the user supplied an inhomogeneity, we have one
     if (!rhs_coeffs.empty())
       local_inhom = 1;
+
     // If any of the eliminated masters are constrained by a Dirichlet
     // condition, we have an inhomogeneity
     if (!bc_coeffs.empty())
@@ -263,7 +260,6 @@ public:
     MPI_Allreduce(&local_inhom, &global_inhom, 1, MPI_INT, MPI_LOR,
                   V->mesh()->comm());
     _has_inhomogeneity = global_inhom != 0;
-
     update_constants();
   }
   //-----------------------------------------------------------------------------

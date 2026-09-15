@@ -207,7 +207,7 @@ class MultiPointConstraint:
             self.V.dofmap.index_map.size_local + self.V.dofmap.index_map.num_ghosts
         )
         if self._rhs_coeffs is None:
-            rhs_coeffs = numpy.zeros(num_dofs_local, dtype=self._dtype)
+            rhs_coeffs = numpy.zeros(0, dtype=self._dtype)
         else:
             rhs_coeffs = self._rhs_coeffs.x.array[:num_dofs_local].astype(self._dtype)
         bcs = [bc._cpp_object for bc in self._bcs]
