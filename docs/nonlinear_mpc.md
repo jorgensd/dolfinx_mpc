@@ -36,8 +36,8 @@ u_s \;=\; \sum_{j \notin \mathcal{D}} c_{sj} u_{m_j}
         \;+\; \underbrace{\sum_{j \in \mathcal{D}} c_{sj}\, g_{m_j}}_{\text{folded into } g_s} .
 $$
 
-Because $g_{m_j}$ is read from the `DirichletBC` each time
-`MultiPointConstraint.update_constants` is called, time-dependent boundary data
+Because $g_{m_j}$ is read from the {py:class}`dolfinx.fem.DirichletBC` each time
+{py:meth}`dolfinx_mpc.MultiPointConstraint.update_constants` is called, time-dependent boundary data
 is supported.
 
 A **Dirichlet condition is itself the degenerate case** of this relation: a dof
@@ -53,8 +53,8 @@ $$
 K^{H} A K\, \hat{u} \;=\; K^{H}\!\left(b - A g\right).
 $$
 
-The term $-K^{H} A g$ is what `dolfinx_mpc.apply_mpc_lifting` computes. It is
-structurally identical to Dirichlet lifting, and `LinearProblem` applies it
+The term $-K^{H} A g$ is what {py:func}`dolfinx_mpc.apply_mpc_lifting` computes. It is
+structurally identical to Dirichlet lifting, and {py:class}`dolfinx_mpc.LinearProblem` applies it
 automatically. After solving, the full vector is recovered by *backsubstitution*,
 
 $$
@@ -110,8 +110,8 @@ This is the reason the code keeps two distinct operations:
 
 | operation | applied to | formula |
 |---|---|---|
-| `backsubstitution` | the **iterate** | $u_s = \sum_j c_{sj} u_{m_j} + g_s$ |
-| `homogenize` | an **increment** | $u_s = 0$ |
+| {py:meth}`backsubstitution<dolfinx_mpc.MultiPointConstraint.backsubstitution>` | the **iterate** | $u_s = \sum_j c_{sj} u_{m_j} + g_s$ |
+| {py:meth}`homogenize<dolfinx_mpc.MultiPointConstraint.homogenize>` | an **increment** | $u_s = 0$ |
 
 ### Why no lifting of $g$ appears in the residual
 
@@ -122,10 +122,10 @@ right-hand side $b$ is assembled from the linear form alone — nothing in it
 knows about $g$. The term $-K^{H} A g$ must therefore be added explicitly.
 
 In the nonlinear path the residual is assembled **at the current iterate**, and
-`assemble_residual_mpc` enforces $u = K\hat{u} + g$ by calling
-`backsubstitution` *before* assembling. Hence $F$ is evaluated at a point that
+{py:func}`dolfinx_mpc.assemble_residual_mpc` enforces $u = K\hat{u} + g$ by calling
+{py:meth}`dolfinx_mpc.MultiPointConstraint.backsubstitution` *before* assembling. Hence $F$ is evaluated at a point that
 already contains $g$, and the offset enters the reduced residual through $F$
-itself. Adding `apply_mpc_lifting` here would count it twice.
+itself. Adding {py:func}`dolfinx_mpc.apply_mpc_lifting` here would count it twice.
 
 The consistency of the two views is easiest to see in the linear case
 $F(u) = Au - b$:
@@ -143,13 +143,13 @@ and setting $r=0$ recovers exactly the linear system of the previous section.
 Dirichlet conditions that are *not* folded into the constraint are handled by
 the usual mechanism, phrased on the increment rather than the iterate. Writing
 $x$ for the current iterate and $g_{\mathrm{bc}}$ for the prescribed values,
-`assemble_residual_mpc` first calls `apply_lifting` with `scale=-1` and `x0=x`,
+{py:func}`dolfinx_mpc.assemble_residual_mpc` first calls {py:func}`dolfinx_mpc.apply_lifting` with `scale=-1` and `x0=x`,
 
 $$
 F \;\leftarrow\; F \;+\; K^{H} J \left(g_{\mathrm{bc}} - x\right),
 $$
 
-and then `set_bc` with `alpha=-1` and `x0=x`, which overwrites the constrained
+and then {py:fuc}`set_bc<dolfinx.fem.petsc.set_bc>` with `alpha=-1` and `x0=x`, which overwrites the constrained
 entries with
 
 $$
@@ -163,9 +163,9 @@ the condition.
 
 ## Implementation summary
 
-Per Newton iteration, `dolfinx_mpc` performs:
+Per Newton iteration, {py:mod}`dolfinx_mpc` performs:
 
-1. `homogenize(u)` then `backsubstitution(u)` — enforce $u = K\hat{u} + g$ on
+1. {py:meth}`homogenize(u)<dolfinx_mpc.MultiPointConstraint.homogenize>` then {py:meth}`backsubstitution(u)<dolfinx_mpc.MultiPointConstraint.backsubstitution>` — enforce $u = K\hat{u} + g$ on
    the incoming iterate.
 2. Assemble $J$ with the constraint, giving $K^{H} J K$. Slave rows and columns
    are eliminated in place, and a value `diagval` is written on the diagonal of
@@ -188,7 +188,7 @@ Dirichlet condition expressed as a constraint).
 
 ## Worked example
 
-Expressing a Dirichlet condition entirely as a constraint, with no `DirichletBC`
+Expressing a Dirichlet condition entirely as a constraint, with no {py:class}`dolfinx.fem.DirichletBC`
 reaching the assembler:
 
 ```python
