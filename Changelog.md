@@ -2,16 +2,8 @@
 
 ## main
 
-- **Affine multi point constraints**: `MultiPointConstraint` now accepts optional `bcs` and
-  `rhs_coeffs` arguments, generalising the constraint from `x = K x_red` to
-  `x = K x_red + g`. A master degree of freedom that is constrained by one of the supplied
-  Dirichlet conditions is removed from the equation of its slave and its contribution folded
-  into `g`, which fixes the previously incorrect assembly for that case. The offset is
-  recomputed from the current values of the conditions by `MultiPointConstraint.update_constants`,
-  so time dependent boundary data is supported. Use the new `dolfinx_mpc.apply_mpc_lifting` to
-  add the resulting `-K^T A g` term when assembling by hand; `LinearProblem` does it for you.
-  The numba assemblers raise `NotImplementedError` for an inhomogeneous constraint. Passing
-  neither `bcs` nor `rhs_coeffs` reproduces the previous behaviour exactly.
+- Affine multi-point constraints: `MultiPointConstraint` now supports affine constraints of the form $x = K x_{\text{red}} + g$ via the new optional bcs and rhs_coeffs arguments. Time-dependent boundary data is supported via `MultiPointConstraint.update_constants()`. For manual linear assembly, use the new `dolfinx_mpc.apply_mpc_lifting` function (handled automatically by `LinearProblem`). NonlinearProblem automatically handles affine constraints and Dirichlet conditions without requiring any API changes. Passing neither of the new arguments reproduces the previous homogeneous behavior. Note: Numba assemblers currently raise `NotImplementedError` for inhomogeneous constraints.For a full mathematical derivation of the offset $g$ and the linear/nonlinear solver paths, see the theory document. 
+
 - **BUGFIX**: `modify_mpc_vec` zeroed the slave entry of the element vector inside the loop
   over that slave's masters, so a slave with an *empty* master list kept its entry. The
   assembled reduced residual then had non-zero slave rows, which left the solution correct
