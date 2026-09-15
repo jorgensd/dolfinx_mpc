@@ -149,7 +149,7 @@ $$
 F \;\leftarrow\; F \;+\; K^{H} J \left(g_{\mathrm{bc}} - x\right),
 $$
 
-and then {py:fuc}`set_bc<dolfinx.fem.petsc.set_bc>` with `alpha=-1` and `x0=x`, which overwrites the constrained
+and then {py:func}`set_bc<dolfinx.fem.petsc.set_bc>` with `alpha=-1` and `x0=x`, which overwrites the constrained
 entries with
 
 $$
