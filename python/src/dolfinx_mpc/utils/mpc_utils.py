@@ -116,7 +116,7 @@ def facet_normal_approximation(
     u_0.x.petsc_vec.set(0)
 
     bc_deac = _fem.dirichletbc(u_0, deac_blocks)
-    A = _cpp.la.petsc.create_matrix(comm, pattern, None)
+    A = _cpp.la.petsc.create_matrix(comm, pattern._cpp_object, None)
     A.zeroEntries()
 
     # Assemble the matrix with all entries
@@ -126,7 +126,7 @@ def facet_normal_approximation(
     if bilinear_form.function_spaces[0] is bilinear_form.function_spaces[1]:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        _cpp.fem.petsc.insert_diagonal(A, bilinear_form.function_spaces[0], [bc_deac._cpp_object], 1.0)
+        _cpp.fem.petsc.insert_diagonal(A, bilinear_form.function_spaces[0]._cpp_object, [bc_deac._cpp_object], 1.0)
     A.assemble()
     linear_form = _fem.form(L, jit_options=jit_options, form_compiler_options=form_compiler_options)
     b = _fem.petsc.assemble_vector(linear_form)
