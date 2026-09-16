@@ -91,13 +91,9 @@ from dolfinx_mpc import (
 
 # Next, we create some convenience functions to create a gif from a given function.
 #
-# The mesh is partitioned in parallel, so each process holds only a piece of the
-# solution. Rather than writing one animation per process, each one builds a
-# PyVista grid over the cells it *owns* and the grids are gathered onto rank 0,
-# which draws them into a single figure and writes a single GIF. Two details
-# matter: restricting to owned cells, so that a cell shared between processes is
-# not drawn twice, and giving every piece the same colour limits, so that the
-# partitions are comparable.
+# Each process builds a PyVista grid over the cells it *owns*, so a shared cell is
+# not drawn twice, and the grids are gathered onto one process which draws them
+# into a single figure and writes a single GIF, with common colour limits.
 #
 # The geometry does not move, so the grids are gathered once when the animation
 # is opened and only the nodal values are communicated per frame.

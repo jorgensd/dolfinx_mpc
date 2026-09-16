@@ -25,19 +25,18 @@
 # $\Gamma_{out}$, here $\sigma\cdot\mathbf{n} = \mu\mathbf{n}$: a constant normal
 # traction with no tangential component. The solution is Poiseuille flow,
 # $\mathbf{u} = (6Qy(H-y)/H^3, 0)$ and $p = -12\nu Qx/H^3$, both of which lie in
-# the Taylor-Hood space, so the discrete solution is exact. The value the
-# multiplier should take is read off $p$ with UFL rather than derived by hand: for
-# a fully developed profile $(\sigma\cdot\mathbf{n})\cdot\mathbf{n}$ reduces to
-# $-p$ on the outlet, so it is the mean of $p$ there.
+# the Taylor-Hood space, so the discrete solution is exact.
 #
-# Two things differ from the scalar demo. The velocity space is blocked, so a
-# global master index is `index_map.local_to_global(dof // bs) * bs + dof % bs`;
-# and the corner nodes of the outlet carry the no-slip condition. Those may not be
-# chosen as the slave, but they are perfectly good *masters*: passing `bcs` to
+# Two things differ from the scalar  {doc}`demo_boundary_average_constraint`.
+# The velocity space is blocked, and the corner nodes of the outlet carry
+# the no-slip condition. Those may not be chosen as the slave,
+# but they are perfectly good *masters*: passing `bcs` to
 # {py:class}`dolfinx_mpc.MultiPointConstraint` eliminates them from the relation
 # and folds their contribution into the constraint offset.
 
-# +
+# We start by importing the relevant modules.
+
+# + tags=["hide-input"]
 from __future__ import annotations
 
 from mpi4py import MPI
@@ -305,12 +304,8 @@ def solve_flow_rate(nx, ny, nu=1.0, flow_rate=1.0, length=2.0, height=1.0):
 
     results = {"M": num_masters, "bs": V.dofmap.index_map_bs}
     results["exact_flux_error"] = results_flux_check
-    # Outlet traction of Poiseuille flow; the multiplier enters the reference
-    # form as +lam, so it carries the opposite sign to the flux mu.
-    # The multiplier is the outlet traction. With sigma = nu*grad(u) - p*I and a
-    # fully developed profile, (sigma.n).n reduces to -p there, and the reference
-    # form carries the opposite sign, so lambda is the mean exact pressure on the
-    # outlet. Taken from p_ex with UFL rather than written out by hand.
+    # On a fully developed outlet sigma.n reduces to -p, and the reference form
+    # carries +lam, so the multiplier is the mean exact pressure there.
     results["lambda_exact"] = comm.allreduce(fem.assemble_scalar(fem.form(p_ex * ds(OUTLET))), op=MPI.SUM) / area
     results["flux"] = comm.allreduce(fem.assemble_scalar(fem.form(ufl.dot(uh, n) * ds(OUTLET))), op=MPI.SUM)
     results["error_u"] = np.sqrt(
@@ -365,11 +360,9 @@ assert res["exact_flux_error"] < 1e-12
 
 # ## Visualization
 #
-# The mesh is partitioned in parallel, so each process holds only a piece of the
-# field. Each one builds a PyVista grid over the cells it *owns* and the grids are
-# gathered onto rank 0 and drawn into a single figure. Two details matter:
-# restricting to owned cells, so a shared cell is not drawn twice, and giving
-# every piece the same colour limits, so the partitions are comparable.
+# Each process builds a PyVista grid over the cells it *owns*, so a shared cell is
+# not drawn twice, and the grids are gathered onto one process and drawn into a
+# single figure with common colour limits.
 
 # +
 

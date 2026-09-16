@@ -324,12 +324,9 @@ uh, ph = problem.solve()
 
 # ## Visualization
 #
-# The mesh is partitioned in parallel, so each process holds only a piece of the
-# solution. Each one builds a PyVista grid over the cells it *owns* and the grids
-# are gathered onto rank 0, which draws them into a single figure. Two details
-# matter: restricting to owned cells, so that a cell shared between processes is
-# not drawn twice, and giving every piece the same colour limits, so that the
-# partitions are comparable.
+# Each process builds a PyVista grid over the cells it *owns*, so a shared cell is
+# not drawn twice, and the grids are gathered onto one process and drawn into a
+# single figure with common colour limits.
 
 # +
 

@@ -85,6 +85,7 @@ from mpi4py import MPI
 
 import basix.ufl
 import numpy as np
+import pandas
 import pyvista
 import ufl
 from dolfinx import default_scalar_type, fem, la, mesh, plot
@@ -464,21 +465,42 @@ def measure(N: int) -> dict:
     }
 
 
-if comm.rank == 0:
-    print("\n----Cost and conditioning----")
-    _header = f"{'N':>6} {'M':>6} {'||c||':>8} {'nnz(A)':>9} {'nnz(KtAK)':>11} {'nnz(saddle)':>12}"
-    _header += f" {'cond(A)':>11} {'cond(KtAK)':>11} {'cond(saddle)':>12}"
-    _header += f" | {'build[s]':>9} {'mpc[s]':>8} {'real[s]':>8} {'mpc/real':>9}"
-    print(_header)
-for _N in (8, 12, 16):
-    r = measure(_N)
-    if comm.rank == 0:
-        print(
-            f"{r['N']:6d} {r['M']:6d} {r['norm_c']:8.2f} {r['nnz_A']:9d} {r['nnz_mpc']:11d} "
-            f"{r['nnz_real']:12d} {r['cond_A']:11.3e} {r['cond_mpc']:11.3e} {r['cond_real']:12.3e}"
-            f" | {r['t_constraint']:9.4f} {r['t_mpc']:8.4f} {r['t_real']:8.4f}"
-            f" {r['t_mpc'] / r['t_real']:9.2f}"
-        )
+# +
+
+rows = [measure(N) for N in (8, 12, 16)]
+
+COLUMNS = {
+    "N": "dofs",
+    "M": "masters",
+    "norm_c": "||c||",
+    "nnz_A": "nnz(A)",
+    "nnz_mpc": "nnz(KtAK)",
+    "nnz_real": "nnz(saddle)",
+    "cond_A": "cond(A)",
+    "cond_mpc": "cond(KtAK)",
+    "cond_real": "cond(saddle)",
+    "t_constraint": "build [s]",
+    "t_mpc": "mpc [s]",
+    "t_real": "real [s]",
+    "mpc/real": "mpc/real",
+}
+FORMATS = {
+    "||c||": "{:.2f}",
+    "cond(A)": "{:.3e}",
+    "cond(KtAK)": "{:.3e}",
+    "cond(saddle)": "{:.3e}",
+    "build [s]": "{:.4f}",
+    "mpc [s]": "{:.4f}",
+    "real [s]": "{:.4f}",
+    "mpc/real": "{:.2f}",
+}
+
+table = pandas.DataFrame(rows)
+table["mpc/real"] = table["t_mpc"] / table["t_real"]
+table = table[list(COLUMNS)].rename(columns=COLUMNS).set_index("dofs")
+table.style.format(FORMATS)
+
+# -
 
 # The table shows `nnz(KtAK)` growing like $M^2$ and `cond(KtAK)` like
 # $\lVert c\rVert^2\sim M$, because the rank one term $cc^TA_{ss}$ couples every
@@ -496,12 +518,9 @@ for _N in (8, 12, 16):
 
 # ## Visualization
 #
-# The mesh is partitioned in parallel, so each rank holds only a piece of the
-# field. Rather than writing one image per rank, each rank builds a PyVista grid
-# over the cells it *owns* and the grids are gathered onto rank 0 and drawn into
-# a single figure. Two details matter: restricting to owned cells, so a shared cell
-# is not drawn twice, and giving every piece the same colour limits,
-# so the partitions are comparable.
+# Each process builds a PyVista grid over the cells it *owns*, so a shared cell is
+# not drawn twice, and the grids are gathered onto one process and drawn into a
+# single figure with common colour limits.
 
 pyvista.global_theme.allow_empty_mesh = True
 
