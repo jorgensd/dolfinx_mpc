@@ -200,15 +200,17 @@ def integral_constraint(V, weight_form, value, bcs=(), rtol=1e-14):
         g.x.array[slave_local] = dtype(value) / w_slave
         mpc.add_constraint(V, np.array([slave_local], dtype=np.int32), masters, coeffs, owners, offsets)
     g.x.scatter_forward()
-    # Offering every dof as a master leaves most coefficients at zero, and
+    # Offering every dof as a master leaves most coefficients negligible, and
     # `filter` discards them: for a facet functional that is nearly the whole
     # mesh, and for a cell integral with P2 it is every vertex dof, since the
-    # integral of a P2 vertex basis function vanishes exactly on simplices. A
-    # negligible coefficient changes nothing in the constraint but still costs a
-    # ghost, a row of the sparsity pattern and an entry in every element matrix
-    # modification. For a very large problem it is worth restricting the gather
-    # above to the support of the functional too, so that the communication is
-    # not O(num_dofs) on every rank.
+    # integral of a P2 vertex basis function vanishes on simplices. Note that
+    # quadrature returns those as roundoff, around 1e-19 rather than exactly
+    # zero, which is why the threshold is relative to the largest coefficient
+    # instead of a test against zero. A negligible coefficient changes nothing in
+    # the constraint but still costs a ghost, a row of the sparsity pattern and
+    # an entry in every element matrix modification. For a very large problem it
+    # is worth restricting the gather above to the support of the functional too,
+    # so that the communication is not O(num_dofs) on every rank.
     mpc.finalize(filter=rtol)  # collective: every rank must reach this
 
     # Report the masters that survived the filter, not the ones offered
@@ -218,8 +220,19 @@ def integral_constraint(V, weight_form, value, bcs=(), rtol=1e-14):
 
 # ## Cost and conditioning
 #
-# Eliminating the slave is not free. Writing the masters as $m$ and the slave as
-# $s$, the reduced operator is
+# Eliminating the slave is not free. Order the degrees of freedom with the masters
+# $m$ first and the slave $s$ last. With $w$ the assembled functional, the
+# constraint is $u=K\hat{u}+g$, and both $A$ and $K$ split as
+#
+# $$
+# A = \begin{pmatrix} A_{mm} & A_{ms} \\ A_{sm} & A_{ss}\end{pmatrix},
+# \qquad
+# K = \begin{pmatrix} I \\ c^T \end{pmatrix},
+# \qquad c_i = -\frac{w_i}{w_s},
+# $$
+#
+# where $c$ collects the coefficients of the one slave and $A_{ss}$ is a scalar.
+# Multiplying out,
 #
 # $$
 # K^TAK = A_{mm} + A_{ms}c^T + cA_{sm} + \left(cc^T\right)A_{ss}.
@@ -228,6 +241,9 @@ def integral_constraint(V, weight_form, value, bcs=(), rtol=1e-14):
 # The final term is rank one and dense over every pair of masters. Here that set
 # is only the boundary, so it grows like $\sqrt{N}$ and the penalty stays mild,
 # in sharp contrast to the cell integral of {doc}`demo_mean_value_constraint`.
+# The reference pays less here too: its real space lives on a submesh of $\Gamma$,
+# so the coupling blocks only reach the cells meeting $\Gamma$ rather than adding
+# a row and column over the whole mesh.
 
 
 def operator_stats(A, comm, root=0):

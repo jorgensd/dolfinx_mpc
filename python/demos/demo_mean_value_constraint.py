@@ -220,15 +220,17 @@ def integral_constraint(
         g.x.array[slave_local] = dtype(value) / w_slave
         mpc.add_constraint(V, np.array([slave_local], dtype=np.int32), masters, coeffs, owners, offsets)
     g.x.scatter_forward()
-    # Offering every dof as a master leaves most coefficients at zero, and
+    # Offering every dof as a master leaves most coefficients negligible, and
     # `filter` discards them: for a facet functional that is nearly the whole
     # mesh, and for a cell integral with P2 it is every vertex dof, since the
-    # integral of a P2 vertex basis function vanishes exactly on simplices. A
-    # negligible coefficient changes nothing in the constraint but still costs a
-    # ghost, a row of the sparsity pattern and an entry in every element matrix
-    # modification. For a very large problem it is worth restricting the gather
-    # above to the support of the functional too, so that the communication is
-    # not O(num_dofs) on every rank.
+    # integral of a P2 vertex basis function vanishes on simplices. Note that
+    # quadrature returns those as roundoff, around 1e-19 rather than exactly
+    # zero, which is why the threshold is relative to the largest coefficient
+    # instead of a test against zero. A negligible coefficient changes nothing in
+    # the constraint but still costs a ghost, a row of the sparsity pattern and
+    # an entry in every element matrix modification. For a very large problem it
+    # is worth restricting the gather above to the support of the functional too,
+    # so that the communication is not O(num_dofs) on every rank.
     mpc.finalize(filter=rtol)  # collective: every rank must reach this
 
     # Report the masters that survived the filter, not the ones offered
@@ -305,8 +307,19 @@ def solve_real_space(domain, degree, u_ex, value):
 
 # ## Cost and conditioning
 #
-# Eliminating the slave is not free. Writing the masters as $m$ and the slave as
-# $s$, the reduced operator is
+# Eliminating the slave is not free. Order the degrees of freedom with the masters
+# $m$ first and the slave $s$ last, so that the constraint above is
+# $u=K\hat{u}+g$ and both $A$ and $K$ split as
+#
+# $$
+# A = \begin{pmatrix} A_{mm} & A_{ms} \\ A_{sm} & A_{ss}\end{pmatrix},
+# \qquad
+# K = \begin{pmatrix} I \\ c^T \end{pmatrix},
+# \qquad c_i = -\frac{w_i}{w_s},
+# $$
+#
+# where $c$ collects the coefficients of the one slave and $A_{ss}$ is a scalar.
+# Multiplying out,
 #
 # $$
 # K^TAK = A_{mm} + A_{ms}c^T + cA_{sm} + \left(cc^T\right)A_{ss}.
@@ -317,7 +330,10 @@ def solve_real_space(domain, degree, u_ex, value):
 # freedom is a master, so $K^TAK$ is completely full, and its norm is inflated
 # by $\lVert c\rVert^2$, which costs roughly a factor $M$ in the condition
 # number. The saddle point system pays neither price: it keeps $A$ intact and
-# appends one sparse row and column. The helper below measures both effects.
+# appends one row and column. That row is itself dense -- every $w_i$ is stored,
+# so the system grows by exactly $2N$ entries -- but $2N$ is *linear* in the
+# problem size, against the $M^2$ of the elimination. The helper below measures
+# both effects.
 
 
 def operator_stats(A, comm, singular=False, root=0):
@@ -507,8 +523,9 @@ table.style.format(FORMATS)
 # master to every other. Here the functional is supported on the whole mesh, so
 # $M$ is the number of degrees of freedom (bar the vertex dofs, whose weights
 # vanish for P2 on simplices) and the reduced operator is essentially full. A
-# real space instead appends one sparse row and column, and leaves the
-# conditioning of $A$ untouched.
+# real space instead appends a single row and column -- dense, but only $2N$
+# entries, so `nnz(saddle)` grows linearly where `nnz(KtAK)` grows quadratically
+# -- and leaves the conditioning of $A$ untouched.
 #
 # The timings say the same in wall clock terms. Building the constraint is cheap
 # and mesh independent; what costs is solving with the operator it produces, and
