@@ -195,11 +195,25 @@ class MultiPointConstraint:
             mpc_data.offsets,
         )
 
-    def finalize(self) -> None:
+    def finalize(self, filter: Optional[numpy.floating] = None) -> None:
         """
         Finializes the multi point constraint. After this function is called, no new constraints can be added
         to the constraint. This function creates a map from the cells (local to index) to the slave degrees of
         freedom and builds a new index map and function space where unghosted master dofs are added as ghosts.
+
+        Args:
+            filter: If given, discard every master whose coefficient satisfies
+                :math:`|c_{sj}| < \\mathrm{filter}\\cdot\\max_k|c_{sk}|`, the
+                maximum being over the masters of that same slave. A negligible
+                coefficient contributes nothing to the constraint, but still
+                costs a ghost, a row of the sparsity pattern and an entry in
+                every element matrix modification, so removing them can shrink
+                :math:`K^HAK` substantially. With `None` (the default) every
+                master supplied is kept.
+
+        Note:
+            Filtering changes the constraint that is enforced, by exactly the
+            terms that are dropped. It is local and adds no communication.
         """
         self._already_finalized()
 
@@ -232,6 +246,7 @@ class MultiPointConstraint:
             self._offsets,
             rhs_coeffs,
             bcs,
+            filter,
         )
 
         # Replace function space
