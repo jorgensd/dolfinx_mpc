@@ -108,28 +108,39 @@ pyvista.global_theme.allow_empty_mesh = True
 
 
 class GatheredGrid(typing.NamedTuple):
-    """Owned-cell PyVista grids of a distributed function, gathered on rank 0."""
+    """Owned-cell PyVista grids of a distributed function, gathered on one process."""
 
     comm: MPI.Comm
+    root: int
     num_points: int
     pieces: typing.Optional[list[pyvista.UnstructuredGrid]]
 
     @classmethod
-    def create(cls, V: fem.FunctionSpace) -> "GatheredGrid":
+    def create(cls, V: fem.FunctionSpace, root: int = 0) -> "GatheredGrid":
+        """Gather the geometry, which does not change, once.
+
+        ``root`` is kept on the object so that the values gathered later cannot
+        end up on a different process than the grids they belong to.
+        """
         tdim = V.mesh.topology.dim
         owned_cells = np.arange(V.mesh.topology.index_map(tdim).size_local, dtype=np.int32)
         grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(V, entities=owned_cells))
         comm = V.mesh.comm
-        return cls(comm, grid.n_points, comm.gather(grid, root=0))
+        return cls(comm, root, grid.n_points, comm.gather(grid, root=root))
 
-    def gather_values(self, plotfunc: fem.Function, root: int) -> typing.Optional[list[np.ndarray]]:
-        """Collect the nodal values of each partition on rank 0.
+    @property
+    def is_root(self) -> bool:
+        """Whether this process is the one holding the gathered grids."""
+        return self.comm.rank == self.root
+
+    def gather_values(self, plotfunc: fem.Function) -> typing.Optional[list[np.ndarray]]:
+        """Collect the nodal values of each partition on the root process.
 
         ``plotfunc`` may live in the constraint's extended space, whose array is
         longer than the original space; the extended index map keeps the original
         dofs first, so the leading entries are the ones the grid refers to.
         """
-        return self.comm.gather(plotfunc.x.array.real[: self.num_points].copy(), root=root)
+        return self.comm.gather(plotfunc.x.array.real[: self.num_points].copy(), root=self.root)
 
 
 def create_gif(
