@@ -137,7 +137,8 @@ jobs:
           coverage run --rcfile=.coveragerc python/demos/demo_elasticity_disconnect.py
           coverage run --rcfile=.coveragerc python/demos/demo_periodic_gep.py
           coverage run --rcfile=.coveragerc python/demos/demo_mean_value_constraint.py
-          coverage run --rcfile=.coveragerc python/demos/demo_facet_integral_constraint.py
+          coverage run --rcfile=.coveragerc python/demos/demo_boundary_average_constraint.py
+          coverage run --rcfile=.coveragerc python/demos/demo_flow_rate_constraint.py
 
       - name: Run demos (parallel)
         run: |
@@ -150,7 +151,8 @@ jobs:
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_elasticity_disconnect.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_periodic_gep.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_mean_value_constraint.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_facet_integral_constraint.py
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_boundary_average_constraint.py
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_flow_rate_constraint.py
 
       - name: Run contact demos 2D (serial)
         run: |
