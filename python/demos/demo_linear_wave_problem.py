@@ -144,7 +144,7 @@ class GatheredGrid(typing.NamedTuple):
 
 
 def create_gif(
-    plotfunc: fem.Function, filename: str, fps: float
+    plotfunc: fem.Function, filename: str, fps: float, root: int = 0
 ) -> tuple[GatheredGrid, typing.Optional[pyvista.Plotter]]:
     """
     Create a GIF animation from a given plotting function and function space.
@@ -153,8 +153,9 @@ def create_gif(
         plotfunc: The plotting function that generates the data to be visualized.
         filename: The name of the output GIF file.
         fps: Frames per second for the GIF animation.
+        root: The process that gathers the pieces and writes the animation.
     Returns:
-        tuple: The gathered grid, and the plotter on rank 0 (``None`` elsewhere).
+        tuple: The gathered grid, and the plotter on ``root`` (``None`` elsewhere).
 
     Example:
 
@@ -166,9 +167,9 @@ def create_gif(
                 plotter = update_gif(...)
             finalize_gif(...)
     """
-    grid = GatheredGrid.create(plotfunc.function_space)
+    grid = GatheredGrid.create(plotfunc.function_space, root=root)
     plotter = None
-    if grid.comm.rank == 0:
+    if grid.is_root:
         plotter = pyvista.Plotter(off_screen=True)
         plotter.open_gif(filename, fps=fps)
         plotter.show_axes()  # type: ignore[call-arg]
@@ -182,26 +183,25 @@ def update_gif(
     warp_gif: bool,
     clip_gif: bool,
     clip_normal: typing.Literal["x", "y", "z", "-x", "-y", "-z"] = "y",
-    root: int = 0,
 ) -> pyvista.Plotter | None:
     """
     Add one frame, drawing every partition of the solution into a single figure.
 
     Args:
         grid: The gathered grid to be plotted.
-        plotter: The plotter instance used for plotting, on rank 0.
+        plotter: The plotter instance used for plotting, on the root process.
         plotfunc: An object containing the data to be plotted, with an attribute `x.array`.
         warp_gif: If True, warp the grid by the scalar values.
         clip_gif: If True, clip the grid along the specified normal.
         clip_normal: The normal direction for clipping. Default is "y".
-        root: The rank of the process that gathers the data and creates the plot. Default is 0.
 
     Returns:
-        The updated plotter instance on rank `root`, and None elsewhere.
+        The updated plotter instance on the root process, and None elsewhere.
+        The root is the one given to :func:`create_gif`, and is carried on ``grid``.
     """
     # Collective: every process contributes its piece
-    values = grid.gather_values(plotfunc, root)
-    if grid.comm.rank != 0:
+    values = grid.gather_values(plotfunc)
+    if not grid.is_root:
         return plotter
     assert plotter is not None and grid.pieces is not None and values is not None
 
