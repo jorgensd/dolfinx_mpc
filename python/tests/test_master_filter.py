@@ -167,9 +167,7 @@ def test_filter_is_relative_to_each_slave():
     coeff_values, coeff_offsets = mpc.coefficients()
     assert len(mpc.masters.links(0)) == 1
     assert len(mpc.masters.links(1)) == 1
-    kept = {
-        s: coeff_values[coeff_offsets[s] : coeff_offsets[s + 1]] for s in (0, 1)
-    }
+    kept = {s: coeff_values[coeff_offsets[s] : coeff_offsets[s + 1]] for s in (0, 1)}
     nt.assert_allclose(np.abs(kept[0]), [1.0])
     nt.assert_allclose(np.abs(kept[1]), [1e6])
 

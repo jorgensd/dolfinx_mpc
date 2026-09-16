@@ -89,14 +89,52 @@ from dolfinx_mpc import (
 
 # -
 
-# Next, we create some convenience functions to create a gif from a given function
+# Next, we create some convenience functions to create a gif from a given function.
+#
+# The mesh is partitioned in parallel, so each process holds only a piece of the
+# solution. Rather than writing one animation per process, each one builds a
+# PyVista grid over the cells it *owns* and the grids are gathered onto rank 0,
+# which draws them into a single figure and writes a single GIF. Two details
+# matter: restricting to owned cells, so that a cell shared between processes is
+# not drawn twice, and giving every piece the same colour limits, so that the
+# partitions are comparable.
+#
+# The geometry does not move, so the grids are gathered once when the animation
+# is opened and only the nodal values are communicated per frame.
 
 # +
 
+pyvista.global_theme.allow_empty_mesh = True
+
+
+class GatheredGrid(typing.NamedTuple):
+    """Owned-cell PyVista grids of a distributed function, gathered on rank 0."""
+
+    comm: MPI.Comm
+    num_points: int
+    pieces: typing.Optional[list[pyvista.UnstructuredGrid]]
+
+    @classmethod
+    def create(cls, V: fem.FunctionSpace) -> "GatheredGrid":
+        tdim = V.mesh.topology.dim
+        owned_cells = np.arange(V.mesh.topology.index_map(tdim).size_local, dtype=np.int32)
+        grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(V, entities=owned_cells))
+        comm = V.mesh.comm
+        return cls(comm, grid.n_points, comm.gather(grid, root=0))
+
+    def gather_values(self, plotfunc: fem.Function, root: int) -> typing.Optional[list[np.ndarray]]:
+        """Collect the nodal values of each partition on rank 0.
+
+        ``plotfunc`` may live in the constraint's extended space, whose array is
+        longer than the original space; the extended index map keeps the original
+        dofs first, so the leading entries are the ones the grid refers to.
+        """
+        return self.comm.gather(plotfunc.x.array.real[: self.num_points].copy(), root=root)
+
 
 def create_gif(
-    plotfunc: dolfinx.fem.Function, filename: str, fps: float
-) -> tuple[pyvista.UnstructuredGrid, pyvista.Plotter]:
+    plotfunc: fem.Function, filename: str, fps: float
+) -> tuple[GatheredGrid, typing.Optional[pyvista.Plotter]]:
     """
     Create a GIF animation from a given plotting function and function space.
 
@@ -105,7 +143,7 @@ def create_gif(
         filename: The name of the output GIF file.
         fps: Frames per second for the GIF animation.
     Returns:
-        tuple: A tuple containing the grid and plotter used for creating the GIF.
+        tuple: The gathered grid, and the plotter on rank 0 (``None`` elsewhere).
 
     Example:
 
@@ -117,66 +155,72 @@ def create_gif(
                 plotter = update_gif(...)
             finalize_gif(...)
     """
-    grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(plotfunc.function_space))
-    plotter = pyvista.Plotter(off_screen=True)
-
-    plotter.open_gif(filename, fps=fps)
-    plotter.show_axes()  # type: ignore[call-arg]
-    grid.point_data["uh1"] = plotfunc.x.array
-
+    grid = GatheredGrid.create(plotfunc.function_space)
+    plotter = None
+    if grid.comm.rank == 0:
+        plotter = pyvista.Plotter(off_screen=True)
+        plotter.open_gif(filename, fps=fps)
+        plotter.show_axes()  # type: ignore[call-arg]
     return grid, plotter
 
 
 def update_gif(
-    grid: pyvista.UnstructuredGrid,
-    plotter: pyvista.Plotter,
-    plotfunc: dolfinx.fem.Function,
+    grid: GatheredGrid,
+    plotter: pyvista.Plotter | None,
+    plotfunc: fem.Function,
     warp_gif: bool,
     clip_gif: bool,
     clip_normal: typing.Literal["x", "y", "z", "-x", "-y", "-z"] = "y",
-):
+    root: int = 0,
+) -> pyvista.Plotter | None:
     """
-    Update the plotter with the given grid and plot function, and optionally warp or clip the grid.
+    Add one frame, drawing every partition of the solution into a single figure.
 
     Args:
-        grid: The grid to be plotted.
-        plotter: The plotter instance used for plotting.
+        grid: The gathered grid to be plotted.
+        plotter: The plotter instance used for plotting, on rank 0.
         plotfunc: An object containing the data to be plotted, with an attribute `x.array`.
         warp_gif: If True, warp the grid by the scalar values.
         clip_gif: If True, clip the grid along the specified normal.
         clip_normal: The normal direction for clipping. Default is "y".
+        root: The rank of the process that gathers the data and creates the plot. Default is 0.
 
     Returns:
-    pyvista.Plotter: The updated plotter instance.
+        The updated plotter instance on rank `root`, and None elsewhere.
     """
-    maxval = max(plotfunc.x.array)
-    maxval = 1
-    grid.point_data["uh"] = plotfunc.x.array
+    # Collective: every process contributes its piece
+    values = grid.gather_values(plotfunc, root)
+    if grid.comm.rank != 0:
+        return plotter
+    assert plotter is not None and grid.pieces is not None and values is not None
 
+    # A fixed range keeps the colours comparable between frames and partitions
+    maxval = 1.0
+    plotter.clear()
     if warp_gif and clip_gif:
         PETSc.Sys.Print("warp and clip not possible at the same time")  # type: ignore
-        plotter.clear()
-        plotter.add_mesh(grid, clim=[-maxval, maxval], show_edges=True)
-    elif warp_gif:
-        grid_warped = grid.warp_by_scalar("uh", factor=0.2 * 1 / maxval)
-        plotter.clear()
-        plotter.add_mesh(grid_warped, clim=[-maxval, maxval], show_edges=True)
-    elif clip_gif:
-        grad_clipped = grid.clip(clip_normal, invert=True)
-        plotter.clear()
-        plotter.add_mesh(grad_clipped, clim=[-maxval, maxval], show_edges=True)
-        plotter.add_mesh(grid, style="wireframe", clim=[-maxval, maxval], show_edges=True)
-    else:
-        plotter.clear()
-        plotter.add_mesh(grid, clim=[-maxval, maxval], show_edges=True)
+    for piece, piece_values in zip(grid.pieces, values):
+        piece.point_data["uh"] = piece_values
+        if warp_gif and not clip_gif:
+            plotter.add_mesh(
+                piece.warp_by_scalar("uh", factor=0.2 / maxval),
+                clim=[-maxval, maxval],
+                show_edges=True,
+            )
+        elif clip_gif:
+            plotter.add_mesh(piece.clip(clip_normal, invert=True), clim=[-maxval, maxval], show_edges=True)
+            plotter.add_mesh(piece, style="wireframe", clim=[-maxval, maxval], show_edges=True)
+        else:
+            plotter.add_mesh(piece, clim=[-maxval, maxval], show_edges=True)
 
     plotter.write_frame()
     plotter.show_axes()  # type: ignore[call-arg]
     return plotter
 
 
-def finalize_gif(plotter: pyvista.Plotter):
-    plotter.close()
+def finalize_gif(plotter: typing.Optional[pyvista.Plotter]):
+    if plotter is not None:
+        plotter.close()
 
 
 # -
@@ -251,12 +295,9 @@ Nx = 40  # number of elements in x and y direction
 h = 1 / Nx  # mesh size
 bconst = 1.0  # magnitude of the advection field
 
-if MPI.COMM_WORLD.size == 1:
-    filename_gifV = "testV.gif"
-    filename_gifp = "testp.gif"
-else:
-    filename_gifV = f"testV_{MPI.COMM_WORLD.rank}.gif"
-    filename_gifp = f"testp_{MPI.COMM_WORLD.rank}.gif"
+# A single animation is written however many processes are used
+filename_gifV = "testV.gif"
+filename_gifp = "testp.gif"
 # -
 
 warp_gif = True
