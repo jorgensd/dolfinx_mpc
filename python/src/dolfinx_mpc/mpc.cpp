@@ -28,6 +28,7 @@
 #include <nanobind/stl/complex.h>
 #include <nanobind/stl/function.h>
 #include <nanobind/stl/map.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
@@ -79,7 +80,8 @@ void declare_mpc(nb::module_& m, std::string type)
               nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>& offsets,
               nb::ndarray<nb::numpy, T, nb::ndim<1>>& rhs_coeffs,
               const std::vector<std::shared_ptr<
-                  const dolfinx::fem::DirichletBC<T, U>>>& bcs)
+                  const dolfinx::fem::DirichletBC<T, U>>>& bcs,
+              std::optional<U> filter)
            {
              new (mpc) dolfinx_mpc::MultiPointConstraint(
                  V, std::span<const std::int32_t>(slaves.data(), slaves.size()),
@@ -87,7 +89,8 @@ void declare_mpc(nb::module_& m, std::string type)
                  std::span<const T>(coeffs.data(), coeffs.size()),
                  std::span<const std::int32_t>(owners.data(), owners.size()),
                  std::span<const std::int32_t>(offsets.data(), offsets.size()),
-                 std::span<const T>(rhs_coeffs.data(), rhs_coeffs.size()), bcs);
+                 std::span<const T>(rhs_coeffs.data(), rhs_coeffs.size()), bcs,
+                 filter);
            })
       .def_prop_ro("masters", &dolfinx_mpc::MultiPointConstraint<T, U>::masters)
       .def("coefficients",

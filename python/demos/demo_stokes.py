@@ -41,7 +41,6 @@
 # +
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Union
 
 from mpi4py import MPI
@@ -49,7 +48,8 @@ from mpi4py import MPI
 import basix.ufl
 import gmsh
 import numpy as np
-from dolfinx import common, default_real_type, default_scalar_type, fem, io
+import pyvista
+from dolfinx import common, default_real_type, default_scalar_type, fem, plot
 from dolfinx.io import gmsh as gmshio
 from numpy.typing import NDArray
 from ufl import (
@@ -323,21 +323,94 @@ problem = LinearProblem(extract_blocks(a), extract_blocks(L), [mpc_u, mpc_p], bc
 uh, ph = problem.solve()
 
 # ## Visualization
-# We store the solution to the `VTX` file format, which can be opend with the
-# `ADIOS2VTXReader` in Paraview
+#
+# Each process builds a PyVista grid over the cells it *owns*, so a shared cell is
+# not drawn twice, and the grids are gathered onto one process and drawn into a
+# single figure with common colour limits.
 
 # +
 
 uh.name = "u"
 ph.name = "p"
 
-outdir = Path("results").absolute()
-outdir.mkdir(exist_ok=True, parents=True)
+pyvista.global_theme.allow_empty_mesh = True
 
-with io.VTXWriter(mesh.comm, outdir / "demo_stokes_u.bp", uh, engine="BP4") as vtx:
-    vtx.write(0.0)
-with io.VTXWriter(mesh.comm, outdir / "demo_stokes_p.bp", ph, engine="BP4") as vtx:
-    vtx.write(0.0)
+
+def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0):
+    """Owned-cell PyVista grids with ``u`` attached, gathered on ``root``.
+
+    Vector fields are padded to three components, as PyVista expects. Returns the
+    grids on ``root`` (``None`` elsewhere) and the global range of the magnitude,
+    so that every piece can be drawn with the same colour limits.
+
+    ``u`` may live in the constraint's extended space, whose array is longer than
+    the original space; the extended index map keeps the original dofs first, so
+    the leading entries are the ones the grid refers to.
+    """
+    comm = V.mesh.comm
+    bs = V.dofmap.index_map_bs
+    tdim = V.mesh.topology.dim
+    owned_cells = np.arange(V.mesh.topology.index_map(tdim).size_local, dtype=np.int32)
+    grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(V, entities=owned_cells))
+    # vtk_mesh emits one point per dof block, in local numbering
+    values = u.x.array.real[: grid.n_points * bs]
+    if bs == 1:
+        grid.point_data[name] = values
+        magnitude = np.abs(values)
+    else:
+        padded = np.zeros((grid.n_points, 3))
+        padded[:, :bs] = values.reshape(-1, bs)
+        grid.point_data[name] = padded
+        grid.set_active_vectors(name)
+        magnitude = np.linalg.norm(padded, axis=1)
+        grid.point_data[f"|{name}|"] = magnitude
+    lo = comm.allreduce(float(magnitude.min()) if magnitude.size else np.inf, op=MPI.MIN)
+    hi = comm.allreduce(float(magnitude.max()) if magnitude.size else -np.inf, op=MPI.MAX)
+    # gather returns the list on `root` and None everywhere else, so the caller
+    # can test the result instead of comparing ranks itself
+    return comm.gather(grid, root=root), [lo, hi]
+
+
+velocity_pieces, velocity_clim = gather_grids(uh, V, "u")
+pressure_pieces, pressure_clim = gather_grids(ph, Q, "p")
+
+# The velocity is drawn as arrows, which show the slip condition directly: along
+# the tilted walls the flow runs parallel to the boundary rather than through it.
+# The two panels share a camera, so both show the channel in the same frame and
+# the fields can be compared point by point.
+
+if velocity_pieces is not None:  # only the root process received the grids
+    plotter = pyvista.Plotter(shape=(2, 1), window_size=[700, 800])
+    plotter.subplot(0, 0)
+    plotter.add_text("Velocity", font_size=10)
+    for piece in velocity_pieces:
+        plotter.add_mesh(
+            piece.glyph(orient="u", scale="|u|", factor=0.08),
+            scalars="|u|",
+            cmap="viridis",
+            clim=velocity_clim,
+            scalar_bar_args={"vertical": True},
+        )
+    plotter.view_xy()
+    plotter.camera.tight(padding=0.15, view="xy", adjust_render_window=False)
+
+    plotter.subplot(1, 0)
+    plotter.add_text("Pressure", font_size=10)
+    for piece in pressure_pieces:
+        plotter.add_mesh(
+            piece,
+            scalars="p",
+            cmap="coolwarm",
+            clim=pressure_clim,
+            scalar_bar_args={"vertical": True},
+        )
+    plotter.view_xy()
+    plotter.camera.tight(padding=0.15, view="xy", adjust_render_window=False)
+    plotter.link_views()
+    if pyvista.OFF_SCREEN:
+        plotter.screenshot("demo_stokes.png")
+    else:
+        plotter.show()
 # -
 
 
