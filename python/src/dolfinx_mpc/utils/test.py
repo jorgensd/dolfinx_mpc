@@ -11,6 +11,7 @@ __all__ = [
     "compare_mpc_lhs",
     "compare_mpc_rhs",
     "gather_transformation_matrix",
+    "gather_constants",
     "compare_CSR",
 ]
 
@@ -47,16 +48,18 @@ def _gather_slaves_global(constraint):
 
 def gather_constants(constraint, root=0):
     """
-    Given a multi-point constraint, gather all constants
+    Given a multi-point constraint, gather the constraint offsets :math:`g` of all
+    processes into a single global vector on `root`, indexed by global dof.
     """
-    imap = constraint.index_map()
-    constants = constraint._cpp_object.constants
-    l_range = imap.local_range
-    ranges = MPI.COMM_WORLD.gather(np.asarray(l_range, dtype=np.int64), root=root)
+    V = constraint.V
+    imap = V.dofmap.index_map
+    block_size = V.dofmap.index_map_bs
+    constants = constraint.constants
+    l_range = np.asarray(imap.local_range, dtype=np.int64) * block_size
+    ranges = MPI.COMM_WORLD.gather(l_range, root=root)
     g_consts = MPI.COMM_WORLD.gather(constants[: l_range[1] - l_range[0]], root=root)
     if MPI.COMM_WORLD.rank == root:
-        block_size = constraint.function_space().dofmap.index_map_bs
-        global_consts = np.zeros(imap.size_global * block_size, dtype=constraint.coefficients()[0].dtype)
+        global_consts = np.zeros(imap.size_global * block_size, dtype=constants.dtype)
         for r, vals in zip(ranges, g_consts):
             global_consts[r[0] : r[1]] = vals
         return global_consts
@@ -116,18 +119,13 @@ def gather_transformation_matrix(constraint, root=0):
             + master_rems[offsets[slave] : offsets[slave + 1]]
         )
         coeffs_index = coeffs[offsets[slave] : offsets[slave + 1]]
-        # If we have a simply equality constraint (dirichletbc)
-        if len(masters_index) > 0:
-            for master, coeff in zip(masters_index, coeffs_index):
-                count = sum(master > all_slaves)
-                K_val.append(coeff)
-                rows.append(global_slave)
-                cols.append(master - count)
-        else:
-            K_val.append(1)
-            count = sum(global_slave > all_slaves)
+        # A slave with no masters is a pure offset u_s = g_s, so its row of K is
+        # zero and the value is carried by the constant vector instead
+        for master, coeff in zip(masters_index, coeffs_index):
+            count = sum(master > all_slaves)
+            K_val.append(coeff)
             rows.append(global_slave)
-            cols.append(global_slave - count)
+            cols.append(master - count)
 
     # Add identity for all dofs on diagonal
     l_range = V.dofmap.index_map.local_range
@@ -247,18 +245,27 @@ def compare_mpc_rhs(
     b: PETSc.Vec,  # type: ignore
     constraint: dolfinx_mpc.MultiPointConstraint,
     root: int = 0,
+    A_org: PETSc.Mat = None,  # type: ignore
 ):
     """
     Compare an unconstrained RHS with an MPC rhs.
+
+    The reduced right hand side is :math:`K^T (b - A g)`, where :math:`g` is the constraint
+    offset. For a homogeneous constraint the :math:`A g` term vanishes and `A_org` is not
+    needed; for an affine constraint it must be supplied.
     """
+    if constraint.has_inhomogeneity and A_org is None:
+        raise ValueError("A_org is required to compare the rhs of an inhomogeneous constraint")
     glob_slaves = _gather_slaves_global(constraint)
     b_org_np = gather_PETScVector(b_org, root=root)
     b_np = gather_PETScVector(b, root=root)
     K = gather_transformation_matrix(constraint, root=root)
-    # constants = gather_constants(constraint)
+    constants = gather_constants(constraint, root=root)
+    A_csr = None if A_org is None else gather_PETScMatrix(A_org, root=root)
     comm = constraint.V.mesh.comm
     if comm.rank == root:
-        reduced_b = np.conj(K.T) @ b_org_np  # - constants for RHS mpc
+        lifted = b_org_np if A_csr is None else b_org_np - A_csr @ constants
+        reduced_b = np.conj(K.T) @ lifted
         all_cols = np.arange(constraint.V.dofmap.index_map.size_global * constraint.V.dofmap.index_map_bs)
         cols_except_slaves = np.flatnonzero(np.isin(all_cols, glob_slaves, invert=True).astype(np.int32))
         assert np.allclose(b_np[glob_slaves], 0)

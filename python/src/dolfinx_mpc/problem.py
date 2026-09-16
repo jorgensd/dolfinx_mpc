@@ -19,7 +19,13 @@ from dolfinx.la.petsc import _ghost_update, _zero_vector, create_vector
 from dolfinx_mpc.cpp import mpc as _cpp_mpc
 
 from .assemble_matrix import assemble_matrix, assemble_matrix_nest, create_matrix_nest
-from .assemble_vector import apply_lifting, assemble_vector, assemble_vector_nest, create_vector_nest
+from .assemble_vector import (
+    apply_lifting,
+    apply_mpc_lifting,
+    assemble_vector,
+    assemble_vector_nest,
+    create_vector_nest,
+)
 from .multipointconstraint import MultiPointConstraint
 
 
@@ -535,6 +541,14 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         Returns:
             Function containing the solution"""
 
+        # Refresh the constraint offsets, so that a change in the values of the
+        # Dirichlet conditions held by the constraint is picked up
+        if isinstance(self._mpc, Sequence):
+            for mpc_i in self._mpc:
+                mpc_i.update_constants()
+        else:
+            self._mpc.update_constants()
+
         # Assemble lhs
         self._A.zeroEntries()
         if self._A.getType() == "nest":
@@ -567,16 +581,26 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             assemble_vector(self._L, self._mpc, self._b)
 
         # Lift vector
+        # Decide between nest/blocked and single form lifting up front, so that a
+        # failure in one of the lifting calls cannot fall through to the other
+        # branch and apply the lifting twice
         try:
-            # Nest and blocked lifting
             bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(self._a, 1), self.bcs)  # type: ignore
-            apply_lifting(self._b, self._a, bcs=bcs1, constraint=self._mpc)  # type: ignore
-            _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
             bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(self._L), self.bcs)  # type: ignore
-            _fem.petsc.set_bc(self._b, bcs0)
+            blocked = True
         except ValueError:
+            blocked = False
+
+        if blocked:
+            # Nest and blocked lifting
+            apply_lifting(self._b, self._a, bcs=bcs1, constraint=self._mpc)  # type: ignore
+            apply_mpc_lifting(self._b, self._a, constraint=self._mpc)  # type: ignore
+            _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
+            _fem.petsc.set_bc(self._b, bcs0)
+        else:
             # Single form lifting
             apply_lifting(self._b, [self._a], bcs=[self.bcs], constraint=self._mpc)  # type: ignore
+            apply_mpc_lifting(self._b, [self._a], constraint=self._mpc)  # type: ignore
             _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
             _fem.petsc.set_bc(self._b, self.bcs)
         _ghost_update(self._b, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore

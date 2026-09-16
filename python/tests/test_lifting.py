@@ -106,14 +106,14 @@ def test_lifting(get_assemblers):  # noqa: F811
         K = dolfinx_mpc.utils.gather_transformation_matrix(mpc, root=root)
         L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
         u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
-        # constants = dolfinx_mpc.utils.gather_contants(mpc, root=root)
+        constants = dolfinx_mpc.utils.gather_constants(mpc, root=root)
         if MPI.COMM_WORLD.rank == root:
             KTAK = K.T * A_csr * K
-            reduced_L = K.T @ (L_np)  # - constants)
+            reduced_L = K.T @ (L_np - A_csr @ constants)
             # Solve linear system
             d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
             # Back substitution to full solution vector
-            uh_numpy = K @ (d)  # + constants)
+            uh_numpy = K @ d + constants
             nt.assert_allclose(uh_numpy, u_mpc, rtol=1e-5, atol=1e-8)
 
     list_timings(comm)
