@@ -16,11 +16,36 @@ import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_scalar_type, fem
+from dolfinx import default_real_type, default_scalar_type, fem
 from dolfinx.mesh import create_unit_square
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
+
+# Baseline for the accuracy PETSc can assemble and invert to in the precision DOLFINx
+# was installed with. Everything below is expressed relative to it, so the same test
+# file is meaningful for a float32 and a float64 build.
+_eps = np.finfo(default_real_type).eps
+
+
+def _tol(f64_tol: float, factor: float = 1000.0) -> float:
+    """Loosen a tolerance written for float64 to what the installed precision can hold.
+
+    The float64 value is kept as a floor, so a double precision build is never
+    *tightened* by this and keeps the bounds these tests were written against.
+    """
+    return max(f64_tol, factor * _eps)
+
+
+def _isclose(x, value):
+    """`np.isclose` with a precision aware tolerance, for locating dofs geometrically.
+
+    Single precision mesh coordinates carry a roundoff of order eps, which puts a dof
+    nominally at x = 0 as far out as 1.5e-8 and therefore outside `np.isclose`'s default
+    atol of 1e-8. The default would silently locate *fewer* dofs than intended rather
+    than fail, so the tolerance has to scale with the precision.
+    """
+    return np.isclose(x, value, atol=_tol(1e-8))
 
 
 def _l2b(li, mesh):
@@ -76,7 +101,7 @@ def _reference(bilinear_form, linear_form, mpc, bcs, uh, root=0):
         KTAK = np.conj(K.T) * A_csr * K
         reduced = np.conj(K.T) @ (L_np - A_csr @ g)
         d = scipy.sparse.linalg.spsolve(KTAK, reduced)
-        nt.assert_allclose(K @ d + g, u_mpc, rtol=1e-6, atol=1e-10)
+        nt.assert_allclose(K @ d + g, u_mpc, rtol=_tol(1e-6), atol=_tol(1e-10))
     A_org.destroy()
     L_org.destroy()
 
@@ -88,7 +113,7 @@ def test_dirichlet_master_is_eliminated():
 
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 3.0
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
     bc = fem.dirichletbc(u_bc, dofs)
 
     # The master at (1, 0) lies on the Dirichlet boundary x = 1
@@ -102,7 +127,7 @@ def test_dirichlet_master_is_eliminated():
         # The only master was Dirichlet constrained, so it has been removed and
         # its contribution 2.0 * 3.0 folded into the offset
         assert len(mpc.masters.links(slave)) == 0
-        nt.assert_allclose(mpc.constants[slave], 6.0)
+        nt.assert_allclose(mpc.constants[slave], 6.0, rtol=_tol(1e-7))
 
 
 def test_update_constants_tracks_time_dependent_data():
@@ -112,7 +137,7 @@ def test_update_constants_tracks_time_dependent_data():
 
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 3.0
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
     bc = fem.dirichletbc(u_bc, dofs)
 
     s_m_c = {_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0}}
@@ -124,7 +149,7 @@ def test_update_constants_tracks_time_dependent_data():
         u_bc.x.array[:] = value
         mpc.update_constants()
         for slave in mpc.slaves[: mpc.num_local_slaves]:
-            nt.assert_allclose(mpc.constants[slave], 2.0 * value)
+            nt.assert_allclose(mpc.constants[slave], 2.0 * value, rtol=_tol(1e-7))
 
 
 def test_homogeneous_constraint_is_unchanged():
@@ -138,7 +163,7 @@ def test_homogeneous_constraint_is_unchanged():
     mpc.finalize()
 
     assert not mpc.has_inhomogeneity
-    nt.assert_allclose(mpc.constants, 0.0)
+    nt.assert_allclose(mpc.constants, 0.0, atol=_tol(1e-12))
 
 
 def test_affine_solve_with_dirichlet_master():
@@ -149,7 +174,7 @@ def test_affine_solve_with_dirichlet_master():
 
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 2.3
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
     bcs = [fem.dirichletbc(u_bc, dofs)]
 
     s_m_c = {_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0}}
@@ -171,7 +196,7 @@ def test_affine_solve_with_rhs_coeffs():
 
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 1.0
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
     bcs = [fem.dirichletbc(u_bc, dofs)]
 
     # Slave and master are both away from the Dirichlet boundary
@@ -179,7 +204,7 @@ def test_affine_solve_with_rhs_coeffs():
 
     g = fem.Function(V)
     g.x.array[:] = 0.0
-    slave_dof = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0) & np.isclose(x[1], 0))
+    slave_dof = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 0) & _isclose(x[1], 0))
     g.x.array[slave_dof] = 0.75
     g.x.scatter_forward()
 
@@ -205,7 +230,7 @@ def test_linear_problem_affine():
 
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 2.3
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
     bcs = [fem.dirichletbc(u_bc, dofs)]
 
     s_m_c = {_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0}}
@@ -227,7 +252,7 @@ def test_linear_problem_affine():
 
     # The constraint must hold in the solution: u_slave = 2.0 * u_bc = 4.6
     for slave in mpc.slaves[: mpc.num_local_slaves]:
-        nt.assert_allclose(uh.x.array[slave], 4.6, rtol=1e-6)
+        nt.assert_allclose(uh.x.array[slave], 4.6, rtol=_tol(1e-6))
 
 
 @pytest.mark.skipif(default_scalar_type != np.float64, reason="Numba assemblers are only built for float64 here")
@@ -242,7 +267,7 @@ def test_numba_rejects_inhomogeneous_constraint():
 
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 3.0
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
     bcs = [fem.dirichletbc(u_bc, dofs)]
 
     s_m_c = {_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0}}
@@ -259,7 +284,7 @@ def test_update_constants_tracks_rhs_coeffs():
     mesh = create_unit_square(MPI.COMM_WORLD, 4, 4)
     V = fem.functionspace(mesh, ("Lagrange", 1))
 
-    slave_dof = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0) & np.isclose(x[1], 0))
+    slave_dof = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 0) & _isclose(x[1], 0))
     g = fem.Function(V)
     g.x.array[:] = 0.0
     g.x.array[slave_dof] = 0.75
@@ -271,13 +296,13 @@ def test_update_constants_tracks_rhs_coeffs():
     mpc.finalize()
 
     for slave in mpc.slaves[: mpc.num_local_slaves]:
-        nt.assert_allclose(mpc.constants[slave], 0.75)
+        nt.assert_allclose(mpc.constants[slave], 0.75, rtol=_tol(1e-7))
 
     g.x.array[slave_dof] = -2.25
     g.x.scatter_forward()
     mpc.update_constants()
     for slave in mpc.slaves[: mpc.num_local_slaves]:
-        nt.assert_allclose(mpc.constants[slave], -2.25)
+        nt.assert_allclose(mpc.constants[slave], -2.25, rtol=_tol(1e-7))
 
 
 def test_affine_blocked_problem():
@@ -298,7 +323,7 @@ def test_affine_blocked_problem():
 
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 1.7
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
     bcs = [fem.dirichletbc(u_bc, dofs)]
 
     # The master at (1, 0) lies on the Dirichlet boundary of V
@@ -324,14 +349,14 @@ def test_affine_blocked_problem():
 
     # The constraint must hold in the solution: u_slave = 2.0 * 1.7 = 3.4
     for slave in mpc_u.slaves[: mpc_u.num_local_slaves]:
-        nt.assert_allclose(uh[0].x.array[slave], 3.4, rtol=1e-6)
+        nt.assert_allclose(uh[0].x.array[slave], 3.4, rtol=_tol(1e-6))
 
     # Because the only master is Dirichlet constrained, the relation collapses to the
     # fixed value u_slave = 3.4. Solving the same blocked problem with that stated as an
     # ordinary Dirichlet condition and no constraint must give the same solution, which
     # exercises the -K^T A g term and the pairing of each block with its column
     # constraint.
-    slave_dof = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0) & np.isclose(x[1], 0))
+    slave_dof = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 0) & _isclose(x[1], 0))
     u_pin = fem.Function(V)
     u_pin.x.array[:] = 3.4
     bcs_ref = [fem.dirichletbc(u_bc, dofs), fem.dirichletbc(u_pin, slave_dof)]
@@ -353,7 +378,7 @@ def test_affine_blocked_problem():
     err_u = np.max(np.abs(uh[0].x.array[:n_u] - u_ref[0].x.array[:n_u])) if n_u else 0.0
     err_p = np.max(np.abs(uh[1].x.array[:n_p] - u_ref[1].x.array[:n_p])) if n_p else 0.0
     err = mesh.comm.allreduce(max(float(err_u), float(err_p)), op=MPI.MAX)
-    assert err < 1e-9, f"blocked affine solution differs from the reference by {err}"
+    assert err < _tol(1e-9), f"blocked affine solution differs from the reference by {err}"
 
 
 def test_slave_that_is_also_dirichlet_is_rejected():
@@ -364,7 +389,7 @@ def test_slave_that_is_also_dirichlet_is_rejected():
     u_bc = fem.Function(V)
     u_bc.x.array[:] = 1.0
     # The Dirichlet boundary x = 0 contains the slave at (0, 0)
-    dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0))
+    dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 0))
     bcs = [fem.dirichletbc(u_bc, dofs)]
 
     s_m_c = {_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0}}
@@ -393,7 +418,7 @@ def test_dirichletbc_as_pure_mpc(degree):
 
     # A spatially varying condition on x = 0 and x = 1
     def boundary(x):
-        return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+        return _isclose(x[0], 0.0) | _isclose(x[0], 1.0)
 
     u_bc = fem.Function(V)
     u_bc.interpolate(lambda x: 1.0 + x[0] + 2.0 * x[1] ** 2)
@@ -447,14 +472,14 @@ def test_dirichletbc_as_pure_mpc(degree):
     uh = problem.solve()
 
     # The constraint must reproduce the boundary data exactly
-    nt.assert_allclose(uh.x.array[slaves], u_bc.x.array[slaves], rtol=1e-10, atol=1e-12)
+    nt.assert_allclose(uh.x.array[slaves], u_bc.x.array[slaves], rtol=_tol(1e-10), atol=_tol(1e-12))
 
     # ... and the whole solution must match the ordinary DirichletBC solve. Compare the
     # owned block only, since the constraint's space carries extra ghosts in parallel,
     # and reduce before asserting so that every process reaches the same verdict.
     err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
     err = mesh.comm.allreduce(float(err), op=MPI.MAX)
-    assert err < 1e-9, f"MPC-as-DirichletBC solution differs from DOLFINx by {err}"
+    assert err < _tol(1e-9), f"MPC-as-DirichletBC solution differs from DOLFINx by {err}"
 
 
 @pytest.mark.skipif(
@@ -475,7 +500,7 @@ def test_nonlinear_dirichletbc_as_pure_mpc(degree):
     V = fem.functionspace(mesh, ("Lagrange", degree))
 
     def boundary(x):
-        return np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)
+        return _isclose(x[0], 0.0) | _isclose(x[0], 1.0)
 
     u_bc = fem.Function(V)
     u_bc.interpolate(lambda x: 0.5 + 0.25 * x[1])
@@ -484,7 +509,8 @@ def test_nonlinear_dirichletbc_as_pure_mpc(degree):
     x = ufl.SpatialCoordinate(mesh)
     source = 2.0 + ufl.sin(2 * ufl.pi * x[1])
 
-    tol = 1e-10
+    # A float32 build cannot drive the residual anywhere near 1e-10
+    tol = _tol(1e-10)
     petsc_options = {
         "snes_type": "newtonls",
         "ksp_type": "preonly",
@@ -547,13 +573,13 @@ def test_nonlinear_dirichletbc_as_pure_mpc(degree):
     assert converged
 
     # The constraint must reproduce the boundary data exactly
-    nt.assert_allclose(uh.x.array[slaves], u_bc.x.array[slaves], rtol=1e-10, atol=1e-12)
+    nt.assert_allclose(uh.x.array[slaves], u_bc.x.array[slaves], rtol=_tol(1e-10), atol=_tol(1e-12))
 
     # ... and the whole solution must match the ordinary DirichletBC solve
     num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
     err = mesh.comm.allreduce(float(err), op=MPI.MAX)
-    assert err < 1e-8, f"nonlinear MPC-as-DirichletBC solution differs from DOLFINx by {err}"
+    assert err < _tol(1e-8), f"nonlinear MPC-as-DirichletBC solution differs from DOLFINx by {err}"
 
 
 @pytest.mark.skipif(
@@ -578,7 +604,7 @@ def test_nonlinear_affine_dirichlet_master(degree):
 
     # Dirichlet data on x = 1, where the master lives
     def right(x):
-        return np.isclose(x[0], 1.0)
+        return _isclose(x[0], 1.0)
 
     u_bc_value = 1.3
     coeff = 2.0
@@ -588,7 +614,8 @@ def test_nonlinear_affine_dirichlet_master(degree):
     x = ufl.SpatialCoordinate(mesh)
     source = 2.0 + ufl.sin(2 * ufl.pi * x[1])
 
-    tol = 1e-10
+    # A float32 build cannot drive the residual anywhere near 1e-10
+    tol = _tol(1e-10)
     petsc_options = {
         "snes_type": "newtonls",
         "ksp_type": "preonly",
@@ -604,7 +631,7 @@ def test_nonlinear_affine_dirichlet_master(degree):
     # they exist for any degree. Every process that sees them must declare them, hence
     # `locate_dofs_geometrical`, which returns owned and ghost dofs.
     def at_slave(x):
-        return np.isclose(x[0], 0.0) & np.isclose(x[1], 0.0)
+        return _isclose(x[0], 0.0) & _isclose(x[1], 0.0)
 
     slave_dofs = fem.locate_dofs_geometrical(V, at_slave)
 
@@ -656,7 +683,7 @@ def test_nonlinear_affine_dirichlet_master(degree):
 
     # The constraint must hold exactly: u_slave = coeff * u_bc + g_s
     if len(slave_dofs) > 0:
-        nt.assert_allclose(uh.x.array[slave_dofs[0]], slave_value, rtol=1e-10, atol=1e-12)
+        nt.assert_allclose(uh.x.array[slave_dofs[0]], slave_value, rtol=_tol(1e-10), atol=_tol(1e-12))
 
     # ... and the whole solution must match the reference. Compare the owned block only:
     # the constraint's space carries extra ghosts for off-process masters. Reduce before
@@ -665,7 +692,7 @@ def test_nonlinear_affine_dirichlet_master(degree):
     num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     err = np.max(np.abs(uh.x.array[:num_owned] - u_ref.x.array[:num_owned])) if num_owned else 0.0
     err = mesh.comm.allreduce(float(err), op=MPI.MAX)
-    assert err < 1e-8, f"nonlinear affine MPC solution differs from the reference by {err}"
+    assert err < _tol(1e-8), f"nonlinear affine MPC solution differs from the reference by {err}"
 
 
 @pytest.mark.skipif(
@@ -725,7 +752,8 @@ def test_nonlinear_affine_surviving_master(degree):
     assert num_slaves > 0
     assert num_masters == num_slaves
 
-    tol = 1e-10
+    # A float32 build cannot drive the residual anywhere near 1e-10
+    tol = _tol(1e-10)
     petsc_options = {
         "snes_type": "newtonls",
         "ksp_type": "preonly",
@@ -761,8 +789,8 @@ def test_nonlinear_affine_surviving_master(degree):
     before = uh.x.array.copy()
     mpc.backsubstitution(uh)
     slaves = mpc.slaves
-    assert len(slaves) == 0 or np.max(np.abs(uh.x.array[slaves] - before[slaves])) < 1e-9
-    nt.assert_allclose(uh.x.array, before, rtol=1e-9, atol=1e-11)
+    assert len(slaves) == 0 or np.max(np.abs(uh.x.array[slaves] - before[slaves])) < _tol(1e-9)
+    nt.assert_allclose(uh.x.array, before, rtol=_tol(1e-9), atol=_tol(1e-11))
 
     # The offset is genuinely present at the slaves: with g = 0 the constrained value is
     # the master value alone, so the two solves below must differ
@@ -785,4 +813,4 @@ def test_nonlinear_affine_surviving_master(degree):
     num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     diff = np.max(np.abs(uh.x.array[:num_owned] - uh_h.x.array[:num_owned])) if num_owned else 0.0
     diff = mesh.comm.allreduce(float(diff), op=MPI.MAX)
-    assert diff > 1e-4, "the constraint offset did not change the solution"
+    assert diff > _tol(1e-4), "the constraint offset did not change the solution"
