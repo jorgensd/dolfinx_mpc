@@ -376,11 +376,11 @@ assert res["exact_flux_error"] < 1e-12
 pyvista.global_theme.allow_empty_mesh = True
 
 
-def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str):
-    """Owned-cell PyVista grids with ``u`` attached, gathered on rank 0.
+def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0):
+    """Owned-cell PyVista grids with ``u`` attached, gathered on ``root``.
 
     Vector fields are padded to three components, as PyVista expects. Returns the
-    grids on rank 0 (``None`` elsewhere) and the global range of the magnitude,
+    grids on ``root`` (``None`` elsewhere) and the global range of the magnitude,
     so every piece can be drawn with the same colour limits.
     """
     comm = V.mesh.comm
@@ -402,7 +402,9 @@ def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str):
         grid.point_data[f"|{name}|"] = magnitude
     lo = comm.allreduce(float(magnitude.min()) if magnitude.size else np.inf, op=MPI.MIN)
     hi = comm.allreduce(float(magnitude.max()) if magnitude.size else -np.inf, op=MPI.MAX)
-    return comm.gather(grid, root=0), [lo, hi]
+    # gather returns the list on `root` and None everywhere else, so the caller
+    # can test the result instead of comparing ranks itself
+    return comm.gather(grid, root=root), [lo, hi]
 
 
 # -
@@ -420,7 +422,7 @@ u_plot = fem.Function(V_plot)
 u_plot.x.array[:] = uh.x.array[: u_plot.x.array.size]
 pieces, clim = gather_grids(u_plot, V_plot, "u")
 
-if comm.rank == 0:
+if pieces is not None:  # only the root process received the grids
     plotter = pyvista.Plotter(window_size=[700, 450])
     plotter.add_text(f"flow rate = {res['flux']:.4f}", font_size=10)
     for piece in pieces:

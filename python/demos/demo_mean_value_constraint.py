@@ -506,8 +506,8 @@ for _N in (8, 12, 16):
 pyvista.global_theme.allow_empty_mesh = True
 
 
-def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str):
-    """Owned-cell PyVista grids with ``u`` attached, gathered on rank 0.
+def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0):
+    """Owned-cell PyVista grids with ``u`` attached, gathered on ``root``.
 
     Returns the list of grids on rank 0 (``None`` elsewhere) and the global
     value range, so that every piece can be drawn with the same colour limits.
@@ -523,7 +523,9 @@ def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str):
     local = np.linalg.norm(values.reshape(-1, bs), axis=1) if bs > 1 else values
     lo = comm.allreduce(float(local.min()) if local.size else np.inf, op=MPI.MIN)
     hi = comm.allreduce(float(local.max()) if local.size else -np.inf, op=MPI.MAX)
-    return comm.gather(grid, root=0), [lo, hi]
+    # gather returns the list on `root` and None everywhere else, so the caller
+    # can test the result instead of comparing ranks itself
+    return comm.gather(grid, root=root), [lo, hi]
 
 
 # `uh` lives in the constraint's extended space, which carries the master dofs as
@@ -539,7 +541,7 @@ pieces, clim = gather_grids(u_plot, V, "u")
 # offset $C-1/6$ out of the one parameter family the pure Neumann problem admits.
 # Warping by the value makes that offset visible as the height above zero.
 
-if comm.rank == 0:
+if pieces is not None:  # only the root process received the grids
     plotter = pyvista.Plotter(window_size=[700, 500])
     plotter.add_text(f"mean(u) = {mean_value:.6f}", font_size=10)
     for piece in pieces:

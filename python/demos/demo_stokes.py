@@ -339,11 +339,11 @@ ph.name = "p"
 pyvista.global_theme.allow_empty_mesh = True
 
 
-def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str):
-    """Owned-cell PyVista grids with ``u`` attached, gathered on rank 0.
+def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0):
+    """Owned-cell PyVista grids with ``u`` attached, gathered on ``root``.
 
     Vector fields are padded to three components, as PyVista expects. Returns the
-    grids on rank 0 (``None`` elsewhere) and the global range of the magnitude,
+    grids on ``root`` (``None`` elsewhere) and the global range of the magnitude,
     so that every piece can be drawn with the same colour limits.
 
     ``u`` may live in the constraint's extended space, whose array is longer than
@@ -369,7 +369,9 @@ def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str):
         grid.point_data[f"|{name}|"] = magnitude
     lo = comm.allreduce(float(magnitude.min()) if magnitude.size else np.inf, op=MPI.MIN)
     hi = comm.allreduce(float(magnitude.max()) if magnitude.size else -np.inf, op=MPI.MAX)
-    return comm.gather(grid, root=0), [lo, hi]
+    # gather returns the list on `root` and None everywhere else, so the caller
+    # can test the result instead of comparing ranks itself
+    return comm.gather(grid, root=root), [lo, hi]
 
 
 velocity_pieces, velocity_clim = gather_grids(uh, V, "u")
@@ -380,7 +382,7 @@ pressure_pieces, pressure_clim = gather_grids(ph, Q, "p")
 # The two panels share a camera, so both show the channel in the same frame and
 # the fields can be compared point by point.
 
-if mesh.comm.rank == 0:
+if velocity_pieces is not None:  # only the root process received the grids
     plotter = pyvista.Plotter(shape=(2, 1), window_size=[700, 800])
     plotter.subplot(0, 0)
     plotter.add_text("Velocity", font_size=10)
