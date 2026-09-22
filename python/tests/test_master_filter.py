@@ -38,8 +38,8 @@ def _integral_constraint(V, weight_form, value, filter=None):
     w.scatter_reverse(la.InsertMode.add)
     w_owned = w.array[:num_owned]
 
-    local = np.arange(num_owned, dtype=np.int32)
-    global_dofs = (imap.local_to_global((local // bs).astype(np.int32)) * bs + local % bs).astype(np.int64)
+    # Owned dofs are a contiguous global range; local_range is in blocks
+    global_dofs = np.arange(imap.local_range[0] * bs, imap.local_range[1] * bs, dtype=np.int64)
     counts = np.array(comm.allgather(global_dofs.size), dtype=np.int32)
     displ = np.concatenate(([0], np.cumsum(counts)[:-1])).astype(np.int32)
     total = int(counts.sum())

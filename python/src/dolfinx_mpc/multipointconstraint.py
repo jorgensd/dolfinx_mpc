@@ -19,6 +19,7 @@ from dolfinx import default_real_type, default_scalar_type
 import dolfinx_mpc.cpp
 
 from .dictcondition import create_dictionary_constraint
+from .integralcondition import create_integral_constraint
 
 _mpc_classes = Union[
     dolfinx_mpc.cpp.mpc.MultiPointConstraint_double,
@@ -180,6 +181,49 @@ class MultiPointConstraint:
             self._masters = numpy.append(self._masters, masters)
             self._coeffs = numpy.array(numpy.append(self._coeffs, coeffs), dtype=self._dtype)
             self._owners = numpy.append(self._owners, owners)
+
+    def add_integral_constraint(
+        self,
+        weight_form,
+        value,
+        bcs: Optional[List[_fem.DirichletBC]] = None,
+        rtol: numpy.floating = 1e-14,
+    ):
+        r"""Constrain a scalar integral of the solution, :math:`L(u) = \gamma`.
+
+        The functional is given as a linear form, and turned into a constraint
+        with a single slave by :func:`dolfinx_mpc.create_integral_constraint`;
+        see there for the derivation and the cost. The inhomogeneity
+        :math:`\gamma/w_s` is written into the ``rhs_coeffs`` function of this
+        constraint, which is created here if none was supplied to the
+        constructor.
+
+        Args:
+            weight_form: A linear form in ``ufl.TestFunction(V)`` defining the
+                functional, for instance ``v * ufl.dx``. Its test function must
+                be in the function space of this constraint.
+            value: The prescribed value :math:`\gamma` of the functional.
+            bcs: Dirichlet conditions on the space. A constrained degree of
+                freedom is never chosen as the slave. Pass the same conditions
+                to the constructor to have a constrained *master* folded into
+                the constraint offset. Defaults to the conditions given to the
+                constructor.
+            rtol: Discard a master whose coefficient is below this fraction of
+                the largest one.
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._already_finalized()
+        slaves, masters, coeffs, owners, offsets, rhs = create_integral_constraint(
+            self.V, weight_form, value, self._bcs if bcs is None else bcs, rtol
+        )
+        if self._rhs_coeffs is None:
+            self._rhs_coeffs = rhs
+        else:
+            # Slaves of separate constraints are disjoint, so the offsets add
+            self._rhs_coeffs.x.array[:] += rhs.x.array
+        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
     def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace, mpc_data: Union[_mpc_data_classes, MPCData]):
         """

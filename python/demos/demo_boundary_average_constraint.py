@@ -65,7 +65,7 @@ import numpy as np
 import pandas
 import pyvista
 import ufl
-from dolfinx import default_scalar_type, fem, la, mesh, plot
+from dolfinx import default_scalar_type, fem, mesh, plot
 
 import dolfinx_mpc.utils
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
@@ -116,106 +116,13 @@ def mark_boundary(domain, indicator, tag, other_tag):
 # has weight exactly zero and is discarded by the filter.
 
 
-def integral_constraint(V, weight_form, value, bcs=(), rtol=1e-14):
-    """Build an affine MPC enforcing ``L(u) = value`` for a linear functional.
-
-    Args:
-        V: The function space the constraint acts on.
-        weight_form: A linear form in ``TestFunction(V)`` defining the
-            functional, e.g. ``v * ds(tag)`` or ``ufl.dot(v, n) * ds(tag)``.
-        value: The prescribed value of the functional.
-        bcs: Dirichlet conditions on ``V``. Constrained dofs are excluded from
-            being the slave, and are folded into the constraint offset if they
-            appear as masters.
-        rtol: Passed to `finalize` as the master filter: a master whose
-            coefficient is below this fraction of the largest coefficient
-            of its slave is discarded.
-
-    Returns:
-        The finalized constraint, the ``Function`` holding the inhomogeneity
-        (keep it alive to change ``value`` via ``update_constants``), and the
-        number of masters.
-    """
-    comm = V.mesh.comm
-    imap = V.dofmap.index_map
-    bs = V.dofmap.index_map_bs
-    num_owned = imap.size_local * bs
-    dtype = default_scalar_type
-    mpi_scalar = MPI._typedict[np.dtype(dtype).char]
-
-    # Ghost contributions are unaccumulated until scatter_reverse
-    w = fem.assemble_vector(fem.form(weight_form, dtype=dtype))
-    w.scatter_reverse(la.InsertMode.add)
-    w_owned = w.array[:num_owned]
-
-    # A Dirichlet dof may be a master, but must not be the slave
-    bc_marker = np.zeros(num_owned, dtype=np.int8)
-    for bc in bcs:
-        dofs, num_owned_bc = bc.dof_indices()
-        owned_bc = dofs[:num_owned_bc]
-        bc_marker[owned_bc[owned_bc < num_owned]] = 1
-
-    # Every owned dof is offered as a master candidate. The global index of a
-    # blocked space is global block index * bs + component.
-    local_dofs = np.arange(num_owned, dtype=np.int32)
-    global_dofs = (imap.local_to_global(local_dofs // bs) * bs + local_dofs % bs).astype(np.int64)
-
-    counts = np.array(comm.allgather(global_dofs.size), dtype=np.int32)
-    displ = np.concatenate(([0], np.cumsum(counts)[:-1])).astype(np.int32)
-    total = int(counts.sum())
-    all_dofs = np.empty(total, dtype=np.int64)
-    all_weights = np.empty(total, dtype=dtype)
-    all_bc = np.empty(total, dtype=np.int8)
-    # mpi4py reads a three-entry tuple as (buffer, counts, datatype), so the
-    # datatype must be spelled out whenever displacements are given.
-    comm.Allgatherv(global_dofs, (all_dofs, counts, displ, MPI.INT64_T))
-    comm.Allgatherv(np.ascontiguousarray(w_owned, dtype=dtype), (all_weights, counts, displ, mpi_scalar))
-    comm.Allgatherv(np.ascontiguousarray(bc_marker), (all_bc, counts, displ, MPI.SIGNED_CHAR))
-    all_owners = np.repeat(np.arange(comm.size, dtype=np.int32), counts)
-
-    # The largest weight makes the best slave: it bounds every |c_i| by one. The
-    # gathered arrays are identical on every rank, so no reduction is needed to
-    # find it, and every rank independently picks the same slave.
-    candidates = np.where(all_bc == 0, np.abs(all_weights), -1.0)
-    slave = int(np.argmax(candidates))
-    if candidates[slave] < 0:
-        raise RuntimeError("Every dof in the support of the functional is Dirichlet constrained")
-    if candidates[slave] == 0:
-        # Otherwise the coefficients below would silently be 0/0
-        raise RuntimeError("The functional vanishes identically on V")
-    w_slave = all_weights[slave]
-    slave_global = int(all_dofs[slave])
-
-    masters = np.delete(all_dofs, slave).astype(np.int64)
-    coeffs = (-np.delete(all_weights, slave) / w_slave).astype(dtype)
-    owners = np.delete(all_owners, slave).astype(np.int32)
-    offsets = np.array([0, masters.size], dtype=np.int32)
-
-    g = fem.Function(V, dtype=dtype)
-    g.x.array[:] = 0.0
-    mpc = MultiPointConstraint(V, dtype=dtype, bcs=list(bcs), rhs_coeffs=g)
-    slave_block = int(imap.global_to_local(np.array([slave_global // bs], dtype=np.int64))[0])
-    if slave_block != -1:  # the owning rank, and every rank ghosting the slave
-        slave_local = np.int32(slave_block * bs + slave_global % bs)
-        g.x.array[slave_local] = dtype(value) / w_slave
-        mpc.add_constraint(V, np.array([slave_local], dtype=np.int32), masters, coeffs, owners, offsets)
-    g.x.scatter_forward()
-    # Offering every dof as a master leaves most coefficients negligible, and
-    # `filter` discards them: for a facet functional that is nearly the whole
-    # mesh, and for a cell integral with P2 it is every vertex dof, since the
-    # integral of a P2 vertex basis function vanishes on simplices. Note that
-    # quadrature returns those as roundoff, around 1e-19 rather than exactly
-    # zero, which is why the threshold is relative to the largest coefficient
-    # instead of a test against zero. A negligible coefficient changes nothing in
-    # the constraint but still costs a ghost, a row of the sparsity pattern and
-    # an entry in every element matrix modification. For a very large problem it
-    # is worth restricting the gather above to the support of the functional too,
-    # so that the communication is not O(num_dofs) on every rank.
-    mpc.finalize(filter=rtol)  # collective: every rank must reach this
-
-    # Report the masters that survived the filter, not the ones offered
+def build_constraint(V, weight_form, value, bcs=()):
+    """Constrain ``L(u) = value`` and report how many masters survived."""
+    mpc = MultiPointConstraint(V, bcs=list(bcs))
+    mpc.add_integral_constraint(weight_form, value, bcs=list(bcs))
+    mpc.finalize()
     kept = sum(len(mpc.masters.links(s)) for s in mpc.slaves[: mpc.num_local_slaves])
-    return mpc, g, comm.allreduce(kept, op=MPI.SUM)
+    return mpc, V.mesh.comm.allreduce(kept, op=MPI.SUM)
 
 
 # ## Cost and conditioning
@@ -358,7 +265,7 @@ def solve_boundary_average(N, degree, collect_stats=False):
     # Time the two paths against each other, as in demo_mean_value_constraint.py
     comm.Barrier()
     t0 = time.perf_counter()
-    mpc, g, num_masters = integral_constraint(V, ufl.TestFunction(V) * ds(GAMMA), gamma_value)
+    mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ds(GAMMA), gamma_value)
     comm.Barrier()
     t1 = time.perf_counter()
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}

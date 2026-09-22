@@ -31,6 +31,43 @@
 # h~\mathrm{d}s = 0$. Prescribing the mean value $\int_\Omega u~\mathrm{d}x =
 # \gamma$ selects the unique solution.
 #
+
+# We start by import the required modules:
+
+# + tags=["hide-input"]
+from __future__ import annotations
+
+import time
+
+from mpi4py import MPI
+
+import basix.ufl
+import numpy as np
+import pandas
+import pyvista
+import ufl
+from dolfinx import default_scalar_type, fem, mesh, plot
+
+import dolfinx_mpc.utils
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
+
+# -
+
+# ### Problem data
+#
+# We use the manufactured solution $u_{ex} = x^2 - x + C$. Everything else is
+# derived from it with UFL rather than worked out by hand: the source is
+# $f=-\Delta u_{ex}$, the boundary flux is $h=\nabla u_{ex}\cdot n$, and the
+# target $\gamma$ is the integral of $u_{ex}$ itself. Deriving $f$ and $h$ from
+# the same expression makes the compatibility condition hold by construction,
+# since $\int_\Omega -\Delta u_{ex}~\mathrm{d}x + \int_{\partial\Omega} \nabla
+# u_{ex}\cdot n~\mathrm{d}s = 0$ is the divergence theorem. Since $u_{ex}$ is a
+# second order polynomial it lies in the second order Lagrange space, so the
+# discrete solution should reproduce it up to solver accuracy.
+
+C = 3.0
+degree = 2
+
 # ## Transforming an integral condition into a multi-point constraint
 #
 # Expanding $u_h=\sum_i u_i\phi_i$ turns the integral condition into a single
@@ -53,189 +90,33 @@
 # $$
 #
 # So $s$ is the single *slave*, every other degree of freedom in the support of
-# the functional is a *master*, the coefficients are $-w_i/w_s$, and the
-# inhomogeneity $\gamma/w_s$ is supplied through `rhs_coeffs`. A single
-# {py:meth}`add_constraint<dolfinx_mpc.MultiPointConstraint.add_constraint>`
-# call expresses the whole integral condition.
+# the functional is a *master*, the coefficients are $-w_i/w_s$.
 #
-# ## Relation to a real space
-#
-# The constrained problem has the saddle point form
-#
-# $$
-# \begin{pmatrix} A & w \\ w^T & 0\end{pmatrix}
-# \begin{pmatrix} u \\ \lambda \end{pmatrix}
-# = \begin{pmatrix} b \\ \gamma \end{pmatrix},
-# $$
-#
-# where $\lambda$ is the scalar Lagrange multiplier carried by a real space.
-# Since $\mathrm{range}(K)=\{v: w^Tv=0\}$, the first block row says $b-Au \in
-# \mathrm{span}(w)$, i.e. $K^T(b-Au)=0$; together with $w^Tu=\gamma$ that *is*
-# the reduced system $K^TAK\hat{u}=K^T(b-Ag)$.
-
-# We start by import the required modules:
-
-# + tags=["hide-input"]
-from __future__ import annotations
-
-import time
-import typing
-
-from mpi4py import MPI
-
-import basix.ufl
-import numpy as np
-import pandas
-import pyvista
-import ufl
-from dolfinx import default_scalar_type, fem, la, mesh, plot
-
-import dolfinx_mpc.utils
-from dolfinx_mpc import LinearProblem, MultiPointConstraint
-
-# -
-
-# ## Problem data
-#
-# We use the manufactured solution $u_{ex} = x^2 - x + C$. Everything else is
-# derived from it with UFL rather than worked out by hand: the source is
-# $f=-\Delta u_{ex}$, the boundary flux is $h=\nabla u_{ex}\cdot n$, and the
-# target $\gamma$ is the integral of $u_{ex}$ itself. Deriving $f$ and $h$ from
-# the same expression makes the compatibility condition hold by construction,
-# since $\int_\Omega -\Delta u_{ex}~\mathrm{d}x + \int_{\partial\Omega} \nabla
-# u_{ex}\cdot n~\mathrm{d}s = 0$ is the divergence theorem. Since $u_{ex}$ is a
-# second order polynomial it lies in the second order Lagrange space, so the
-# discrete solution should reproduce it up to solver accuracy.
-
-C = 3.0
-degree = 2
-
-# ## Building the constraint
+# The only new concept in this demo compared to the others is the inhomogeneity $g_s=\gamma/w_s$.
+# We assign this inhomogeneity to a {py:class}`dolfinx.fem.Function` and pass it to the
+# {py:class}`dolfinx_mpc.MultiPointConstraint` constructor through the `rhs_coeffs` argument.
+# This means that if you have a time-dependent problem, you can change the values of $\gamma$
+# through interpolation or any other means, and it will be reflected in the assembly.
 #
 # The constraint is built from the assembled weight vector. We note the two following
 # prerequisites for the input to {py:class}`dolfinx_mpc.MultiPointConstraint.add_constraint`:
 #
-# 1. The masters are given in *global* numbering with the rank owning each one,
+# 1. The `masters` are given in *global* numbering with the rank owning each one,
 #    so every process gathers the owned part of the support and the owner array
 #    follows from the gather displacements.
-# 2. The slave must be declared on the owning rank **and** on every rank that
+# 2. The `slave` must be declared on the owning rank **and** on every rank that
 #    ghosts it, with the same master list, while the constructor and
 #    {py:meth}`finalize<dolfinx_mpc.MultiPointConstraint.finalize>` are
 #    collective and must be reached by all ranks.
 
 
-def integral_constraint(
-    V: fem.FunctionSpace,
-    weight_form: ufl.Form,
-    value: float,
-    bcs: typing.Sequence[fem.DirichletBC] = (),
-    rtol: float = 1e-14,
-):
-    """Build an affine MPC enforcing ``L(u) = value`` for a linear functional.
-
-    Args:
-        V: The function space the constraint acts on.
-        weight_form: A linear form in ``TestFunction(V)`` defining the
-            functional, e.g. ``v * ufl.dx`` or ``ufl.dot(v, n) * ds(tag)``.
-        value: The prescribed value of the functional.
-        bcs: Dirichlet conditions on ``V``. Constrained dofs are excluded from
-            being the slave, and are folded into the constraint offset if they
-            appear as masters.
-        rtol: Passed to `finalize` as the master filter: a master whose
-            coefficient is below this fraction of the largest coefficient
-            of its slave is discarded.
-
-    Returns:
-        The finalized constraint, the ``Function`` holding the inhomogeneity
-        (keep it alive to change ``value`` via ``update_constants``), and the
-        number of masters.
-    """
-    comm = V.mesh.comm
-    imap = V.dofmap.index_map
-    bs = V.dofmap.index_map_bs
-    num_owned = imap.size_local * bs
-    dtype = default_scalar_type
-    mpi_scalar = MPI._typedict[np.dtype(dtype).char]
-
-    # Assemble the functional and accumulate ghost contributions onto the owner
-    w = fem.assemble_vector(fem.form(weight_form, dtype=dtype))
-    w.scatter_reverse(la.InsertMode.add)
-    w.scatter_forward()
-    w_owned = w.array[:num_owned]
-
-    # Dirichlet dofs may be masters, but must not be chosen as the slave
-    bc_marker = np.zeros(num_owned, dtype=np.int8)
-    for bc in bcs:
-        dofs, num_owned_bc = bc.dof_indices()
-        owned_bc = dofs[:num_owned_bc]
-        bc_marker[owned_bc[owned_bc < num_owned]] = 1
-
-    # Every owned dof is offered as a master candidate. The global index of a
-    # blocked space is global block index * bs + component.
-    local_dofs = np.arange(num_owned, dtype=np.int32)
-    global_dofs = (imap.local_to_global(local_dofs // bs) * bs + local_dofs % bs).astype(np.int64)
-
-    # Gather the support on every rank. The gathered arrays are bit-identical
-    # everywhere, so the slave picked below is automatically consistent.
-    counts = np.array(comm.allgather(global_dofs.size), dtype=np.int32)
-    displ = np.concatenate(([0], np.cumsum(counts)[:-1])).astype(np.int32)
-    total = int(counts.sum())
-    all_dofs = np.empty(total, dtype=np.int64)
-    all_weights = np.empty(total, dtype=dtype)
-    all_bc = np.empty(total, dtype=np.int8)
-    # NOTE: mpi4py reads a three-entry tuple as (buffer, counts, datatype), so
-    # the datatype has to be spelled out whenever displacements are given.
-    comm.Allgatherv(global_dofs, (all_dofs, counts, displ, MPI.INT64_T))
-    comm.Allgatherv(np.ascontiguousarray(w_owned, dtype=dtype), (all_weights, counts, displ, mpi_scalar))
-    comm.Allgatherv(np.ascontiguousarray(bc_marker), (all_bc, counts, displ, MPI.SIGNED_CHAR))
-    all_owners = np.repeat(np.arange(comm.size, dtype=np.int32), counts)
-
-    # The largest weight makes the best slave: it bounds every |c_i| by one. The
-    # gathered arrays are identical on every rank, so no reduction is needed to
-    # find it, and every rank independently picks the same slave.
-    candidates = np.where(all_bc == 0, np.abs(all_weights), -1.0)
-    slave = int(np.argmax(candidates))
-    if candidates[slave] < 0:
-        raise RuntimeError("Every dof in the support of the functional is Dirichlet constrained")
-    if candidates[slave] == 0:
-        # Otherwise the coefficients below would silently be 0/0
-        raise RuntimeError("The functional vanishes identically on V")
-    w_slave = all_weights[slave]
-    slave_global = int(all_dofs[slave])
-
-    # The slave is not a master of itself
-    masters = np.delete(all_dofs, slave).astype(np.int64)
-    coeffs = (-np.delete(all_weights, slave) / w_slave).astype(dtype)
-    owners = np.delete(all_owners, slave).astype(np.int32)
-    offsets = np.array([0, masters.size], dtype=np.int32)
-
-    # The offset g lives in the original space, and is read on owned and ghost
-    # entries when the constraint is finalized, so scatter before finalizing.
-    g = fem.Function(V, dtype=dtype)
-    g.x.array[:] = 0.0
-    mpc = MultiPointConstraint(V, dtype=dtype, bcs=list(bcs), rhs_coeffs=g)
-    slave_block = int(imap.global_to_local(np.array([slave_global // bs], dtype=np.int64))[0])
-    if slave_block != -1:  # the owning rank, and every rank ghosting the slave
-        slave_local = np.int32(slave_block * bs + slave_global % bs)
-        g.x.array[slave_local] = dtype(value) / w_slave
-        mpc.add_constraint(V, np.array([slave_local], dtype=np.int32), masters, coeffs, owners, offsets)
-    g.x.scatter_forward()
-    # Offering every dof as a master leaves most coefficients negligible, and
-    # `filter` discards them: for a facet functional that is nearly the whole
-    # mesh, and for a cell integral with P2 it is every vertex dof, since the
-    # integral of a P2 vertex basis function vanishes on simplices. Note that
-    # quadrature returns those as roundoff, around 1e-19 rather than exactly
-    # zero, which is why the threshold is relative to the largest coefficient
-    # instead of a test against zero. A negligible coefficient changes nothing in
-    # the constraint but still costs a ghost, a row of the sparsity pattern and
-    # an entry in every element matrix modification. For a very large problem it
-    # is worth restricting the gather above to the support of the functional too,
-    # so that the communication is not O(num_dofs) on every rank.
-    mpc.finalize(filter=rtol)  # collective: every rank must reach this
-
-    # Report the masters that survived the filter, not the ones offered
+def build_constraint(V, weight_form, value, bcs=()):
+    """Constrain ``L(u) = value`` and report how many masters survived."""
+    mpc = MultiPointConstraint(V, bcs=list(bcs))
+    mpc.add_integral_constraint(weight_form, value, bcs=list(bcs))
+    mpc.finalize()
     kept = sum(len(mpc.masters.links(s)) for s in mpc.slaves[: mpc.num_local_slaves])
-    return mpc, g, comm.allreduce(kept, op=MPI.SUM)
+    return mpc, V.mesh.comm.allreduce(kept, op=MPI.SUM)
 
 
 # ## Variational problem
@@ -263,7 +144,20 @@ def exact_mean(domain, u_ex):
     return domain.comm.allreduce(fem.assemble_scalar(fem.form(u_ex * ufl.dx)), op=MPI.SUM)
 
 
-# ## The real space reference
+# ## Relation to a real space
+#
+# The constrained problem has the saddle point form
+#
+# $$
+# \begin{pmatrix} A & w \\ w^T & 0\end{pmatrix}
+# \begin{pmatrix} u \\ \lambda \end{pmatrix}
+# = \begin{pmatrix} b \\ \gamma \end{pmatrix},
+# $$
+#
+# where $\lambda$ is the scalar Lagrange multiplier carried by a real space.
+# Since $\mathrm{range}(K)=\{v: w^Tv=0\}$, the first block row says $b-Au \in
+# \mathrm{span}(w)$, i.e. $K^T(b-Au)=0$; together with $w^Tu=\gamma$ that *is*
+# the reduced system $K^TAK\hat{u}=K^T(b-Ag)$.
 #
 # The same problem, solved as a saddle point system with a scalar multiplier in
 # a real space. Because the real basis function is identically one,
@@ -374,7 +268,7 @@ gamma = exact_mean(domain, u_ex)
 
 comm.Barrier()
 _t0 = time.perf_counter()
-mpc, g, num_masters = integral_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
+mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
 comm.Barrier()
 _t1 = time.perf_counter()
 
@@ -446,7 +340,7 @@ def measure(N: int) -> dict:
 
     comm.Barrier()
     t0 = time.perf_counter()
-    mpc, _, num_masters = integral_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
+    mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
     comm.Barrier()
     t1 = time.perf_counter()
     problem = LinearProblem(a, L, mpc, bcs=[], petsc_options=petsc_options)
