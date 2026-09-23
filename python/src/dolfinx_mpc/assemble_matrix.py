@@ -77,10 +77,10 @@ def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Se
     if isinstance(mpc, Sequence):
         assert len(mpc) == 2
         for mpc_ in mpc:
-            mpc_._not_finalized()  # type: ignore
+            mpc_._raise_if_not_finalized()  # type: ignore
             return cpp.mpc.create_sparsity_pattern(form._cpp_object, mpc[0]._cpp_object, mpc[1]._cpp_object)
     else:
-        mpc._not_finalized()  # type: ignore
+        mpc._raise_if_not_finalized()  # type: ignore
         return cpp.mpc.create_sparsity_pattern(
             form._cpp_object,
             mpc._cpp_object,  # type: ignore

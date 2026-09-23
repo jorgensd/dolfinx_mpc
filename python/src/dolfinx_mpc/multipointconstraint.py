@@ -173,7 +173,7 @@ class MultiPointConstraint:
 
         """
         assert V == self.V
-        self._already_finalized()
+        self._raise_if_finalized()
 
         if len(slaves) > 0:
             self._offsets = numpy.append(self._offsets, offsets[1:] + len(self._masters))
@@ -214,7 +214,7 @@ class MultiPointConstraint:
         Note:
             Collective. Must be called by every process.
         """
-        self._already_finalized()
+        self._raise_if_finalized()
         slaves, masters, coeffs, owners, offsets, rhs = create_integral_constraint(
             self.V, weight_form, value, self._bcs if bcs is None else bcs, rtol
         )
@@ -229,7 +229,7 @@ class MultiPointConstraint:
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
         """
-        self._already_finalized()
+        self._raise_if_finalized()
         self.add_constraint(
             V,
             mpc_data.slaves,
@@ -259,7 +259,7 @@ class MultiPointConstraint:
             Filtering changes the constraint that is enforced, by exactly the
             terms that are dropped. It is local and adds no communication.
         """
-        self._already_finalized()
+        self._raise_if_finalized()
 
         num_dofs_local = self.V.dofmap.index_map_bs * (
             self.V.dofmap.index_map.size_local + self.V.dofmap.index_map.num_ghosts
@@ -311,7 +311,7 @@ class MultiPointConstraint:
         Note:
             Collective. Must be called by every process.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         if self._rhs_coeffs is not None:
             # Pass the array natively. Zero-copy, zero-allocation.
             num_dofs_local = self.V.dofmap.index_map_bs * (
@@ -328,7 +328,7 @@ class MultiPointConstraint:
         The constraint offset :math:`g` for each degree of freedom local to the process,
         i.e. the affine term in :math:`x = K x_{red} + g`.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.constants
 
     @property
@@ -337,7 +337,7 @@ class MultiPointConstraint:
         Whether any process carries a non-zero constraint offset. The value is globally
         reduced, so it is identical on every process.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.has_inhomogeneity
 
     def create_periodic_constraint_topological(
@@ -623,7 +623,7 @@ class MultiPointConstraint:
         """
         Returns a vector of integers where the ith entry indicates if a degree of freedom (local to process) is a slave.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.is_slave
 
     @property
@@ -631,7 +631,7 @@ class MultiPointConstraint:
         """
         Returns the degrees of freedom for all slaves local to process
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.slaves
 
     @property
@@ -648,7 +648,7 @@ class MultiPointConstraint:
                 masters = mpc.masters
                 masters_of_dof_i = masters.links(i)
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.masters
 
     def coefficients(self) -> _float_array_types:
@@ -664,7 +664,7 @@ class MultiPointConstraint:
                 coeffs, offsets = mpc.coefficients()
                 coeffs_of_slave_i = coeffs[offsets[i]:offsets[i+1]]
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.coefficients()
 
     @property
@@ -672,7 +672,7 @@ class MultiPointConstraint:
         """
         Return the number of slaves owned by the current process.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.num_local_slaves
 
     @property
@@ -690,7 +690,7 @@ class MultiPointConstraint:
                 cell_to_slaves = mpc.cell_to_slaves()
                 slaves_in_cell_i = cell_to_slaves.links(i)
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.cell_to_slaves
 
     @property
@@ -698,7 +698,7 @@ class MultiPointConstraint:
         """
         Return the function space for the multi-point constraint with the updated index map
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self.V
 
     def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:  # type: ignore
@@ -734,16 +734,16 @@ class MultiPointConstraint:
         self._cpp_object.homogenize(u.x.array)
         u.x.scatter_forward()
 
-    def _already_finalized(self):
+    def _raise_if_finalized(self):
         """
-        Check if we have already finalized the multi point constraint
+        Raise if the multi point constraint has already been finalized
         """
         if self.finalized:
             raise RuntimeError("MultiPointConstraint has already been finalized")
 
-    def _not_finalized(self):
+    def _raise_if_not_finalized(self):
         """
-        Check if we have finalized the multi point constraint
+        Raise if the multi point constraint has not yet been finalized
         """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
