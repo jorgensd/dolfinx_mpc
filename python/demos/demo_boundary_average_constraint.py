@@ -294,6 +294,7 @@ comm.Barrier()
 t_real = time.perf_counter() - _t2
 
 num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+assert isinstance(uh, fem.Function)
 _diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
 mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
 if comm.rank == 0:
@@ -502,7 +503,7 @@ if pieces is not None:  # only the root process received the grids
             show_edges=False,
             scalar_bar_args={"vertical": True},
         )
-    plotter.view_isometric()
+    plotter.view_isometric()  # type: ignore[call-arg]
     plotter.camera.zoom(1.4)
     if pyvista.OFF_SCREEN:
         plotter.screenshot("demo_boundary_average_constraint.png")

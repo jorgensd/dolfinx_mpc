@@ -187,7 +187,7 @@ class MultiPointConstraint:
         weight_form,
         value,
         bcs: Optional[List[_fem.DirichletBC]] = None,
-        rtol: numpy.floating = 1e-14,
+        rtol: numpy.floating | float = 1e-14,
     ):
         r"""Constrain a scalar integral of the solution, :math:`L(u) = \gamma`.
 

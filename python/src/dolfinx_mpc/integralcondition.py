@@ -23,7 +23,7 @@ def create_integral_constraint(
     weight_form: ufl.Form,
     value: np.floating | np.complexfloating | float | complex,
     bcs: typing.Optional[typing.Sequence[_fem.DirichletBC]] = None,
-    rtol: np.floating = 1e-14,
+    rtol: np.floating | float = 1e-14,
 ) -> tuple[
     npt.NDArray[np.int32],
     npt.NDArray[np.int64],
