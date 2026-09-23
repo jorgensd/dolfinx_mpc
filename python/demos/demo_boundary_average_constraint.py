@@ -5,16 +5,19 @@
 #
 # The companion demo {doc}`demo_mean_value_constraint` enforces
 # $\int_\Omega u~\mathrm{d}x=\gamma$ with an affine multi-point constraint, and
-# shows that the price is a reduced operator that is completely full. This demo
+# shows that a dense integral condition of that kind is more costly to enforce
+# with a multi-point constraint than with a Lagrange multiplier. This demo
 # applies the same construction to a functional supported on a **facet**,
 #
 # $$
 # \int_\Gamma u ~\mathrm{d}s = \gamma,
 # $$
 #
-# where the master set is only the degrees of freedom on $\Gamma$. Both the extra
-# sparsity and the loss of conditioning scale with that set, so here the
-# constraint is genuinely cheap, and this is where it is the better tool.
+# and highlights the opposite conclusion: with the master set restricted to the
+# degrees of freedom on $\Gamma$, both the extra fill and the loss of
+# conditioning scale with that (small) set rather than with all of $\Omega$, so
+# for an integral condition with small support the multi-point constraint is the
+# better tool.
 #
 # On $\Omega=(0,1)^2$ with $\Gamma=\{x=0\}$ we solve
 #
@@ -125,61 +128,114 @@ def build_constraint(V, weight_form, value, bcs=()):
     return mpc, V.mesh.comm.allreduce(kept, op=MPI.SUM)
 
 
-# ## Cost and conditioning
+# ## Variational problem
 #
-# Eliminating the slave is not free. Order the degrees of freedom with the masters
-# $m$ first and the slave $s$ last. With $w$ the assembled functional, the
-# constraint is $u=K\hat{u}+g$, and both $A$ and $K$ split as
-#
-# $$
-# A = \begin{pmatrix} A_{mm} & A_{ms} \\ A_{sm} & A_{ss}\end{pmatrix},
-# \qquad
-# K = \begin{pmatrix} I \\ c^T \end{pmatrix},
-# \qquad c_i = -\frac{w_i}{w_s},
-# $$
-#
-# where $c$ collects the coefficients of the one slave and $A_{ss}$ is a scalar.
-# Multiplying out,
-#
-# $$
-# K^TAK = A_{mm} + A_{ms}c^T + cA_{sm} + \left(cc^T\right)A_{ss}.
-# $$
-#
-# The final term is rank one and dense over every pair of masters. Here that set
-# is only the boundary, so it grows like $\sqrt{N}$ and the penalty stays mild,
-# in sharp contrast to the cell integral of {doc}`demo_mean_value_constraint`.
-# The reference pays less here too: its real space lives on a submesh of $\Gamma$,
-# so the coupling blocks only reach the cells meeting $\Gamma$ rather than adding
-# a row and column over the whole mesh.
+# The forms are the standard Poisson ones, with natural data on the
+# unconstrained part of the boundary only; nothing in them knows about the
+# constraint.
 
 
-def operator_stats(A, comm, root=0):
-    """Global nnz and 2-norm condition number of an assembled operator.
-
-    The condition number needs a dense SVD, so this is a diagnostic for demo
-    sized problems only.
-    """
-    # petsc4py defaults to MatInfoType.GLOBAL_SUM, so this is already reduced
-    nnz = int(A.getInfo()["nz_used"])
-    A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
-    cond = None
-    if comm.rank == root:
-        cond = float(np.linalg.cond(A_csr.toarray()))
-    return nnz, comm.bcast(cond, root=root)
+def build_poisson_forms(V, u_ex, ds, natural_tag):
+    """Bilinear and linear form of the Poisson problem, Neumann on ``natural_tag``."""
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    n = ufl.FacetNormal(V.mesh)
+    f = -ufl.div(ufl.grad(u_ex))
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    L = ufl.inner(f, v) * ufl.dx + ufl.inner(ufl.dot(ufl.grad(u_ex), n), v) * ds(natural_tag)
+    return a, L
 
 
-# ## The real space reference, on a submesh of $\Gamma$
+# ## Setting up the problem
+
+# +
+N = 24
+degree = 2
+comm = MPI.COMM_WORLD
+domain = mesh.create_unit_square(comm, N, N)
+mt = mark_boundary(domain, lambda x: np.isclose(x[0], 0.0), GAMMA, REST)
+ds = ufl.Measure("ds", domain=domain, subdomain_data=mt)
+
+V = fem.functionspace(domain, ("Lagrange", degree))
+x = ufl.SpatialCoordinate(domain)
+u_ex = x[0] ** 2 / 2 + x[0] + C
+n = ufl.FacetNormal(domain)
+a, L = build_poisson_forms(V, u_ex, ds, REST)
+# -
+
+# The target and the expected multiplier both come from the manufactured
+# solution. `mu` is the average of the exact flux over `GAMMA`; the demo also
+# checks that the flux really is constant there, which is what makes the
+# defective condition well posed.
+
+gamma_value, length = boundary_average(domain, u_ex, ds, GAMMA)
+flux = ufl.dot(ufl.grad(u_ex), n)
+mu_exact = boundary_average(domain, flux, ds, GAMMA)[0] / length
+flux_variation = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((flux - mu_exact) ** 2 * ds(GAMMA))), op=MPI.SUM))
+
+# Time the two paths against each other, as in {doc}`demo_mean_value_constraint`
+
+comm.Barrier()
+_t0 = time.perf_counter()
+mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ds(GAMMA), gamma_value)
+comm.Barrier()
+_t1 = time.perf_counter()
+t_constraint = _t1 - _t0
+
+# ## Solving
+
+petsc_options = {
+    "ksp_type": "preonly",
+    "pc_type": "lu",
+    "pc_factor_mat_solver_type": "mumps",
+    "ksp_error_if_not_converged": True,
+}
+problem = LinearProblem(a, L, mpc, bcs=[], petsc_options=petsc_options)
+uh = problem.solve()
+comm.Barrier()
+t_mpc = time.perf_counter() - _t1
+
+# ## Verification
+#
+# The constraint is checked against its target, the manufactured solution is
+# recovered, and the recovered flux is compared with the exact one.
+
+# +
+integral = comm.allreduce(fem.assemble_scalar(fem.form(uh * ds(GAMMA))), op=MPI.SUM)
+error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((uh - u_ex) ** 2 * ufl.dx)), op=MPI.SUM))
+mu = comm.allreduce(fem.assemble_scalar(fem.form(ufl.dot(ufl.grad(uh), n) * ds(GAMMA))), op=MPI.SUM) / length
+
+if comm.rank == 0:
+    print("----Verification----")
+    print(f"  dofs                      {V.dofmap.index_map.size_global * V.dofmap.index_map_bs}")
+    print(f"  masters                   {num_masters}")
+    print(f"  int_Gamma u_h ds          {integral:.15f} (target {gamma_value:.15f})")
+    print(f"  |int_Gamma u_h ds - g|    {abs(integral - gamma_value):.3e}")
+    print(f"  L2(u_h - u_ex)            {error:.3e}")
+    print(f"  recovered flux mu         {mu:.12f} (exact {mu_exact:.12f})")
+
+assert abs(integral - gamma_value) < 1e-12
+assert error < 1e-11
+# The exact flux must be constant on Gamma, or the defective condition would not
+# be the problem this demo claims to solve
+assert flux_variation < 1e-12
+assert abs(mu - mu_exact) < 1e-8
+# -
+
+# ### Relation to a real space, on a submesh of $\Gamma$
 #
 # The multiplier $\lambda$ conjugate to a boundary functional lives on $\Gamma$,
 # not on $\Omega$, so the reference puts the real space on a **submesh of the
 # marked facets** rather than using a domain-global real element. The form is
-# still integrated on the parent mesh -- mixed dimensional forms always use the
-# higher dimensional domain as the integration domain -- and the `EntityMap`
-# returned by {py:func}`dolfinx.mesh.create_submesh` relates the two.
+# still integrated on the parent mesh, as mixed dimensional forms always use the
+# higher dimensional domain as the integration domain and the
+# {py:class}`EntityMap<dolfinx.mesh.EntityMap>` returned by
+# {py:func}`dolfinx.mesh.create_submesh` relates the two.
 #
 # ```{warning}
-# The facets given to `create_submesh` must cover everything the measure
-# integrates over. Facets outside the submesh map to `-1`, which is not checked,
+# :class: dropdown
+# The facets given to {py:func}`create_submesh<dolfinx.mesh.create_submesh>`
+# must cover everything the measure integrates over.
+# Facets outside the submesh map to `-1`, which is not checked,
 # and for a real element silently resolves to its single degree of freedom, so the
 # form is integrated over the wrong domain without any error. Here the submesh is
 # exactly `mt.find(GAMMA)` and the measure is `ds(GAMMA)`.
@@ -219,7 +275,12 @@ def solve_poisson_real_space(domain, mt, degree, u_ex, value):
         kind="mpi",
         entity_maps=[entity_map],
         petsc_options_prefix="demo_facet_real_",
-        petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+        },
     )
     uh, lamh = problem.solve()
     # The single real dof is ghosted on every rank, so it must not be summed
@@ -227,141 +288,113 @@ def solve_poisson_real_space(domain, mt, degree, u_ex, value):
     return uh, float(np.real(lam_value)), problem
 
 
-# ## Solving
-#
-# One function does the whole solve, so that the cost table below can repeat it at
-# several resolutions.
+_t2 = time.perf_counter()
+u_real, lam_real, real_problem = solve_poisson_real_space(domain, mt, degree, u_ex, gamma_value)
+comm.Barrier()
+t_real = time.perf_counter() - _t2
 
-
-def solve_boundary_average(N, degree, collect_stats=False):
-    """Solve the boundary averaged Poisson problem on an ``N`` by ``N`` square."""
-    comm = MPI.COMM_WORLD
-    domain = mesh.create_unit_square(comm, N, N)
-    mt = mark_boundary(domain, lambda x: np.isclose(x[0], 0.0), GAMMA, REST)
-    ds = ufl.Measure("ds", domain=domain, subdomain_data=mt)
-
-    V = fem.functionspace(domain, ("Lagrange", degree))
-    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
-    x = ufl.SpatialCoordinate(domain)
-    u_ex = x[0] ** 2 / 2 + x[0] + C
-    n = ufl.FacetNormal(domain)
-    f = -ufl.div(ufl.grad(u_ex))
-
-    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
-    # Natural data on the unconstrained part of the boundary only
-    L = ufl.inner(f, v) * ufl.dx + ufl.inner(ufl.dot(ufl.grad(u_ex), n), v) * ds(REST)
-
-    # The target and the expected multiplier both come from the manufactured
-    # solution. mu is the average of the exact flux over Gamma; the demo also
-    # checks that the flux really is constant there, which is what makes the
-    # defective condition well posed.
-    gamma_value, length = boundary_average(domain, u_ex, ds, GAMMA)
-    flux = ufl.dot(ufl.grad(u_ex), n)
-    mu_exact = boundary_average(domain, flux, ds, GAMMA)[0] / length
-    flux_variation = np.sqrt(
-        comm.allreduce(fem.assemble_scalar(fem.form((flux - mu_exact) ** 2 * ds(GAMMA))), op=MPI.SUM)
-    )
-
-    # Time the two paths against each other, as in demo_mean_value_constraint.py
-    comm.Barrier()
-    t0 = time.perf_counter()
-    mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ds(GAMMA), gamma_value)
-    comm.Barrier()
-    t1 = time.perf_counter()
-    petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
-    problem = LinearProblem(a, L, mpc, bcs=[], petsc_options=petsc_options)
-    uh = problem.solve()
-    comm.Barrier()
-    t2 = time.perf_counter()
-
-    results = {"N": V.dofmap.index_map.size_global * V.dofmap.index_map_bs, "M": num_masters}
-    results["gamma"] = gamma_value
-    results["mu_exact"] = mu_exact
-    results["flux_variation"] = flux_variation
-    results["t_constraint"] = t1 - t0
-    results["t_mpc"] = t2 - t1
-    results["integral"] = comm.allreduce(fem.assemble_scalar(fem.form(uh * ds(GAMMA))), op=MPI.SUM)
-    results["error"] = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((uh - u_ex) ** 2 * ufl.dx)), op=MPI.SUM))
-    # The constant flux conjugate to the constraint, recovered from the solution
-    results["mu"] = (
-        comm.allreduce(fem.assemble_scalar(fem.form(ufl.dot(ufl.grad(uh), n) * ds(GAMMA))), op=MPI.SUM) / length
-    )
-
-    t3 = time.perf_counter()
-    u_real, lam_real, real_problem = solve_poisson_real_space(domain, mt, degree, u_ex, gamma_value)
-    comm.Barrier()
-    results["t_real"] = time.perf_counter() - t3
-    results["lambda"] = lam_real
-    num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-    diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
-    results["mpc_vs_real"] = comm.allreduce(diff, op=MPI.MAX)
-
-    if collect_stats:
-        A_plain = fem.petsc.assemble_matrix(fem.form(a), bcs=[])
-        A_plain.assemble()
-        sv_stats = operator_stats(A_plain, comm)
-        # A is singular here too (pure Neumann away from Gamma), so report the
-        # nnz only and take the conditioning from the constrained operators.
-        results["nnz_A"] = sv_stats[0]
-        A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A_plain, root=0)
-        cond_A = None
-        if comm.rank == 0:
-            sv = np.linalg.svd(A_csr.toarray(), compute_uv=False)
-            cond_A = sv[0] / sv[-2]
-        results["cond_A"] = comm.bcast(cond_A, root=0)
-        results["nnz_mpc"], results["cond_mpc"] = operator_stats(problem.A, comm)
-        results["nnz_real"], results["cond_real"] = operator_stats(real_problem.A, comm)
-        results["norm_c"] = float(np.linalg.norm(mpc.coefficients()[0]))
-        A_plain.destroy()
-
-    return uh, domain, results
-
-
-# ## Verification
-#
-# The constraint is checked against its target, the manufactured solution is
-# recovered, the recovered flux is compared with the exact one, and the whole
-# solve is compared with the real space formulation.
-
-# +
-
-comm = MPI.COMM_WORLD
-degree = 2
-uh, domain, res = solve_boundary_average(24, degree, collect_stats=True)
-
+num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+_diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
+mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
 if comm.rank == 0:
-    print("\n----Prescribed boundary average----")
-    print(f"  dofs                      {res['N']}")
-    print(f"  masters                   {res['M']}")
-    print(f"  int_Gamma u_h ds          {res['integral']:.15f} (target {res['gamma']:.15f})")
-    print(f"  |int_Gamma u_h ds - g|    {abs(res['integral'] - res['gamma']):.3e}")
-    print(f"  L2(u_h - u_ex)            {res['error']:.3e}")
-    print(f"  recovered flux mu         {res['mu']:.12f} (exact {res['mu_exact']:.12f})")
-    print(f"  real space multiplier     {res['lambda']:.12f} (equals -mu)")
-    print(f"  max|u_mpc - u_real|       {res['mpc_vs_real']:.3e}")
+    print(f"  real space multiplier     {lam_real:.12f} (equals -mu)")
+    print(f"  max|u_mpc - u_real|       {mpc_vs_real:.3e}")
 
-assert abs(res["integral"] - res["gamma"]) < 1e-12
-assert res["error"] < 1e-11
-# The exact flux must be constant on Gamma, or the defective condition would not
-# be the problem this demo claims to solve
-assert res["flux_variation"] < 1e-12
-assert abs(res["mu"] - res["mu_exact"]) < 1e-8
 # The multiplier enters the reference form as +lam, so it is -mu
-assert abs(res["lambda"] + res["mu"]) < 1e-8
-assert res["mpc_vs_real"] < 1e-11
+assert abs(lam_real + mu) < 1e-8
+assert mpc_vs_real < 1e-11
+
+# ### Cost and conditioning
+#
+# {doc}`demo_mean_value_constraint` derives
+# $K^TAK = A_{mm} + A_{ms}c^T + cA_{sm} + \left(cc^T\right)A_{ss}$
+# for the same elimination and shows that the rank-one
+# term $\left(cc^T\right)A_{ss}$ is dense over every surviving master. The
+# difference here is only the size of that master set: it is just the boundary,
+# so it grows like $\sqrt{N}$ instead of $N$, and the penalty stays mild. The
+# reference pays less here too: its real space lives on a submesh of $\Gamma$, so
+# the coupling blocks only reach the cells meeting $\Gamma$ rather than adding a
+# row and column over the whole mesh.
+
+
+# + tags=["hide-input"]
+def operator_stats(A, comm, singular=False, root=0):
+    """Global nnz and 2-norm condition number of an assembled operator.
+
+    The condition number is computed from a dense SVD on ``root``, so this is a
+    diagnostic for demo sized problems only.
+    """
+    # petsc4py defaults to MatInfoType.GLOBAL_SUM, so this is already reduced
+    nnz = int(A.getInfo()["nz_used"])
+    A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
+    cond = None
+    if comm.rank == root:
+        sv = np.linalg.svd(A_csr.toarray(), compute_uv=False)
+        # A is singular for the bare Poisson problem (pure Neumann away from
+        # Gamma), so compare against the smallest *nonzero* singular value.
+        cond = sv[0] / (sv[-2] if singular else sv[-1])
+    return nnz, comm.bcast(cond, root=root)
+
 
 # -
 
-# ## Cost and conditioning, measured
-#
 # The same table as in {doc}`demo_mean_value_constraint`, and the comparison is the
 # point of this demo: the master set is the boundary rather than the whole mesh,
 # so it grows like the square root of the number of degrees of freedom, and both
 # the extra fill and the loss of conditioning follow it.
 
-# +
 
-rows = [solve_boundary_average(N, degree, collect_stats=True)[2] for N in (8, 12, 16)]
+# + tags=["hide-input"]
+def measure(N: int) -> dict:
+    """Solve at resolution ``N`` and collect cost, conditioning and timings."""
+    comm = MPI.COMM_WORLD
+    domain = mesh.create_unit_square(comm, N, N)
+    mt = mark_boundary(domain, lambda x: np.isclose(x[0], 0.0), GAMMA, REST)
+    ds = ufl.Measure("ds", domain=domain, subdomain_data=mt)
+    V = fem.functionspace(domain, ("Lagrange", degree))
+    x = ufl.SpatialCoordinate(domain)
+    u_ex = x[0] ** 2 / 2 + x[0] + C
+    a, L = build_poisson_forms(V, u_ex, ds, REST)
+    gamma_value, _ = boundary_average(domain, u_ex, ds, GAMMA)
+
+    comm.Barrier()
+    t0 = time.perf_counter()
+    mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ds(GAMMA), gamma_value)
+    comm.Barrier()
+    t1 = time.perf_counter()
+    problem = LinearProblem(a, L, mpc, bcs=[], petsc_options=petsc_options)
+    problem.solve()
+    comm.Barrier()
+    t2 = time.perf_counter()
+
+    t3 = time.perf_counter()
+    _, _, real_problem = solve_poisson_real_space(domain, mt, degree, u_ex, gamma_value)
+    comm.Barrier()
+    t_real = time.perf_counter() - t3
+
+    A_plain = fem.petsc.assemble_matrix(fem.form(a), bcs=[])
+    A_plain.assemble()
+    nnz_A, cond_A = operator_stats(A_plain, comm, singular=True)
+    nnz_mpc, cond_mpc = operator_stats(problem.A, comm)
+    nnz_real, cond_real = operator_stats(real_problem.A, comm)
+    A_plain.destroy()
+    return {
+        "N": V.dofmap.index_map.size_global * V.dofmap.index_map_bs,
+        "M": num_masters,
+        "norm_c": float(np.linalg.norm(mpc.coefficients()[0])),
+        "nnz_A": nnz_A,
+        "nnz_mpc": nnz_mpc,
+        "nnz_real": nnz_real,
+        "cond_A": cond_A,
+        "cond_mpc": cond_mpc,
+        "cond_real": cond_real,
+        "t_constraint": t1 - t0,
+        "t_mpc": t2 - t1,
+        "t_real": t_real,
+    }
+
+
+rows = [measure(N) for N in (8, 12, 16)]
 
 COLUMNS = {
     "N": "dofs",
@@ -417,7 +450,7 @@ table.style.format(FORMATS)
 # not drawn twice, and the grids are gathered onto one process and drawn into a
 # single figure with common colour limits.
 
-# +
+# + tags=["hide-input"]
 
 pyvista.global_theme.allow_empty_mesh = True
 
@@ -425,9 +458,8 @@ pyvista.global_theme.allow_empty_mesh = True
 def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0):
     """Owned-cell PyVista grids with ``u`` attached, gathered on ``root``.
 
-    Vector fields are padded to three components, as PyVista expects. Returns the
-    grids on ``root`` (``None`` elsewhere) and the global range of the magnitude,
-    so every piece can be drawn with the same colour limits.
+    Returns the grids on ``root`` (``None`` elsewhere) and the global range of
+    the values, so that every piece can be drawn with the same colour limits.
     """
     comm = V.mesh.comm
     bs = V.dofmap.index_map_bs
@@ -436,18 +468,10 @@ def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0
     grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(V, entities=owned_cells))
     # vtk_mesh emits one point per dof block, in local numbering
     values = u.x.array.real[: grid.n_points * bs]
-    if bs == 1:
-        grid.point_data[name] = values
-        magnitude = np.abs(values)
-    else:
-        padded = np.zeros((grid.n_points, 3))
-        padded[:, :bs] = values.reshape(-1, bs)
-        grid.point_data[name] = padded
-        grid.set_active_vectors(name)
-        magnitude = np.linalg.norm(padded, axis=1)
-        grid.point_data[f"|{name}|"] = magnitude
-    lo = comm.allreduce(float(magnitude.min()) if magnitude.size else np.inf, op=MPI.MIN)
-    hi = comm.allreduce(float(magnitude.max()) if magnitude.size else -np.inf, op=MPI.MAX)
+    grid.point_data[name] = values if bs == 1 else values.reshape(-1, bs)
+    local = np.linalg.norm(values.reshape(-1, bs), axis=1) if bs > 1 else values
+    lo = comm.allreduce(float(local.min()) if local.size else np.inf, op=MPI.MIN)
+    hi = comm.allreduce(float(local.max()) if local.size else -np.inf, op=MPI.MAX)
     # gather returns the list on `root` and None everywhere else, so the caller
     # can test the result instead of comparing ranks itself
     return comm.gather(grid, root=root), [lo, hi]
@@ -460,25 +484,22 @@ def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0
 # extended index map keeps the original dofs first, so the leading entries are
 # exactly the values of the original space.
 
-# +
+# + tags =["hide-input"]
 
-V_plot = fem.functionspace(domain, ("Lagrange", degree))
-u_plot = fem.Function(V_plot)
+u_plot = fem.Function(V)
 u_plot.x.array[:] = uh.x.array[: u_plot.x.array.size]
-pieces, clim = gather_grids(u_plot, V_plot, "u")
+pieces, clim = gather_grids(u_plot, V, "u")
 
 if pieces is not None:  # only the root process received the grids
     plotter = pyvista.Plotter(window_size=[700, 500])
-    plotter.add_text(
-        f"boundary average = {res['integral']:.4f}, recovered flux = {res['mu']:.4f}",
-        font_size=10,
-    )
+    plotter.add_text(f"boundary average = {integral:.4f}, recovered flux = {mu:.4f}", font_size=10)
     for piece in pieces:
         plotter.add_mesh(
             piece.warp_by_scalar("u", factor=0.15),
             scalars="u",
             cmap="viridis",
             clim=clim,
+            show_edges=False,
             scalar_bar_args={"vertical": True},
         )
     plotter.view_isometric()
@@ -487,9 +508,7 @@ if pieces is not None:  # only the root process received the grids
         plotter.screenshot("demo_boundary_average_constraint.png")
     else:
         plotter.show()
-
 # -
-
 # ```{bibliography}
 #    :filter: cited and ({"python/demos/demo_boundary_average_constraint"} >= docnames)
 # ```
