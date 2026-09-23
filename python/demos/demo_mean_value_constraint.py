@@ -92,22 +92,17 @@ degree = 2
 # So $s$ is the single *slave*, every other degree of freedom in the support of
 # the functional is a *master*, the coefficients are $-w_i/w_s$.
 #
-# The only new concept in this demo compared to the others is the inhomogeneity $g_s=\gamma/w_s$.
-# We assign this inhomogeneity to a {py:class}`dolfinx.fem.Function` and pass it to the
-# {py:class}`dolfinx_mpc.MultiPointConstraint` constructor through the `rhs_coeffs` argument.
-# This means that if you have a time-dependent problem, you can change the values of $\gamma$
-# through interpolation or any other means, and it will be reflected in the assembly.
-#
-# The constraint is built from the assembled weight vector. We note the two following
-# prerequisites for the input to {py:class}`dolfinx_mpc.MultiPointConstraint.add_constraint`:
-#
-# 1. The `masters` are given in *global* numbering with the rank owning each one,
-#    so every process gathers the owned part of the support and the owner array
-#    follows from the gather displacements.
-# 2. The `slave` must be declared on the owning rank **and** on every rank that
-#    ghosts it, with the same master list, while the constructor and
-#    {py:meth}`finalize<dolfinx_mpc.MultiPointConstraint.finalize>` are
-#    collective and must be reached by all ranks.
+# There are two new concepts in this demo compared to the others:
+# 1. The inhomogeneity $g_s=\frac{\gamma}{w_s}$ is computed and assigned to the constraint.
+# 2. The constraint involves an integral, so the weights $w_i$ are computed by assembling a
+#    linear form rather than reading them off a mesh entity.
+# We create a convenience function `build_constraint` that takes in:
+# 1. the function space `V`
+# that our {py:class}`dolfinx_mpc.MultiPointConstraint` will be built on
+# 2. the {py:class}`linear form <ufl.Form>` `weight_form` that defines the weights
+# 3. The target value `value`, which is $\gamma$
+# 4. Any {py:class}`boundary conditions<dolfinx.fem.DirichletBC>` `bcs` that should be applied to the constraint.
+# The function returns the finalized MPC as well as the number of masters in the MPC constraint.
 
 
 def build_constraint(V, weight_form, value, bcs=()):
@@ -124,8 +119,10 @@ def build_constraint(V, weight_form, value, bcs=()):
 # The forms are the standard pure Neumann Poisson ones; nothing in them knows
 # about the constraint.
 
+# +
 
-def poisson_forms(V, u_ex):
+
+def build_poisson_forms(V: fem.FunctionSpace, u_ex: ufl.core.expr.Expr) -> tuple[ufl.Form, ufl.Form]:
     """Bilinear and linear form of the pure Neumann Poisson problem.
 
     The source and the boundary flux are both differentiated out of ``u_ex``, so
@@ -139,12 +136,84 @@ def poisson_forms(V, u_ex):
     return a, L
 
 
-def exact_mean(domain, u_ex):
+def exact_mean(domain: mesh.Mesh, u_ex):
     """The target value, integrated from the manufactured solution."""
-    return domain.comm.allreduce(fem.assemble_scalar(fem.form(u_ex * ufl.dx)), op=MPI.SUM)
+    compiled_mean = fem.form(u_ex * ufl.dx(domain=domain))
+    return compiled_mean.mesh.comm.allreduce(fem.assemble_scalar(compiled_mean), op=MPI.SUM)
 
 
-# ## Relation to a real space
+# -
+
+
+# ## Setting up the problem
+#
+# The reduced operator of a cell integral constraint is dense, so the mesh is
+# deliberately coarse; the cost table at the end of the demo shows why.
+
+N = 16
+domain = mesh.create_unit_square(MPI.COMM_WORLD, N, N)
+comm = domain.comm
+V = fem.functionspace(domain, ("Lagrange", degree))
+x = ufl.SpatialCoordinate(domain)
+u_ex = x[0] ** 2 - x[0] + C
+a, L = build_poisson_forms(V, u_ex)
+gamma = exact_mean(domain, u_ex)
+
+# We use the form `ufl.TestFunction(V) * ufl.dx` to compute the weights $w_i$
+# of the integral constraint.
+
+
+comm.Barrier()
+_t0 = time.perf_counter()
+mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
+comm.Barrier()
+_t1 = time.perf_counter()
+t_constraint = _t1 - _t0
+
+# ## Solving
+#
+# {py:class}`dolfinx_mpc.LinearProblem` handles the affine constraint for us: it
+# refreshes the offset with
+# {py:meth}`update_constants<dolfinx_mpc.MultiPointConstraint.update_constants>`
+# and applies {py:func}`dolfinx_mpc.apply_mpc_lifting`, which contributes the
+# $-K^TAg$ term. Note that no null space has to be attached even though $A$ is
+# singular: the constraint removes the constant kernel, because
+# $w\cdot\mathbf{1} = |\Omega| \neq 0$.
+
+petsc_options = {
+    "ksp_type": "preonly",
+    "pc_type": "lu",
+    "pc_factor_mat_solver_type": "mumps",
+    "ksp_error_if_not_converged": True,
+}
+problem = LinearProblem(a, L, mpc, bcs=[], petsc_options=petsc_options)
+uh = problem.solve()
+comm.Barrier()
+t_mpc = time.perf_counter() - _t1
+
+# ## Verification
+#
+# Three things are checked: that the constraint is satisfied and that the
+# manufactured solution is recovered.
+
+mean_value = comm.allreduce(fem.assemble_scalar(fem.form(uh * ufl.dx)), op=MPI.SUM)
+error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((uh - u_ex) ** 2 * ufl.dx)), op=MPI.SUM))
+
+
+if comm.rank == 0:
+    print("----Verification----")
+    print(f"  dofs                  {V.dofmap.index_map.size_global * V.dofmap.index_map_bs}")
+    print(f"  masters               {num_masters}")
+    print(f"  mean(u_h)             {mean_value:.15f} (target {gamma:.15f})")
+    print(f"  |mean(u_h) - gamma|   {abs(mean_value - gamma):.3e}")
+    print(f"  L2(u_h - u_ex)        {error:.3e}")
+
+assert abs(mean_value - gamma) < 1e-12
+# u_ex lies in the discrete space, so the discretization is exact. The remaining
+# error is the conditioning of the dense reduced operator, quantified below.
+assert error < 1e-8
+
+# ### Relation to a real space
 #
 # The constrained problem has the saddle point form
 #
@@ -191,7 +260,12 @@ def solve_real_space(domain, degree, u_ex, value):
         bcs=[],
         kind="mpi",
         petsc_options_prefix="demo_mean_value_real_",
-        petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+        },
     )
     uh, lamh = problem.solve()
     # The problem is returned alongside the solution: it owns the PETSc matrix,
@@ -199,7 +273,20 @@ def solve_real_space(domain, degree, u_ex, value):
     return uh, lamh, problem
 
 
-# ## Cost and conditioning
+# We compare the solution of the Lagrange multiplier problem to the one with the multi-point constraint.
+
+_t2 = time.perf_counter()
+u_real, lam_real, real_problem = solve_real_space(domain, degree, u_ex, gamma)
+comm.Barrier()
+t_real = time.perf_counter() - _t2
+
+num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+_diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
+mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
+assert mpc_vs_real < 1e-8
+print(f"  max|u_mpc - u_real|   {mpc_vs_real:.3e}")
+
+# ### Cost and conditioning
 #
 # Eliminating the slave is not free. Order the degrees of freedom with the masters
 # $m$ first and the slave $s$ last, so that the constraint above is
@@ -220,10 +307,13 @@ def solve_real_space(domain, degree, u_ex, value):
 # $$
 #
 # The final term is a rank one matrix that is **dense over every pair of
-# masters**, because $c$ has no zeros. For a cell integral every degree of
-# freedom is a master, so $K^TAK$ is completely full, and its norm is inflated
-# by $\lVert c\rVert^2$, which costs roughly a factor $M$ in the condition
-# number. The saddle point system pays neither price: it keeps $A$ intact and
+# masters that survive filtering**, since $c$ has no near-zero entries left once
+# they are dropped. For a cell integral nearly every degree of freedom is a
+# master -- only the P2 vertex dofs are filtered out, since a P2 vertex basis
+# function integrates to exactly zero on simplices -- so $K^TAK$ is essentially
+# full, and its norm is inflated by $\lVert c\rVert^2$, which costs roughly a
+# factor $M$ in the condition number. The saddle point system pays neither
+# price: it keeps $A$ intact and
 # appends one row and column. That row is itself dense -- every $w_i$ is stored,
 # so the system grows by exactly $2N$ entries -- but $2N$ is *linear* in the
 # problem size, against the $M^2$ of the elimination. The helper below measures
@@ -249,79 +339,6 @@ def operator_stats(A, comm, singular=False, root=0):
     return nnz, comm.bcast(cond, root=root)
 
 
-# ## Setting up the problem
-#
-# The reduced operator of a cell integral constraint is dense, so the mesh is
-# deliberately coarse; the cost table at the end of the demo shows why.
-
-N = 16
-domain = mesh.create_unit_square(MPI.COMM_WORLD, N, N)
-comm = domain.comm
-V = fem.functionspace(domain, ("Lagrange", degree))
-x = ufl.SpatialCoordinate(domain)
-u_ex = x[0] ** 2 - x[0] + C
-a, L = poisson_forms(V, u_ex)
-gamma = exact_mean(domain, u_ex)
-
-# We time the two formulations against each other. The barriers stop a rank that
-# finishes early from charging its wait to the next section.
-
-comm.Barrier()
-_t0 = time.perf_counter()
-mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
-comm.Barrier()
-_t1 = time.perf_counter()
-
-# ## Solving
-#
-# {py:class}`dolfinx_mpc.LinearProblem` handles the affine constraint for us: it
-# refreshes the offset with
-# {py:meth}`update_constants<dolfinx_mpc.MultiPointConstraint.update_constants>`
-# and applies {py:func}`dolfinx_mpc.apply_mpc_lifting`, which contributes the
-# $-K^TAg$ term. Note that no null space has to be attached even though $A$ is
-# singular: the constraint removes the constant kernel, because
-# $w\cdot\mathbf{1} = |\Omega| \neq 0$.
-
-petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
-problem = LinearProblem(a, L, mpc, bcs=[], petsc_options=petsc_options)
-uh = problem.solve()
-comm.Barrier()
-t_mpc = time.perf_counter() - _t1
-t_constraint = _t1 - _t0
-
-# ## Verification
-#
-# Three things are checked: that the constraint is satisfied, that the
-# manufactured solution is recovered, and that the real space formulation gives
-# the same answer.
-
-mean_value = comm.allreduce(fem.assemble_scalar(fem.form(uh * ufl.dx)), op=MPI.SUM)
-error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((uh - u_ex) ** 2 * ufl.dx)), op=MPI.SUM))
-
-_t2 = time.perf_counter()
-u_real, lam_real, real_problem = solve_real_space(domain, degree, u_ex, gamma)
-comm.Barrier()
-t_real = time.perf_counter() - _t2
-
-num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-_diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
-mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
-
-if comm.rank == 0:
-    print("----Verification----")
-    print(f"  dofs                  {V.dofmap.index_map.size_global * V.dofmap.index_map_bs}")
-    print(f"  masters               {num_masters}")
-    print(f"  mean(u_h)             {mean_value:.15f} (target {gamma:.15f})")
-    print(f"  |mean(u_h) - gamma|   {abs(mean_value - gamma):.3e}")
-    print(f"  L2(u_h - u_ex)        {error:.3e}")
-    print(f"  max|u_mpc - u_real|   {mpc_vs_real:.3e}")
-
-assert abs(mean_value - gamma) < 1e-12
-# u_ex lies in the discrete space, so the discretization is exact. The remaining
-# error is the conditioning of the dense reduced operator, quantified below.
-assert error < 1e-8
-assert mpc_vs_real < 1e-8
-
 # ## Cost and conditioning, measured
 #
 # The helper below repeats the solve over a small refinement sweep so that the
@@ -335,7 +352,7 @@ def measure(N: int) -> dict:
     V = fem.functionspace(domain, ("Lagrange", degree))
     x = ufl.SpatialCoordinate(domain)
     u_ex = x[0] ** 2 - x[0] + C
-    a, L = poisson_forms(V, u_ex)
+    a, L = build_poisson_forms(V, u_ex)
     gamma = exact_mean(domain, u_ex)
 
     comm.Barrier()
@@ -433,6 +450,7 @@ table.style.format(FORMATS)
 # not drawn twice, and the grids are gathered onto one process and drawn into a
 # single figure with common colour limits.
 
+# +
 pyvista.global_theme.allow_empty_mesh = True
 
 
@@ -489,3 +507,4 @@ if pieces is not None:  # only the root process received the grids
         plotter.screenshot("demo_mean_value_constraint.png")
     else:
         plotter.show()
+# -
