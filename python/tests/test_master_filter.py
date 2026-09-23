@@ -93,7 +93,7 @@ def test_filter_removes_zero_coefficients():
     gamma = np.sort(locate_entities_boundary(mesh, tdim - 1, lambda x: np.isclose(x[0], 0.0)))
     mt = meshtags(mesh, tdim - 1, gamma, np.full(len(gamma), 1, dtype=np.int32))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
-    weight_form = ufl.TestFunction(V) * ds(1)
+    weight_form = ufl.conj(ufl.TestFunction(V)) * ds(1)
 
     unfiltered, _, _ = _integral_constraint(V, weight_form, 1.0, filter=None)
     filtered, _, _ = _integral_constraint(V, weight_form, 1.0, filter=1e-14)
@@ -117,7 +117,7 @@ def test_filter_preserves_solution():
     gamma = np.sort(locate_entities_boundary(mesh, tdim - 1, lambda x: np.isclose(x[0], 0.0)))
     mt = meshtags(mesh, tdim - 1, gamma, np.full(len(gamma), 1, dtype=np.int32))
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=mt)
-    weight_form = ufl.TestFunction(V) * ds(1)
+    weight_form = ufl.conj(ufl.TestFunction(V)) * ds(1)
 
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx + ufl.inner(u, v) * ufl.dx
@@ -177,7 +177,7 @@ def test_filter_none_keeps_everything():
     comm = MPI.COMM_WORLD
     mesh = create_unit_square(comm, 6, 6)
     V = fem.functionspace(mesh, ("Lagrange", 1))
-    weight_form = ufl.TestFunction(V) * ufl.dx
+    weight_form = ufl.conj(ufl.TestFunction(V)) * ufl.dx
 
     default, _, _ = _integral_constraint(V, weight_form, 1.0)
     explicit_zero, _, _ = _integral_constraint(V, weight_form, 1.0, filter=0.0)
