@@ -209,8 +209,13 @@ assert error_p < 1e-10
 # submesh must cover.
 
 
-def solve_stokes_real_space(domain, mt, nu, flow_rate):
-    """Reference Stokes solve with the flow rate imposed by a real space."""
+def solve_stokes_real_space(domain, mt, nu, flow_rate, kind="mpi"):
+    """Reference Stokes solve with the flow rate imposed by a real space.
+
+    ``kind`` selects the PETSc matrix format (``"mpi"`` for a monolithic AIJ
+    matrix, ``"nest"`` for the block format `dolfinx_mpc.LinearProblem` uses);
+    it changes nothing about the discrete problem, only how it is assembled.
+    """
     tdim = domain.topology.dim
     submesh, entity_map = mesh.create_submesh(domain, tdim - 1, mt.find(OUTLET))[:2]
     V = fem.functionspace(domain, basix.ufl.element("Lagrange", domain.basix_cell(), 2, shape=(tdim,)))
@@ -247,9 +252,9 @@ def solve_stokes_real_space(domain, mt, nu, flow_rate):
         ufl.extract_blocks(a),
         ufl.extract_blocks(L),
         bcs=[bc],
-        kind="mpi",
+        kind=kind,
         entity_maps=[entity_map],
-        petsc_options_prefix="demo_stokes_real_",
+        petsc_options_prefix=f"demo_stokes_real_{kind}_",
         petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
     )
     uh, ph, lamh = problem.solve()
@@ -264,9 +269,16 @@ def solve_stokes_real_space(domain, mt, nu, flow_rate):
 lambda_exact = comm.allreduce(fem.assemble_scalar(fem.form(p_ex * ds(OUTLET))), op=MPI.SUM) / area
 
 _t2 = time.perf_counter()
-u_real, p_real, lam_real, real_problem = solve_stokes_real_space(domain, mt, nu, flow_rate)
+u_real, p_real, lam_real, real_problem = solve_stokes_real_space(domain, mt, nu, flow_rate, kind="mpi")
 comm.Barrier()
-t_real = time.perf_counter() - _t2
+t_real_mpi = time.perf_counter() - _t2
+
+# Same problem, assembled as a `nest` instead of a monolithic matrix, timed only
+# to isolate the format's own cost from the discrete problem it is solving.
+_t3 = time.perf_counter()
+solve_stokes_real_space(domain, mt, nu, flow_rate, kind="nest")
+comm.Barrier()
+t_real_nest = time.perf_counter() - _t3
 
 num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 _diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
@@ -277,7 +289,8 @@ mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
 if comm.rank == 0:
     print(f"  real space multiplier     {lam_real:.9f} (exact {lambda_exact:.9f})")
     print(f"  max|u_mpc - u_real|       {mpc_vs_real:.3e}")
-    print(f"  real space solve [s]     {t_real:.3e}")
+    print(f"  real space solve, mpi  [s] {t_real_mpi:.3e}")
+    print(f"  real space solve, nest [s] {t_real_nest:.3e}")
 # -
 
 assert abs(lam_real - lambda_exact) < 1e-8
@@ -286,6 +299,14 @@ assert mpc_vs_real < 1e-11
 # No nnz comparison here: the constrained block system is assembled as a PETSc
 # `nest`, which has no MatGetInfo, and the reference is monolithic. The fill and
 # conditioning story is measured in {doc}`demo_boundary_average_constraint`.
+#
+# The printed solve times are not evidence for that story either. `MultiPointConstraint`
+# forces a `nest` matrix for this blocked velocity/pressure system, and the
+# `real space solve, nest [s]` line above solves the *same* reference problem as
+# `real space solve, mpi [s]`, only in that format, to isolate its cost. At the
+# small size of these demo problems, a `nest` matrix's one-time setup cost for
+# direct factorization is what the gap between those two lines, and between the
+# MPC solve and the `mpi` reference, is actually measuring.
 
 # ## Visualization
 #
