@@ -138,7 +138,7 @@ bc = fem.dirichletbc(u_zero, fem.locate_dofs_topological(V, tdim - 1, mt.find(WA
 # filtered out. The no-slip corner dofs stay as masters and are folded into the
 # offset by passing bcs to the constraint.
 
-weight_form = ufl.dot(ufl.TestFunction(V), n) * ds(OUTLET)
+weight_form = ufl.dot(ufl.conj(ufl.TestFunction(V)), n) * ds(OUTLET)
 comm.Barrier()
 _t0 = time.perf_counter()
 mpc_u, num_masters = build_constraint(V, weight_form, flow_rate, bcs=[bc])

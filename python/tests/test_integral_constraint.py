@@ -48,7 +48,7 @@ def test_mean_value_constraint(degree):
     gamma = comm.allreduce(fem.assemble_scalar(fem.form(u_ex * ufl.dx)), op=MPI.SUM)
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.add_integral_constraint(ufl.TestFunction(V) * ufl.dx, gamma)
+    mpc.add_integral_constraint(ufl.conj(ufl.TestFunction(V)) * ufl.dx, gamma)
     mpc.finalize()
 
     uh = dolfinx_mpc.LinearProblem(a, L, mpc, bcs=[], petsc_options=_options).solve()
@@ -79,7 +79,7 @@ def test_facet_constraint_matches_real_space():
     target = comm.allreduce(fem.assemble_scalar(fem.form(u_ex * ds(1))), op=MPI.SUM)
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.add_integral_constraint(ufl.TestFunction(V) * ds(1), target)
+    mpc.add_integral_constraint(ufl.conj(ufl.TestFunction(V)) * ds(1), target)
     mpc.finalize()
     uh = dolfinx_mpc.LinearProblem(a, L, mpc, bcs=[], petsc_options=_options).solve()
 
@@ -95,7 +95,7 @@ def test_standalone_matches_method():
     comm = MPI.COMM_WORLD
     mesh = create_unit_square(comm, 8, 8)
     V = fem.functionspace(mesh, ("Lagrange", 1))
-    form = ufl.TestFunction(V) * ufl.dx
+    form = ufl.conj(ufl.TestFunction(V)) * ufl.dx
 
     slaves, masters, coeffs, owners, offsets, rhs = dolfinx_mpc.create_integral_constraint(V, form, 0.5)
     manual = dolfinx_mpc.MultiPointConstraint(V, rhs_coeffs=rhs)
@@ -161,7 +161,9 @@ def test_dirichlet_dofs_are_not_chosen_as_slave():
     g.x.array[:] = 0.0
     bc = fem.dirichletbc(g, fem.locate_dofs_topological(V, tdim - 1, facets))
 
-    slaves, _, _, _, _, _ = dolfinx_mpc.create_integral_constraint(V, ufl.TestFunction(V) * ufl.dx, 1.0, bcs=[bc])
+    slaves, _, _, _, _, _ = dolfinx_mpc.create_integral_constraint(
+        V, ufl.conj(ufl.TestFunction(V)) * ufl.dx, 1.0, bcs=[bc]
+    )
     constrained, num_owned_bc = bc.dof_indices()
     owned_constrained = set(constrained[:num_owned_bc].tolist())
     assert all(int(s) not in owned_constrained for s in slaves)

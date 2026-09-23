@@ -176,7 +176,7 @@ flux_variation = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((flux - mu_
 
 comm.Barrier()
 _t0 = time.perf_counter()
-mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ds(GAMMA), gamma_value)
+mpc, num_masters = build_constraint(V, ufl.conj(ufl.TestFunction(V)) * ds(GAMMA), gamma_value)
 comm.Barrier()
 _t1 = time.perf_counter()
 t_constraint = _t1 - _t0

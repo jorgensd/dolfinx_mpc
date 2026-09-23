@@ -165,7 +165,7 @@ gamma = exact_mean(domain, u_ex)
 
 comm.Barrier()
 _t0 = time.perf_counter()
-mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
+mpc, num_masters = build_constraint(V, ufl.conj(ufl.TestFunction(V)) * ufl.dx, gamma)
 comm.Barrier()
 _t1 = time.perf_counter()
 t_constraint = _t1 - _t0
