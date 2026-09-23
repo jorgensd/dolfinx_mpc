@@ -27,7 +27,7 @@
 # $\mathbf{u} = (6Qy(H-y)/H^3, 0)$ and $p = -12\nu Qx/H^3$, both of which lie in
 # the Taylor-Hood space, so the discrete solution is exact.
 #
-# Two things differ from the scalar  {doc}`demo_boundary_average_constraint`.
+# Two things differ from the scalar case in {doc}`demo_boundary_average_constraint`.
 # The velocity space is blocked, and the corner nodes of the outlet carry
 # the no-slip condition. Those may not be chosen as the slave,
 # but they are perfectly good *masters*: passing `bcs` to
@@ -38,6 +38,8 @@
 
 # + tags=["hide-input"]
 from __future__ import annotations
+
+import time
 
 from mpi4py import MPI
 
@@ -75,8 +77,8 @@ def stokes_markers(domain, length):
 
 # ## Building the constraint
 #
-# The same builder as in the scalar demo. The functional is now
-# $\mathbf{v}\mapsto\int_{\Gamma_{out}} \mathbf{v}\cdot\mathbf{n}~\mathrm{d}s$,
+# The same builder as in {doc}`demo_boundary_average_constraint`. The functional
+# is now $\mathbf{v}\mapsto\int_{\Gamma_{out}} \mathbf{v}\cdot\mathbf{n}~\mathrm{d}s$,
 # so only the components along the outlet normal carry a weight and everything
 # else is discarded by the filter.
 
@@ -109,7 +111,96 @@ def stokes_forms(V, P, nu):
     return a, L
 
 
-# ## The real space reference, on a submesh of the outlet
+# ## Setting up the problem
+
+# +
+
+nx, ny = 32, 16
+nu, flow_rate, length, height = 1.0, 1.0, 2.0, 1.0
+comm = MPI.COMM_WORLD
+domain = mesh.create_rectangle(comm, [np.array([0.0, 0.0]), np.array([length, height])], [nx, ny])
+tdim = domain.topology.dim
+mt = stokes_markers(domain, length)
+ds = ufl.Measure("ds", domain=domain, subdomain_data=mt)
+n = ufl.FacetNormal(domain)
+
+V = fem.functionspace(domain, basix.ufl.element("Lagrange", domain.basix_cell(), 2, shape=(tdim,)))
+P = fem.functionspace(domain, ("Lagrange", 1))
+a, L = stokes_forms(V, P, nu)
+
+u_zero = fem.Function(V)
+u_zero.x.array[:] = 0.0
+bc = fem.dirichletbc(u_zero, fem.locate_dofs_topological(V, tdim - 1, mt.find(WALL)))
+
+# -
+
+# Only the components along the outlet normal carry a weight; the rest are
+# filtered out. The no-slip corner dofs stay as masters and are folded into the
+# offset by passing bcs to the constraint.
+
+weight_form = ufl.dot(ufl.TestFunction(V), n) * ds(OUTLET)
+comm.Barrier()
+_t0 = time.perf_counter()
+mpc_u, num_masters = build_constraint(V, weight_form, flow_rate, bcs=[bc])
+mpc_p = MultiPointConstraint(P)
+mpc_p.finalize()
+comm.Barrier()
+_t1 = time.perf_counter()
+t_constraint = _t1 - _t0
+
+# ## Solving
+
+petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+problem = LinearProblem(
+    ufl.extract_blocks(a), ufl.extract_blocks(L), [mpc_u, mpc_p], bcs=[bc], petsc_options=petsc_options
+)
+uh, ph = problem.solve()
+comm.Barrier()
+t_mpc = time.perf_counter() - _t1
+
+# ## Verification
+#
+# The flow rate is checked against its target, and the Poiseuille profile is
+# recovered.
+
+# +
+x = ufl.SpatialCoordinate(domain)
+u_ex = ufl.as_vector((6 * flow_rate * x[1] * (height - x[1]) / height**3, 0.0))
+p_ex = -12 * nu * flow_rate * x[0] / height**3
+area = comm.allreduce(
+    fem.assemble_scalar(fem.form(fem.Constant(domain, default_scalar_type(1.0)) * ds(OUTLET))), op=MPI.SUM
+)
+# The manufactured profile must itself carry the prescribed flow rate
+exact_flux = comm.allreduce(fem.assemble_scalar(fem.form(ufl.dot(u_ex, n) * ds(OUTLET))), op=MPI.SUM)
+exact_flux_error = abs(exact_flux - flow_rate)
+
+flux = comm.allreduce(fem.assemble_scalar(fem.form(ufl.dot(uh, n) * ds(OUTLET))), op=MPI.SUM)
+error_u = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(uh - u_ex, uh - u_ex) * ufl.dx)), op=MPI.SUM))
+error_p = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((ph - p_ex) ** 2 * ufl.dx)), op=MPI.SUM))
+# -
+
+# + tags=["hide-input"]
+if comm.rank == 0:
+    print("----Verification----")
+    print(f"  block size                {V.dofmap.index_map_bs}")
+    print(f"  masters                   {num_masters}")
+    print(f"  int_out u.n ds            {flux:.15f} (target {flow_rate})")
+    print(f"  L2(u_h - u_ex)            {error_u:.3e}")
+    print(f"  L2(p_h - p_ex)            {error_p:.3e}")
+    print(f"  build constraint [s]      {t_constraint:.3e}")
+    print(f"  mpc solve [s]             {t_mpc:.3e}")
+# -
+
+assert exact_flux_error < 1e-12
+assert abs(flux - flow_rate) < 1e-12
+assert error_u < 1e-11
+assert error_p < 1e-10
+
+# Only 30 masters are kept: the outlet has 33 velocity nodes, one becomes the
+# slave, and the two no-slip corners are eliminated by the Dirichlet conditions
+# passed to the constraint and folded into its offset.
+
+# ### Relation to a real space, on a submesh of the outlet
 #
 # The multiplier conjugate to a boundary functional lives on the outlet, so the
 # reference puts the real space on a **submesh of the marked facets**, giving a
@@ -166,106 +257,35 @@ def solve_stokes_real_space(domain, mt, nu, flow_rate):
     return uh, ph, float(np.real(lam_value)), problem
 
 
-# ## Solving
-
-
-def solve_flow_rate(nx, ny, nu=1.0, flow_rate=1.0, length=2.0, height=1.0):
-    """Stokes flow in a channel with a prescribed outlet flow rate."""
-    comm = MPI.COMM_WORLD
-    domain = mesh.create_rectangle(comm, [np.array([0.0, 0.0]), np.array([length, height])], [nx, ny])
-    tdim = domain.topology.dim
-    mt = stokes_markers(domain, length)
-    ds = ufl.Measure("ds", domain=domain, subdomain_data=mt)
-    n = ufl.FacetNormal(domain)
-
-    V = fem.functionspace(domain, basix.ufl.element("Lagrange", domain.basix_cell(), 2, shape=(tdim,)))
-    P = fem.functionspace(domain, ("Lagrange", 1))
-    a, L = stokes_forms(V, P, nu)
-
-    u_zero = fem.Function(V)
-    u_zero.x.array[:] = 0.0
-    bc = fem.dirichletbc(u_zero, fem.locate_dofs_topological(V, tdim - 1, mt.find(WALL)))
-
-    # Only the components along the outlet normal carry a weight; the rest are
-    # filtered out. The no-slip corner dofs stay as masters and are folded into
-    # the offset by passing bcs to the constraint.
-    weight_form = ufl.dot(ufl.TestFunction(V), n) * ds(OUTLET)
-    mpc_u, num_masters = build_constraint(V, weight_form, flow_rate, bcs=[bc])
-    mpc_p = MultiPointConstraint(P)
-    mpc_p.finalize()
-
-    petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
-    problem = LinearProblem(
-        ufl.extract_blocks(a), ufl.extract_blocks(L), [mpc_u, mpc_p], bcs=[bc], petsc_options=petsc_options
-    )
-    uh, ph = problem.solve()
-
-    x = ufl.SpatialCoordinate(domain)
-    u_ex = ufl.as_vector((6 * flow_rate * x[1] * (height - x[1]) / height**3, 0.0))
-    p_ex = -12 * nu * flow_rate * x[0] / height**3
-    area = comm.allreduce(
-        fem.assemble_scalar(fem.form(fem.Constant(domain, default_scalar_type(1.0)) * ds(OUTLET))),
-        op=MPI.SUM,
-    )
-    # The Poiseuille profile must carry exactly the flow rate we prescribed
-    exact_flux = comm.allreduce(fem.assemble_scalar(fem.form(ufl.dot(u_ex, n) * ds(OUTLET))), op=MPI.SUM)
-    results_flux_check = abs(exact_flux - flow_rate)
-
-    results = {"M": num_masters, "bs": V.dofmap.index_map_bs}
-    results["exact_flux_error"] = results_flux_check
-    # On a fully developed outlet sigma.n reduces to -p, and the reference form
-    # carries +lam, so the multiplier is the mean exact pressure there.
-    results["lambda_exact"] = comm.allreduce(fem.assemble_scalar(fem.form(p_ex * ds(OUTLET))), op=MPI.SUM) / area
-    results["flux"] = comm.allreduce(fem.assemble_scalar(fem.form(ufl.dot(uh, n) * ds(OUTLET))), op=MPI.SUM)
-    results["error_u"] = np.sqrt(
-        comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(uh - u_ex, uh - u_ex) * ufl.dx)), op=MPI.SUM)
-    )
-    results["error_p"] = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((ph - p_ex) ** 2 * ufl.dx)), op=MPI.SUM))
-    # No nnz comparison here: the constrained block system is assembled as a
-    # PETSc `nest`, which has no MatGetInfo, and the reference is monolithic.
-    # The fill and conditioning story is measured in Part 1.
-    u_real, p_real, lam_real, real_problem = solve_stokes_real_space(domain, mt, nu, flow_rate)
-    results["lambda"] = lam_real
-    num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-    diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
-    results["mpc_vs_real"] = comm.allreduce(diff, op=MPI.MAX)
-
-    return uh, ph, domain, results
-
-
-# ## Verification
-#
-# The flow rate is checked against its target, the Poiseuille profile is
-# recovered, and the multiplier matches the exact outlet traction.
+# On a fully developed outlet sigma.n reduces to -p, and the reference form
+# carries +lam, so the multiplier is the mean exact pressure there.
 
 # +
+lambda_exact = comm.allreduce(fem.assemble_scalar(fem.form(p_ex * ds(OUTLET))), op=MPI.SUM) / area
 
-comm = MPI.COMM_WORLD
-uh, ph, domain, res = solve_flow_rate(32, 16)
+_t2 = time.perf_counter()
+u_real, p_real, lam_real, real_problem = solve_stokes_real_space(domain, mt, nu, flow_rate)
+comm.Barrier()
+t_real = time.perf_counter() - _t2
 
-if comm.rank == 0:
-    print("\n----Prescribed flow rate----")
-    print(f"  block size                {res['bs']}")
-    print(f"  masters                   {res['M']}")
-    print(f"  int_out u.n ds            {res['flux']:.15f} (target 1.0)")
-    print(f"  L2(u_h - u_ex)            {res['error_u']:.3e}")
-    print(f"  L2(p_h - p_ex)            {res['error_p']:.3e}")
-    print(f"  real space multiplier     {res['lambda']:.9f} (exact {res['lambda_exact']:.9f})")
-    print(f"  max|u_mpc - u_real|       {res['mpc_vs_real']:.3e}")
-
-assert abs(res["flux"] - 1.0) < 1e-12
-assert res["error_u"] < 1e-11
-assert res["error_p"] < 1e-10
-assert res["mpc_vs_real"] < 1e-11
-assert abs(res["lambda"] - res["lambda_exact"]) < 1e-8
-# The manufactured profile must itself carry the prescribed flow rate
-assert res["exact_flux_error"] < 1e-12
-
+num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+_diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
+mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
 # -
 
-# Only 30 masters are kept: the outlet has 33 velocity nodes, one becomes the
-# slave, and the two no-slip corners are eliminated by the Dirichlet conditions
-# passed to the constraint and folded into its offset.
+# + tags=["hide-input"]
+if comm.rank == 0:
+    print(f"  real space multiplier     {lam_real:.9f} (exact {lambda_exact:.9f})")
+    print(f"  max|u_mpc - u_real|       {mpc_vs_real:.3e}")
+    print(f"  real space solve [s]     {t_real:.3e}")
+# -
+
+assert abs(lam_real - lambda_exact) < 1e-8
+assert mpc_vs_real < 1e-11
+
+# No nnz comparison here: the constrained block system is assembled as a PETSc
+# `nest`, which has no MatGetInfo, and the reference is monolithic. The fill and
+# conditioning story is measured in {doc}`demo_boundary_average_constraint`.
 
 # ## Visualization
 #
@@ -318,7 +338,6 @@ def gather_grids(u: fem.Function, V: fem.FunctionSpace, name: str, root: int = 0
 # the flow rate, and the solve produces the whole profile that carries it.
 
 # +
-
 V_plot = fem.functionspace(domain, basix.ufl.element("Lagrange", domain.basix_cell(), 2, shape=(2,)))
 u_plot = fem.Function(V_plot)
 u_plot.x.array[:] = uh.x.array[: u_plot.x.array.size]
@@ -326,7 +345,7 @@ pieces, clim = gather_grids(u_plot, V_plot, "u")
 
 if pieces is not None:  # only the root process received the grids
     plotter = pyvista.Plotter(window_size=[700, 450])
-    plotter.add_text(f"flow rate = {res['flux']:.4f}", font_size=10)
+    plotter.add_text(f"flow rate = {flux:.4f}", font_size=10)
     for piece in pieces:
         plotter.add_mesh(
             piece.glyph(orient="u", scale="|u|", factor=0.10),
@@ -336,8 +355,9 @@ if pieces is not None:  # only the root process received the grids
             scalar_bar_args={"vertical": True},
         )
     plotter.view_xy()
-    plotter.camera.tight(padding=0.25, view="xy", adjust_render_window=False)
+    plotter.camera.tight(padding=0.6, view="xy", adjust_render_window=False)
     if pyvista.OFF_SCREEN:
         plotter.screenshot("demo_flow_rate_constraint.png")
     else:
         plotter.show()
+# -
