@@ -212,13 +212,13 @@ if comm.rank == 0:
     print(f"  |int_Gamma u_h ds - g|    {abs(integral - gamma_value):.3e}")
     print(f"  L2(u_h - u_ex)            {error:.3e}")
     print(f"  recovered flux mu         {mu:.12f} (exact {mu_exact:.12f})")
-
-assert abs(integral - gamma_value) < 1e-12
-assert error < 1e-11
+tol = 100 * np.finfo(default_scalar_type()).eps
+assert abs(integral - gamma_value) < tol
+assert error < tol
 # The exact flux must be constant on Gamma, or the defective condition would not
 # be the problem this demo claims to solve
-assert flux_variation < 1e-12
-assert abs(mu - mu_exact) < 1e-8
+assert flux_variation < tol
+assert abs(mu - mu_exact) < tol
 # -
 
 # ### Relation to a real space, on a submesh of $\Gamma$

@@ -199,7 +199,7 @@ t_mpc = time.perf_counter() - _t1
 mean_value = comm.allreduce(fem.assemble_scalar(fem.form(uh * ufl.dx)), op=MPI.SUM)
 error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((uh - u_ex) ** 2 * ufl.dx)), op=MPI.SUM))
 
-
+# + tags=["hide-input"]
 if comm.rank == 0:
     print("----Verification----")
     print(f"  dofs                  {V.dofmap.index_map.size_global * V.dofmap.index_map_bs}")
@@ -208,10 +208,15 @@ if comm.rank == 0:
     print(f"  |mean(u_h) - gamma|   {abs(mean_value - gamma):.3e}")
     print(f"  L2(u_h - u_ex)        {error:.3e}")
 
-assert abs(mean_value - gamma) < 1e-12
+# - tags=["hide-input"]
+
+tol = 100 * np.finfo(default_scalar_type()).eps
+assert abs(mean_value - gamma) < tol
+assert error < tol
+
 # u_ex lies in the discrete space, so the discretization is exact. The remaining
 # error is the conditioning of the dense reduced operator, quantified below.
-assert error < 1e-8
+assert error < tol
 
 # ### Relation to a real space
 #
@@ -284,7 +289,7 @@ num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 assert isinstance(uh, fem.Function)
 _diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
 mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
-assert mpc_vs_real < 1e-8
+assert mpc_vs_real < tol
 print(f"  max|u_mpc - u_real|   {mpc_vs_real:.3e}")
 
 # ### Cost and conditioning

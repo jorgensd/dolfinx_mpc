@@ -191,10 +191,11 @@ if comm.rank == 0:
     print(f"  mpc solve [s]             {t_mpc:.3e}")
 # -
 
-assert exact_flux_error < 1e-12
-assert abs(flux - flow_rate) < 1e-12
-assert error_u < 1e-11
-assert error_p < 1e-10
+tol = 100 * np.finfo(default_scalar_type()).eps
+assert exact_flux_error < tol
+assert abs(flux - flow_rate) < tol
+assert error_u < tol
+assert error_p < tol
 
 # Only 30 masters are kept: the outlet has 33 velocity nodes, one becomes the
 # slave, and the two no-slip corners are eliminated by the Dirichlet conditions
