@@ -15,7 +15,7 @@ import dolfinx.fem as _fem
 import numpy as np
 import numpy.typing as npt
 import ufl
-from dolfinx import default_scalar_type, la
+from dolfinx import default_real_type, default_scalar_type, la
 
 
 def create_integral_constraint(
@@ -23,7 +23,7 @@ def create_integral_constraint(
     weight_form: ufl.Form,
     value: np.floating | np.complexfloating | float | complex,
     bcs: typing.Optional[typing.Sequence[_fem.DirichletBC]] = None,
-    rtol: np.floating | float = 1e-14,
+    rtol: np.floating | float = 100 * np.finfo(default_real_type).eps,
 ) -> tuple[
     npt.NDArray[np.int32],
     npt.NDArray[np.int64],
@@ -70,7 +70,11 @@ def create_integral_constraint(
             largest one. The weights of degrees of freedom outside the support
             of the functional are returned by quadrature as roundoff rather than
             as exact zeros, so the threshold is relative rather than a test
-            against zero.
+            against zero. The default scales with the runtime scalar type's own
+            precision (``default_real_type``), not a fixed constant: a threshold
+            tight enough for `float64` roundoff is far below `float32` roundoff,
+            and would then discard nothing, inflating the master count and the
+            conditioning of the reduced operator.
 
     Returns:
         The ``slaves``, ``masters``, ``coeffs``, ``owners`` and ``offsets``

@@ -191,6 +191,28 @@ uh = problem.solve()
 comm.Barrier()
 t_mpc = time.perf_counter() - _t1
 
+
+def operator_stats(A, comm, singular=False, root=0):
+    """Global nnz and 2-norm condition number of an assembled operator.
+
+    The condition number is computed from a dense SVD on ``root``, so this is a
+    diagnostic for demo sized problems only. Used just below to make the
+    verification tolerance conditioning-aware; see "Cost and conditioning"
+    further down for why $K^TAK$ needs this at all.
+    """
+    # petsc4py defaults to MatInfoType.GLOBAL_SUM, so this is already reduced
+    # over the communicator and must not be summed again.
+    nnz = int(A.getInfo()["nz_used"])
+    A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
+    cond = None
+    if comm.rank == root:
+        sv = np.linalg.svd(A_csr.toarray(), compute_uv=False)
+        # A is singular for the pure Neumann problem, so compare against the
+        # smallest *nonzero* singular value.
+        cond = sv[0] / (sv[-2] if singular else sv[-1])
+    return nnz, comm.bcast(cond, root=root)
+
+
 # ## Verification
 #
 # Three things are checked: that the constraint is satisfied and that the
@@ -198,6 +220,7 @@ t_mpc = time.perf_counter() - _t1
 
 mean_value = comm.allreduce(fem.assemble_scalar(fem.form(uh * ufl.dx)), op=MPI.SUM)
 error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form((uh - u_ex) ** 2 * ufl.dx)), op=MPI.SUM))
+_, cond_mpc = operator_stats(problem.A, comm)
 
 # + tags=["hide-input"]
 if comm.rank == 0:
@@ -207,16 +230,22 @@ if comm.rank == 0:
     print(f"  mean(u_h)             {mean_value:.15f} (target {gamma:.15f})")
     print(f"  |mean(u_h) - gamma|   {abs(mean_value - gamma):.3e}")
     print(f"  L2(u_h - u_ex)        {error:.3e}")
+    print(f"  cond(K^TAK)           {cond_mpc:.3e}")
 
 # - tags=["hide-input"]
 
 tol = 100 * np.finfo(default_scalar_type()).eps
 assert abs(mean_value - gamma) < tol
-assert error < tol
 
-# u_ex lies in the discrete space, so the discretization is exact. The remaining
-# error is the conditioning of the dense reduced operator, quantified below.
-assert error < tol
+# u_ex lies in the discrete space, so the discretization is exact. The
+# remaining error is the conditioning of the dense reduced operator: a direct
+# solve loses roughly $\log_{10}\kappa$ digits, so the bound below scales with
+# the *measured* $\kappa(K^TAK)$ rather than a fixed constant -- a flat bound
+# tight enough for `float64` would be far too strict for a lower-precision
+# build, where `tol` itself is orders of magnitude larger to begin with.
+
+assert error < 10 * cond_mpc * tol
+
 
 # ### Relation to a real space
 #
@@ -289,7 +318,10 @@ num_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 assert isinstance(uh, fem.Function)
 _diff = np.max(np.abs(uh.x.array[:num_owned] - u_real.x.array[:num_owned])) if num_owned else 0.0
 mpc_vs_real = comm.allreduce(_diff, op=MPI.MAX)
-assert mpc_vs_real < tol
+# The real-space (saddle point) solve keeps A's own, much better conditioning,
+# so this difference is dominated by uh's error and needs the same
+# conditioning-aware bound as the check against u_ex above.
+assert mpc_vs_real < 10 * cond_mpc * tol
 print(f"  max|u_mpc - u_real|   {mpc_vs_real:.3e}")
 
 # ### Cost and conditioning
@@ -322,28 +354,9 @@ print(f"  max|u_mpc - u_real|   {mpc_vs_real:.3e}")
 # price: it keeps $A$ intact and
 # appends one row and column. That row is itself dense -- every $w_i$ is stored,
 # so the system grows by exactly $2N$ entries -- but $2N$ is *linear* in the
-# problem size, against the $M^2$ of the elimination. The helper below measures
-# both effects.
-
-
-def operator_stats(A, comm, singular=False, root=0):
-    """Global nnz and 2-norm condition number of an assembled operator.
-
-    The condition number is computed from a dense SVD on ``root``, so this is a
-    diagnostic for demo sized problems only.
-    """
-    # petsc4py defaults to MatInfoType.GLOBAL_SUM, so this is already reduced
-    # over the communicator and must not be summed again.
-    nnz = int(A.getInfo()["nz_used"])
-    A_csr = dolfinx_mpc.utils.gather_PETScMatrix(A, root=root)
-    cond = None
-    if comm.rank == root:
-        sv = np.linalg.svd(A_csr.toarray(), compute_uv=False)
-        # A is singular for the pure Neumann problem, so compare against the
-        # smallest *nonzero* singular value.
-        cond = sv[0] / (sv[-2] if singular else sv[-1])
-    return nnz, comm.bcast(cond, root=root)
-
+# problem size, against the $M^2$ of the elimination. `operator_stats`,
+# defined and used above to make the verification tolerance conditioning-aware,
+# measures both effects; the sweep below repeats it over a refinement range.
 
 # ## Cost and conditioning, measured
 #

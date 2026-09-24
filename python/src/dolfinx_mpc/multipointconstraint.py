@@ -187,7 +187,7 @@ class MultiPointConstraint:
         weight_form,
         value,
         bcs: Optional[List[_fem.DirichletBC]] = None,
-        rtol: numpy.floating | float = 1e-14,
+        rtol: numpy.floating | float | None = None,
     ):
         r"""Constrain a scalar integral of the solution, :math:`L(u) = \gamma`.
 
@@ -209,14 +209,17 @@ class MultiPointConstraint:
                 the constraint offset. Defaults to the conditions given to the
                 constructor.
             rtol: Discard a master whose coefficient is below this fraction of
-                the largest one.
+                the largest one. Defaults to
+                :func:`dolfinx_mpc.create_integral_constraint`'s own default,
+                which scales with the runtime scalar type's precision.
 
         Note:
             Collective. Must be called by every process.
         """
         self._raise_if_finalized()
+        kwargs = {} if rtol is None else {"rtol": rtol}
         slaves, masters, coeffs, owners, offsets, rhs = create_integral_constraint(
-            self.V, weight_form, value, self._bcs if bcs is None else bcs, rtol
+            self.V, weight_form, value, self._bcs if bcs is None else bcs, **kwargs
         )
         if self._rhs_coeffs is None:
             self._rhs_coeffs = rhs
