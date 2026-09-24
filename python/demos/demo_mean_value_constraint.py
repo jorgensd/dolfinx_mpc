@@ -376,7 +376,7 @@ def measure(N: int) -> dict:
 
     comm.Barrier()
     t0 = time.perf_counter()
-    mpc, num_masters = build_constraint(V, ufl.TestFunction(V) * ufl.dx, gamma)
+    mpc, num_masters = build_constraint(V, ufl.conj(ufl.TestFunction(V)) * ufl.dx, gamma)
     comm.Barrier()
     t1 = time.perf_counter()
     problem = LinearProblem(a, L, mpc, bcs=[], petsc_options=petsc_options)
