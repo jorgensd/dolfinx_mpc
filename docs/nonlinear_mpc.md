@@ -187,7 +187,7 @@ Expressing a Dirichlet condition entirely as a constraint, with no {py:class}`do
 reaching the assembler:
 
 ```python
-slaves = np.sort(bc_dofs).astype(np.int32)   # owned *and* ghost dofs
+slaves = np.sort(bc_dofs).astype(np.int32)  # owned *and* ghost dofs
 
 g = dolfinx.fem.Function(V)
 g.x.array[:] = 0.0
@@ -198,7 +198,7 @@ mpc = dolfinx_mpc.MultiPointConstraint(V, rhs_coeffs=g)
 mpc.add_constraint(
     V,
     slaves,
-    np.array([], dtype=np.int64),          # no masters
+    np.array([], dtype=np.int64),  # no masters
     np.array([], dtype=default_scalar_type),
     np.array([], dtype=np.int32),
     np.zeros(len(slaves) + 1, dtype=np.int32),

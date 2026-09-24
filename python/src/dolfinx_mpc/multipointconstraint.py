@@ -19,6 +19,7 @@ from dolfinx import default_real_type, default_scalar_type
 import dolfinx_mpc.cpp
 
 from .dictcondition import create_dictionary_constraint
+from .integralcondition import create_integral_constraint
 
 _mpc_classes = Union[
     dolfinx_mpc.cpp.mpc.MultiPointConstraint_double,
@@ -172,7 +173,7 @@ class MultiPointConstraint:
 
         """
         assert V == self.V
-        self._already_finalized()
+        self._raise_if_finalized()
 
         if len(slaves) > 0:
             self._offsets = numpy.append(self._offsets, offsets[1:] + len(self._masters))
@@ -181,11 +182,57 @@ class MultiPointConstraint:
             self._coeffs = numpy.array(numpy.append(self._coeffs, coeffs), dtype=self._dtype)
             self._owners = numpy.append(self._owners, owners)
 
+    def add_integral_constraint(
+        self,
+        weight_form,
+        value,
+        bcs: Optional[List[_fem.DirichletBC]] = None,
+        rtol: numpy.floating | float | None = None,
+    ):
+        r"""Constrain a scalar integral of the solution, :math:`L(u) = \gamma`.
+
+        The functional is given as a linear form, and turned into a constraint
+        with a single slave by :func:`dolfinx_mpc.create_integral_constraint`;
+        see there for the derivation and the cost. The inhomogeneity
+        :math:`\gamma/w_s` is written into the ``rhs_coeffs`` function of this
+        constraint, which is created here if none was supplied to the
+        constructor.
+
+        Args:
+            weight_form: A linear form in ``ufl.TestFunction(V)`` defining the
+                functional, for instance ``v * ufl.dx``. Its test function must
+                be in the function space of this constraint.
+            value: The prescribed value :math:`\gamma` of the functional.
+            bcs: Dirichlet conditions on the space. A constrained degree of
+                freedom is never chosen as the slave. Pass the same conditions
+                to the constructor to have a constrained *master* folded into
+                the constraint offset. Defaults to the conditions given to the
+                constructor.
+            rtol: Discard a master whose coefficient is below this fraction of
+                the largest one. Defaults to
+                :func:`dolfinx_mpc.create_integral_constraint`'s own default,
+                which scales with the runtime scalar type's precision.
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._raise_if_finalized()
+        kwargs = {} if rtol is None else {"rtol": rtol}
+        slaves, masters, coeffs, owners, offsets, rhs = create_integral_constraint(
+            self.V, weight_form, value, self._bcs if bcs is None else bcs, **kwargs
+        )
+        if self._rhs_coeffs is None:
+            self._rhs_coeffs = rhs
+        else:
+            # Slaves of separate constraints are disjoint, so the offsets add
+            self._rhs_coeffs.x.array[:] += rhs.x.array
+        self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+
     def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace, mpc_data: Union[_mpc_data_classes, MPCData]):
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
         """
-        self._already_finalized()
+        self._raise_if_finalized()
         self.add_constraint(
             V,
             mpc_data.slaves,
@@ -195,13 +242,27 @@ class MultiPointConstraint:
             mpc_data.offsets,
         )
 
-    def finalize(self) -> None:
+    def finalize(self, filter: Optional[numpy.floating] = None) -> None:
         """
         Finializes the multi point constraint. After this function is called, no new constraints can be added
         to the constraint. This function creates a map from the cells (local to index) to the slave degrees of
         freedom and builds a new index map and function space where unghosted master dofs are added as ghosts.
+
+        Args:
+            filter: If given, discard every master whose coefficient satisfies
+                :math:`|c_{sj}| < \\mathrm{filter}\\cdot\\max_k|c_{sk}|`, the
+                maximum being over the masters of that same slave. A negligible
+                coefficient contributes nothing to the constraint, but still
+                costs a ghost, a row of the sparsity pattern and an entry in
+                every element matrix modification, so removing them can shrink
+                :math:`K^HAK` substantially. With `None` (the default) every
+                master supplied is kept.
+
+        Note:
+            Filtering changes the constraint that is enforced, by exactly the
+            terms that are dropped. It is local and adds no communication.
         """
-        self._already_finalized()
+        self._raise_if_finalized()
 
         num_dofs_local = self.V.dofmap.index_map_bs * (
             self.V.dofmap.index_map.size_local + self.V.dofmap.index_map.num_ghosts
@@ -232,6 +293,7 @@ class MultiPointConstraint:
             self._offsets,
             rhs_coeffs,
             bcs,
+            filter,
         )
 
         # Replace function space
@@ -252,7 +314,7 @@ class MultiPointConstraint:
         Note:
             Collective. Must be called by every process.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         if self._rhs_coeffs is not None:
             # Pass the array natively. Zero-copy, zero-allocation.
             num_dofs_local = self.V.dofmap.index_map_bs * (
@@ -269,7 +331,7 @@ class MultiPointConstraint:
         The constraint offset :math:`g` for each degree of freedom local to the process,
         i.e. the affine term in :math:`x = K x_{red} + g`.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.constants
 
     @property
@@ -278,7 +340,7 @@ class MultiPointConstraint:
         Whether any process carries a non-zero constraint offset. The value is globally
         reduced, so it is identical on every process.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.has_inhomogeneity
 
     def create_periodic_constraint_topological(
@@ -564,7 +626,7 @@ class MultiPointConstraint:
         """
         Returns a vector of integers where the ith entry indicates if a degree of freedom (local to process) is a slave.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.is_slave
 
     @property
@@ -572,7 +634,7 @@ class MultiPointConstraint:
         """
         Returns the degrees of freedom for all slaves local to process
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.slaves
 
     @property
@@ -589,7 +651,7 @@ class MultiPointConstraint:
                 masters = mpc.masters
                 masters_of_dof_i = masters.links(i)
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.masters
 
     def coefficients(self) -> _float_array_types:
@@ -605,7 +667,7 @@ class MultiPointConstraint:
                 coeffs, offsets = mpc.coefficients()
                 coeffs_of_slave_i = coeffs[offsets[i]:offsets[i+1]]
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.coefficients()
 
     @property
@@ -613,7 +675,7 @@ class MultiPointConstraint:
         """
         Return the number of slaves owned by the current process.
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.num_local_slaves
 
     @property
@@ -631,7 +693,7 @@ class MultiPointConstraint:
                 cell_to_slaves = mpc.cell_to_slaves()
                 slaves_in_cell_i = cell_to_slaves.links(i)
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self._cpp_object.cell_to_slaves
 
     @property
@@ -639,7 +701,7 @@ class MultiPointConstraint:
         """
         Return the function space for the multi-point constraint with the updated index map
         """
-        self._not_finalized()
+        self._raise_if_not_finalized()
         return self.V
 
     def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:  # type: ignore
@@ -675,16 +737,16 @@ class MultiPointConstraint:
         self._cpp_object.homogenize(u.x.array)
         u.x.scatter_forward()
 
-    def _already_finalized(self):
+    def _raise_if_finalized(self):
         """
-        Check if we have already finalized the multi point constraint
+        Raise if the multi point constraint has already been finalized
         """
         if self.finalized:
             raise RuntimeError("MultiPointConstraint has already been finalized")
 
-    def _not_finalized(self):
+    def _raise_if_not_finalized(self):
         """
-        Check if we have finalized the multi point constraint
+        Raise if the multi point constraint has not yet been finalized
         """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")

@@ -24,6 +24,7 @@ from .assemble_vector import (
     assemble_vector_nest,
     create_vector_nest,
 )
+from .integralcondition import create_integral_constraint
 from .multipointconstraint import MultiPointConstraint
 from .problem import LinearProblem, NonlinearProblem, assemble_jacobian_mpc, assemble_residual_mpc
 
@@ -37,6 +38,7 @@ __all__ = [
     "assemble_vector_nest",
     "create_vector_nest",
     "MultiPointConstraint",
+    "create_integral_constraint",
     "LinearProblem",
     "create_sparsity_pattern",
     "NonlinearProblem",

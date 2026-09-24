@@ -9,6 +9,8 @@
 #include "mpc_helpers.h"
 #include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <complex>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
@@ -22,6 +24,7 @@
 #include <format>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -48,6 +51,14 @@ public:
   /// @param[in] bcs Dirichlet conditions on the input space. A master that is
   /// constrained by one of these is removed from the master list of its slave
   /// and its contribution folded into the constraint offset.
+  /// @param[in] filter If set, discard master @f$m_j@f$ of slave @f$s@f$ when
+  /// @f$|c_{sj}| < \mathrm{filter}\cdot\max_k|c_{sk}|@f$, the maximum being
+  /// over the masters of that same slave. A negligible coefficient contributes
+  /// nothing to the constraint, but still costs a ghost, a row of the sparsity
+  /// pattern and an entry in every element matrix modification. Unset (the
+  /// default) keeps every master supplied.
+  /// @note Filtering changes the constraint that is enforced, by exactly the
+  /// terms dropped. It is local and performs no communication.
   /// @tparam The floating type of the mesh
   MultiPointConstraint(
       std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
@@ -56,7 +67,8 @@ public:
       std::span<const std::int32_t> owners,
       std::span<const std::int32_t> offsets, std::span<const T> rhs_coeffs = {},
       const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
-          bcs = {})
+          bcs = {},
+      std::optional<U> filter = std::nullopt)
       : _slaves(), _is_slave(), _cell_to_slaves_map(), _num_local_slaves(),
         _master_map(), _coeff_map(), _owner_map(), _mpc_constants(),
         _rhs_coeffs(), _bcs(bcs), _bc_master_map(), _bc_coeff_map(), _V()
@@ -65,6 +77,52 @@ public:
     assert(masters.size() == coeffs.size());
     assert(coeffs.size() == owners.size());
     assert(offsets.back() == owners.size());
+
+    // Storage for the filtered constraint, kept alive for as long as the spans
+    // below point into it.
+    std::vector<std::int64_t> kept_masters;
+    std::vector<T> kept_coeffs;
+    std::vector<std::int32_t> kept_owners, kept_offsets;
+    if (filter.has_value())
+    {
+      if (!(*filter >= 0) or !std::isfinite(*filter))
+      {
+        throw std::invalid_argument(std::format(
+            "filter must be finite and non-negative, got {}", *filter));
+      }
+      kept_masters.reserve(masters.size());
+      kept_coeffs.reserve(coeffs.size());
+      kept_owners.reserve(owners.size());
+      kept_offsets.reserve(offsets.size());
+      kept_offsets.push_back(0);
+      for (std::size_t i = 0; i < slaves.size(); ++i)
+      {
+        const std::int32_t begin = offsets[i];
+        const std::int32_t end = offsets[i + 1];
+        U max_coeff = 0;
+        for (std::int32_t j = begin; j < end; ++j)
+          max_coeff = std::max(max_coeff, static_cast<U>(std::abs(coeffs[j])));
+        // An all-zero row keeps nothing: the relation is then u_s = g_s
+        const U threshold = *filter * max_coeff;
+        for (std::int32_t j = begin; j < end; ++j)
+        {
+          if (max_coeff > 0
+              and static_cast<U>(std::abs(coeffs[j])) >= threshold)
+          {
+            kept_masters.push_back(masters[j]);
+            kept_coeffs.push_back(coeffs[j]);
+            kept_owners.push_back(owners[j]);
+          }
+        }
+        kept_offsets.push_back(static_cast<std::int32_t>(kept_masters.size()));
+      }
+      spdlog::debug("MPC filter {}: kept {} of {} masters", *filter,
+                    kept_masters.size(), masters.size());
+      masters = kept_masters;
+      coeffs = kept_coeffs;
+      owners = kept_owners;
+      offsets = kept_offsets;
+    }
 
     // Create list indicating which dofs on the process are slaves
     const dolfinx::fem::DofMap& dofmap = *(V->dofmap());
@@ -233,17 +291,26 @@ public:
         bc_offsets.push_back(static_cast<std::int32_t>(bc_masters.size()));
       }
     }
+    // Whether a master was eliminated by a Dirichlet condition has to be read
+    // before bc_coeffs is moved from below.
+    const bool eliminated_bc_masters = !bc_coeffs.empty();
+
+    // AdjacencyList takes (U&& data, V&& offsets) by forwarding reference, so
+    // an lvalue is copied. Move instead: each array is large, and the copies
+    // would double peak memory right before the extended index map is built.
+    // Each offsets array is shared by several lists, so only its last use
+    // moves.
     _master_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-        keep_masters, keep_offsets);
+        std::move(keep_masters), keep_offsets);
     _coeff_map = std::make_shared<dolfinx::graph::AdjacencyList<T>>(
-        keep_coeffs, keep_offsets);
+        std::move(keep_coeffs), keep_offsets);
     _owner_map = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-        keep_owners, keep_offsets);
+        std::move(keep_owners), std::move(keep_offsets));
     _bc_master_map
         = std::make_shared<dolfinx::graph::AdjacencyList<std::int32_t>>(
-            bc_masters, bc_offsets);
+            std::move(bc_masters), bc_offsets);
     _bc_coeff_map = std::make_shared<dolfinx::graph::AdjacencyList<T>>(
-        bc_coeffs, bc_offsets);
+        std::move(bc_coeffs), std::move(bc_offsets));
 
     // Decide if we have an inhomogeneity, and pass this to all processes once
     // to avoid repeat calls to MPI_Allreduce.
@@ -254,7 +321,7 @@ public:
 
     // If any of the eliminated masters are constrained by a Dirichlet
     // condition, we have an inhomogeneity
-    if (!bc_coeffs.empty())
+    if (eliminated_bc_masters)
       local_inhom = 1;
     int global_inhom = 0;
     MPI_Allreduce(&local_inhom, &global_inhom, 1, MPI_INT, MPI_LOR,
