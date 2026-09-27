@@ -98,7 +98,7 @@ def assemble_vector(
     needs_transformation_data = e0.needs_dof_transformations or form._cpp_object.needs_facet_permutations
     cell_perms = numpy.array([], dtype=numpy.uint32)
     if needs_transformation_data:
-        V.mesh.topology.create_entity_permutations(num_threads)
+        V.mesh.topology.create_cell_permutations(num_threads)
         cell_perms = V.mesh.topology.get_cell_permutation_info()
     if e0.needs_dof_transformations:
         raise NotImplementedError("Dof transformations not implemented")
@@ -115,7 +115,7 @@ def assemble_vector(
         raise RuntimeError(f"Unsupported scalar type {_PETSc.ScalarType}.")  # type: ignore
     ufcx_form = form.ufcx_form
     if (num_cell_integrals := form.num_integrals(_fem.IntegralType.cell, 0)) > 0:
-        V.mesh.topology.create_entity_permutations(num_threads)
+        V.mesh.topology.create_cell_permutations(num_threads)
 
         # NOTE: This depends on enum ordering in ufcx.h
         cell_form_pos = ufcx_form.form_integral_offsets[0]

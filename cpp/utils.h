@@ -439,14 +439,13 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
   // coupled to its parent), in which case their cell numberings are unrelated.
   // Each axis is therefore walked with its own integration entities, taken from
   // `Form::domain_arg`, exactly as `assemble_cells_impl` does.
-  auto pattern_populator
-      = [expand_masters_for_slave](
-            dolfinx::la::SparsityPattern& pattern,
-            const dolfinx::fem::Form<T>& a,
-            const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>
-                mpc_row,
-            const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>
-                mpc_col)
+  auto pattern_populator =
+      [expand_masters_for_slave](
+          dolfinx::la::SparsityPattern& pattern, const dolfinx::fem::Form<T>& a,
+          const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>
+              mpc_row,
+          const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>
+              mpc_col)
   {
     const auto& V_row = mpc_row->function_space();
     const auto& V_col = mpc_col->function_space();
@@ -1101,7 +1100,7 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
-    mesh->topology_mutable()->create_entity_permutations(num_threads);
+    mesh->topology_mutable()->create_cell_permutations(num_threads);
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 
@@ -1369,7 +1368,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
-    mesh->topology_mutable()->create_entity_permutations(num_threads);
+    mesh->topology_mutable()->create_cell_permutations(num_threads);
     cell_info = std::span(mesh->topology()->get_cell_permutation_info());
   }
 

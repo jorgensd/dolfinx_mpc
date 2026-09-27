@@ -66,7 +66,7 @@ def _finalize_matrix(
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         for A_sub, V in bc_blocks:
-            _cpp.fem.petsc.insert_diagonal(A_sub, V, bcs, diagval)
+            _cpp.fem.petsc.insert_diagonal(A_sub, V._cpp_object, bcs, diagval)
 
     A.assemble()
 

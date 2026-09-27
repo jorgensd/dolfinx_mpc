@@ -123,7 +123,7 @@ def assemble_matrix(
     )
     cell_perms = numpy.array([], dtype=numpy.uint32)
     if needs_transformation_data:
-        V.mesh.topology.create_entity_permutations(num_threads)
+        V.mesh.topology.create_cell_permutations(num_threads)
         cell_perms = V.mesh.topology.get_cell_permutation_info()
     # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
     # to support more exotic elements
@@ -145,7 +145,7 @@ def assemble_matrix(
     if num_cell_integrals > 0:
         # NOTE: This depends on enum ordering in ufcx.h
         cell_form_pos = ufcx_form.form_integral_offsets[0]
-        V.mesh.topology.create_entity_permutations(num_threads)
+        V.mesh.topology.create_cell_permutations(num_threads)
         for i in range(num_cell_integrals):
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, i)]
             cell_kernel = getattr(ufcx_form.form_integrals[cell_form_pos + i], f"tabulate_tensor_{nptype}")

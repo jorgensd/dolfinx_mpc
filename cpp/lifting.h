@@ -211,9 +211,9 @@ void lift_values(
 
   if (needs_transformation_data)
   {
-    mesh0->topology_mutable()->create_entity_permutations(num_threads);
+    mesh0->topology_mutable()->create_cell_permutations(num_threads);
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
-    mesh1->topology_mutable()->create_entity_permutations(num_threads);
+    mesh1->topology_mutable()->create_cell_permutations(num_threads);
     cell_info1 = std::span(mesh1->topology()->get_cell_permutation_info());
   }
 
@@ -226,10 +226,10 @@ void lift_values(
   {
     const dolfinx::mesh::CellType cell_type
         = mesh->topology()->cell_types().front();
-    num_facets_per_cell = dolfinx::mesh::cell_num_entities(
-        cell_type, mesh->topology()->dim() - 1);
-    mesh->topology_mutable()->create_entity_permutations(num_threads);
-    perms = std::span(mesh->topology()->get_facet_permutations());
+    std::size_t fdim = mesh->topology()->dim() - 1;
+    num_facets_per_cell = dolfinx::mesh::cell_num_entities(cell_type, fdim);
+    mesh->topology_mutable()->create_entity_permutations(fdim, num_threads);
+    perms = std::span(mesh->topology()->get_entity_permutations(fdim));
   }
 
   // Get dof-transformations for the element matrix

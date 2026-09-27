@@ -382,7 +382,6 @@ mpc_data<T> create_contact_slip_condition(
 
   mesh->topology_mutable()->create_connectivity(fdim, tdim);
   mesh->topology_mutable()->create_connectivity(tdim, tdim);
-  mesh->topology_mutable()->create_entity_permutations(num_threads);
 
   // Find all slave dofs and split them into locally owned and ghosted blocks
   std::vector<std::int32_t> local_slave_blocks;
