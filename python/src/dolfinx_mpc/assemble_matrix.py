@@ -109,7 +109,7 @@ def assemble_matrix(
     _assemble_form(A, form, constraint, bcs, num_threads)
 
     slave_blocks = [(A, constraint[0])] if constraint[0] is constraint[1] else []
-    bc_blocks = [(A, form.function_spaces[0]._cpp_object)] if form.function_spaces[0] is form.function_spaces[1] else []
+    bc_blocks = [(A, form.function_spaces[0])] if form.function_spaces[0] is form.function_spaces[1] else []
     _finalize_matrix(A, slave_blocks, bc_blocks, bcs, diagval)
     return A
 
@@ -211,6 +211,6 @@ def assemble_matrix_nest(
         A_ii = A.getNestSubMatrix(i, i)
         slave_blocks.append((A_ii, constraints[i]))
         if a_ii.function_spaces[0] is a_ii.function_spaces[1]:
-            bc_blocks.append((A_ii, a_ii.function_spaces[0]._cpp_object))
+            bc_blocks.append((A_ii, a_ii.function_spaces[0]))
 
     _finalize_matrix(A, slave_blocks, bc_blocks, _bcs, diagval)
