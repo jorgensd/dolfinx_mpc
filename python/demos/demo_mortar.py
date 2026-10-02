@@ -147,7 +147,7 @@ def to_bottom(coords):
 
 
 scale = default_scalar_type(1.0)
-bcs = []
+bcs: list[fem.DirichletBC] = []
 mpc_u = dolfinx_mpc.MultiPointConstraint(V)
 mpc_u.create_periodic_constraint_geometrical(V, on_top, to_bottom, bcs, scale)
 mpc_u.finalize()
