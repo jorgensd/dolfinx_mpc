@@ -24,7 +24,7 @@ def _assemble_form(
     A: _PETSc.Mat,  # type: ignore
     form: _fem.Form,
     constraint: Sequence[MultiPointConstraint],
-    bcs: Sequence,
+    bcs: Sequence[_fem.DirichletBC] | None,
     num_threads: Optional[int] = 1,
 ):
     """
@@ -43,8 +43,8 @@ def _assemble_form(
 def _finalize_matrix(
     A: _PETSc.Mat,  # type: ignore
     slave_blocks: Sequence,
-    bc_blocks: Sequence,
-    bcs: Sequence,
+    bc_blocks: Sequence[tuple[_PETSc.Mat, _fem.FunctionSpace]],
+    bcs: Sequence[_fem.DirichletBC] | None,
     diagval: _PETSc.ScalarType = 1,  # type: ignore
 ):
     """
