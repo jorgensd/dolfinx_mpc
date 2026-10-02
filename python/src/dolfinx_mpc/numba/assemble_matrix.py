@@ -82,9 +82,9 @@ def assemble_matrix(
     # Create 1D bc indicator for matrix assembly
     num_dofs_local = (dofmap.index_map.size_local + dofmap.index_map.num_ghosts) * dofmap.index_map_bs
     is_bc = numpy.zeros(num_dofs_local, dtype=bool)
-    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
-    if len(bcs) > 0:
-        for bc in bcs:
+    bcs_cpp = [] if bcs is None else [bc._cpp_object for bc in bcs]
+    if len(bcs_cpp) > 0:
+        for bc in bcs_cpp:
             is_bc[bc.dof_indices()[0]] = True
 
     # Get data from mesh
@@ -102,7 +102,8 @@ def assemble_matrix(
     A.zeroEntries()
 
     # Assemble the matrix with all entries
-    _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, bcs, False)
+    markers = _fem.petsc._matrix_bc_markers(form, bcs)
+    _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, *markers, False)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size
@@ -211,7 +212,13 @@ def assemble_matrix(
     if form.function_spaces[0] is form.function_spaces[1]:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0]._cpp_object, bcs, diagval)
+        rows_ = []
+        for bc in bcs or []:
+            if form.function_spaces[0].contains(bc.function_space):
+                dofs, owned = bc.dof_indices()
+                rows_.append(dofs[:owned])
+        rows = numpy.concatenate(rows_) if rows_ else numpy.empty(0, dtype=numpy.int32)
+        _cpp.fem.petsc.set_diagonal(A, rows, diagval, _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
 
     A.assemble()
     timer_matrix.stop()

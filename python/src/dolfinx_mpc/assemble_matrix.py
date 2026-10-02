@@ -10,10 +10,12 @@ from typing import Optional, Union
 
 from petsc4py import PETSc as _PETSc
 
+from dolfinx import default_scalar_type
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 
 from dolfinx_mpc import cpp
+import numpy as np
 
 from .multipointconstraint import MultiPointConstraint
 
@@ -40,7 +42,7 @@ def assemble_matrix(
     Returns:
         _PETSc.Mat: The matrix with the assembled bi-linear form  #type: ignore
     """
-    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
+    bcs_cpp = [] if bcs is None else [bc._cpp_object for bc in bcs]
     if not isinstance(constraint, Sequence):
         assert form.function_spaces[0] == form.function_spaces[1]
         constraint = (constraint, constraint)
@@ -52,14 +54,20 @@ def assemble_matrix(
 
     # Assemble matrix in C++
     cpp.mpc.assemble_matrix(
-        A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs, diagval, num_threads
+        A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs_cpp, diagval, num_threads
     )
 
     # Add one on diagonal for Dirichlet boundary conditions
     if form.function_spaces[0] is form.function_spaces[1]:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0]._cpp_object, bcs, diagval)
+        rows_ = []
+        for bc in bcs or []:
+            if form.function_spaces[0].contains(bc.function_space):
+                dofs, owned = bc.dof_indices()
+                rows_.append(dofs[:owned])
+        rows = np.concatenate(rows_) if rows_ else np.empty(0, dtype=np.int32)
+        _cpp.fem.petsc.set_diagonal(A, rows, default_scalar_type(diagval), _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
 
     A.assemble()
     return A
