@@ -807,9 +807,9 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     slave_to_ghost = std::make_shared<const dolfinx::common::IndexMap>(
         std::move(std::get<0>(compressed_map)));
     // Build map from new index map to slave indices (unrolled)
-    // `blocks` is sorted and unique by now, so look the slave block up with a
-    // binary search rather than a linear scan, which would make this loop
-    // O(num_slaves * num_blocks).
+    //
+    // `blocks` was sorted and deduplicated above, before being handed to
+    // `create_sub_index_map`, so a binary search is valid here
     for (std::size_t i = 0; i < slaves.size(); i++)
     {
       const std::int32_t block = slaves[i] / bs;
