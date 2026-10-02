@@ -125,6 +125,11 @@ def test_stokes_channelflow(cell_type, els, order):
     ksp_p.setType("preonly")
     ksp_p.getPC().setType("jacobi")
 
+    # Increase working memory for MUMPS to avoid "Out of Memory" errors
+    prefix_u = ksp_u.getOptionsPrefix() or ""
+    PETSc.Options()[f"{prefix_u}mat_mumps_icntl_14"] = 100
+    ksp_u.setFromOptions()
+
     # Finalize KSP setup
     ksp.setFromOptions()
 
