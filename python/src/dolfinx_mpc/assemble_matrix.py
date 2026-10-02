@@ -112,8 +112,7 @@ def assemble_matrix(
         constraint = (constraint, constraint)
 
     # Generate matrix with MPC sparsity pattern. A freshly created matrix is
-    # already zeroed; an `A` supplied by the caller is added into, following the
-    # additive convention of the DOLFINx assemblers.
+    # already zeroed; an `A` supplied by the caller is added into.
     if A is None:
         A = cpp.mpc.create_matrix(form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object)
 
