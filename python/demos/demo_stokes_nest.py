@@ -1,14 +1,18 @@
-# Copyright (C) 2022 Nathan Sime
+# # Stokes problem with slip condition using NEST matrices
 #
-# This file is part of DOLFINX_MPC
+# Copyright (C) 2022 Nathan Sime
 #
 # SPDX-License-Identifier:    MIT
 #
 # This demo illustrates how to apply a slip condition on an
-# interface not aligned with the coordiante axis.
+# interface not aligned with the coordinate axis.
 # The demos solves the Stokes problem using the nest functionality to
 # avoid using mixed function spaces. The demo also illustrates how to use
-#  block preconditioners with PETSc
+#  block preconditioners with PETSc. This demo uses the lower level
+# API of {py:mod}`dolfinx_mpc`. See {doc}`demo_mortar` for a
+# higher level API for creating MPCs on NEST matrices.
+
+# + tags=["hide-input"]
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,6 +32,10 @@ from ufl.core.expr import Expr
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
+# -
+
+
+# We create a convenience function to create a mesh with {py:mod}`gmsh`.
 
 
 def create_mesh_gmsh(
@@ -110,7 +118,9 @@ def create_mesh_gmsh(
     return mesh_data.mesh, ft
 
 
-# ------------------- Mesh and function space creation ------------------------
+# ## Mesh and function space creation
+
+# +
 mesh, mt = create_mesh_gmsh(res=0.1)
 
 fdim = mesh.topology.dim - 1
@@ -128,6 +138,13 @@ Qe = basix.ufl.element(basix.ElementFamily.P, cellname, 1, dtype=default_real_ty
 
 V = dolfinx.fem.functionspace(mesh, Ve)
 Q = dolfinx.fem.functionspace(mesh, Qe)
+# -
+
+# ## Defining boundary conditions
+
+# +
+
+# ### Inlet velocity Dirichlet BC
 
 
 def inlet_velocity_expression(x):
@@ -139,18 +156,17 @@ def inlet_velocity_expression(x):
     )
 
 
-# ----------------------Defining boundary conditions----------------------
-# Inlet velocity Dirichlet BC
 inlet_velocity = dolfinx.fem.Function(V)
 inlet_velocity.interpolate(inlet_velocity_expression)
 inlet_velocity.x.scatter_forward()
 dofs = dolfinx.fem.locate_dofs_topological(V, 1, mt.find(3))
 bc1 = dolfinx.fem.dirichletbc(inlet_velocity, dofs)
-
-# Collect Dirichlet boundary conditions
 bcs: list[dolfinx.fem.DirichletBC] = [bc1]
+# -
 
-# Slip conditions for walls
+# ### Slip conditions for walls
+
+# +
 n = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
 with dolfinx.common.Timer("~Stokes: Create slip constraint"):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
@@ -159,8 +175,12 @@ mpc.finalize()
 
 mpc_q = dolfinx_mpc.MultiPointConstraint(Q)
 mpc_q.finalize()
+# -
+
+# ## Variational problem
 
 
+# +
 def tangential_proj(u: Expr, n: Expr):
     """
     See for instance:
@@ -177,7 +197,6 @@ def T(u: Expr, p: Expr, mu: Expr):
     return 2 * mu * sym_grad(u) - p * ufl.Identity(u.ufl_shape[0])
 
 
-# --------------------------Variational problem---------------------------
 # Traditional terms
 mu = 1
 f = dolfinx.fem.Constant(mesh, default_scalar_type((0, 0)))
@@ -233,8 +252,11 @@ dolfinx.fem.petsc.set_bc(b, bcs0)
 P11 = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(ufl.inner(p, q) * ufl.dx))
 P = PETSc.Mat().createNest([[A.getNestSubMatrix(0, 0), None], [None, P11]])  # type: ignore
 P.assemble()
+# -
 
-# ---------------------- Solve variational problem -----------------------
+# ## Solve variational problem
+
+# + tags=["hide-output"]
 ksp = PETSc.KSP().create(mesh.comm)  # type: ignore
 ksp.setOperators(A, P)
 ksp.setMonitor(
@@ -268,8 +290,11 @@ for Uh_sub in Uh.getNestSubVecs():
         addv=PETSc.InsertMode.INSERT,  # type: ignore
         mode=PETSc.ScatterMode.FORWARD,  # type: ignore
     )  # type: ignore
-# ----------------------------- Put NestVec into DOLFINx Function - ---------
+# -
 
+# ## Put NestVec into DOLFINx Function
+
+# +
 uh = dolfinx.fem.Function(mpc.function_space)
 ph = dolfinx.fem.Function(mpc_q.function_space)
 dolfinx.fem.petsc.assign(Uh, [uh, ph])
@@ -279,9 +304,11 @@ ph.x.scatter_forward()
 # Backsubstitute to update slave dofs in solution vector
 mpc.backsubstitution(uh)
 mpc_q.backsubstitution(ph)
+# -
 
-# ------------------------------ Output ----------------------------------
+# ## Output
 
+# +
 uh.name = "u"
 ph.name = "p"
 outdir = Path("results")
@@ -294,7 +321,11 @@ with dolfinx.io.XDMFFile(mesh.comm, outdir / "demo_stokes_nest.xdmf", "w") as ou
 
 with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh, engine="BP4") as vtx:
     vtx.write(0.0)
-# -------------------- Verification --------------------------------
+# -
+
+
+# + tags=["hide-input"]
+# Verification
 # Transfer data from the MPC problem to numpy arrays for comparison
 with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix reduction"):
     W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([Ve, Qe]))
@@ -362,7 +393,7 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
         np.testing.assert_allclose(
             np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2), atol=1e3 * tol, rtol=1e3 * tol
         )
-
+# -
 
 A.destroy()
 b.destroy()
@@ -370,5 +401,9 @@ for Uh_sub in Uh.getNestSubVecs():
     Uh_sub.destroy()
 Uh.destroy()
 ksp.destroy()
-# -------------------- List timings --------------------------
+
+# Expand the cell below to inspect timings of various functions
+
+# +tags=["hide-output"]
 dolfinx.common.list_timings(MPI.COMM_WORLD)
+# -

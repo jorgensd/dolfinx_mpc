@@ -26,8 +26,6 @@ namespace
 /// @param[in] active_cells0 The corresponding cells for the test function space
 /// @param[in] dofmap The dofmap
 /// @param[in] mpc The multipoint constraint
-/// @param[in] fetch_cells Function that fetches the cell index for an entity
-/// in active_entities
 /// @param[in] assemble_local_element_matrix Function f(be, entities, entties0,
 /// index) that assembles into a local element matrix for a given entity
 /// @tparam T Scalar type for vector
@@ -38,8 +36,6 @@ void _assemble_entities_impl(
     std::span<const std::int32_t> active_cells0,
     const dolfinx::fem::DofMap& dofmap,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
-    const std::function<const std::int32_t(std::span<const std::int32_t>)>
-        fetch_cells,
     const std::function<void(std::span<T>, std::span<const std::int32_t>,
                              std::int32_t, std::size_t)>
         assemble_local_element_vector)
@@ -66,8 +62,11 @@ void _assemble_entities_impl(
   for (std::size_t e = 0; e < active_entities.size(); e += estride)
   {
     std::span<const std::int32_t> entity = active_entities.subspan(e, estride);
-    std::span<const std::int32_t> cells0 = active_cells0.subspan(e, estride);
-    std::int32_t cell0 = fetch_cells(entity);
+    // The entity indexes the integration mesh; `cell0` indexes the test
+    // function's own mesh. They coincide only when the two are the same mesh,
+    // so the dofmap, the constraint and the dof transformation must all be
+    // keyed on `active_cells0`, never on `entity`.
+    const std::int32_t cell0 = active_cells0.subspan(e, estride).front();
     // Assemble into element vector
     assemble_local_element_vector(_be, entity, cell0, e / estride);
 
@@ -164,8 +163,6 @@ void _assemble_vector(
   if (num_cell_types > 1)
     throw std::runtime_error("Not implemented for mixed cell types");
 
-  const auto fetch_cell
-      = [&](std::span<const std::int32_t> entity) { return entity.front(); };
   for (int i = 0; i < L.num_integrals(dolfinx::fem::IntegralType::cell, 0); ++i)
   {
     const auto& coeffs = coefficients.at({dolfinx::fem::IntegralType::cell, i});
@@ -205,7 +202,7 @@ void _assemble_vector(
     // Assemble over all active cells
     std::span cells = L.domain(dolfinx::fem::IntegralType::cell, i, 0);
     std::span cells0 = L.domain_arg(dolfinx::fem::IntegralType::cell, 0, i, 0);
-    _assemble_entities_impl<T, U, 1>(b, cells, cells0, *dofmap, mpc, fetch_cell,
+    _assemble_entities_impl<T, U, 1>(b, cells, cells0, *dofmap, mpc,
                                      assemble_local_cell_vector);
   }
   // Prepare permutations for exterior and interior facet integrals
@@ -257,7 +254,6 @@ void _assemble_vector(
     std::span cells0
         = L.domain_arg(dolfinx::fem::IntegralType::exterior_facet, 0, i, 0);
     _assemble_entities_impl<T, U, 2>(b, active_facets, cells0, *dofmap, mpc,
-                                     fetch_cell,
                                      assemble_local_exterior_facet_vector);
   }
 

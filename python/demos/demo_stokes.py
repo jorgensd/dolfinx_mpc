@@ -9,7 +9,7 @@
 # ## Mathematical formulation
 #
 # We start with the general, mathematical formulation of this problem, similar
-# to the formulation presented in {cite}`Knobloch2000`.
+# to the formulation presented in {cite}`stokes-Knobloch2000`.
 #
 # Find the fluid velocity and pressure, $(\mathbf{u}, p)\in V(\Omega) \times Q(\Omega)$ such that
 #
@@ -288,7 +288,7 @@ L = inner(f, v) * dx + inner(fem.Constant(mesh, default_scalar_type(0.0)), q) * 
 
 # We could prescibe some shear stress at the slip boundaries. However, in this demo, we set it to `0`,
 # but include it in the variational formulation. We add the appropriate terms due to the slip condition,
-# as explained in {cite}`sime2020automaticweakimpositionfree`.
+# as explained in {cite}`stokes-sime2020automaticweakimpositionfree`.
 
 # +
 n = FacetNormal(mesh)
@@ -415,5 +415,7 @@ if velocity_pieces is not None:  # only the root process received the grids
 
 
 # ```{bibliography}
-#    :filter: cited and ({"python/demos/demo_stokes"} >= docnames)
+#    :filter: cited
+#    :labelprefix:
+#    :keyprefix: stokes-
 # ```

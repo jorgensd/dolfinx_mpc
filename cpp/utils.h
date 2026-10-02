@@ -551,6 +551,30 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
   spdlog::debug("Build new pattern\n");
   pattern_populator(pattern, a, mpc0, mpc1);
 
+  // `insert_slave_diagonal` writes a diagonal entry for every owned slave of a
+  // diagonal block, so the pattern has to reserve those entries. They usually
+  // fall inside the standard pattern already, but not when the block's form has
+  // no integral covering them -- a `ufl.ZeroBaseForm` diagonal block, say --
+  // and a missing entry is a PETSc allocation error at assembly rather than a
+  // silently wrong matrix.
+  if (mpc0 == mpc1)
+  {
+    // `slaves()` holds unrolled dof indices while the pattern is indexed by
+    // blocks, so divide through by the block size before inserting. Reserving
+    // the whole diagonal block is a superset of the single scalar entry
+    // `insert_slave_diagonal` writes, which is harmless.
+    std::span<const std::int32_t> slaves(mpc0->slaves().data(),
+                                         mpc0->num_local_slaves());
+    std::vector<std::int32_t> slave_blocks;
+    slave_blocks.reserve(slaves.size());
+    std::ranges::transform(slaves, std::back_inserter(slave_blocks),
+                           [bs0](std::int32_t dof) { return dof / bs0; });
+    std::ranges::sort(slave_blocks);
+    slave_blocks.erase(std::unique(slave_blocks.begin(), slave_blocks.end()),
+                       slave_blocks.end());
+    pattern.insert_diagonal(slave_blocks);
+  }
+
   return pattern;
 }
 

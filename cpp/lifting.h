@@ -120,8 +120,12 @@ void lift_bc_entities(
     const std::span<T> _Ae(Ae);
     lift_local_vector(_be, _Ae, num_rows, num_cols, entity, cell0, cell1,
                       e / estride);
-    // Modify local element matrix if entity is connected to a slave cell
-    std::span<const std::int32_t> slaves = cell_to_slaves->links(cell1);
+    // Modify local element matrix if entity is connected to a slave cell.
+    // `cell_to_slaves`, `is_slave`, `masters` and `dmap0` all belong to
+    // `mpc0`, which constrains the rows, so the lookup is keyed on the test
+    // space's cell. `cell0` and `cell1` coincide only when both spaces live
+    // on the integration mesh.
+    std::span<const std::int32_t> slaves = cell_to_slaves->links(cell0);
 
     if (slaves.size() > 0)
     {
