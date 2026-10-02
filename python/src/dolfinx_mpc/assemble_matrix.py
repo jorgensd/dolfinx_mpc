@@ -10,12 +10,12 @@ from typing import Optional, Union
 
 from petsc4py import PETSc as _PETSc
 
-from dolfinx import default_scalar_type
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import numpy as np
+from dolfinx import default_scalar_type
 
 from dolfinx_mpc import cpp
-import numpy as np
 
 from .multipointconstraint import MultiPointConstraint
 
