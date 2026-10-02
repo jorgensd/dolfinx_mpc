@@ -12,6 +12,10 @@ namespace dolfinx_mpc
 {
 
 /// Create a map from cell to a set of dofs
+///
+/// The map has a node for every cell of the mesh, ghosts included, so it can
+/// be indexed with any cell a form names as an integration entity. Interior
+/// facet integrals are the standard case where that includes a ghost cell.
 /// @param[in] The degrees of freedom (local to process)
 /// @tparam The floating type of the mesh
 /// @returns The map from cell index (local to process) to dofs (local to
@@ -24,7 +28,8 @@ create_cell_to_dofs_map(const dolfinx::fem::FunctionSpace<U>& V,
   const auto& mesh = *(V.mesh());
   const dolfinx::fem::DofMap& dofmap = *(V.dofmap());
   const int tdim = mesh.topology()->dim();
-  const int num_cells = mesh.topology()->index_map(tdim)->size_local();
+  const dolfinx::common::IndexMap& cmap = *mesh.topology()->index_map(tdim);
+  const std::int32_t num_cells = cmap.size_local() + cmap.num_ghosts();
 
   const std::int32_t local_size
       = dofmap.index_map->size_local() + dofmap.index_map->num_ghosts();

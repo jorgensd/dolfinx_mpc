@@ -8,6 +8,7 @@
 
 #include "MultiPointConstraint.h"
 #include "mpi_utils.h"
+#include <cassert>
 #include <dolfinx/common/Scatterer.h>
 #include <dolfinx/common/sort.h>
 #include <dolfinx/fem/CoordinateElement.h>
@@ -473,12 +474,10 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     // `build_standard_pattern`, so only cells carrying a slave do any work.
     auto insert_entity = [&](std::int32_t cell_row, std::int32_t cell_col)
     {
-      const bool row_has_slaves
-          = cell_row < cell_to_row_slaves->num_nodes()
-            and !cell_to_row_slaves->links(cell_row).empty();
-      const bool col_has_slaves
-          = cell_col < cell_to_col_slaves->num_nodes()
-            and !cell_to_col_slaves->links(cell_col).empty();
+      // `cell_to_slaves` has a node for every cell, ghosts included, so any
+      // entity a form names can be looked up directly.
+      const bool row_has_slaves = cell_to_row_slaves->num_links(cell_row) > 0;
+      const bool col_has_slaves = cell_to_col_slaves->num_links(cell_col) > 0;
       if (!row_has_slaves and !col_has_slaves)
         return;
 
