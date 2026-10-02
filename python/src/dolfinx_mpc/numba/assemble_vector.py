@@ -188,7 +188,7 @@ def assemble_cells(
     num_dofs_per_element: int,
     mpc: Tuple[  # type: ignore
         npt.NDArray[numpy.int32],
-        npt.NDArray[_PETSc.ScalarType],
+        npt.NDArray[_PETSc.ScalarType],  # type: ignore
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
@@ -250,7 +250,7 @@ def assemble_exterior_slave_facets(
     num_dofs_per_element: int,
     mpc: Tuple[  # type: ignore
         npt.NDArray[numpy.int32],
-        npt.NDArray[_PETSc.ScalarType],
+        npt.NDArray[_PETSc.ScalarType],  # type: ignore
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
@@ -312,7 +312,7 @@ def modify_mpc_contributions(
     b_copy: npt.NDArray[_PETSc.ScalarType],  # type: ignore
     mpc: Tuple[  # type: ignore
         npt.NDArray[numpy.int32],
-        npt.NDArray[_PETSc.ScalarType],
+        npt.NDArray[_PETSc.ScalarType],  # type: ignore
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
         npt.NDArray[numpy.int32],
