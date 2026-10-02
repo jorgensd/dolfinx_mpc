@@ -361,8 +361,7 @@ void assemble_exterior_facets(
       std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
                           std::next(coordinate_dofs.begin(), 3 * i));
     }
-    // Tabulate tensor. A kernel for a form whose arguments live on different
-    // meshes reads the facet permutation, so a null pointer would crash it.
+    // Tabulate tensor.
     const std::uint8_t perm
         = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
     std::ranges::fill(Aeb, 0);
