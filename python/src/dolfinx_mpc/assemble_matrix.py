@@ -12,6 +12,8 @@ from petsc4py import PETSc as _PETSc
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import numpy as np
+from dolfinx import default_scalar_type
 
 from dolfinx_mpc import cpp
 
@@ -32,7 +34,10 @@ def _assemble_form(
     those belong to the system rather than to a single form, see
     :func:`_finalize_matrix`.
     """
-    cpp.mpc.assemble_matrix(A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs, num_threads)
+    bcs_cpp = [bc._cpp_object for bc in bcs] if bcs else []
+    cpp.mpc.assemble_matrix(
+        A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs_cpp, num_threads
+    )
 
 
 def _finalize_matrix(
@@ -63,10 +68,17 @@ def _finalize_matrix(
     # The slave diagonal is added, the Dirichlet diagonal is inserted, so the
     # additive contributions have to be communicated before switching mode.
     if bc_blocks:
+        # Add one on diagonal for Dirichlet boundary conditions
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         for A_sub, V in bc_blocks:
-            _cpp.fem.petsc.insert_diagonal(A_sub, V._cpp_object, bcs, diagval)
+            rows_ = []
+            for bc in bcs or []:
+                if V.contains(bc.function_space):
+                    dofs, owned = bc.dof_indices()
+                    rows_.append(dofs[:owned])
+            rows = np.concatenate(rows_) if rows_ else np.empty(0, dtype=np.int32)
+            _cpp.fem.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
 
     A.assemble()
 
@@ -95,7 +107,6 @@ def assemble_matrix(
     Returns:
         _PETSc.Mat: The matrix with the assembled bi-linear form  #type: ignore
     """
-    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
     if not isinstance(constraint, Sequence):
         assert form.function_spaces[0] == form.function_spaces[1]
         constraint = (constraint, constraint)
@@ -111,6 +122,7 @@ def assemble_matrix(
     slave_blocks = [(A, constraint[0])] if constraint[0] is constraint[1] else []
     bc_blocks = [(A, form.function_spaces[0])] if form.function_spaces[0] is form.function_spaces[1] else []
     _finalize_matrix(A, slave_blocks, bc_blocks, bcs, diagval)
+
     return A
 
 
@@ -187,7 +199,7 @@ def assemble_matrix_nest(
         diagval: Value to set on the diagonal of the matrix (Default 1)
         num_threads: The number of threads to use for certain operations
     """
-    _bcs = [bc._cpp_object for bc in bcs]
+    _bcs = [bc for bc in bcs]
 
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):

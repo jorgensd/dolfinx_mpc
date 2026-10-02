@@ -79,14 +79,6 @@ def assemble_matrix(
     )
     slave_cells = extract_slave_cells(c_to_s_off)
 
-    # Create 1D bc indicator for matrix assembly
-    num_dofs_local = (dofmap.index_map.size_local + dofmap.index_map.num_ghosts) * dofmap.index_map_bs
-    is_bc = numpy.zeros(num_dofs_local, dtype=bool)
-    bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
-    if len(bcs) > 0:
-        for bc in bcs:
-            is_bc[bc.dof_indices()[0]] = True
-
     # Get data from mesh
     x_dofs = V.mesh.geometry.dofmaps[0]
     x = V.mesh.geometry.x
@@ -103,7 +95,8 @@ def assemble_matrix(
         A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern, None)
 
     # Assemble the matrix with all entries
-    _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, bcs, False)
+    markers = _fem.petsc._matrix_bc_markers(form, bcs)
+    _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, *markers, False)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size
@@ -162,7 +155,7 @@ def assemble_matrix(
                 block_size,
                 num_dofs_per_element,
                 mpc_data,
-                is_bc,
+                markers[0],
             )
 
     # Assemble over exterior facets
@@ -198,7 +191,7 @@ def assemble_matrix(
                 num_dofs_per_element,
                 facet_info,
                 mpc_data,
-                is_bc,
+                markers[0],
                 num_facets_per_cell,
             )
 
@@ -212,7 +205,13 @@ def assemble_matrix(
     if form.function_spaces[0] is form.function_spaces[1]:
         A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        _cpp.fem.petsc.insert_diagonal(A, form.function_spaces[0]._cpp_object, bcs, diagval)
+        rows_ = []
+        for bc in bcs or []:
+            if form.function_spaces[0].contains(bc.function_space):
+                dofs, owned = bc.dof_indices()
+                rows_.append(dofs[:owned])
+        rows = numpy.concatenate(rows_) if rows_ else numpy.empty(0, dtype=numpy.int32)
+        _cpp.fem.petsc.set_diagonal(A, rows, diagval, _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
 
     A.assemble()
     timer_matrix.stop()
@@ -254,7 +253,7 @@ def assemble_slave_cells(
         numba.int32[:],
         numba.int32[:],
     ],
-    is_bc: numba.bool_[:],
+    bc_markers: numba.int8[:],
 ):
     """
     Assemble MPC contributions for cell integrals
@@ -299,12 +298,14 @@ def assemble_slave_cells(
 
         local_blocks = dofmap[cell]
 
-        # Remove all contributions for dofs that are in the Dirichlet bcs
-        for j in range(num_dofs_per_element):
-            for k in range(block_size):
-                if is_bc[local_blocks[j] * block_size + k]:
-                    A_local[j * block_size + k, :] = 0
-                    A_local[:, j * block_size + k] = 0
+        # Remove all contributions for dofs that are in the Dirichlet bcs.
+        # `bc_markers` is empty when no condition applies to this space.
+        if bc_markers.size > 0:
+            for j in range(num_dofs_per_element):
+                for k in range(block_size):
+                    if bc_markers[local_blocks[j] * block_size + k] != 0:
+                        A_local[j * block_size + k, :] = 0
+                        A_local[:, j * block_size + k] = 0
 
         A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()  # type: ignore
 
@@ -475,7 +476,7 @@ def assemble_exterior_slave_facets(
         numba.int32[:],
         numba.int32[:],
     ],
-    is_bc: npt.NDArray[numpy.bool_],
+    bc_markers: npt.NDArray[numpy.int8],
     num_facets_per_cell: int,
 ):
     """Assemble MPC contributions over exterior facet integrals"""
@@ -529,12 +530,14 @@ def assemble_exterior_slave_facets(
         # Extract local blocks of dofs
         local_blocks = dofmap[cell_index]
 
-        # Remove all contributions for dofs that are in the Dirichlet bcs
-        for j in range(num_dofs_per_element):
-            for k in range(block_size):
-                if is_bc[local_blocks[j] * block_size + k]:
-                    A_local[j * block_size + k, :] = 0
-                    A_local[:, j * block_size + k] = 0
+        # Remove all contributions for dofs that are in the Dirichlet bcs.
+        # `bc_markers` is empty when no condition applies to this space.
+        if bc_markers.size > 0:
+            for j in range(num_dofs_per_element):
+                for k in range(block_size):
+                    if bc_markers[local_blocks[j] * block_size + k] != 0:
+                        A_local[j * block_size + k, :] = 0
+                        A_local[:, j * block_size + k] = 0
 
         A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()  # type: ignore
         slaves = c_to_s[c_to_s_off[cell_index] : c_to_s_off[cell_index + 1]]
