@@ -362,9 +362,9 @@ def _assemble_matrix_nest(
     A.assemble()
 
 
-def assemble_matrix_nest(
+def _assemble_matrix_nest(
     A: _PETSc.Mat,  # type: ignore
-    a: Sequence[Sequence[_fem.Form]],
+    a: Sequence[Sequence[Optional[_fem.Form]]],
     constraints: Sequence[MultiPointConstraint],
     bcs: Sequence[_fem.DirichletBC] = [],
     diagval: _PETSc.ScalarType = 1,  # type: ignore

@@ -311,13 +311,13 @@ warp_gif = True
 # ## Mesh, spaces, functions
 # We create a {py:class}`ufl.MixedFunctionSpace` for the functions `V,p`
 
-msh = create_unit_square(MPI.COMM_WORLD, Nx, Nx)
-P1 = element("Lagrange", "triangle", 1)
+msh = create_unit_square(MPI.COMM_WORLD, Nx, Nx, dtype=default_real_type)
+P1 = element("Lagrange", "triangle", 1, dtype=default_real_type)
 XV = functionspace(msh, P1)
 Xp = functionspace(msh, P1)
 Z = MixedFunctionSpace(XV, Xp)
 eps = 0.8
-bfield = Constant(msh, (eps, np.sqrt(1 - eps**2)))
+bfield = Constant(msh, default_scalar_type(((eps), np.sqrt(1 - eps**2))))
 x = SpatialCoordinate(msh)
 n = FacetNormal(msh)
 
@@ -328,7 +328,7 @@ facets = locate_entities_boundary(
     msh, dim=1, marker=lambda x: np.logical_or.reduce((np.isclose(x[1], 1.0), np.isclose(x[1], 0.0)))
 )
 dofs = fem.locate_dofs_topological(V=Xp, entity_dim=1, entities=facets)
-bcs = [fem.dirichletbc(np.array(0.0), dofs=dofs, V=Xp)]
+bcs = [fem.dirichletbc(np.array(0.0, dtype=default_scalar_type), dofs=dofs, V=Xp)]
 
 # ## Periodic BC
 # Along the left and right wall, we set periodic boundary conditions
@@ -381,14 +381,14 @@ mpc_V.finalize()
 # +
 
 # new time step values
-V_new = fem.Function(mpc_V.function_space)
-p_new = fem.Function(mpc_p.function_space)
+V_new = fem.Function(mpc_V.function_space, dtype=default_scalar_type)
+p_new = fem.Function(mpc_p.function_space, dtype=default_scalar_type)
 V, p = TrialFunctions(Z)
 W, q = TestFunctions(Z)
 
 # initial conditions
-V_old = Function(mpc_V.function_space)
-p_old = Function(mpc_p.function_space)
+V_old = Function(mpc_V.function_space, dtype=default_scalar_type)
+p_old = Function(mpc_p.function_space, dtype=default_scalar_type)
 V_old.interpolate(lambda x: 0.0 * x[0])
 p_old.interpolate(lambda x: np.exp(-1 * (((x[0] - 0.5) / 0.15) ** 2 + ((x[1] - 0.5) / 0.15) ** 2)))
 
@@ -407,7 +407,7 @@ E = inner(grad(p), bfield * W) * dx
 F = inner(grad(V), bfield * q) * dx
 N = inner(p, q) * dx
 a = M + dt / 2 * E + dt / 2 * F + N
-a_blocked = form(extract_blocks(a))
+a_blocked = form(extract_blocks(a), dtype=default_scalar_type)
 
 # As the system matrix is time-independent, we use {py:func}`assemble_matrix<dolfinx_mpc.assemble_matrix>`
 # with `kind="nest"` to create and assemble the system matrix once, outside the temporal loop.
@@ -431,7 +431,7 @@ L = (
     + inner(p_old, q) * dx
     - dt / 2 * inner(grad(V_old), bfield * q) * dx
 )
-L_blocked = form(extract_blocks(L))
+L_blocked = form(extract_blocks(L), dtype=default_scalar_type)
 b = create_vector(L_blocked, [mpc_V, mpc_p], kind="nest")
 
 # We perform the time dependent solve in a temporal loop.

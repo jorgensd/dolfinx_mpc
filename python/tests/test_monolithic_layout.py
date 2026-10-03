@@ -191,7 +191,7 @@ def _coupled(kind, options):
             ufl.inner(p, q) * ufl.dx + ufl.inner(ufl.grad(p), ufl.grad(q)) * ufl.dx,
         ],
     ]
-    L = [ufl.inner(f, v) * ufl.dx, ufl.cos(2 * ufl.pi * x[0]) * q * ufl.dx]
+    L = [ufl.inner(f, v) * ufl.dx, ufl.inner(ufl.cos(2 * ufl.pi * x[0]), q) * ufl.dx]
     problem = dolfinx_mpc.LinearProblem(
         a,
         L,
@@ -249,14 +249,14 @@ def _nonlinear(kind, options):
     dolfinx_mpc.finalize_multipointconstraints(mpcs)
 
     # The unknowns live in the space of the constraints, the arguments in the original spaces
-    uh, ph = (fem.Function(mpc.function_space) for mpc in mpcs)
+    uh, ph = (fem.Function(mpc.function_space, dtype=default_scalar_type) for mpc in mpcs)
     v, q = ufl.TestFunction(V), ufl.TestFunction(Q)
     x = ufl.SpatialCoordinate(domain)
     F = [
         (1 + uh**2) * ufl.inner(ufl.grad(uh), ufl.grad(v)) * ufl.dx
-        + 0.3 * ph * v * ufl.dx
-        - ufl.sin(2 * ufl.pi * x[0]) * v * ufl.dx,
-        (ph - uh**2) * q * ufl.dx + ufl.inner(ufl.grad(ph), ufl.grad(q)) * ufl.dx,
+        + 0.3 * ufl.inner(ph, v) * ufl.dx
+        - ufl.inner(ufl.sin(2 * ufl.pi * x[0]), v) * ufl.dx,
+        ufl.inner(ph - uh**2, q) * ufl.dx + ufl.inner(ufl.grad(ph), ufl.grad(q)) * ufl.dx,
     ]
     unknowns, trials = [uh, ph], [ufl.TrialFunction(V), ufl.TrialFunction(Q)]
     J = [[ufl.derivative(F_i, u_j, du_j) for u_j, du_j in zip(unknowns, trials)] for F_i in F]
