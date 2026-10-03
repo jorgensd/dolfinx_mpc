@@ -510,6 +510,10 @@ void assemble_interior_facets(
       = dolfinx::fem::is_transform_set(apply_dof_transformation);
   const bool transform1_set
       = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
+  // Whether a cell exists on a side and carries a slave
+  auto has_slaves
+      = [](const dolfinx::graph::AdjacencyList<std::int32_t>& c,
+           std::int32_t cell) { return cell >= 0 and c.num_links(cell) > 0; };
   for (std::size_t f = 0; f < facets.size() / 4; ++f)
   {
     // Entities are (cell, local facet) for each side
@@ -566,9 +570,6 @@ void assemble_interior_facets(
       }
     }
 
-    auto has_slaves
-        = [](const dolfinx::graph::AdjacencyList<std::int32_t>& c,
-             std::int32_t cell) { return cell >= 0 and c.num_links(cell) > 0; };
     const bool all_cells = cells0[0] >= 0 and cells0[1] >= 0 and cells1[0] >= 0
                            and cells1[1] >= 0;
     const bool any_slaves = has_slaves(*cell_to_slaves[0], cells0[0])
