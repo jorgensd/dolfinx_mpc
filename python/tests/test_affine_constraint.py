@@ -130,6 +130,53 @@ def test_dirichlet_master_is_eliminated():
         nt.assert_allclose(mpc.constants[slave], 6.0, rtol=_tol(1e-7))
 
 
+def test_dirichlet_diagonal_is_exact():
+    """The Dirichlet diagonal is added, so assembly must leave those rows empty.
+
+    `_finalize_matrix` adds `diagval` rather than inserting it, which avoids a
+    flush but is only correct if nothing else writes into a constrained row.
+    Nothing does: the element matrix has its constrained rows and columns
+    zeroed, a slave carrying a condition is rejected at finalize, and a master
+    carrying one is eliminated into the offset instead of staying in the master
+    list. If any of that stopped holding, the diagonal would come out larger
+    than `diagval` rather than silently wrong somewhere else.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 4, 4)
+    V = fem.functionspace(mesh, ("Lagrange", 1))
+
+    u_bc = fem.Function(V)
+    u_bc.x.array[:] = 3.0
+    bc_dofs = fem.locate_dofs_geometrical(V, lambda x: _isclose(x[0], 1))
+    bc = fem.dirichletbc(u_bc, bc_dofs)
+
+    # A master on the Dirichlet boundary and another away from it, so both the
+    # eliminated and the retained master paths are live.
+    s_m_c = {_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0, _l2b([0, 1], mesh): 0.5}}
+    mpc = dolfinx_mpc.MultiPointConstraint(V, bcs=[bc])
+    mpc.create_general_constraint(s_m_c)
+    mpc.finalize()
+
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = fem.form(ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx)
+    diagval = default_scalar_type(1.75)
+    A = dolfinx_mpc.assemble_matrix(a, mpc, bcs=[bc], diagval=diagval)
+
+    owned_bc_rows = bc_dofs[bc_dofs < V.dofmap.index_map.size_local * V.dofmap.index_map_bs]
+    assert MPI.COMM_WORLD.allreduce(len(owned_bc_rows), op=MPI.SUM) > 0
+    diagonal = A.getDiagonal()
+    nt.assert_allclose(diagonal.array_r[owned_bc_rows], diagval, rtol=_tol(1e-12))
+
+    # and the rest of each constrained row is empty
+    start, _ = A.getOwnershipRange()
+    for row in owned_bc_rows:
+        cols, vals = A.getRow(start + int(row))
+        off_diagonal = vals[cols != start + int(row)]
+        nt.assert_allclose(off_diagonal, 0.0, atol=_tol(1e-14))
+
+    diagonal.destroy()
+    A.destroy()
+
+
 def test_update_constants_tracks_time_dependent_data():
     """Changing the value of a Dirichlet condition is picked up by update_constants."""
     mesh = create_unit_square(MPI.COMM_WORLD, 2, 2)
@@ -396,6 +443,32 @@ def test_slave_that_is_also_dirichlet_is_rejected():
     mpc = dolfinx_mpc.MultiPointConstraint(V, bcs=bcs)
     mpc.create_general_constraint(s_m_c)
     with pytest.raises(Exception, match="both a slave"):
+        mpc.finalize()
+
+
+def test_foreign_dirichlet_condition_is_rejected():
+    """A condition on another space cannot be given to the constraint.
+
+    `gather_bc_markers` and `gather_bc_values` fill arrays sized for the
+    constraint's own space and mark every condition in `_bcs` without
+    filtering, while `DirichletBC::mark_dofs` bounds-checks only under
+    `#ifndef NDEBUG`. A condition belonging elsewhere would therefore be a
+    silent heap write in a Release build, so it is rejected up front. The
+    verdict depends only on function space identity, which is replicated, so
+    every rank raises and the error cannot deadlock.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 2, 2)
+    V = fem.functionspace(mesh, ("Lagrange", 1))
+    W = fem.functionspace(mesh, ("Lagrange", 2))
+
+    u_bc = fem.Function(W)
+    u_bc.x.array[:] = 1.0
+    dofs = fem.locate_dofs_geometrical(W, lambda x: _isclose(x[0], 0))
+    foreign = fem.dirichletbc(u_bc, dofs)
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V, bcs=[foreign])
+    mpc.create_general_constraint({_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0}})
+    with pytest.raises(Exception, match="not\\s+defined on the constraint"):
         mpc.finalize()
 
 

@@ -12,11 +12,14 @@ from petsc4py import PETSc as _PETSc
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import dolfinx.fem.petsc  # noqa: F401
 import numpy as np
+import numpy.typing as npt
 from dolfinx import default_scalar_type
 
 from dolfinx_mpc import cpp
 
+from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint
 
 
@@ -24,7 +27,7 @@ def _assemble_form(
     A: _PETSc.Mat,  # type: ignore
     form: _fem.Form,
     constraint: Sequence[MultiPointConstraint],
-    bcs: Sequence[_fem.DirichletBC] | None,
+    bc_data: BCData,
     num_threads: Optional[int] = 1,
 ):
     """
@@ -34,17 +37,24 @@ def _assemble_form(
     those belong to the system rather than to a single form, see
     :func:`_finalize_matrix`.
     """
-    bcs_cpp = [bc._cpp_object for bc in bcs] if bcs else []
+    # Markers come from the cache rather than being rebuilt here, so a caller
+    # that reassembles the same form pays for them once; see `BCData`.
+    dof_marker0, dof_marker1 = bc_data.markers(*form.function_spaces)
     cpp.mpc.assemble_matrix(
-        A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs_cpp, num_threads
+        A,
+        form._cpp_object,
+        constraint[0]._cpp_object,
+        constraint[1]._cpp_object,
+        dof_marker0,
+        dof_marker1,
+        num_threads,
     )
 
 
 def _finalize_matrix(
     A: _PETSc.Mat,  # type: ignore
     slave_blocks: Sequence,
-    bc_blocks: Sequence[tuple[_PETSc.Mat, _fem.FunctionSpace]],
-    bcs: Sequence[_fem.DirichletBC] | None,
+    bc_blocks: Sequence[tuple[_PETSc.Mat, npt.NDArray[np.int32]]],
     diagval: _PETSc.ScalarType = 1,  # type: ignore
 ):
     """
@@ -58,27 +68,20 @@ def _finalize_matrix(
     Args:
         A: The matrix, with every form already assembled into it
         slave_blocks: `(sub-matrix, constraint)` pairs whose slave rows get `diagval`
-        bc_blocks: `(sub-matrix, function space)` pairs whose Dirichlet rows get `diagval`
-        bcs: Sequence of C++ Dirichlet boundary conditions
+        bc_blocks: `(sub-matrix, rows)` pairs whose Dirichlet rows get `diagval`
         diagval: Value to place on the diagonal
     """
     for A_sub, mpc in slave_blocks:
         cpp.mpc.insert_diagonal_slaves(A_sub, mpc._cpp_object, diagval)
 
-    # The slave diagonal is added, the Dirichlet diagonal is inserted, so the
-    # additive contributions have to be communicated before switching mode.
-    if bc_blocks:
-        # Add one on diagonal for Dirichlet boundary conditions
-        A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        for A_sub, V in bc_blocks:
-            rows_ = []
-            for bc in bcs or []:
-                if V.contains(bc.function_space):
-                    dofs, owned = bc.dof_indices()
-                    rows_.append(dofs[:owned])
-            rows = np.concatenate(rows_) if rows_ else np.empty(0, dtype=np.int32)
-            _cpp.fem.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
+    # Both diagonals are added rather than inserted, so no flush is needed to
+    # take the matrix out of add mode. Adding is equivalent here because
+    # assembly leaves a Dirichlet row empty: the element matrix has its
+    # constrained rows and columns zeroed, slaves are rejected at finalize if
+    # they carry a condition, and a master that carries one is eliminated into
+    # the constraint offset rather than kept in the master list.
+    for A_sub, rows in bc_blocks:
+        _cpp.fem.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.ADD_VALUES)  # type: ignore
 
     A.assemble()
 
@@ -90,6 +93,7 @@ def assemble_matrix(
     diagval: _PETSc.ScalarType = 1,  # type: ignore
     A: Optional[_PETSc.Mat] = None,  # type: ignore
     num_threads: Optional[int] = 1,
+    bc_data: Optional[BCData] = None,
 ) -> _PETSc.Mat:  # type: ignore
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
@@ -104,9 +108,13 @@ def assemble_matrix(
             zeroed; call `A.zeroEntries()` first to discard its contents. If not
             supplied a new matrix is created, which is already zeroed.
         num_threads: The number of threads to use for certain operations
+        bc_data: A :class:`BCData` cache. Built from `bcs` when not supplied;
+            pass one to share it with the other assemblies of the same system.
     Returns:
         _PETSc.Mat: The matrix with the assembled bi-linear form  #type: ignore
     """
+    if bc_data is None:
+        bc_data = BCData(bcs)
     if not isinstance(constraint, Sequence):
         assert form.function_spaces[0] == form.function_spaces[1]
         constraint = (constraint, constraint)
@@ -116,11 +124,12 @@ def assemble_matrix(
     if A is None:
         A = cpp.mpc.create_matrix(form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object)
 
-    _assemble_form(A, form, constraint, bcs, num_threads)
+    _assemble_form(A, form, constraint, bc_data, num_threads)
 
+    V0, V1 = form.function_spaces
     slave_blocks = [(A, constraint[0])] if constraint[0] is constraint[1] else []
-    bc_blocks = [(A, form.function_spaces[0])] if form.function_spaces[0] is form.function_spaces[1] else []
-    _finalize_matrix(A, slave_blocks, bc_blocks, bcs, diagval)
+    bc_blocks = [(A, bc_data.rows(V0))] if V0 is V1 else []
+    _finalize_matrix(A, slave_blocks, bc_blocks, diagval)
 
     return A
 
@@ -148,7 +157,7 @@ def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Se
         )  # type: ignore
 
 
-def create_matrix_nest(a: Sequence[Sequence[_fem.Form]], constraints: Sequence[MultiPointConstraint]):
+def create_matrix_nest(a: Sequence[Sequence[_fem.Form | None]], constraints: Sequence[MultiPointConstraint]):
     """
     Create a PETSc matrix of type "nest" with appropriate sparsity pattern
     given the provided multi points constraints
@@ -163,11 +172,10 @@ def create_matrix_nest(a: Sequence[Sequence[_fem.Form]], constraints: Sequence[M
 
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):
-            if a[i][j] is None:
+            a_ij = a[i][j]
+            if a_ij is None:
                 continue
-            A_[i][j] = cpp.mpc.create_matrix(
-                a[i][j]._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object
-            )
+            A_[i][j] = cpp.mpc.create_matrix(a_ij._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object)
 
     A = _PETSc.Mat().createNest(
         A_,  # type: ignore
@@ -183,6 +191,7 @@ def assemble_matrix_nest(
     bcs: Sequence[_fem.DirichletBC] = [],
     diagval: _PETSc.ScalarType = 1,  # type: ignore
     num_threads: Optional[int] = 1,
+    bc_data: Optional[BCData] = None,
 ):
     """
     Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
@@ -197,8 +206,12 @@ def assemble_matrix_nest(
         bcs: Sequence of Dirichlet boundary conditions
         diagval: Value to set on the diagonal of the matrix (Default 1)
         num_threads: The number of threads to use for certain operations
+        bc_data: A :class:`BCData` cache. Built from `bcs` when not supplied;
+            pass one to share it with the other assemblies of the same system.
     """
     _bcs = [bc for bc in bcs]
+    if bc_data is None:
+        bc_data = BCData(_bcs)
 
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):
@@ -207,7 +220,7 @@ def assemble_matrix_nest(
                     A.getNestSubMatrix(i, j),
                     a_block,
                     (constraints[i], constraints[j]),
-                    _bcs,
+                    bc_data,
                     num_threads,
                 )
 
@@ -222,6 +235,6 @@ def assemble_matrix_nest(
         A_ii = A.getNestSubMatrix(i, i)
         slave_blocks.append((A_ii, constraints[i]))
         if a_ii.function_spaces[0] is a_ii.function_spaces[1]:
-            bc_blocks.append((A_ii, a_ii.function_spaces[0]))
+            bc_blocks.append((A_ii, bc_data.rows(a_ii.function_spaces[0])))
 
-    _finalize_matrix(A, slave_blocks, bc_blocks, _bcs, diagval)
+    _finalize_matrix(A, slave_blocks, bc_blocks, diagval)

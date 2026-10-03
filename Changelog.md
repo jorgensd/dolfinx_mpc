@@ -7,6 +7,20 @@
 - **New demos**: `python/demos/demo_mean_value_constraint.py`, `python/demos/demo_boundary_average_constraint.py` and `python/demos/demo_flow_rate_constraint.py` show `create_integral_constraint` used for a mean-value, a boundary-average and a Stokes flow-rate constraint respectively, each verified against a `basix.ufl.real_element` solve and measuring the trade-off: for a cell integral every dof becomes a master, so $K^HAK$ is essentially full and its condition number is inflated by a factor $\sim M$; for a facet integral the master set is only the boundary and the constraint is the cheaper of the two formulations.
 - **New feature**: Affine multi-point constraints: `MultiPointConstraint` now supports affine constraints of the form $x = K x_{\text{red}} + g$ via the new optional bcs and rhs_coeffs arguments. Time-dependent boundary data is supported via `MultiPointConstraint.update_constants()`. For manual linear assembly, use the new `dolfinx_mpc.apply_mpc_lifting` function (handled automatically by `LinearProblem`). NonlinearProblem automatically handles affine constraints and Dirichlet conditions without requiring any API changes. Passing neither of the new arguments reproduces the previous homogeneous behaviour. Note: Numba assemblers currently raise `NotImplementedError` for inhomogeneous constraints. For a full mathematical derivation of the offset $g$ and the linear/nonlinear solver paths, see the [theory document](./docs/nonlinear_mpc.md). 
 - **Error handling**: The `MultiPointConstraint` constructor now throws `invalid_argument` if a dof is both a slave and Dirichlet-constraine. That was previously accepted silently.
+- **Assembly takes dof markers**, following DOLFINx [#4583](https://github.com/FEniCS/dolfinx/pull/4583).
+  `dolfinx_mpc::assemble_matrix` gained an overload taking `dof_marker0`/`dof_marker1`; the
+  `bcs` overload remains as a convenience wrapper that rebuilds them per call. The new
+  `dolfinx_mpc.BCData` caches markers and diagonal rows, keyed by function space, so one
+  instance serves an operator, its preconditioner and its Jacobian. `LinearProblem` and
+  `NonlinearProblem` hold one and reuse it, rather than rebuilding on every solve or Newton
+  iteration.
+- **Lifting takes dof markers and values.** `dolfinx_mpc::apply_lifting` is one template taking
+  `bc_markers1`/`bc_values1` per block, plus a `bcs` wrapper; the four per-scalar-type overloads
+  are gone. `dolfinx_mpc.apply_lifting` gained `bc_data`; markers are cached, values are re-read
+  on every call. A condition now applies to block `j` if it is defined on (a subspace of)
+  that block's trial space, so a flat list of conditions is accepted.
+- **BUGFIX**: `NonlinearProblem` failed with a non-nest `P`, and with `J=None` for a single form.
+- `LinearProblem` accepts `entity_maps`, as `NonlinearProblem` already did, so forms coupling two meshes need not be compiled by hand.
 - **Forms coupling spaces on different meshes** — a space on a submesh coupled to one on its
   parent, as in a mortar or Lagrange multiplier formulation — can now be assembled with a
   multi point constraint. **BUGFIX**: the exterior facet kernels were passed a null facet

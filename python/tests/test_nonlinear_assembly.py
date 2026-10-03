@@ -164,3 +164,47 @@ def test_homogenize(tensor_order, poly_order):
             else:
                 assert np.isclose(u_.array_r[i], 1.0)
     u.x.petsc_vec.destroy()
+
+
+def test_nonlinear_problem_with_preconditioner():
+    """A non-nest `NonlinearProblem` accepts a separate preconditioner form."""
+    mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, 8, 8)
+    V = dolfinx.fem.functionspace(mesh, ("Lagrange", 1))
+    uh = dolfinx.fem.Function(V)
+    v = ufl.TestFunction(V)
+    du = ufl.TrialFunction(V)
+    x = ufl.SpatialCoordinate(mesh)
+    F = (1 + uh**2) * ufl.inner(ufl.grad(uh), ufl.grad(v)) * ufl.dx - ufl.inner(ufl.sin(x[0]), v) * ufl.dx
+    P = ufl.inner(ufl.grad(du), ufl.grad(v)) * ufl.dx + ufl.inner(du, v) * ufl.dx
+
+    bc = dolfinx.fem.dirichletbc(
+        dolfinx.default_scalar_type(0.0),
+        dolfinx.fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0.0)),
+        V,
+    )
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.finalize()
+    tol = 50 * np.finfo(uh.x.array.dtype).resolution
+
+    def solve(P):
+        uh.x.array[:] = 0
+        problem = dolfinx_mpc.NonlinearProblem(
+            F,
+            uh,
+            mpc=mpc,
+            bcs=[bc],
+            P=P,
+            petsc_options_prefix="test_nonlinear_P_",
+            petsc_options={
+                "snes_rtol": tol,
+                "snes_atol": tol,
+                "snes_error_if_not_converged": True,
+                "ksp_type": "gmres",
+                "ksp_rtol": tol,
+                "pc_type": "lu",
+            },
+        )
+        problem.solve()
+        return uh.x.array.copy()
+
+    np.testing.assert_allclose(solve(P), solve(None), rtol=tol, atol=tol)

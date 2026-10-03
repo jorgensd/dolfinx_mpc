@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Iterable, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
 from petsc4py import PETSc as _PETSc
 
@@ -19,46 +19,89 @@ from dolfinx.la.petsc import _zero_vector, create_vector
 
 import dolfinx_mpc.cpp
 
+from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint, _float_classes
 
 
 def apply_lifting(
     b: _PETSc.Vec,
-    form: Union[Iterable[Sequence[_fem.Form]], Iterable[_fem.Form]],  # type: ignore
+    form: Union[Sequence[Sequence[Optional[_fem.Form]]], Sequence[Optional[_fem.Form]]],
     bcs: Union[Sequence[_fem.DirichletBC], Sequence[Sequence[_fem.DirichletBC]]],
     constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
     x0: Optional[Sequence[_PETSc.Vec]] = None,
     scale: _float_classes = default_scalar_type(1.0),  # type: ignore
     num_threads: Optional[int] = 1,
+    bc_data: Optional[BCData] = None,
 ):  # type: ignore
     """
-    Apply lifting to vector b, i.e.
-    :math:`b = b - scale \\cdot K^T (A_j (g_j - x0_j))`
+    Apply lifting of Dirichlet conditions to the vector `b`.
+
+    For a single vector,
+
+    .. math::
+
+        b \\leftarrow b - \\mathrm{scale}\\, K^T \\sum_j A_j (g_j - x0_j),
+
+    where :math:`A_j` is assembled from `form[j]`, :math:`g_j` holds the
+    Dirichlet values on its trial space and :math:`K` is the reduction matrix
+    of `constraint`. For a nest vector, block row :math:`i` is
+
+    .. math::
+
+        b_i \\leftarrow b_i - \\mathrm{scale}\\, K_i^T \\sum_j A_{ij} (g_j - x0_j),
+
+    where :math:`A_{ij}` is assembled from `form[i][j]` and :math:`K_i` is the
+    reduction matrix of `constraint[i]`. A `None` form is skipped.
 
     Args:
         b: PETSc vector to assemble into
-        form: The linear form
-        bcs: List of Dirichlet boundary conditions
+        form: The bilinear forms, `form[j]` (single vector) or `form[i][j]`
+            (nest vector) as above
+        bcs: List of Dirichlet boundary conditions. A condition contributes to
+            :math:`g_j` if it is defined on the trial space of column `j` or a
+            subspace of it, so the conditions may be given per block or as one
+            flat list.
         constraint: The multi point constraint
         x0: List of vectors
         scale: Scaling for lifting
         num_threads: The number of threads to use for certain operations
+        bc_data: A :class:`BCData` cache. Built from `bcs` when not supplied;
+            pass one to reuse the dof markers across calls.
     """
     t = Timer("~MPC: Apply lifting (C++)")
     if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
         scale = scale.item()  # type: ignore
+    if bc_data is None:
+        bc_data = BCData([bc for bcs_j in bcs for bc in (bcs_j if isinstance(bcs_j, Sequence) else [bcs_j])])
+
+    # The values depend only on the trial space, so compute them once per space
+    # rather than once per block row.
+    lifting_data: dict[int, tuple[numpy.ndarray, numpy.ndarray]] = {}
+
+    def _lifting_data(forms):
+        markers, values = [], []
+        for a in forms:
+            if a is None:
+                markers.append(numpy.empty(0, dtype=numpy.int8))
+                values.append(numpy.empty(0, dtype=_PETSc.ScalarType))  # type: ignore
+                continue
+            V1 = a.function_spaces[1]
+            key = id(V1._cpp_object)
+            if key not in lifting_data:
+                lifting_data[key] = bc_data.lifting(V1, _PETSc.ScalarType)  # type: ignore
+            markers.append(lifting_data[key][0])
+            values.append(lifting_data[key][1])
+        return markers, values
 
     if b.getType() == "nest":
-        try:
-            bcs = _fem.bcs_by_block(_fem.extract_function_spaces(form, 1), bcs)  # type: ignore
-        except AttributeError:
-            pass
         x0 = [] if x0 is None else x0.getNestSubVecs()  # type: ignore
         assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
         for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
+            markers, values = _lifting_data(a_sub)
             _a = [None if form is None else form._cpp_object for form in a_sub]  # type:ignore
-            _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]  # type: ignore
-            dolfinx_mpc.cpp.mpc.apply_lifting(b_sub.array_w, _a, _bcs, x0, scale, mpc_i._cpp_object, num_threads)
+            dolfinx_mpc.cpp.mpc.apply_lifting(
+                b_sub.array_w, _a, markers, values, x0, scale, mpc_i._cpp_object, num_threads
+            )
     else:
         with contextlib.ExitStack() as stack:
             if x0 is None:
@@ -67,11 +110,11 @@ def apply_lifting(
                 x0 = [stack.enter_context(x.localForm()) for x in x0]
             x0_r = [x.array_r for x in x0]
             b_local = stack.enter_context(b.localForm())
-            _forms = [f._cpp_object for f in form]  # type: ignore
-            _bcs = [[bc._cpp_object for bc in bcs0] for bcs0 in bcs]  # type: ignore
+            markers, values = _lifting_data(form)
+            _forms = [None if f is None else f._cpp_object for f in form]  # type: ignore
             assert isinstance(constraint, MultiPointConstraint)
             dolfinx_mpc.cpp.mpc.apply_lifting(
-                b_local.array_w, _forms, _bcs, x0_r, scale, constraint._cpp_object, num_threads
+                b_local.array_w, _forms, markers, values, x0_r, scale, constraint._cpp_object, num_threads
             )
     t.stop()
 

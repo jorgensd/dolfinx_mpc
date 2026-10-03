@@ -26,15 +26,17 @@ from .assemble_vector import (
     assemble_vector_nest,
     create_vector_nest,
 )
+from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint
 
 
 def assemble_jacobian_mpc(
     u: Sequence[_fem.Function] | _fem.Function,
-    jacobian: _fem.Form | Sequence[Sequence[_fem.Form]],
-    preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None,
+    jacobian: _fem.Form | Sequence[Sequence[_fem.Form | None]],
+    preconditioner: _fem.Form | Sequence[Sequence[_fem.Form | None]] | None,
     bcs: Iterable[_fem.DirichletBC],
     mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
+    bc_data: BCData,
     _snes: PETSc.SNES,  # type: ignore
     x: PETSc.Vec,  # type: ignore
     J: PETSc.Mat,  # type: ignore
@@ -55,6 +57,10 @@ def assemble_jacobian_mpc(
         preconditioner: Form of the preconditioner
         bcs: List of Dirichlet boundary conditions
         mpc: The multi point constraint or a sequence of multi point
+        bc_data: Dof marker and diagonal row cache, built once by the caller so
+            that every Newton iteration reuses it. The Jacobian and the
+            preconditioner share it: entries are keyed by function space, and
+            the two forms are over the same spaces.
         _snes: The solver instance
         x: The vector containing the point to evaluate at
         J: Matrix to assemble the Jacobian into
@@ -79,16 +85,16 @@ def assemble_jacobian_mpc(
     # Assemble Jacobian
     J.zeroEntries()
     if J.getType() == "nest":
-        assemble_matrix_nest(J, jacobian, mpc, bcs, diagval=1.0)  # type: ignore
+        assemble_matrix_nest(J, jacobian, mpc, bcs, diagval=1.0, bc_data=bc_data)  # type: ignore
     else:
-        assemble_matrix(jacobian, mpc, bcs, diagval=1.0, A=J)  # type: ignore
+        assemble_matrix(jacobian, mpc, bcs, diagval=1.0, A=J, bc_data=bc_data)  # type: ignore
     J.assemble()
     if preconditioner is not None:
         P.zeroEntries()
         if P.getType() == "nest":
-            assemble_matrix_nest(P, preconditioner, mpc, bcs, diagval=1.0)  # type: ignore
+            assemble_matrix_nest(P, preconditioner, mpc, bcs, diagval=1.0, bc_data=bc_data)  # type: ignore
         else:
-            assemble_matrix(mpc, preconditioner, bcs, diagval=1.0, A=P)  # type: ignore
+            assemble_matrix(preconditioner, mpc, bcs, diagval=1.0, A=P, bc_data=bc_data)  # type: ignore
 
         P.assemble()
 
@@ -99,6 +105,7 @@ def assemble_residual_mpc(
     jacobian: _fem.Form | Sequence[Sequence[_fem.Form]],
     bcs: Sequence[_fem.DirichletBC],
     mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
+    bc_data: BCData,
     _snes: PETSc.SNES,  # type: ignore
     x: PETSc.Vec,  # type: ignore
     F: PETSc.Vec,  # type: ignore
@@ -118,6 +125,10 @@ def assemble_residual_mpc(
         jacobian: Form of the Jacobian. It can be a nested sequence of
             forms.
         bcs: List of Dirichlet boundary conditions.
+        mpc: The multi point constraint or a sequence of multi point
+            constraints.
+        bc_data: Dof marker cache shared with the Jacobian, built once by the
+            caller so that every Newton iteration reuses it.
         _snes: The solver instance.
         x: The vector containing the point to evaluate the residual at.
         F: Vector to assemble the residual into.
@@ -150,13 +161,13 @@ def assemble_residual_mpc(
         # Nest and blocked lifting
         bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(jacobian, 1), bcs)  # type: ignore
         _fem.petsc._assign_block_data(residual, x)  # type: ignore
-        apply_lifting(F, jacobian, bcs=bcs1, constraint=mpc, x0=x, scale=-1.0)  # type: ignore
+        apply_lifting(F, jacobian, bcs=bcs1, constraint=mpc, x0=x, scale=-1.0, bc_data=bc_data)  # type: ignore
         _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(residual), bcs)  # type: ignore
         _fem.petsc.set_bc(F, bcs0, x0=x, alpha=-1.0)
     except (TypeError, ValueError):
         # Single form lifting
-        apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0)  # type: ignore
+        apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0, bc_data=bc_data)  # type: ignore
         _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         _fem.petsc.set_bc(F, bcs, x0=x, alpha=-1.0)
     _ghost_update(F, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
@@ -233,8 +244,8 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
 
         if J is None:
             if isinstance(F, ufl.form.Form):
-                du = ufl.TrialFunction(self._F.arguments()[0].ufl_function_space())
-                J = ufl.derivative(F, du)
+                du = ufl.TrialFunction(F.arguments()[0].ufl_function_space())
+                J = ufl.derivative(F, u, du)
             else:
                 dus = [ufl.TrialFunction(Fi.arguments()[0].ufl_function_space()) for Fi in F]
                 J = _fem.forms.derivative_block(F, u, dus)
@@ -284,24 +295,34 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             self._x = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
 
         # Create PETSc structure for preconditioner if provided
-        if self.preconditioner is not None:  # type: ignore
+        prec = self.preconditioner
+        if prec is not None:  # type: ignore
             if kind == "nest":
-                assert isinstance(self.preconditioner, Sequence)
-                assert isinstance(self.mpc, Sequence)
-                self._P_mat = create_matrix_nest(self.preconditioner, self.mpc)
+                assert isinstance(prec, Sequence)
+                assert isinstance(mpc, Sequence)
+                self._P_mat = create_matrix_nest(prec, mpc)
             else:
-                assert isinstance(self._preconditioner, _fem.Form)
-                self._P_mat = _cpp_mpc.create_matrix(self.preconditioner, kind=kind)
+                assert isinstance(prec, _fem.Form)
+                assert isinstance(mpc, MultiPointConstraint)
+                self._P_mat = _cpp_mpc.create_matrix(prec._cpp_object, mpc._cpp_object)
         else:
             self._P_mat = None  # type: ignore
 
         # Create the SNES solver and attach the corresponding Jacobian and
         # residual computation functions
         self._snes = PETSc.SNES().create(comm=self.A.comm)  # type: ignore
+
+        # Markers and diagonal rows depend only on the function spaces and the
+        # conditions, so one cache covers the Jacobian and the preconditioner
+        # and every Newton iteration reuses it.
+        bc_data = BCData(bcs)
+
         self.solver.setJacobian(
-            partial(assemble_jacobian_mpc, u, self.J, self.preconditioner, bcs, mpc), self._A, self.P_mat
+            partial(assemble_jacobian_mpc, u, self.J, prec, bcs, mpc, bc_data),
+            self._A,
+            self.P_mat,
         )
-        self.solver.setFunction(partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc), self.b)
+        self.solver.setFunction(partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc, bc_data), self.b)
 
         # Set PETSc options
         self._petsc_options_prefix = petsc_options_prefix
@@ -404,18 +425,19 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
 
     """
 
-    u: _fem.Function | list[_fem.Function]
+    _u: _fem.Function | list[_fem.Function]
     _a: _fem.Form | Sequence[Sequence[_fem.Form]]
     _L: _fem.Form | Sequence[_fem.Form]
-    _preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None
+    _jacobian: _fem.Form | Sequence[Sequence[_fem.Form | None]]
+    _preconditioner: _fem.Form | Sequence[Sequence[_fem.Form | None]] | None  # type: ignore
     _mpc: MultiPointConstraint | Sequence[MultiPointConstraint]
+    _bc_data: BCData
     _A: PETSc.Mat
     _P: PETSc.Mat | None
     _b: PETSc.Vec
     _solver: PETSc.KSP
     _x: PETSc.Vec
     bcs: list[_fem.DirichletBC]
-    __slots__ = tuple(__annotations__)
 
     def __init__(
         self,
@@ -465,7 +487,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         if is_nest:
             if u is None:
                 assert isinstance(self._mpc, Sequence)
-                self.u = [_fem.Function(self._mpc[i].function_space) for i in range(len(self._mpc))]
+                self._u = [_fem.Function(self._mpc[i].function_space) for i in range(len(self._mpc))]
             else:
                 assert isinstance(self._mpc, Sequence)
                 assert isinstance(u, Sequence)
@@ -477,21 +499,26 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                             "The input function has to be in the function space in the multi-point constraint",
                             "i.e. u = dolfinx.fem.Function(mpc.function_space)",
                         )
-                self.u = list(u)
+                self._u = list(u)
         else:
             if u is None:
                 assert isinstance(self._mpc, MultiPointConstraint)
-                self.u = _fem.Function(self._mpc.function_space)
+                self._u = _fem.Function(self._mpc.function_space)
             else:
                 assert isinstance(u, _fem.Function)
                 assert isinstance(self._mpc, MultiPointConstraint)
                 if u.function_space is self._mpc.function_space:
-                    self.u = u
+                    self._u = u
                 else:
                     raise ValueError(
                         "The input function has to be in the function space in the multi-point constraint",
                         "i.e. u = dolfinx.fem.Function(mpc.function_space)",
                     )
+
+        # Markers and diagonal rows depend only on the function spaces and the
+        # conditions, both fixed for this object, so one cache covers the
+        # operator and the preconditioner and every solve reuses it.
+        self._bc_data = BCData(bcs)
 
         # Create MPC matrix and vector
         self._preconditioner = _fem.form(  # type: ignore
@@ -561,7 +588,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                 opts.delValue(k)
             opts.prefixPop()
 
-    def solve(self) -> _fem.Function | list[_fem.Function]:
+    def solve(self) -> _fem.Function | Sequence[_fem.Function]:
         """Solve the problem.
 
         Returns:
@@ -578,10 +605,10 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         # Assemble lhs
         self._A.zeroEntries()
         if self._A.getType() == "nest":
-            assemble_matrix_nest(self._A, self._a, self._mpc, self.bcs, diagval=1.0)  # type: ignore
+            assemble_matrix_nest(self._A, self._a, self._mpc, self.bcs, diagval=1.0, bc_data=self._bc_data)  # type: ignore
         else:
             assert isinstance(self._a, _fem.Form)
-            assemble_matrix(self._a, self._mpc, bcs=self.bcs, A=self._A)
+            assemble_matrix(self._a, self._mpc, bcs=self.bcs, A=self._A, bc_data=self._bc_data)
 
         self._A.assemble()
         assert self._A.assembled
@@ -591,10 +618,10 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             self._P_mat.zeroEntries()
             if self._P_mat.getType() == "nest":
                 assert isinstance(self._preconditioner, Sequence)
-                assemble_matrix_nest(self._P_mat, self._preconditioner, self._mpc, self.bcs)  # type: ignore
+                assemble_matrix_nest(self._P_mat, self._preconditioner, self._mpc, self.bcs, bc_data=self._bc_data)  # type: ignore
             else:
                 assert isinstance(self._preconditioner, _fem.Form)
-                assemble_matrix(self._preconditioner, self._mpc, bcs=self.bcs, A=self._P_mat)
+                assemble_matrix(self._preconditioner, self._mpc, bcs=self.bcs, A=self._P_mat, bc_data=self._bc_data)
             self._P_mat.assemble()
 
         # Assemble the residual
@@ -619,13 +646,13 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
 
         if blocked:
             # Nest and blocked lifting
-            apply_lifting(self._b, self._a, bcs=bcs1, constraint=self._mpc)  # type: ignore
+            apply_lifting(self._b, self._a, bcs=bcs1, constraint=self._mpc, bc_data=self._bc_data)  # type: ignore
             apply_mpc_lifting(self._b, self._a, constraint=self._mpc)  # type: ignore
             _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
             _fem.petsc.set_bc(self._b, bcs0)
         else:
             # Single form lifting
-            apply_lifting(self._b, [self._a], bcs=[self.bcs], constraint=self._mpc)  # type: ignore
+            apply_lifting(self._b, [self._a], bcs=[self.bcs], constraint=self._mpc, bc_data=self._bc_data)  # type: ignore
             apply_mpc_lifting(self._b, [self._a], constraint=self._mpc)  # type: ignore
             _ghost_update(self._b, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
             _fem.petsc.set_bc(self._b, self.bcs)
@@ -647,4 +674,4 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             self._mpc.homogenize(self.u)
             self._mpc.backsubstitution(self.u)
 
-        return self.u
+        return self._u
