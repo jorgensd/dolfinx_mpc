@@ -123,7 +123,9 @@ void zero_dirichlet(std::span<T> Ae, std::span<const std::int32_t> dofs0,
 /// @param[in, out] Ae The local element matrix
 /// @param[in] dofs The local indices of the row and column dofs (blocked)
 /// @param[in] bs The row and column block size
-/// @param[in] slaves The row and column slave indices (local to process)
+/// @param[in] slaves The row and column slave indices (local to process). A
+/// dof may appear more than once when the element spans several cells.
+/// @param[in] local_index Position of `slaves[axis][i]` in the element tensor
 /// @param[in] masters Row and column map from the slave indices (local to
 /// process) to the master dofs (local to process)
 /// @param[in] coefficients row and column map from the slave indices (local to
@@ -145,6 +147,7 @@ void modify_mpc_cell(
     const std::array<std::span<const std::int32_t>, 2>& dofs,
     const std::array<const int, 2>& bs,
     const std::array<std::span<const std::int32_t>, 2>& slaves,
+    const std::array<std::span<const std::int32_t>, 2>& local_index,
     const std::array<
         std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>&
         masters,
@@ -153,26 +156,13 @@ void modify_mpc_cell(
     const std::array<std::span<const std::int8_t>, 2>& is_slave,
     std::span<T> scratch_memory)
 {
+  // Count number of masters in flattened structure for the rows and columns
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
-  std::array<std::vector<std::int32_t>, 2> local_index;
   for (int axis = 0; axis < 2; ++axis)
   {
-    // NOTE: Should this be moved into the MPC constructor?
-    // Locate which local dofs are slave dofs and compute the local index of the
-    // slave
-    local_index[axis] = dolfinx_mpc::compute_local_slave_index(
-        slaves[axis], num_dofs[axis], bs[axis], dofs[axis], is_slave[axis]);
-
-    // Count number of masters in flattened structure for the rows and columns
-    for (std::uint32_t i = 0; i < num_dofs[axis]; i++)
-    {
-      for (int j = 0; j < bs[axis]; j++)
-      {
-        const std::int32_t dof = dofs[axis][i] * bs[axis] + j;
-        if (is_slave[axis][dof])
-          num_flattened_masters[axis] += masters[axis]->links(dof).size();
-      }
-    }
+    assert(slaves[axis].size() == local_index[axis].size());
+    for (std::int32_t slave : slaves[axis])
+      num_flattened_masters[axis] += masters[axis]->links(slave).size();
   }
 
   const int ndim0 = bs[0] * num_dofs[0];
