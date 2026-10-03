@@ -40,7 +40,7 @@
 # $$
 #
 # for an *unknown constant* $\mu$. This is the classical "defective boundary
-# condition" of {cite}`FormaggiaGerbeauNobileQuarteroni2002`: an averaged datum is
+# condition" of {cite}`bndavg-FormaggiaGerbeauNobileQuarteroni2002`: an averaged datum is
 # prescribed, and the constant flux conjugate to it is produced by the solve. The
 # demo recovers $\mu$ from the discrete solution and compares it with the
 # multiplier of the equivalent real space formulation.
@@ -522,5 +522,7 @@ if pieces is not None:  # only the root process received the grids
         plotter.show()
 # -
 # ```{bibliography}
-#    :filter: cited and ({"python/demos/demo_boundary_average_constraint"} >= docnames)
+#    :filter: cited
+#    :labelprefix:
+#    :keyprefix: bndavg-
 # ```

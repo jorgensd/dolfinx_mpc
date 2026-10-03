@@ -10,6 +10,7 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
+#include <dolfinx/mesh/cell_types.h>
 
 using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
     const std::int32_t,
@@ -294,6 +295,7 @@ void assemble_exterior_facets(
     const std::vector<T>& constants,
     const std::span<const std::uint32_t>& cell_info0,
     const std::span<const std::uint32_t>& cell_info1,
+    std::span<const std::uint8_t> perms, int num_facets_per_cell,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
 {
@@ -359,10 +361,12 @@ void assemble_exterior_facets(
       std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
                           std::next(coordinate_dofs.begin(), 3 * i));
     }
-    // Tabulate tensor
+    // Tabulate tensor.
+    const std::uint8_t perm
+        = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
     std::ranges::fill(Aeb, 0);
     kernel(Aeb.data(), coeffs.data() + l / 2 * cstride, constants.data(),
-           coordinate_dofs.data(), &local_facet, nullptr, nullptr);
+           coordinate_dofs.data(), &local_facet, &perm, nullptr);
     if (is_transform0_set)
       apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
     if (is_transform1_set)
@@ -627,10 +631,25 @@ void assemble_matrix_impl(
   std::span<const std::uint32_t> cell_info1;
   if (needs_transformation_data)
   {
-    mesh0->topology_mutable()->create_entity_permutations(num_threads);
-    mesh1->topology_mutable()->create_entity_permutations(num_threads);
+    mesh0->topology_mutable()->create_cell_permutations(num_threads);
+    mesh1->topology_mutable()->create_cell_permutations(num_threads);
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
     cell_info1 = std::span(mesh1->topology()->get_cell_permutation_info());
+  }
+
+  // Facet permutations of the integration domain. Needed whenever the kernel
+  // asks for them, which happens for instance when the two argument spaces
+  // live on different meshes.
+  std::span<const std::uint8_t> perms;
+  int num_facets_per_cell = 0;
+  if (a.needs_facet_permutations())
+  {
+    const dolfinx::mesh::CellType cell_type
+        = mesh->topology()->cell_types().front();
+    const std::size_t fdim = mesh->topology()->dim() - 1;
+    num_facets_per_cell = dolfinx::mesh::cell_num_entities(cell_type, fdim);
+    mesh->topology_mutable()->create_entity_permutations(fdim, num_threads);
+    perms = std::span(mesh->topology()->get_entity_permutations(fdim));
   }
   for (int i = 0; i < a.num_integrals(dolfinx::fem::IntegralType::cell, 0); ++i)
   {
@@ -667,7 +686,8 @@ void assemble_matrix_impl(
         mat_add_block_values, mat_add_values, *mesh, facets, active_facets0,
         active_facets1, apply_dof_transformation, *dofmap0,
         apply_dof_transformation_to_transpose, *dofmap1, bc0, bc1, fn, coeffs,
-        cstride, constants, cell_info0, cell_info1, mpc0, mpc1);
+        cstride, constants, cell_info0, cell_info1, perms, num_facets_per_cell,
+        mpc0, mpc1);
   }
 
   if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0) > 0)
@@ -686,7 +706,7 @@ void _assemble_matrix(
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    const T diagval, std::size_t num_threads)
+    std::size_t num_threads)
 {
   dolfinx::common::Timer timer("~MPC: Assemble matrix (C++)");
 
@@ -722,20 +742,6 @@ void _assemble_matrix(
   assemble_matrix_impl<T>(mat_add_block, mat_add, a, dof_marker0, dof_marker1,
                           mpc0, mpc1, num_threads);
 
-  // Add diagval on diagonal for slave dofs
-  if (mpc0->function_space() == mpc1->function_space())
-  {
-    const std::vector<std::int32_t>& slaves = mpc0->slaves();
-    const std::int32_t num_local_slaves = mpc0->num_local_slaves();
-    std::vector<std::int32_t> diag_dof(1);
-    std::vector<T> diag_value(1);
-    diag_value[0] = diagval;
-    for (std::int32_t i = 0; i < num_local_slaves; ++i)
-    {
-      diag_dof[0] = slaves[i];
-      mat_add(diag_dof, diag_dof, diag_value);
-    }
-  }
   timer.stop();
 }
 } // namespace
@@ -754,10 +760,9 @@ void dolfinx_mpc::assemble_matrix(
         const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
-    const double diagval, std::size_t num_threads)
+    std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
-                   num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -777,10 +782,9 @@ void dolfinx_mpc::assemble_matrix(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
-    const std::complex<double> diagval, std::size_t num_threads)
+    std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
-                   num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -797,10 +801,9 @@ void dolfinx_mpc::assemble_matrix(
         const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc1,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
         bcs,
-    const float diagval, std::size_t num_threads)
+    std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
-                   num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -820,8 +823,7 @@ void dolfinx_mpc::assemble_matrix(
     const std::vector<
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
-    const std::complex<float> diagval, std::size_t num_threads)
+    std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, diagval,
-                   num_threads);
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
 }

@@ -79,14 +79,6 @@ def assemble_matrix(
     )
     slave_cells = extract_slave_cells(c_to_s_off)
 
-    # Create 1D bc indicator for matrix assembly
-    num_dofs_local = (dofmap.index_map.size_local + dofmap.index_map.num_ghosts) * dofmap.index_map_bs
-    is_bc = numpy.zeros(num_dofs_local, dtype=bool)
-    bcs_cpp = [] if bcs is None else [bc._cpp_object for bc in bcs]
-    if len(bcs_cpp) > 0:
-        for bc in bcs_cpp:
-            is_bc[bc.dof_indices()[0]] = True
-
     # Get data from mesh
     x_dofs = V.mesh.geometry.dofmaps[0]
     x = V.mesh.geometry.x
@@ -95,11 +87,12 @@ def assemble_matrix(
     form_coeffs = _cpp.fem.pack_coefficients(form._cpp_object)
     form_consts = _cpp.fem.pack_constants(form._cpp_object)
     # Create sparsity pattern and matrix if not supplied
+    # A freshly created matrix is already zeroed; an `A` supplied by the caller
+    # is added into, following the additive convention of the DOLFINx assemblers.
     if A is None:
         pattern = create_sparsity_pattern(form, constraint)
         pattern.finalize()
         A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern, None)
-    A.zeroEntries()
 
     # Assemble the matrix with all entries
     markers = _fem.petsc._matrix_bc_markers(form, bcs)
@@ -123,7 +116,7 @@ def assemble_matrix(
     )
     cell_perms = numpy.array([], dtype=numpy.uint32)
     if needs_transformation_data:
-        V.mesh.topology.create_entity_permutations(num_threads)
+        V.mesh.topology.create_cell_permutations(num_threads)
         cell_perms = V.mesh.topology.get_cell_permutation_info()
     # NOTE: Here we need to add the apply_dof_transformation and apply_dof_transformation transpose functions
     # to support more exotic elements
@@ -145,7 +138,7 @@ def assemble_matrix(
     if num_cell_integrals > 0:
         # NOTE: This depends on enum ordering in ufcx.h
         cell_form_pos = ufcx_form.form_integral_offsets[0]
-        V.mesh.topology.create_entity_permutations(num_threads)
+        V.mesh.topology.create_cell_permutations(num_threads)
         for i in range(num_cell_integrals):
             coeffs_i = form_coeffs[(_fem.IntegralType.cell, i)]
             cell_kernel = getattr(ufcx_form.form_integrals[cell_form_pos + i], f"tabulate_tensor_{nptype}")
@@ -162,7 +155,7 @@ def assemble_matrix(
                 block_size,
                 num_dofs_per_element,
                 mpc_data,
-                is_bc,
+                markers[0],
             )
 
     # Assemble over exterior facets
@@ -198,7 +191,7 @@ def assemble_matrix(
                 num_dofs_per_element,
                 facet_info,
                 mpc_data,
-                is_bc,
+                markers[0],
                 num_facets_per_cell,
             )
 
@@ -260,7 +253,7 @@ def assemble_slave_cells(
         numba.int32[:],
         numba.int32[:],
     ],
-    is_bc: numba.bool_[:],
+    bc_markers: numba.int8[:],
 ):
     """
     Assemble MPC contributions for cell integrals
@@ -305,12 +298,14 @@ def assemble_slave_cells(
 
         local_blocks = dofmap[cell]
 
-        # Remove all contributions for dofs that are in the Dirichlet bcs
-        for j in range(num_dofs_per_element):
-            for k in range(block_size):
-                if is_bc[local_blocks[j] * block_size + k]:
-                    A_local[j * block_size + k, :] = 0
-                    A_local[:, j * block_size + k] = 0
+        # Remove all contributions for dofs that are in the Dirichlet bcs.
+        # `bc_markers` is empty when no condition applies to this space.
+        if bc_markers.size > 0:
+            for j in range(num_dofs_per_element):
+                for k in range(block_size):
+                    if bc_markers[local_blocks[j] * block_size + k] != 0:
+                        A_local[j * block_size + k, :] = 0
+                        A_local[:, j * block_size + k] = 0
 
         A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()  # type: ignore
 
@@ -481,7 +476,7 @@ def assemble_exterior_slave_facets(
         numba.int32[:],
         numba.int32[:],
     ],
-    is_bc: npt.NDArray[numpy.bool_],
+    bc_markers: npt.NDArray[numpy.int8],
     num_facets_per_cell: int,
 ):
     """Assemble MPC contributions over exterior facet integrals"""
@@ -535,12 +530,14 @@ def assemble_exterior_slave_facets(
         # Extract local blocks of dofs
         local_blocks = dofmap[cell_index]
 
-        # Remove all contributions for dofs that are in the Dirichlet bcs
-        for j in range(num_dofs_per_element):
-            for k in range(block_size):
-                if is_bc[local_blocks[j] * block_size + k]:
-                    A_local[j * block_size + k, :] = 0
-                    A_local[:, j * block_size + k] = 0
+        # Remove all contributions for dofs that are in the Dirichlet bcs.
+        # `bc_markers` is empty when no condition applies to this space.
+        if bc_markers.size > 0:
+            for j in range(num_dofs_per_element):
+                for k in range(block_size):
+                    if bc_markers[local_blocks[j] * block_size + k] != 0:
+                        A_local[j * block_size + k, :] = 0
+                        A_local[:, j * block_size + k] = 0
 
         A_local_copy: numpy.typing.NDArray[_PETSc.ScalarType] = A_local.copy()  # type: ignore
         slaves = c_to_s[c_to_s_off[cell_index] : c_to_s_off[cell_index + 1]]

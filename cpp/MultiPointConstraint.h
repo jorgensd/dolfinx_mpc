@@ -147,7 +147,8 @@ public:
       _slave_data[dof] = 1;
     _is_slave = std::move(_slave_data);
 
-    // Create a map for cells owned by the process to the slaves
+    // Create a map from every cell of the mesh, ghosts included, to the
+    // slaves it contains
     _cell_to_slaves_map = create_cell_to_dofs_map(*V, slaves);
 
     // Create adjacency list with all local dofs, where the slave dofs maps to

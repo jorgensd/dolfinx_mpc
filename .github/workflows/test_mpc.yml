@@ -139,6 +139,7 @@ jobs:
           coverage run --rcfile=.coveragerc python/demos/demo_mean_value_constraint.py
           coverage run --rcfile=.coveragerc python/demos/demo_boundary_average_constraint.py
           coverage run --rcfile=.coveragerc python/demos/demo_flow_rate_constraint.py
+          coverage run --rcfile=.coveragerc python/demos/demo_mortar.py
 
       - name: Run demos (parallel)
         run: |
@@ -193,6 +194,7 @@ jobs:
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --theta 1.05 --timing
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 0 --timing
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 1.05 --timing
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_mortar.py
 
       - name: Combine coverage reports
         run: |

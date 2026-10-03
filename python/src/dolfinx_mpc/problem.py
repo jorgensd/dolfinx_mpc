@@ -383,6 +383,16 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             See https://github.com/FEniCS/dolfinx/blob/main/python/dolfinx/jit.py#L22-L37
             for all available parameters. Takes priority over all other parameter values.
         P: A preconditioner UFL form.
+        entity_maps: If any trial functions, test functions, or
+            coefficients in the form are not defined over the same mesh
+            as the integration domain, ``entity_maps`` must be
+            supplied. For each key (a mesh, different to the
+            integration domain mesh) a map should be provided relating
+            the entities in the integration domain mesh to the entities
+            in the key mesh e.g. for a key-value pair ``(msh, emap)``
+            in ``entity_maps``, ``emap[i]`` is the entity in ``msh``
+            corresponding to entity ``i`` in the integration domain
+            mesh.
     Examples:
         Example usage:
 
@@ -419,12 +429,23 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         form_compiler_options: dict | None = None,
         jit_options: dict | None = None,
         P: ufl.Form | Sequence[Sequence[ufl.Form]] | None = None,
+        entity_maps: Sequence[dolfinx.mesh.EntityMap] | None = None,
     ):
         # Compile forms
         form_compiler_options = {} if form_compiler_options is None else form_compiler_options
         jit_options = {} if jit_options is None else jit_options
-        self._a = _fem.form(a, jit_options=jit_options, form_compiler_options=form_compiler_options)
-        self._L = _fem.form(L, jit_options=jit_options, form_compiler_options=form_compiler_options)
+        self._a = _fem.form(
+            a,
+            jit_options=jit_options,
+            form_compiler_options=form_compiler_options,
+            entity_maps=entity_maps,
+        )
+        self._L = _fem.form(
+            L,
+            jit_options=jit_options,
+            form_compiler_options=form_compiler_options,
+            entity_maps=entity_maps,
+        )
 
         self._mpc = mpc
         # Nest assembly
@@ -473,7 +494,12 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                     )
 
         # Create MPC matrix and vector
-        self._preconditioner = _fem.form(P, jit_options=jit_options, form_compiler_options=form_compiler_options)  # type: ignore
+        self._preconditioner = _fem.form(  # type: ignore
+            P,
+            jit_options=jit_options,
+            form_compiler_options=form_compiler_options,
+            entity_maps=entity_maps,
+        )
 
         if is_nest:
             assert isinstance(mpc, Sequence)

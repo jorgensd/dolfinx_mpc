@@ -16,6 +16,7 @@
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/graph/AdjacencyList.h>
 #include <dolfinx/mesh/Geometry.h>
+#include <dolfinx/mesh/cell_types.h>
 #include <format>
 #include <memory>
 #include <span>
@@ -119,8 +120,12 @@ void lift_bc_entities(
     const std::span<T> _Ae(Ae);
     lift_local_vector(_be, _Ae, num_rows, num_cols, entity, cell0, cell1,
                       e / estride);
-    // Modify local element matrix if entity is connected to a slave cell
-    std::span<const std::int32_t> slaves = cell_to_slaves->links(cell1);
+    // Modify local element matrix if entity is connected to a slave cell.
+    // `cell_to_slaves`, `is_slave`, `masters` and `dmap0` all belong to
+    // `mpc0`, which constrains the rows, so the lookup is keyed on the test
+    // space's cell. `cell0` and `cell1` coincide only when both spaces live
+    // on the integration mesh.
+    std::span<const std::int32_t> slaves = cell_to_slaves->links(cell0);
 
     if (slaves.size() > 0)
     {
@@ -210,10 +215,25 @@ void lift_values(
 
   if (needs_transformation_data)
   {
-    mesh0->topology_mutable()->create_entity_permutations(num_threads);
+    mesh0->topology_mutable()->create_cell_permutations(num_threads);
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
-    mesh1->topology_mutable()->create_entity_permutations(num_threads);
+    mesh1->topology_mutable()->create_cell_permutations(num_threads);
     cell_info1 = std::span(mesh1->topology()->get_cell_permutation_info());
+  }
+
+  // Facet permutations of the integration domain. Needed whenever the kernel
+  // asks for them, which happens for instance when the two argument spaces
+  // live on different meshes.
+  std::span<const std::uint8_t> perms;
+  int num_facets_per_cell = 0;
+  if (a->needs_facet_permutations())
+  {
+    const dolfinx::mesh::CellType cell_type
+        = mesh->topology()->cell_types().front();
+    std::size_t fdim = mesh->topology()->dim() - 1;
+    num_facets_per_cell = dolfinx::mesh::cell_num_entities(cell_type, fdim);
+    mesh->topology_mutable()->create_entity_permutations(fdim, num_threads);
+    perms = std::span(mesh->topology()->get_entity_permutations(fdim));
   }
 
   // Get dof-transformations for the element matrix
@@ -331,10 +351,13 @@ void lift_values(
                             std::next(coordinate_dofs.begin(), 3 * i));
       }
 
-      // Tabulate tensor
+      // Tabulate tensor. A kernel that asks for the facet permutation would
+      // dereference a null pointer if it were not supplied.
+      const std::uint8_t perm
+          = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
       std::ranges::fill(Ae, 0);
       kernel(Ae.data(), coeffs.first.data() + index * coeffs.second,
-             constants.data(), coordinate_dofs.data(), &local_facet, nullptr,
+             constants.data(), coordinate_dofs.data(), &local_facet, &perm,
              nullptr);
       if (transform_set0)
         dof_transform(Ae, cell_info0, cell0, num_cols);

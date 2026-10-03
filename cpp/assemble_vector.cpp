@@ -9,6 +9,7 @@
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
+#include <dolfinx/mesh/cell_types.h>
 #include <iostream>
 
 using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -25,8 +26,6 @@ namespace
 /// @param[in] active_cells0 The corresponding cells for the test function space
 /// @param[in] dofmap The dofmap
 /// @param[in] mpc The multipoint constraint
-/// @param[in] fetch_cells Function that fetches the cell index for an entity
-/// in active_entities
 /// @param[in] assemble_local_element_matrix Function f(be, entities, entties0,
 /// index) that assembles into a local element matrix for a given entity
 /// @tparam T Scalar type for vector
@@ -37,8 +36,6 @@ void _assemble_entities_impl(
     std::span<const std::int32_t> active_cells0,
     const dolfinx::fem::DofMap& dofmap,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
-    const std::function<const std::int32_t(std::span<const std::int32_t>)>
-        fetch_cells,
     const std::function<void(std::span<T>, std::span<const std::int32_t>,
                              std::int32_t, std::size_t)>
         assemble_local_element_vector)
@@ -65,8 +62,11 @@ void _assemble_entities_impl(
   for (std::size_t e = 0; e < active_entities.size(); e += estride)
   {
     std::span<const std::int32_t> entity = active_entities.subspan(e, estride);
-    std::span<const std::int32_t> cells0 = active_cells0.subspan(e, estride);
-    std::int32_t cell0 = fetch_cells(entity);
+    // The entity indexes the integration mesh; `cell0` indexes the test
+    // function's own mesh. They coincide only when the two are the same mesh,
+    // so the dofmap, the constraint and the dof transformation must all be
+    // keyed on `active_cells0`, never on `entity`.
+    const std::int32_t cell0 = active_cells0.subspan(e, estride).front();
     // Assemble into element vector
     assemble_local_element_vector(_be, entity, cell0, e / estride);
 
@@ -138,8 +138,23 @@ void _assemble_vector(
   std::span<const std::uint32_t> cell_info0;
   if (needs_transformation_data)
   {
-    mesh0->topology_mutable()->create_entity_permutations(num_threads);
+    mesh0->topology_mutable()->create_cell_permutations(num_threads);
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
+  }
+
+  // Facet permutations of the integration domain. Needed whenever the kernel
+  // asks for them, which happens for instance when an argument space lives on
+  // a different mesh than the integration domain.
+  std::span<const std::uint8_t> perms;
+  int num_facets_per_cell = 0;
+  if (L.needs_facet_permutations())
+  {
+    const dolfinx::mesh::CellType cell_type
+        = mesh->topology()->cell_types().front();
+    const std::size_t fdim = mesh->topology()->dim() - 1;
+    num_facets_per_cell = dolfinx::mesh::cell_num_entities(cell_type, fdim);
+    mesh->topology_mutable()->create_entity_permutations(fdim, num_threads);
+    perms = std::span(mesh->topology()->get_entity_permutations(fdim));
   }
 
   const std::size_t num_dofs_g = x_dofmap.extent(1);
@@ -148,8 +163,6 @@ void _assemble_vector(
   if (num_cell_types > 1)
     throw std::runtime_error("Not implemented for mixed cell types");
 
-  const auto fetch_cell
-      = [&](std::span<const std::int32_t> entity) { return entity.front(); };
   for (int i = 0; i < L.num_integrals(dolfinx::fem::IntegralType::cell, 0); ++i)
   {
     const auto& coeffs = coefficients.at({dolfinx::fem::IntegralType::cell, i});
@@ -189,7 +202,7 @@ void _assemble_vector(
     // Assemble over all active cells
     std::span cells = L.domain(dolfinx::fem::IntegralType::cell, i, 0);
     std::span cells0 = L.domain_arg(dolfinx::fem::IntegralType::cell, 0, i, 0);
-    _assemble_entities_impl<T, U, 1>(b, cells, cells0, *dofmap, mpc, fetch_cell,
+    _assemble_entities_impl<T, U, 1>(b, cells, cells0, *dofmap, mpc,
                                      assemble_local_cell_vector);
   }
   // Prepare permutations for exterior and interior facet integrals
@@ -221,10 +234,13 @@ void _assemble_vector(
                             std::next(coordinate_dofs.begin(), 3 * i));
       }
 
-      // Tabulate tensor
+      // Tabulate tensor. A kernel that asks for the facet permutation would
+      // dereference a null pointer if it were not supplied.
+      const std::uint8_t perm
+          = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
       std::ranges::fill(be, 0);
       fn(be.data(), coeffs.first.data() + index * coeffs.second,
-         constants.data(), coordinate_dofs.data(), &local_facet, nullptr,
+         constants.data(), coordinate_dofs.data(), &local_facet, &perm,
          nullptr);
 
       // Apply any required transformations
@@ -238,7 +254,6 @@ void _assemble_vector(
     std::span cells0
         = L.domain_arg(dolfinx::fem::IntegralType::exterior_facet, 0, i, 0);
     _assemble_entities_impl<T, U, 2>(b, active_facets, cells0, *dofmap, mpc,
-                                     fetch_cell,
                                      assemble_local_exterior_facet_vector);
   }
 
