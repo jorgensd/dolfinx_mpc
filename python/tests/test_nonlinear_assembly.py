@@ -184,6 +184,7 @@ def test_nonlinear_problem_with_preconditioner():
     )
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     mpc.finalize()
+    tol = 50 * np.finfo(uh.x.array.dtype).resolution
 
     def solve(P):
         uh.x.array[:] = 0
@@ -195,15 +196,15 @@ def test_nonlinear_problem_with_preconditioner():
             P=P,
             petsc_options_prefix="test_nonlinear_P_",
             petsc_options={
-                "snes_rtol": 1e-10,
-                "snes_atol": 1e-12,
+                "snes_rtol": tol,
+                "snes_atol": tol,
                 "snes_error_if_not_converged": True,
                 "ksp_type": "gmres",
-                "ksp_rtol": 1e-12,
+                "ksp_rtol": tol,
                 "pc_type": "lu",
             },
         )
         problem.solve()
         return uh.x.array.copy()
 
-    np.testing.assert_allclose(solve(P), solve(None), rtol=1e-8, atol=1e-10)
+    np.testing.assert_allclose(solve(P), solve(None), rtol=tol, atol=tol)
