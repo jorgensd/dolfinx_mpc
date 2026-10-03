@@ -10,6 +10,7 @@ parts:
     - file: "python/demos/demo_boundary_average_constraint.py"
     - file: "python/demos/demo_flow_rate_constraint.py"
     - file: "python/demos/demo_mortar.py"
+    - file: "python/demos/demo_mortar_subdomains.py"
     - file: "python/demos/demo_stokes_nest.py"
   - caption: "Theory"
     chapters:

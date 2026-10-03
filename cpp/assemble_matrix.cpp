@@ -1,16 +1,23 @@
-// Copyright (C) 2020-2022 Jorgen S. Dokken, Nathan Sime, and Connor D. Pierce
+// Copyright (C) 2020-2026 Jorgen S. Dokken, Nathan Sime, and Connor D. Pierce
 //
 // This file is part of DOLFINX_MPC
 //
 // SPDX-License-Identifier:    MIT
 
 #include "assemble_matrix.h"
+#include <algorithm>
+#include <array>
 #include <assemble_utils.h>
+#include <cstdint>
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/mesh/cell_types.h>
+#include <functional>
+#include <memory>
+#include <span>
+#include <vector>
 
 using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
     const std::int32_t,
@@ -77,6 +84,21 @@ void fill_stripped_matrix(
   }
 };
 
+/// Position of each slave in the element tensor of a single cell, for the rows
+/// and the columns
+std::array<std::vector<std::int32_t>, 2>
+local_slave_index(const std::array<std::span<const std::int32_t>, 2>& slaves,
+                  const std::array<const std::uint32_t, 2>& num_dofs,
+                  const std::array<const int, 2>& bs,
+                  const std::array<std::span<const std::int32_t>, 2>& dofs,
+                  const std::array<std::span<const std::int8_t>, 2>& is_slave)
+{
+  return {dolfinx_mpc::compute_local_slave_index(slaves[0], num_dofs[0], bs[0],
+                                                 dofs[0], is_slave[0]),
+          dolfinx_mpc::compute_local_slave_index(slaves[1], num_dofs[1], bs[1],
+                                                 dofs[1], is_slave[1])};
+}
+
 /// Modify local element matrix Ae with MPC contributions, and insert non-local
 /// contributions in the correct places
 ///
@@ -87,7 +109,9 @@ void fill_stripped_matrix(
 /// @param[in, out] Ae The local element matrix
 /// @param[in] dofs The local indices of the row and column dofs (blocked)
 /// @param[in] bs The row and column block size
-/// @param[in] slaves The row and column slave indices (local to process)
+/// @param[in] slaves The row and column slave indices (local to process). A
+/// dof may appear more than once when the element spans several cells.
+/// @param[in] local_index Position of `slaves[axis][i]` in the element tensor
 /// @param[in] masters Row and column map from the slave indices (local to
 /// process) to the master dofs (local to process)
 /// @param[in] coefficients row and column map from the slave indices (local to
@@ -109,6 +133,7 @@ void modify_mpc_cell(
     const std::array<std::span<const std::int32_t>, 2>& dofs,
     const std::array<const int, 2>& bs,
     const std::array<std::span<const std::int32_t>, 2>& slaves,
+    const std::array<std::span<const std::int32_t>, 2>& local_index,
     const std::array<
         std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>&
         masters,
@@ -117,26 +142,13 @@ void modify_mpc_cell(
     const std::array<std::span<const std::int8_t>, 2>& is_slave,
     std::span<T> scratch_memory)
 {
+  // Count number of masters in flattened structure for the rows and columns
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
-  std::array<std::vector<std::int32_t>, 2> local_index;
   for (int axis = 0; axis < 2; ++axis)
   {
-    // NOTE: Should this be moved into the MPC constructor?
-    // Locate which local dofs are slave dofs and compute the local index of the
-    // slave
-    local_index[axis] = dolfinx_mpc::compute_local_slave_index(
-        slaves[axis], num_dofs[axis], bs[axis], dofs[axis], is_slave[axis]);
-
-    // Count number of masters in flattened structure for the rows and columns
-    for (std::uint32_t i = 0; i < num_dofs[axis]; i++)
-    {
-      for (int j = 0; j < bs[axis]; j++)
-      {
-        const std::int32_t dof = dofs[axis][i] * bs[axis] + j;
-        if (is_slave[axis][dof])
-          num_flattened_masters[axis] += masters[axis]->links(dof).size();
-      }
-    }
+    assert(slaves[axis].size() == local_index[axis].size());
+    for (std::int32_t slave : slaves[axis])
+      num_flattened_masters[axis] += masters[axis]->links(slave).size();
   }
 
   const int ndim0 = bs[0] * num_dofs[0];
@@ -416,12 +428,251 @@ void assemble_exterior_facets(
       const std::array<std::span<const std::int32_t>, 2> slaves
           = {cell_to_slaves[0]->links(cell0), cell_to_slaves[1]->links(cell1)};
       const std::array<std::span<const std::int32_t>, 2> dofs = {dmap0, dmap1};
+      const std::array<std::vector<std::int32_t>, 2> local_index
+          = local_slave_index(slaves, num_dofs, bs, dofs, is_slave);
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
-                         masters, coefficients, is_slave, scratch_memory);
+                         {local_index[0], local_index[1]}, masters,
+                         coefficients, is_slave, scratch_memory);
     }
     mat_add_block_values(dmap0, dmap1, Aeb);
   }
 } // namespace
+//-----------------------------------------------------------------------------
+template <typename T, std::floating_point U>
+void assemble_interior_facets(
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const T>)>& mat_add_block_values,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const T>)>& mat_add_values,
+    const dolfinx::mesh::Mesh<U>& mesh, std::span<const std::int32_t> facets,
+    std::span<const std::int32_t> facets0,
+    std::span<const std::int32_t> facets1,
+    const std::function<void(const std::span<T>&,
+                             const std::span<const std::uint32_t>&,
+                             std::int32_t, int)>& apply_dof_transformation,
+    const dolfinx::fem::DofMap& dofmap0,
+    const std::function<
+        void(const std::span<T>&, const std::span<const std::uint32_t>&,
+             std::int32_t, int)>& apply_dof_transformation_to_transpose,
+    const dolfinx::fem::DofMap& dofmap1, std::span<const std::int8_t> bc0,
+    std::span<const std::int8_t> bc1,
+    const std::function<void(T*, const T*, const T*, const U*, const int*,
+                             const std::uint8_t*, void*)>& kernel,
+    const std::span<const T> coeffs, int cstride,
+    const std::vector<T>& constants,
+    const std::span<const std::uint32_t>& cell_info0,
+    const std::span<const std::uint32_t>& cell_info1,
+    std::span<const std::uint8_t> perms, int num_facets_per_cell,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
+{
+  const std::array<
+      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      masters = {mpc0->masters(), mpc1->masters()};
+  const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
+      coefficients = {mpc0->coefficients(), mpc1->coefficients()};
+  const std::array<std::span<const std::int8_t>, 2> is_slave
+      = {mpc0->is_slave(), mpc1->is_slave()};
+  const std::array<
+      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
+      cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
+  const std::array<std::reference_wrapper<const dolfinx::fem::DofMap>, 2>
+      dofmaps = {dofmap0, dofmap1};
+
+  if (mesh.geometry().dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
+  mdspan2_t x_dofmap = mesh.geometry().dofmaps().front();
+  const std::size_t num_dofs_g = x_dofmap.extent(1);
+  std::span<const U> x_g = mesh.geometry().x();
+  std::vector<U> coordinate_dofs(2 * 3 * num_dofs_g);
+
+  // Per-cell sizes; the element tensor spans both cells of the facet
+  const std::array<const std::uint32_t, 2> num_cell_dofs
+      = {static_cast<std::uint32_t>(dofmap0.map().extent(1)),
+         static_cast<std::uint32_t>(dofmap1.map().extent(1))};
+  const std::array<const int, 2> bs = {dofmap0.bs(), dofmap1.bs()};
+  const std::array<std::size_t, 2> ndim
+      = {bs[0] * num_cell_dofs[0], bs[1] * num_cell_dofs[1]};
+  const std::size_t num_rows = 2 * ndim[0];
+  const std::size_t num_cols = 2 * ndim[1];
+
+  std::vector<T> Ab(num_rows * num_cols);
+  // Element tensor restricted to the sides on which each argument exists
+  std::vector<T> Ac(num_rows * num_cols);
+  std::vector<T> scratch_memory(2 * num_rows * num_cols + num_rows + num_cols);
+  std::array<std::vector<std::int32_t>, 2> joint_dofs;
+  std::array<std::vector<std::int32_t>, 2> joint_slaves;
+  std::array<std::vector<std::int32_t>, 2> joint_index;
+  std::array<std::vector<int>, 2> sides;
+
+  const bool transform0_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation);
+  const bool transform1_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
+  for (std::size_t f = 0; f < facets.size() / 4; ++f)
+  {
+    // Entities are (cell, local facet) for each side. A negative cell in an
+    // argument's entities means that argument has no cell on that side, e.g.
+    // on the interface between two subdomains.
+    const std::array<std::int32_t, 2> cells
+        = {facets[4 * f], facets[4 * f + 2]};
+    const std::array<int, 2> local_facet
+        = {facets[4 * f + 1], facets[4 * f + 3]};
+    const std::array<std::array<std::int32_t, 2>, 2> arg_cells
+        = {std::array{facets0[4 * f], facets0[4 * f + 2]},
+           std::array{facets1[4 * f], facets1[4 * f + 2]}};
+
+    for (int s = 0; s < 2; ++s)
+    {
+      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          x_dofmap, cells[s], MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      for (std::size_t i = 0; i < x_dofs.size(); ++i)
+      {
+        std::ranges::copy_n(
+            std::next(x_g.begin(), 3 * x_dofs[i]), 3,
+            std::next(coordinate_dofs.begin(), 3 * (s * num_dofs_g + i)));
+      }
+    }
+
+    const std::array<std::uint8_t, 2> perm
+        = perms.empty()
+              ? std::array<std::uint8_t, 2>{0, 0}
+              : std::array{
+                    perms[cells[0] * num_facets_per_cell + local_facet[0]],
+                    perms[cells[1] * num_facets_per_cell + local_facet[1]]};
+    std::ranges::fill(Ab, T(0));
+    kernel(Ab.data(), coeffs.data() + f * 2 * cstride, constants.data(),
+           coordinate_dofs.data(), local_facet.data(), perm.data(), nullptr);
+
+    // The tensor is a 2x2 block matrix [cell0 cell0, cell0 cell1; cell1 cell0,
+    // cell1 cell1], each block of size (ndim0, ndim1). Transform each block
+    // row and column whose cell exists.
+    if (transform0_set and arg_cells[0][0] >= 0)
+      apply_dof_transformation(Ab, cell_info0, arg_cells[0][0], num_cols);
+    if (transform0_set and arg_cells[0][1] >= 0)
+    {
+      std::span<T> sub(Ab.data() + ndim[0] * num_cols, ndim[0] * num_cols);
+      apply_dof_transformation(sub, cell_info0, arg_cells[0][1], num_cols);
+    }
+    if (transform1_set and arg_cells[1][0] >= 0)
+    {
+      apply_dof_transformation_to_transpose(Ab, cell_info1, arg_cells[1][0],
+                                            num_rows);
+    }
+    if (transform1_set and arg_cells[1][1] >= 0)
+    {
+      // The second cell's columns are not contiguous, so transform row by row
+      for (std::size_t row = 0; row < num_rows; ++row)
+      {
+        std::span<T> sub(Ab.data() + row * num_cols + ndim[1], ndim[1]);
+        apply_dof_transformation_to_transpose(sub, cell_info1, arg_cells[1][1],
+                                              1);
+      }
+    }
+
+    // Gather the dofs of the sides each argument exists on
+    for (int axis = 0; axis < 2; ++axis)
+    {
+      sides[axis].clear();
+      joint_dofs[axis].clear();
+      for (int s = 0; s < 2; ++s)
+      {
+        if (arg_cells[axis][s] < 0)
+          continue;
+        sides[axis].push_back(s);
+        std::span<const std::int32_t> cell_dofs
+            = dofmaps[axis].get().cell_dofs(arg_cells[axis][s]);
+        joint_dofs[axis].insert(joint_dofs[axis].end(), cell_dofs.begin(),
+                                cell_dofs.end());
+      }
+    }
+    if (sides[0].empty() or sides[1].empty())
+      continue;
+
+    // Restrict the tensor to those sides. With both sides present for both
+    // arguments, the common case, it is used as is.
+    const std::size_t rows = sides[0].size() * ndim[0];
+    const std::size_t cols = sides[1].size() * ndim[1];
+    std::span<T> Ae_data(Ab);
+    if (rows != num_rows or cols != num_cols)
+    {
+      for (std::size_t i = 0; i < sides[0].size(); ++i)
+      {
+        for (std::size_t r = 0; r < ndim[0]; ++r)
+        {
+          for (std::size_t j = 0; j < sides[1].size(); ++j)
+          {
+            std::copy_n(
+                std::next(Ab.begin(), (sides[0][i] * ndim[0] + r) * num_cols
+                                          + sides[1][j] * ndim[1]),
+                ndim[1],
+                std::next(Ac.begin(), (i * ndim[0] + r) * cols + j * ndim[1]));
+          }
+        }
+      }
+      Ae_data = std::span<T>(Ac.data(), rows * cols);
+    }
+    MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+        T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
+        Ae(Ae_data.data(), rows, cols);
+
+    // Zero rows/columns for essential bcs
+    if (!bc0.empty())
+    {
+      for (std::size_t i = 0; i < joint_dofs[0].size(); ++i)
+        for (int k = 0; k < bs[0]; ++k)
+          if (bc0[bs[0] * joint_dofs[0][i] + k])
+            std::fill_n(std::next(Ae_data.begin(), cols * (bs[0] * i + k)),
+                        cols, T(0));
+    }
+    if (!bc1.empty())
+    {
+      for (std::size_t j = 0; j < joint_dofs[1].size(); ++j)
+        for (int k = 0; k < bs[1]; ++k)
+          if (bc1[bs[1] * joint_dofs[1][j] + k])
+            for (std::size_t row = 0; row < rows; ++row)
+              Ae(row, bs[1] * j + k) = T(0);
+    }
+
+    // Collect the slaves of each side, with their position in the restricted
+    // tensor. A slave on the facet belongs to both cells and is listed once
+    // per side, each with its own position.
+    for (int axis = 0; axis < 2; ++axis)
+    {
+      joint_slaves[axis].clear();
+      joint_index[axis].clear();
+      for (std::size_t i = 0; i < sides[axis].size(); ++i)
+      {
+        const std::int32_t cell = arg_cells[axis][sides[axis][i]];
+        std::span<const std::int32_t> slaves
+            = cell_to_slaves[axis]->links(cell);
+        std::vector<std::int32_t> index
+            = dolfinx_mpc::compute_local_slave_index(
+                slaves, num_cell_dofs[axis], bs[axis],
+                dofmaps[axis].get().cell_dofs(cell), is_slave[axis]);
+        joint_slaves[axis].insert(joint_slaves[axis].end(), slaves.begin(),
+                                  slaves.end());
+        for (std::int32_t pos : index)
+          joint_index[axis].push_back(pos + i * ndim[axis]);
+      }
+    }
+
+    if (!joint_slaves[0].empty() or !joint_slaves[1].empty())
+    {
+      const std::array<const std::uint32_t, 2> num_dofs
+          = {static_cast<std::uint32_t>(joint_dofs[0].size()),
+             static_cast<std::uint32_t>(joint_dofs[1].size())};
+      modify_mpc_cell<T>(
+          mat_add_values, num_dofs, Ae, {joint_dofs[0], joint_dofs[1]}, bs,
+          {joint_slaves[0], joint_slaves[1]}, {joint_index[0], joint_index[1]},
+          masters, coefficients, is_slave, scratch_memory);
+    }
+    mat_add_block_values(joint_dofs[0], joint_dofs[1], Ae_data);
+  }
+}
 //-----------------------------------------------------------------------------
 template <typename T, std::floating_point U>
 void assemble_cells_impl(
@@ -559,8 +810,11 @@ void assemble_cells_impl(
       const std::array<std::span<const std::int32_t>, 2> slaves
           = {cell_to_slaves[0]->links(cell0), cell_to_slaves[1]->links(cell1)};
       const std::array<std::span<const std::int32_t>, 2> dofs = {dofs0, dofs1};
+      const std::array<std::vector<std::int32_t>, 2> local_index
+          = local_slave_index(slaves, num_dofs, bs, dofs, is_slave);
       modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
-                         masters, coefficients, is_slave, scratch_memory);
+                         {local_index[0], local_index[1]}, masters,
+                         coefficients, is_slave, scratch_memory);
     }
     mat_add_block_values(dofs0, dofs1, _Ae);
   }
@@ -690,8 +944,25 @@ void assemble_matrix_impl(
         mpc0, mpc1);
   }
 
-  if (a.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0) > 0)
-    throw std::runtime_error("Not implemented yet");
+  for (int i = 0;
+       i < a.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0); ++i)
+  {
+    const auto& fn = a.kernel(dolfinx::fem::IntegralType::interior_facet, i, 0);
+    const auto& [coeffs, cstride]
+        = coefficients.at({dolfinx::fem::IntegralType::interior_facet, i});
+    std::span<const std::int32_t> facets
+        = a.domain(dolfinx::fem::IntegralType::interior_facet, i, 0);
+    std::span<const std::int32_t> facets0
+        = a.domain_arg(dolfinx::fem::IntegralType::interior_facet, 0, i, 0);
+    std::span<const std::int32_t> facets1
+        = a.domain_arg(dolfinx::fem::IntegralType::interior_facet, 1, i, 0);
+    assemble_interior_facets<T>(
+        mat_add_block_values, mat_add_values, *mesh, facets, facets0, facets1,
+        apply_dof_transformation, *dofmap0,
+        apply_dof_transformation_to_transpose, *dofmap1, bc0, bc1, fn, coeffs,
+        cstride, constants, cell_info0, cell_info1, perms, num_facets_per_cell,
+        mpc0, mpc1);
+  }
 }
 //-----------------------------------------------------------------------------
 template <typename T, std::floating_point U>

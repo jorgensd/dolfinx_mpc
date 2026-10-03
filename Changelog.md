@@ -7,6 +7,11 @@
 - **New demos**: `python/demos/demo_mean_value_constraint.py`, `python/demos/demo_boundary_average_constraint.py` and `python/demos/demo_flow_rate_constraint.py` show `create_integral_constraint` used for a mean-value, a boundary-average and a Stokes flow-rate constraint respectively, each verified against a `basix.ufl.real_element` solve and measuring the trade-off: for a cell integral every dof becomes a master, so $K^HAK$ is essentially full and its condition number is inflated by a factor $\sim M$; for a facet integral the master set is only the boundary and the constraint is the cheaper of the two formulations.
 - **New feature**: Affine multi-point constraints: `MultiPointConstraint` now supports affine constraints of the form $x = K x_{\text{red}} + g$ via the new optional bcs and rhs_coeffs arguments. Time-dependent boundary data is supported via `MultiPointConstraint.update_constants()`. For manual linear assembly, use the new `dolfinx_mpc.apply_mpc_lifting` function (handled automatically by `LinearProblem`). NonlinearProblem automatically handles affine constraints and Dirichlet conditions without requiring any API changes. Passing neither of the new arguments reproduces the previous homogeneous behaviour. Note: Numba assemblers currently raise `NotImplementedError` for inhomogeneous constraints. For a full mathematical derivation of the offset $g$ and the linear/nonlinear solver paths, see the [theory document](./docs/nonlinear_mpc.md). 
 - **Error handling**: The `MultiPointConstraint` constructor now throws `invalid_argument` if a dof is both a slave and Dirichlet-constraine. That was previously accepted silently.
+- **New feature**: interior facet integrals (`dS`) are supported by the matrix and vector
+  assemblers, lifting and the sparsity pattern, including on the interface between two
+  subdomains, where an argument exists on one side of the facet only. New demo:
+  `python/demos/demo_mortar_subdomains.py`, mortar coupling of two subdomains through a
+  multiplier on the interface. Not supported by the numba assemblers.
 - **Assembly takes dof markers**, following DOLFINx [#4583](https://github.com/FEniCS/dolfinx/pull/4583).
   `dolfinx_mpc::assemble_matrix` gained an overload taking `dof_marker0`/`dof_marker1`; the
   `bcs` overload remains as a convenience wrapper that rebuilds them per call. The new
