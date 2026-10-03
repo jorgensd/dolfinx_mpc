@@ -163,6 +163,52 @@ def test_master_that_is_a_slave_on_another_process():
     _raised_everywhere(comm, mpc.finalize, match="also a slave")
 
 
+def test_slave_constrained_twice_on_one_process():
+    """A repeated slave is rejected on every process, though only one of them sees it."""
+    comm = MPI.COMM_WORLD
+    V = _space(8, 8, CellType.triangle)
+    first = V.dofmap.index_map.local_range[0]
+    rank = comm.rank
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.add_constraint(
+        V,
+        np.array([0], dtype=np.int32),
+        np.array([first + 1], dtype=np.int64),
+        np.array([1], dtype=default_scalar_type),
+        np.array([rank], dtype=np.int32),
+        np.array([0, 1], dtype=np.int32),
+    )
+    if rank == 0:
+        # Dof 0 again, with another master
+        mpc.add_constraint(
+            V,
+            np.array([0], dtype=np.int32),
+            np.array([first + 2], dtype=np.int64),
+            np.array([1], dtype=default_scalar_type),
+            np.array([rank], dtype=np.int32),
+            np.array([0, 1], dtype=np.int32),
+        )
+    _raised_everywhere(comm, mpc.finalize, match="more than one constraint")
+
+
+def test_doubly_periodic_from_two_conditions():
+    """Two periodic conditions on one space both claim the corner, which is rejected."""
+    V = _space(8, 8, CellType.triangle)
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    for axis in range(2):
+
+        def relation(x, axis=axis):
+            y = x.copy()
+            y[axis] -= 1.0
+            return y
+
+        mpc.create_periodic_constraint_geometrical(
+            V, lambda x, axis=axis: np.isclose(x[axis], 1.0), relation, [], tol=_tol
+        )
+    _raised_everywhere(MPI.COMM_WORLD, mpc.finalize, match="more than one constraint")
+
+
 def test_incongruent_communicators():
     """Meshes on communicators of different size cannot share a constraint."""
     comm = MPI.COMM_WORLD
