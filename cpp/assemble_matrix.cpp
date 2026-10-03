@@ -84,6 +84,34 @@ void fill_stripped_matrix(
   }
 };
 
+/// Zero the rows and columns of the row-major element matrix `Ae` whose dofs
+/// carry a Dirichlet condition. Empty markers are skipped.
+template <typename T>
+void zero_dirichlet(std::span<T> Ae, std::span<const std::int32_t> dofs0,
+                    int bs0, std::span<const std::int8_t> bc0,
+                    std::span<const std::int32_t> dofs1, int bs1,
+                    std::span<const std::int8_t> bc1)
+{
+  const std::size_t num_rows = bs0 * dofs0.size();
+  const std::size_t num_cols = bs1 * dofs1.size();
+  if (!bc0.empty())
+  {
+    for (std::size_t i = 0; i < dofs0.size(); ++i)
+      for (int k = 0; k < bs0; ++k)
+        if (bc0[bs0 * dofs0[i] + k])
+          std::fill_n(std::next(Ae.begin(), num_cols * (bs0 * i + k)), num_cols,
+                      T(0));
+  }
+  if (!bc1.empty())
+  {
+    for (std::size_t j = 0; j < dofs1.size(); ++j)
+      for (int k = 0; k < bs1; ++k)
+        if (bc1[bs1 * dofs1[j] + k])
+          for (std::size_t row = 0; row < num_rows; ++row)
+            Ae[row * num_cols + bs1 * j + k] = T(0);
+  }
+}
+
 /// Modify local element matrix Ae with MPC contributions, and insert non-local
 /// contributions in the correct places
 ///
@@ -382,38 +410,7 @@ void assemble_exterior_facets(
     // Zero rows/columns for essential bcs
     auto dmap0 = dofmap0.cell_dofs(cell0);
     auto dmap1 = dofmap1.cell_dofs(cell1);
-    if (!bc0.empty())
-    {
-      for (std::uint32_t i = 0; i < num_dofs0; ++i)
-      {
-        for (int k = 0; k < bs0; ++k)
-        {
-          if (bc0[bs0 * dmap0[i] + k])
-          {
-            // Zero row bs0 * i + k
-            const int row = bs0 * i + k;
-            std::ranges::fill_n(std::next(Ae.data_handle(), ndim1 * row), ndim1,
-                                0.0);
-          }
-        }
-      }
-    }
-    if (!bc1.empty())
-    {
-      for (std::size_t j = 0; j < num_dofs1; ++j)
-      {
-        for (int k = 0; k < bs1; ++k)
-        {
-          if (bc1[bs1 * dmap1[j] + k])
-          {
-            // Zero column bs1 * j + k
-            const int col = bs1 * j + k;
-            for (std::uint32_t row = 0; row < ndim0; ++row)
-              Aeb[row * ndim1 + col] = 0.0;
-          }
-        }
-      }
-    }
+    zero_dirichlet<T>(_Ae, dmap0, bs0, bc0, dmap1, bs1, bc1);
 
     // Modify local element matrix Ae and insert contributions into master
     // locations
@@ -429,34 +426,6 @@ void assemble_exterior_facets(
     mat_add_block_values(dmap0, dmap1, Aeb);
   }
 } // namespace
-//-----------------------------------------------------------------------------
-/// Zero the rows and columns of the row-major element matrix `Ae` whose dofs
-/// carry a Dirichlet condition. Empty markers are skipped.
-template <typename T>
-void zero_dirichlet(std::span<T> Ae, std::span<const std::int32_t> dofs0,
-                    int bs0, std::span<const std::int8_t> bc0,
-                    std::span<const std::int32_t> dofs1, int bs1,
-                    std::span<const std::int8_t> bc1)
-{
-  const std::size_t num_rows = bs0 * dofs0.size();
-  const std::size_t num_cols = bs1 * dofs1.size();
-  if (!bc0.empty())
-  {
-    for (std::size_t i = 0; i < dofs0.size(); ++i)
-      for (int k = 0; k < bs0; ++k)
-        if (bc0[bs0 * dofs0[i] + k])
-          std::fill_n(std::next(Ae.begin(), num_cols * (bs0 * i + k)), num_cols,
-                      T(0));
-  }
-  if (!bc1.empty())
-  {
-    for (std::size_t j = 0; j < dofs1.size(); ++j)
-      for (int k = 0; k < bs1; ++k)
-        if (bc1[bs1 * dofs1[j] + k])
-          for (std::size_t row = 0; row < num_rows; ++row)
-            Ae[row * num_cols + bs1 * j + k] = T(0);
-  }
-}
 //-----------------------------------------------------------------------------
 /// Assemble interior facet integrals.
 ///
@@ -765,27 +734,7 @@ void assemble_cells_impl(
     // Zero rows/columns for essential bcs
     std::span<const std::int32_t> dofs0 = dofmap0.cell_dofs(cell0);
     std::span<const std::int32_t> dofs1 = dofmap1.cell_dofs(cell1);
-    if (!bc0.empty())
-    {
-      for (std::uint32_t i = 0; i < num_dofs0; ++i)
-      {
-        for (std::int32_t k = 0; k < bs.front(); ++k)
-        {
-          if (bc0[bs.front() * dofs0[i] + k])
-            std::ranges::fill_n(
-                std::next(Aeb.begin(), ndim1 * (bs.front() * i + k)), ndim1,
-                T(0));
-        }
-      }
-    }
-    if (!bc1.empty())
-    {
-      for (std::uint32_t j = 0; j < num_dofs1; ++j)
-        for (std::int32_t k = 0; k < bs.back(); ++k)
-          if (bc1[bs.back() * dofs1[j] + k])
-            for (std::size_t l = 0; l < ndim0; ++l)
-              Aeb[l * ndim1 + bs.back() * j + k] = 0;
-    }
+    zero_dirichlet<T>(_Ae, dofs0, bs.front(), bc0, dofs1, bs.back(), bc1);
 
     // Modify local element matrix Ae and insert contributions into master
     // locations
