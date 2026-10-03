@@ -78,6 +78,22 @@ public:
     assert(coeffs.size() == owners.size());
     assert(offsets.back() == owners.size());
 
+    // Every condition must be defined on `V`, or on a subspace of it.
+    // The verdict depends only on function space identity, which is
+    // replicated, so every rank reaches it and the throw cannot deadlock.
+    for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T>>& bc : bcs)
+    {
+      if (!bc or !bc->function_space())
+        throw std::invalid_argument("Dirichlet condition is empty.");
+      if (!V->contains(*bc->function_space()))
+      {
+        throw std::invalid_argument(
+            "A Dirichlet condition given to the multi point constraint is not "
+            "defined on the constraint's function space, nor on a subspace of "
+            "it. Pass each block only the conditions that belong to it.");
+      }
+    }
+
     // Storage for the filtered constraint, kept alive for as long as the spans
     // below point into it.
     std::vector<std::int64_t> kept_masters;
