@@ -287,8 +287,8 @@ void assemble_exterior_facets(
     const std::function<
         void(const std::span<T>&, const std::span<const std::uint32_t>&,
              std::int32_t, int)>& apply_dof_transformation_to_transpose,
-    const dolfinx::fem::DofMap& dofmap1, const std::vector<std::int8_t>& bc0,
-    const std::vector<std::int8_t>& bc1,
+    const dolfinx::fem::DofMap& dofmap1, std::span<const std::int8_t> bc0,
+    std::span<const std::int8_t> bc1,
     const std::function<void(T*, const T*, const T*, const U*, const int*,
                              const std::uint8_t*, void*)>& kernel,
     const std::span<const T> coeffs, int cstride,
@@ -442,8 +442,8 @@ void assemble_cells_impl(
     std::function<void(std::span<T>, const std::span<const std::uint32_t>,
                        const std::int32_t, const int)>
         apply_dof_transformation_to_transpose,
-    const dolfinx::fem::DofMap& dofmap1, const std::vector<std::int8_t>& bc0,
-    const std::vector<std::int8_t>& bc1,
+    const dolfinx::fem::DofMap& dofmap1, std::span<const std::int8_t> bc0,
+    std::span<const std::int8_t> bc1,
     const std::function<void(T*, const T*, const T*, const U*, const int*,
                              const std::uint8_t*, void*)>& kernel,
     const std::span<const T>& coeffs, int cstride,
@@ -574,8 +574,8 @@ void assemble_matrix_impl(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_values,
-    const dolfinx::fem::Form<T>& a, const std::vector<std::int8_t>& bc0,
-    const std::vector<std::int8_t>& bc1,
+    const dolfinx::fem::Form<T>& a, std::span<const std::int8_t> bc0,
+    std::span<const std::int8_t> bc1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
     std::size_t num_threads)
@@ -705,46 +705,66 @@ void _assemble_matrix(
     const dolfinx::fem::Form<T>& a,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    std::size_t num_threads)
+    std::span<const std::int8_t> dof_marker0,
+    std::span<const std::int8_t> dof_marker1, std::size_t num_threads)
 {
   dolfinx::common::Timer timer("~MPC: Assemble matrix (C++)");
-
-  // Index maps for dof ranges
-  std::shared_ptr<const dolfinx::common::IndexMap> map0
-      = a.function_spaces().at(0)->dofmap()->index_map;
-  std::shared_ptr<const dolfinx::common::IndexMap> map1
-      = a.function_spaces().at(1)->dofmap()->index_map;
-  int bs0 = a.function_spaces().at(0)->dofmap()->index_map_bs();
-  int bs1 = a.function_spaces().at(1)->dofmap()->index_map_bs();
-
-  // Build dof markers
-  std::vector<std::int8_t> dof_marker0, dof_marker1;
-  std::int32_t dim0 = bs0 * (map0->size_local() + map0->num_ghosts());
-  std::int32_t dim1 = bs1 * (map1->size_local() + map1->num_ghosts());
-  for (std::size_t k = 0; k < bcs.size(); ++k)
-  {
-    assert(bcs[k]);
-    assert(bcs[k]->function_space());
-    if (a.function_spaces().at(0)->contains(*bcs[k]->function_space()))
-    {
-      dof_marker0.resize(dim0, false);
-      bcs[k]->mark_dofs(dof_marker0);
-    }
-    if (a.function_spaces().at(1)->contains(*bcs[k]->function_space()))
-    {
-      dof_marker1.resize(dim1, false);
-      bcs[k]->mark_dofs(dof_marker1);
-    }
-  }
-
-  // Assemble
   assemble_matrix_impl<T>(mat_add_block, mat_add, a, dof_marker0, dof_marker1,
                           mpc0, mpc1, num_threads);
-
   timer.stop();
 }
+//-----------------------------------------------------------------------------
+/// @brief Mark the dofs of `V` constrained by the conditions in `bcs` that are
+/// defined on `V` or a subspace of it.
+///
+/// Mirrors `dolfinx::fem::impl::bc_dof_markers`. Only the convenience
+/// overloads use it; the library itself is handed markers.
+/// @return Markers, or an empty array if no condition applies.
+template <typename T, std::floating_point U>
+std::vector<std::int8_t> _bc_dof_markers(
+    const dolfinx::fem::FunctionSpace<U>& V,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs)
+{
+  std::vector<std::int8_t> markers;
+  for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T>>& bc : bcs)
+  {
+    assert(bc);
+    assert(bc->function_space());
+    if (V.contains(*bc->function_space()))
+    {
+      if (markers.empty())
+      {
+        const dolfinx::fem::DofMap& dofmap = *V.dofmap();
+        const std::shared_ptr<const dolfinx::common::IndexMap> map
+            = dofmap.index_map;
+        markers.resize(
+            dofmap.index_map_bs() * (map->size_local() + map->num_ghosts()), 0);
+      }
+      bc->mark_dofs(markers);
+    }
+  }
+  return markers;
+}
 } // namespace
+//-----------------------------------------------------------------------------
+void dolfinx_mpc::assemble_matrix(
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const double>&)>& mat_add_block,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const double>&)>& mat_add,
+    const dolfinx::fem::Form<double>& a,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc1,
+    std::span<const std::int8_t> dof_marker0,
+    std::span<const std::int8_t> dof_marker1, std::size_t num_threads)
+{
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, dof_marker0,
+                   dof_marker1, num_threads);
+}
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
     const std::function<int(std::span<const std::int32_t>,
@@ -762,7 +782,36 @@ void dolfinx_mpc::assemble_matrix(
         bcs,
     std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
+  // Convenience overload: it rebuilds the markers on every call, so the
+  // library calls the overload above instead.
+  const std::vector<std::int8_t> marker0
+      = _bc_dof_markers(*a.function_spaces().at(0), bcs);
+  const std::vector<std::int8_t> marker1
+      = _bc_dof_markers(*a.function_spaces().at(1), bcs);
+  assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1,
+                  std::span<const std::int8_t>(marker0),
+                  std::span<const std::int8_t>(marker1), num_threads);
+}
+//-----------------------------------------------------------------------------
+void dolfinx_mpc::assemble_matrix(
+    const std::function<
+        int(std::span<const std::int32_t>, std::span<const std::int32_t>,
+            const std::span<const std::complex<double>>&)>& mat_add_block,
+    const std::function<
+        int(std::span<const std::int32_t>, std::span<const std::int32_t>,
+            const std::span<const std::complex<double>>&)>& mat_add,
+    const dolfinx::fem::Form<std::complex<double>>& a,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
+        mpc1,
+    std::span<const std::int8_t> dof_marker0,
+    std::span<const std::int8_t> dof_marker1, std::size_t num_threads)
+{
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, dof_marker0,
+                   dof_marker1, num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -784,7 +833,34 @@ void dolfinx_mpc::assemble_matrix(
         bcs,
     std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
+  // Convenience overload: it rebuilds the markers on every call, so the
+  // library calls the overload above instead.
+  const std::vector<std::int8_t> marker0
+      = _bc_dof_markers(*a.function_spaces().at(0), bcs);
+  const std::vector<std::int8_t> marker1
+      = _bc_dof_markers(*a.function_spaces().at(1), bcs);
+  assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1,
+                  std::span<const std::int8_t>(marker0),
+                  std::span<const std::int8_t>(marker1), num_threads);
+}
+//-----------------------------------------------------------------------------
+void dolfinx_mpc::assemble_matrix(
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const float>&)>& mat_add_block,
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const float>&)>& mat_add,
+    const dolfinx::fem::Form<float>& a,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc1,
+    std::span<const std::int8_t> dof_marker0,
+    std::span<const std::int8_t> dof_marker1, std::size_t num_threads)
+{
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, dof_marker0,
+                   dof_marker1, num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -803,7 +879,36 @@ void dolfinx_mpc::assemble_matrix(
         bcs,
     std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
+  // Convenience overload: it rebuilds the markers on every call, so the
+  // library calls the overload above instead.
+  const std::vector<std::int8_t> marker0
+      = _bc_dof_markers(*a.function_spaces().at(0), bcs);
+  const std::vector<std::int8_t> marker1
+      = _bc_dof_markers(*a.function_spaces().at(1), bcs);
+  assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1,
+                  std::span<const std::int8_t>(marker0),
+                  std::span<const std::int8_t>(marker1), num_threads);
+}
+//-----------------------------------------------------------------------------
+void dolfinx_mpc::assemble_matrix(
+    const std::function<
+        int(std::span<const std::int32_t>, std::span<const std::int32_t>,
+            const std::span<const std::complex<float>>&)>& mat_add_block,
+    const std::function<
+        int(std::span<const std::int32_t>, std::span<const std::int32_t>,
+            const std::span<const std::complex<float>>&)>& mat_add,
+    const dolfinx::fem::Form<std::complex<float>>& a,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
+        mpc0,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
+        mpc1,
+    std::span<const std::int8_t> dof_marker0,
+    std::span<const std::int8_t> dof_marker1, std::size_t num_threads)
+{
+  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, dof_marker0,
+                   dof_marker1, num_threads);
 }
 //-----------------------------------------------------------------------------
 void dolfinx_mpc::assemble_matrix(
@@ -825,5 +930,13 @@ void dolfinx_mpc::assemble_matrix(
         bcs,
     std::size_t num_threads)
 {
-  _assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1, bcs, num_threads);
+  // Convenience overload: it rebuilds the markers on every call, so the
+  // library calls the overload above instead.
+  const std::vector<std::int8_t> marker0
+      = _bc_dof_markers(*a.function_spaces().at(0), bcs);
+  const std::vector<std::int8_t> marker1
+      = _bc_dof_markers(*a.function_spaces().at(1), bcs);
+  assemble_matrix(mat_add_block, mat_add, a, mpc0, mpc1,
+                  std::span<const std::int8_t>(marker0),
+                  std::span<const std::int8_t>(marker1), num_threads);
 }

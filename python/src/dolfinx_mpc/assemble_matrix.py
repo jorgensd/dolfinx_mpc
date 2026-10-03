@@ -12,6 +12,7 @@ from petsc4py import PETSc as _PETSc
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import dolfinx.fem.petsc  # noqa: F401
 import numpy as np
 from dolfinx import default_scalar_type
 
@@ -34,9 +35,18 @@ def _assemble_form(
     those belong to the system rather than to a single form, see
     :func:`_finalize_matrix`.
     """
-    bcs_cpp = [bc._cpp_object for bc in bcs] if bcs else []
+    # The markers are built here rather than inside the assembler, so a caller
+    # that reassembles the same form -- a Newton iteration, say -- can hoist the
+    # work out of the loop. Mirrors `dolfinx.fem.petsc._assemble_matrix_petsc_markers`.
+    dof_marker0, dof_marker1 = _fem.petsc._matrix_bc_markers(form, bcs)
     cpp.mpc.assemble_matrix(
-        A, form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, bcs_cpp, num_threads
+        A,
+        form._cpp_object,
+        constraint[0]._cpp_object,
+        constraint[1]._cpp_object,
+        dof_marker0,
+        dof_marker1,
+        num_threads,
     )
 
 
@@ -65,20 +75,20 @@ def _finalize_matrix(
     for A_sub, mpc in slave_blocks:
         cpp.mpc.insert_diagonal_slaves(A_sub, mpc._cpp_object, diagval)
 
-    # The slave diagonal is added, the Dirichlet diagonal is inserted, so the
-    # additive contributions have to be communicated before switching mode.
-    if bc_blocks:
-        # Add one on diagonal for Dirichlet boundary conditions
-        A.assemblyBegin(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        A.assemblyEnd(_PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
-        for A_sub, V in bc_blocks:
-            rows_ = []
-            for bc in bcs or []:
-                if V.contains(bc.function_space):
-                    dofs, owned = bc.dof_indices()
-                    rows_.append(dofs[:owned])
-            rows = np.concatenate(rows_) if rows_ else np.empty(0, dtype=np.int32)
-            _cpp.fem.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
+    # Both diagonals are added rather than inserted, so no flush is needed to
+    # take the matrix out of add mode. Adding is equivalent here because
+    # assembly leaves a Dirichlet row empty: the element matrix has its
+    # constrained rows and columns zeroed, slaves are rejected at finalize if
+    # they carry a condition, and a master that carries one is eliminated into
+    # the constraint offset rather than kept in the master list.
+    for A_sub, V in bc_blocks:
+        rows_ = []
+        for bc in bcs or []:
+            if V.contains(bc.function_space):
+                dofs, owned = bc.dof_indices()
+                rows_.append(dofs[:owned])
+        rows = np.concatenate(rows_) if rows_ else np.empty(0, dtype=np.int32)
+        _cpp.fem.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.ADD_VALUES)  # type: ignore
 
     A.assemble()
 

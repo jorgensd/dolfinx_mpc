@@ -314,15 +314,24 @@ void declare_petsc_functions(nb::module_& m)
              mpc0,
          const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&
              mpc1,
-         const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
-             bcs,
+         const nb::ndarray<const std::int8_t, nb::ndim<1>, nb::c_contig>&
+             dof_marker0,
+         const nb::ndarray<const std::int8_t, nb::ndim<1>, nb::c_contig>&
+             dof_marker1,
          std::size_t num_threads)
       {
         dolfinx_mpc::assemble_matrix(
             dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES),
             dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, mpc0, mpc1,
-            bcs, num_threads);
-      });
+            std::span<const std::int8_t>(dof_marker0.data(),
+                                         dof_marker0.size()),
+            std::span<const std::int8_t>(dof_marker1.data(),
+                                         dof_marker1.size()),
+            num_threads);
+      },
+      nb::arg("A"), nb::arg("a"), nb::arg("mpc0"), nb::arg("mpc1"),
+      nb::arg("dof_marker0"), nb::arg("dof_marker1"), nb::arg("num_threads"),
+      "Assemble a bilinear form into a matrix, given constrained dof markers");
   m.def(
       "insert_diagonal_slaves",
       [](Mat A, const dolfinx_mpc::MultiPointConstraint<T, U>& mpc,
