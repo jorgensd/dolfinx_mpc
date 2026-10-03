@@ -11,87 +11,43 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     # avoid running on pull requests from forks
     # which don't have access to secrets
     if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
     env:
-      SONAR_SCANNER_VERSION: 8.1.0.6389 # Find the latest version in at: https://github.com/SonarSource/sonar-scanner-cli/tags
-      SONAR_SERVER_URL: "https://sonarcloud.io"
-      BUILD_WRAPPER_OUT_DIR: build_wrapper_output_directory # Directory where build-wrapper output will be placed
       PETSC_ARCH: linux-gnu-real64-32
-
       PETSC_DIR: /usr/local/petsc
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
-
-      - name: Install zip
+      
+      # The scan action unpacks the scanner, and the container has no unzip
+      - name: Install unzip
         run: |
-          apt-get -y update
-          apt-get install unzip
-      - name: Update pip
-        run: |
-          python3 -m pip install --upgrade pip setuptools
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: "zulu"
-          java-version: 17
-
-      - name: Cache SonarCloud packages
-        uses: actions/cache@v6
-        with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-
-      - name: Download and set up sonar-scanner
-        env:
-          SONAR_SCANNER_DOWNLOAD_URL: https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${{ env.SONAR_SCANNER_VERSION }}-linux-x64.zip
-        run: |
-          mkdir -p $HOME/.sonar
-          wget -O $HOME/.sonar/sonar-scanner.zip ${{ env.SONAR_SCANNER_DOWNLOAD_URL }}
-          unzip -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
-          echo "$HOME/.sonar/sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}-linux-x64/bin" >> $GITHUB_PATH
-
-      - name: Download and set up build-wrapper
-        env:
-          BUILD_WRAPPER_DOWNLOAD_URL: ${{ env.SONAR_SERVER_URL }}/static/cpp/build-wrapper-linux-x86.zip
-        run: |
-          wget -O $HOME/.sonar/build-wrapper-linux-x86.zip ${{ env.BUILD_WRAPPER_DOWNLOAD_URL }}
-          unzip -o $HOME/.sonar/build-wrapper-linux-x86.zip -d $HOME/.sonar/
-          echo "$HOME/.sonar/build-wrapper-linux-x86" >> $GITHUB_PATH
+          apt-get update
+          apt-get install -y unzip
 
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
         with:
-          petsc_arch: ${PETSC_ARCH}
+          petsc_arch: ${{ env.PETSC_ARCH }}
           dolfinx: main
           basix: main
           ufl: main
           ffcx: main
 
-      - name: Run build-wrapper
+      # The compilation database is what SonarCloud analyses the C++ against
+      # (sonar.cfamily.compile-commands in sonar-project.properties)
+      - name: Build DOLFINx-MPC (C++)
         run: |
-          cmake -S ./cpp -B build-mpc
-          build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build build-mpc/ --config Release
-
-      - name: Install DOLFINx-MPC (C++)
-        run: |
-          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
+          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -S cpp/
           cmake --build build-dir --parallel 3
-          cmake --install build-dir
-
-      - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python
 
       - name: Run sonar-scanner
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          sonar-scanner --define sonar.host.url="${{ env.SONAR_SERVER_URL }}" --define sonar.cfamily.build-wrapper-output="${{ env.BUILD_WRAPPER_OUT_DIR }}"
