@@ -3,6 +3,7 @@
 // DOLFINX_MPC interface
 #include <ContactConstraint.h>
 #include <MultiPointConstraint.h>
+#include <RBE.h>
 #include <SlipConstraint.h>
 #include <assemble_matrix.h>
 #include <assemble_vector.h>
