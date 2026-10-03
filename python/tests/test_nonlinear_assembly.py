@@ -174,7 +174,7 @@ def test_nonlinear_problem_with_preconditioner():
     v = ufl.TestFunction(V)
     du = ufl.TrialFunction(V)
     x = ufl.SpatialCoordinate(mesh)
-    F = (1 + uh**2) * ufl.inner(ufl.grad(uh), ufl.grad(v)) * ufl.dx - ufl.sin(x[0]) * v * ufl.dx
+    F = (1 + uh**2) * ufl.inner(ufl.grad(uh), ufl.grad(v)) * ufl.dx - ufl.inner(ufl.sin(x[0]), v) * ufl.dx
     P = ufl.inner(ufl.grad(du), ufl.grad(v)) * ufl.dx + ufl.inner(du, v) * ufl.dx
 
     bc = dolfinx.fem.dirichletbc(
