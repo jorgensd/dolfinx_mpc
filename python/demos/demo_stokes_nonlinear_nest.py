@@ -197,6 +197,8 @@ F -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(uh), n), v) * ds
 F -= ufl.inner(ufl.outer(n, n) * ufl.dot(-ph * ufl.Identity(uh.ufl_shape[0]), n), v) * ds
 F -= ufl.inner(g_tau, v) * ds
 
+# The pressure block of the Jacobian is zero, so the preconditioner replaces it with the pressure
+# mass matrix, spectrally equivalent to the Schur complement
 u, p = ufl.TrialFunctions(W)
 P = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
 P -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
@@ -208,6 +210,7 @@ problem = dolfinx_mpc.NonlinearProblem(
     [uh, ph],
     mpc=[mpc, mpc_q],
     bcs=bcs,
+    P=ufl.extract_blocks(P),
     kind="nest",
     petsc_options={
         "snes_type": "newtonls",
@@ -218,7 +221,9 @@ problem = dolfinx_mpc.NonlinearProblem(
         "snes_linesearch_type": "none",
         "ksp_error_if_not_converged": True,
         "ksp_type": "minres",
-        "ksp_rtol": tol,
+        # The true residual stalls at about the precision of the scalar type, while the residual
+        # MINRES reports keeps falling, so a tighter tolerance only adds iterations
+        "ksp_rtol": np.sqrt(np.finfo(default_real_type).eps),
         "pc_type": "fieldsplit",
         "pc_fieldsplit_type": "additive",
     },
@@ -312,8 +317,11 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
     p_mpc = dolfinx_mpc.utils.gather_PETScVector(ph.x.petsc_vec, root=root)
     up_mpc = np.hstack([u_mpc, p_mpc])
     if MPI.COMM_WORLD.rank == root:
-        KTAK = K.T * A_csr * K
-        reduced_L = K.T @ L_np
+        # Solve in double precision: a single precision direct solve is less accurate than the
+        # iterative MPC solve, and its error depends on the dof order, so on the partition
+        scipy_dtype = np.promote_types(A_csr.dtype, np.float64)
+        KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
+        reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
         # Solve linear system
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
