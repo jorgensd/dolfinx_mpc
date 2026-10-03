@@ -12,6 +12,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx.fem as fem
+import dolfinx.mesh
 import gmsh
 import numpy as np
 import numpy.testing as nt
@@ -300,3 +301,35 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
     solver.destroy()
 
     list_timings(comm)
+
+
+def test_contact_missing_masters():
+    """A slave in no cell of the master side raises on every process, unless allowed."""
+    comm = MPI.COMM_WORLD
+    mesh = dolfinx.mesh.create_unit_square(comm, 4, 4, dolfinx.mesh.CellType.quadrilateral)
+    V = fem.functionspace(mesh, ("Lagrange", 1, (2,)))
+    bs = V.dofmap.index_map_bs
+
+    # Slaves on the bottom edge, masters in the cells along the left edge: only the slave
+    # blocks at x = 0 and x = 0.25 are in such a cell
+    fdim = mesh.topology.dim - 1
+    bottom = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[1], 0))
+    left = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 0))
+    facets = np.hstack([bottom, left])
+    values = np.hstack([np.full(len(bottom), 1), np.full(len(left), 2)]).astype(np.int32)
+    order = np.argsort(facets)
+    mt = dolfinx.mesh.meshtags(mesh, fdim, facets[order], values[order])
+
+    nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
+    with pytest.raises(RuntimeError, match="No masters found"):
+        dolfinx_mpc.MultiPointConstraint(V).create_contact_slip_condition(mt, 1, 2, nh)
+    with pytest.raises(RuntimeError, match="No masters found"):
+        dolfinx_mpc.MultiPointConstraint(V).create_contact_inelastic_condition(mt, 1, 2)
+
+    data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt._cpp_object, 1, 2, 1e-20, True, 1)
+    slaves = np.asarray(data.slaves)
+    owned = slaves[slaves < V.dofmap.index_map.size_local * bs]
+    x = V.tabulate_dof_coordinates()[owned // bs]
+    assert comm.allreduce(len(owned), op=MPI.SUM) == 2 * bs
+    assert np.allclose(x[:, 1], 0)
+    assert np.all(np.isclose(x[:, 0], 0) | np.isclose(x[:, 0], 0.25))
