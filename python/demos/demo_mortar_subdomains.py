@@ -320,7 +320,7 @@ def solve_mortar(N: int, degree: int) -> tuple[float, float]:
 
 for degree in (1, 2):
     previous = None
-    for resolution in (8, 16, 32):
+    for resolution in (4, 8, 16):
         err_u, err_l = solve_mortar(resolution, degree)
         rate = "" if previous is None else f"   rate {np.log2(previous / err_u):.2f}"
         if MPI.COMM_WORLD.rank == 0:
