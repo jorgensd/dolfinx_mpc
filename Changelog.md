@@ -46,6 +46,9 @@
   block. The sparsity pattern now covers every block of the system (`dolfinx_mpc::create_sparsity_patterns`). C++
   callers assemble a block with `dolfinx_mpc::assemble_matrix_blocks`, routing the masters' entries to the matrices of
   the system with `dolfinx_mpc::make_mat_add_blocks`.
+- **New**: C++ tests (`cpp/test`, Catch2) and C++ demos (`cpp/demo`), built against the installed library and run in
+  CI. The first of each covers masters in another block: the test checks every block against a dense `K^T A K` with
+  `la::MatrixCSR`, and `demo_cross_block` solves such a system with PETSc.
 - **Changed**: a nest matrix now always has its diagonal blocks, which receive the diagonal of their slaves also when the
   block has no form; previously such slave rows were empty. With masters in another block every block of the nest
   exists. `create_matrix_nest` is built in C++ (`dolfinx_mpc::create_matrix_nest`).
