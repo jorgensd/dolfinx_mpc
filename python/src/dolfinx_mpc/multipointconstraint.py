@@ -22,7 +22,7 @@ import dolfinx_mpc.cpp
 from .container import MPCData, _float_array_types, _float_classes, _mpc_classes, _mpc_data_classes
 from .dictcondition import create_dictionary_constraint
 from .integralcondition import create_integral_constraint
-from .rbe import create_rbe2
+from .rbe import create_rbe2, create_rbe3
 
 
 class MultiPointConstraint:
@@ -59,6 +59,8 @@ class MultiPointConstraint:
     _rhs_coeffs: Optional[_fem.Function]
     _scale_function: Optional[_fem.Function]
     _rbe2: List[list]
+    _rbe3: List[tuple]
+    _rbe3_data: Optional[tuple]
     V: _fem.FunctionSpace
     finalized: bool
     _cpp_object: _mpc_classes
@@ -88,6 +90,10 @@ class MultiPointConstraint:
         self._scale_function = None
         # Per space on a spider mesh: [W, the tied space, the block of W], the block set by finalize
         self._rbe2 = []
+        # Feet of RBE3 constraints on this space, (V, dofs, spiders, weights) per call, built by
+        # finalize, which keeps the arrays for update_rbe3
+        self._rbe3 = []
+        self._rbe3_data = None
         self.V = V
         self.finalized = False
         self._dtype = dtype
@@ -523,6 +529,158 @@ class MultiPointConstraint:
             raise ValueError("The constraint has no RBE2 constraints")
         for W, V, block in self._rbe2:
             dolfinx_mpc.cpp.mpc.update_rbe2(self._cpp_object, V._cpp_object, W._cpp_object, block)
+
+    def _add_rbe3(self, V: _fem.FunctionSpace, dofs: list[npt.NDArray[numpy.int32]], weights, x):
+        """Record `dofs[k]` as feet of spider `k`, with weights from `weights`."""
+        real = V.mesh.geometry.x.dtype
+        for k, d in enumerate(dofs):
+            if weights is None:
+                w = numpy.ones(len(d), dtype=real)
+            elif callable(weights):
+                w = numpy.asarray(weights(x[d].T), dtype=real).reshape(-1)
+            else:
+                w = numpy.full(len(d), weights, dtype=real)
+            self._rbe3.append((V, d, numpy.full(len(d), k, dtype=numpy.int64), w))
+
+    def add_rbe3_topological(
+        self,
+        V: _fem.FunctionSpace,
+        dim: int,
+        entities: Union[npt.NDArray[numpy.int32], Sequence[Optional[npt.NDArray[numpy.int32]]]],
+        weights: Union[None, float, Callable[[numpy.ndarray], numpy.ndarray]] = None,
+    ):
+        r"""
+        Tie the dofs of spiders to the motion of the dofs of `V` on mesh entities, as the RBE3
+        element of other codes (a flexible "spider").
+
+        This constraint is on the space of the spider mesh (:func:`dolfinx_mpc.create_spider_mesh`).
+        Each spider moves with the rigid motion that best fits its "feet", in the weighted
+        least-squares sense,
+
+        .. math::
+
+            \min_{t, \theta} \sum_i w_i |u_i - t - \theta \times (x_i - x_c)|^2,
+
+        where :math:`x_c` is the coordinate of the spider, :math:`t` and :math:`\theta` its
+        translation and rotation, and :math:`u_i` the displacement of foot :math:`i` at
+        :math:`x_i`. Without rotations, :math:`t` is the weighted mean of the feet. Unlike RBE2, the
+        feet keep their stiffness: a load on the spider is spread over them without making them
+        rigid.
+
+        The feet may be in several spaces, given by one call each. The constraint is built when
+        it is finalized, by :func:`finalize_multipointconstraints` together with the constraints of
+        the spaces of the feet.
+
+        Args:
+            V: The space of the feet, with one component per dimension
+            dim: Topological dimension of the entities
+            entities: Entities (local to the process) whose dofs are feet of spider 0, or a
+                sequence whose entry `k` holds those of the spider with input index `k`. An entry
+                may be `None`.
+            weights: The weight of each foot: `None` for one, a number, or a function of the
+                coordinates, shape `(3, num_points)`, returning one non-negative weight per foot.
+                Evaluated once, here: :meth:`update_rbe3` keeps the weights.
+
+        Note:
+            Collective. Must be called by every process, with the same number of entries in
+            `entities`.
+        """
+        self._raise_if_finalized()
+        per_spider = [entities] if isinstance(entities, numpy.ndarray) else list(entities)
+        dofs = []
+        for e in per_spider:
+            e = numpy.zeros(0, dtype=numpy.int32) if e is None else numpy.asarray(e, dtype=numpy.int32)
+            dofs.append(_fem.locate_dofs_topological(V, dim, e))
+        self._add_rbe3(V, dofs, weights, V.tabulate_dof_coordinates() if callable(weights) else None)
+
+    def add_rbe3_geometrical(
+        self,
+        V: _fem.FunctionSpace,
+        locators: Union[
+            Callable[[numpy.ndarray], numpy.ndarray], Sequence[Optional[Callable[[numpy.ndarray], numpy.ndarray]]]
+        ],
+        weights: Union[None, float, Callable[[numpy.ndarray], numpy.ndarray]] = None,
+    ):
+        """
+        Tie the dofs of spiders to the motion of the dofs of `V` located geometrically, as the
+        RBE3 element of other codes. See :meth:`add_rbe3_topological` for the relation.
+
+        Args:
+            V: The space of the feet, with one component per dimension
+            locators: Marks the feet of spider 0, given their coordinates, shape
+                `(3, num_points)`, or a sequence whose entry `k` marks the feet of the spider with
+                input index `k`. An entry may be `None`.
+            weights: See :meth:`add_rbe3_topological`
+
+        Note:
+            Collective. Must be called by every process, with the same number of locators.
+        """
+        self._raise_if_finalized()
+        per_spider = [locators] if callable(locators) else list(locators)
+        dofs = [
+            numpy.zeros(0, dtype=numpy.int32)
+            if locator is None
+            else numpy.asarray(_fem.locate_dofs_geometrical(V, locator), dtype=numpy.int32)
+            for locator in per_spider
+        ]
+        self._add_rbe3(V, dofs, weights, V.tabulate_dof_coordinates() if callable(weights) else None)
+
+    def _build_rbe3(self, mpcs: Sequence[MultiPointConstraint]) -> None:
+        """Build the RBE3 constraint from the feet recorded, with the blocks of their spaces."""
+        spaces: list[_fem.FunctionSpace] = []
+        for V, *_ in self._rbe3:
+            if not any(V is other for other in spaces):
+                spaces.append(V)
+        blocks = []
+        for V in spaces:
+            matches = [j for j, other in enumerate(mpcs) if other.V is V]
+            if len(matches) != 1:
+                raise ValueError(
+                    "The feet of an RBE3 constraint must be in the space of exactly one of the "
+                    "constraints finalized together with it"
+                )
+            blocks.append(matches[0])
+
+        def gather(i):
+            return [numpy.concatenate([r[i] for r in self._rbe3 if r[0] is V]) for V in spaces]
+
+        data = (self.V, spaces, gather(1), gather(2), gather(3))
+        mpc_data, space = create_rbe3(*data, dtype=self._dtype)
+        self.add_constraint(
+            self.V,
+            mpc_data.slaves,
+            mpc_data.masters,
+            mpc_data.coeffs,
+            mpc_data.owners,
+            mpc_data.offsets,
+            master_blocks=numpy.asarray(blocks, dtype=numpy.int32)[space],
+        )
+        self._rbe3_data = (*data, blocks)
+
+    def update_rbe3(self) -> None:
+        """
+        Recompute the coefficients of the RBE3 constraint from the current coordinates.
+
+        The feet are at the dof coordinates of their spaces, the spiders at those of the space of
+        this constraint, both read now. Move the meshes, then call this. Assemble again
+        afterwards.
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._raise_if_not_finalized()
+        if self._rbe3_data is None:
+            raise ValueError("The constraint has no RBE3 constraint")
+        W, spaces, dofs, spiders, weights, blocks = self._rbe3_data
+        dolfinx_mpc.cpp.mpc.update_rbe3(
+            self._cpp_object,
+            W._cpp_object,
+            [V._cpp_object for V in spaces],
+            blocks,
+            [numpy.ascontiguousarray(d, dtype=numpy.int32) for d in dofs],
+            [numpy.ascontiguousarray(k, dtype=numpy.int64) for k in spiders],
+            [numpy.ascontiguousarray(w) for w in weights],
+        )
 
     def create_slip_constraint(
         self,
@@ -964,6 +1122,11 @@ def finalize_multipointconstraints(
         raise ValueError("All constraints must have the same dtype")
     if dtype.type not in (numpy.float32, numpy.float64, numpy.complex64, numpy.complex128):
         raise ValueError(f"Unsupported dtype {dtype} for coefficients")
+
+    # An RBE3 constraint is built now, when the block of each space of its feet is known
+    for mpc in mpcs:
+        if len(mpc._rbe3) > 0:
+            mpc._build_rbe3(mpcs)
 
     rhs_coeffs = []
     for mpc in mpcs:

@@ -10,6 +10,7 @@
 #include "utils.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <concepts>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
@@ -23,6 +24,8 @@
 #include <dolfinx/mesh/cell_types.h>
 #include <format>
 #include <iterator>
+#include <limits>
+#include <map>
 #include <memory>
 #include <mpi.h>
 #include <numeric>
@@ -87,6 +90,138 @@ U rbe2_coefficient(int gdim, int j, int c, std::span<const U, 3> r)
     return sign3[j][c] * r[comp3[j][c]];
   return sign2[j][c] * r[comp2[j][c]];
 }
+
+/// @brief Send row `i` of `rows` (`n` entries per row) and of `values` (`m`
+/// entries per row) to process `dest[i]`, in one neighbourhood exchange.
+/// @return The received rows and values, grouped by source process in
+/// ascending order, and the source process of each received row.
+/// @note Collective.
+template <typename I, typename R>
+std::tuple<std::vector<I>, std::vector<R>, std::vector<int>>
+send_rows(MPI_Comm comm, std::span<const int> dest, std::span<const I> rows,
+          int n, std::span<const R> values, int m)
+{
+  std::vector<std::size_t> order(dest.size());
+  std::iota(order.begin(), order.end(), 0);
+  std::ranges::stable_sort(order, {},
+                           [&dest](std::size_t i) { return dest[i]; });
+
+  std::vector<int> ranks;
+  std::vector<int> send_counts;
+  std::vector<I> send_rows;
+  std::vector<R> send_values;
+  send_rows.reserve(rows.size());
+  send_values.reserve(values.size());
+  for (std::size_t i : order)
+  {
+    if (ranks.empty() or ranks.back() != dest[i])
+    {
+      ranks.push_back(dest[i]);
+      send_counts.push_back(0);
+    }
+    ++send_counts.back();
+    send_rows.insert(send_rows.end(), std::next(rows.begin(), n * i),
+                     std::next(rows.begin(), n * (i + 1)));
+    send_values.insert(send_values.end(), std::next(values.begin(), m * i),
+                       std::next(values.begin(), m * (i + 1)));
+  }
+  // Some MPI implementations require non-null pointers for empty arrays
+  ranks.reserve(1);
+  send_counts.reserve(1);
+
+  const std::vector<int> src
+      = dolfinx::MPI::compute_graph_edges_nbx(comm, ranks);
+  MPI_Comm neighbors;
+  MPI_Dist_graph_create_adjacent(comm, static_cast<int>(src.size()), src.data(),
+                                 MPI_UNWEIGHTED, static_cast<int>(ranks.size()),
+                                 ranks.data(), MPI_UNWEIGHTED, MPI_INFO_NULL,
+                                 false, &neighbors);
+  std::vector<int> recv_counts(src.size());
+  recv_counts.reserve(1);
+  MPI_Neighbor_alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1,
+                        MPI_INT, neighbors);
+
+  auto exchange = [&neighbors, &send_counts, &recv_counts]<typename V>(
+                      const std::vector<V>& data, int stride) -> std::vector<V>
+  {
+    auto scaled = [stride](const std::vector<int>& counts)
+    {
+      std::pair<std::vector<int>, std::vector<int>> cd;
+      cd.first.reserve(std::max<std::size_t>(counts.size(), 1));
+      cd.second.assign(counts.size() + 1, 0);
+      for (std::size_t i = 0; i < counts.size(); ++i)
+      {
+        cd.first.push_back(stride * counts[i]);
+        cd.second[i + 1] = cd.second[i] + stride * counts[i];
+      }
+      return cd;
+    };
+    const auto [sc, sd] = scaled(send_counts);
+    const auto [rc, rd] = scaled(recv_counts);
+    std::vector<V> recv(rd.back());
+    MPI_Neighbor_alltoallv(data.data(), sc.data(), sd.data(),
+                           dolfinx::MPI::mpi_t<V>, recv.data(), rc.data(),
+                           rd.data(), dolfinx::MPI::mpi_t<V>, neighbors);
+    return recv;
+  };
+  std::vector<I> recv_rows = exchange(send_rows, n);
+  std::vector<R> recv_values = exchange(send_values, m);
+  MPI_Comm_free(&neighbors);
+
+  std::vector<int> source;
+  for (std::size_t s = 0; s < src.size(); ++s)
+    source.insert(source.end(), recv_counts[s], src[s]);
+  return {std::move(recv_rows), std::move(recv_values), std::move(source)};
+}
+
+/// @brief Invert the row-major `n x n` matrix `A` in place, by Gauss-Jordan
+/// elimination with partial pivoting.
+/// @return false if a pivot is negligible relative to the diagonal entry of
+/// its column, i.e. `A` is singular to working precision.
+template <std::floating_point U>
+bool invert(std::vector<U>& A, int n)
+{
+  std::vector<U> diagonal(n);
+  for (int c = 0; c < n; ++c)
+    diagonal[c] = std::abs(A[c * n + c]);
+  std::vector<U> inverse(n * n, 0);
+  for (int c = 0; c < n; ++c)
+    inverse[c * n + c] = 1;
+  const U tol = std::sqrt(std::numeric_limits<U>::epsilon());
+  for (int c = 0; c < n; ++c)
+  {
+    int pivot = c;
+    for (int r = c + 1; r < n; ++r)
+      if (std::abs(A[r * n + c]) > std::abs(A[pivot * n + c]))
+        pivot = r;
+    if (std::abs(A[pivot * n + c]) <= tol * diagonal[c])
+      return false;
+    for (int d = 0; d < n; ++d)
+    {
+      std::swap(A[c * n + d], A[pivot * n + d]);
+      std::swap(inverse[c * n + d], inverse[pivot * n + d]);
+    }
+    const U scale = 1 / A[c * n + c];
+    for (int d = 0; d < n; ++d)
+    {
+      A[c * n + d] *= scale;
+      inverse[c * n + d] *= scale;
+    }
+    for (int r = 0; r < n; ++r)
+    {
+      if (r == c)
+        continue;
+      const U factor = A[r * n + c];
+      for (int d = 0; d < n; ++d)
+      {
+        A[r * n + d] -= factor * A[c * n + d];
+        inverse[r * n + d] -= factor * inverse[c * n + d];
+      }
+    }
+  }
+  A = std::move(inverse);
+  return true;
+}
 } // namespace impl
 
 namespace dolfinx_mpc
@@ -135,88 +270,25 @@ locate_spiders(const dolfinx::fem::FunctionSpace<U>& W,
   const std::vector<U> x = W.tabulate_dof_coordinates(false);
 
   // Publish: each owned point sends (input index, block) and its coordinate
-  // to its post office, this process included, in one neighbourhood exchange.
-  // The source of a row is the owner of the point.
-  std::vector<std::int32_t> published;
+  // to its post office, this process included. The source of a row is the
+  // owner of the point.
   std::vector<int> office;
+  std::vector<std::int64_t> published;
+  std::vector<U> published_x;
   for (std::int32_t c = 0; c < num_cells; ++c)
   {
     const std::int32_t dof = dofmap->cell_dofs(c).front();
     if (dof < imap->size_local())
     {
-      published.push_back(c);
       office.push_back(dolfinx::MPI::index_owner(size, original[c], K));
+      published.insert(published.end(),
+                       {original[c], imap->local_range()[0] + dof});
+      published_x.insert(published_x.end(), std::next(x.begin(), 3 * dof),
+                         std::next(x.begin(), 3 * (dof + 1)));
     }
   }
-  std::vector<std::size_t> order(published.size());
-  std::iota(order.begin(), order.end(), 0);
-  std::ranges::stable_sort(order, {},
-                           [&office](std::size_t i) { return office[i]; });
-
-  std::vector<int> dest;
-  std::vector<int> send_counts;
-  std::vector<std::int64_t> send_rows;
-  std::vector<U> send_x;
-  for (std::size_t i : order)
-  {
-    const std::int32_t dof = dofmap->cell_dofs(published[i]).front();
-    if (dest.empty() or dest.back() != office[i])
-    {
-      dest.push_back(office[i]);
-      send_counts.push_back(0);
-    }
-    ++send_counts.back();
-    send_rows.push_back(original[published[i]]);
-    send_rows.push_back(imap->local_range()[0] + dof);
-    send_x.insert(send_x.end(), std::next(x.begin(), 3 * dof),
-                  std::next(x.begin(), 3 * (dof + 1)));
-  }
-  // Some MPI implementations require non-null pointers for empty arrays
-  dest.reserve(1);
-  send_counts.reserve(1);
-
-  const std::vector<int> src
-      = dolfinx::MPI::compute_graph_edges_nbx(comm, dest);
-  MPI_Comm neighbors;
-  MPI_Dist_graph_create_adjacent(comm, static_cast<int>(src.size()), src.data(),
-                                 MPI_UNWEIGHTED, static_cast<int>(dest.size()),
-                                 dest.data(), MPI_UNWEIGHTED, MPI_INFO_NULL,
-                                 false, &neighbors);
-  std::vector<int> recv_counts(src.size());
-  recv_counts.reserve(1);
-  MPI_Neighbor_alltoall(send_counts.data(), 1, MPI_INT, recv_counts.data(), 1,
-                        MPI_INT, neighbors);
-
-  // Displacements, in rows
-  std::vector<int> send_disp(send_counts.size() + 1, 0);
-  std::partial_sum(send_counts.begin(), send_counts.end(),
-                   std::next(send_disp.begin()));
-  std::vector<int> recv_disp(recv_counts.size() + 1, 0);
-  std::partial_sum(recv_counts.begin(), recv_counts.end(),
-                   std::next(recv_disp.begin()));
-  auto exchange = [&neighbors, &send_counts, &send_disp, &recv_counts,
-                   &recv_disp]<typename V>(const std::vector<V>& data,
-                                           int stride) -> std::vector<V>
-  {
-    auto scale = [stride](const std::vector<int>& v)
-    {
-      std::vector<int> scaled(v.size());
-      std::ranges::transform(v, scaled.begin(),
-                             [stride](int n) { return stride * n; });
-      scaled.reserve(1);
-      return scaled;
-    };
-    const std::vector<int> sc = scale(send_counts), sd = scale(send_disp),
-                           rc = scale(recv_counts), rd = scale(recv_disp);
-    std::vector<V> recv(rd.back());
-    MPI_Neighbor_alltoallv(data.data(), sc.data(), sd.data(),
-                           dolfinx::MPI::mpi_t<V>, recv.data(), rc.data(),
-                           rd.data(), dolfinx::MPI::mpi_t<V>, neighbors);
-    return recv;
-  };
-  const std::vector<std::int64_t> recv_rows = exchange(send_rows, 2);
-  const std::vector<U> recv_x = exchange(send_x, 3);
-  MPI_Comm_free(&neighbors);
+  const auto [recv_rows, recv_x, source] = impl::send_rows<std::int64_t, U>(
+      comm, office, published, 2, published_x, 3);
 
   // The directory of this post office: (block, owner) and coordinate per row
   const std::array<std::int64_t, 2> range
@@ -224,16 +296,13 @@ locate_spiders(const dolfinx::fem::FunctionSpace<U>& W,
   const std::int64_t num_rows = range[1] - range[0];
   std::vector<std::int64_t> directory(2 * num_rows, -1);
   std::vector<U> directory_x(3 * num_rows, 0);
-  for (std::size_t s = 0; s < src.size(); ++s)
+  for (std::size_t i = 0; i < source.size(); ++i)
   {
-    for (int i = recv_disp[s]; i < recv_disp[s + 1]; ++i)
-    {
-      const std::int64_t row = recv_rows[2 * i] - range[0];
-      directory[2 * row] = recv_rows[2 * i + 1];
-      directory[2 * row + 1] = src[s];
-      std::copy_n(std::next(recv_x.begin(), 3 * i), 3,
-                  std::next(directory_x.begin(), 3 * row));
-    }
+    const std::int64_t row = recv_rows[2 * i] - range[0];
+    directory[2 * row] = recv_rows[2 * i + 1];
+    directory[2 * row + 1] = source[i];
+    std::copy_n(std::next(recv_x.begin(), 3 * i), 3,
+                std::next(directory_x.begin(), 3 * row));
   }
 
   // One reduction for both checks, so that every process throws or none
@@ -427,6 +496,265 @@ void update_rbe2(MultiPointConstraint<T, U>& mpc,
         r[d] = x[3 * foot + d] - x_c.array()[3 * spider + d];
       coeffs[k] = impl::rbe2_coefficient<U>(gdim, j, masters[k] % num_body, r);
     }
+  }
+  mpc.update_coefficients(coeffs);
+}
+
+/// @brief Tie the dofs of spiders to the motion of their feet (RBE3).
+///
+/// Each spider's motion is the rigid motion that best fits its feet, in the
+/// weighted least-squares sense:
+/// @f[
+///   \min_{t, \theta} \sum_i w_i |u_i - t - \theta \times (x_i - x_c)|^2,
+/// @f]
+/// so @f$(t, \theta) = A^{-1} \sum_i w_i B_i^T u_i@f$, with @f$B_i@f$ the
+/// map from @f$(t, \theta)@f$ to the rigid motion at foot @f$i@f$ and
+/// @f$A = \sum_i w_i B_i^T B_i@f$. Without rotations, @f$t@f$ is the
+/// weighted mean of the feet. Every dof of a spider is a slave, every
+/// component of each of its feet a master. The feet are sent to the owner
+/// of their spider's dofs, which builds its rows.
+///
+/// @param[in] W Space on the spider mesh, holding the slaves.
+/// @param[in] V Spaces of the feet, with one component per dimension.
+/// @param[in] dofs The feet in each space, blocked dofs local to the
+/// process. Ghosts are ignored: each foot is sent by its owner.
+/// @param[in] spiders Input index of the spider of each foot.
+/// @param[in] weights Weight of each foot, non-negative.
+/// @return (0) The slaves (dofs of `W`), masters (global dofs of their
+/// space), coefficients, owners and offsets, and (1) the position in `V` of
+/// the space of each master.
+/// @note Collective.
+template <typename T, std::floating_point U>
+std::pair<mpc_data<T>, std::vector<std::int32_t>> create_rbe3(
+    const dolfinx::fem::FunctionSpace<U>& W,
+    const std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
+    const std::vector<std::span<const std::int32_t>>& dofs,
+    const std::vector<std::span<const std::int64_t>>& spiders,
+    const std::vector<std::span<const U>>& weights)
+{
+  if (V.empty() or dofs.size() != V.size() or spiders.size() != V.size()
+      or weights.size() != V.size())
+  {
+    throw std::invalid_argument(
+        "One array of feet, spiders and weights is needed per space of feet");
+  }
+  const auto [gdim, num_body, rotations] = impl::check_rbe2_spaces(*V[0], W);
+  for (const auto& V_s : V)
+  {
+    if (std::get<0>(impl::check_rbe2_spaces(*V_s, W)) != gdim)
+      throw std::invalid_argument(
+          "The spaces of the feet must have the same geometric dimension");
+  }
+  MPI_Comm comm = W.mesh()->comm();
+  int bad_input = 0;
+  for (std::size_t s = 0; s < V.size(); ++s)
+  {
+    bad_input |= dofs[s].size() != spiders[s].size()
+                 or dofs[s].size() != weights[s].size()
+                 or std::ranges::any_of(weights[s], [](U w) { return w < 0; });
+  }
+  MPI_Allreduce(MPI_IN_PLACE, &bad_input, 1, MPI_INT, MPI_MAX, comm);
+  if (bad_input)
+  {
+    throw std::invalid_argument("Each foot needs one spider and one "
+                                "non-negative weight");
+  }
+
+  std::vector<std::int64_t> needed;
+  for (std::span<const std::int64_t> k : spiders)
+    needed.insert(needed.end(), k.begin(), k.end());
+  std::ranges::sort(needed);
+  auto [first, last] = std::ranges::unique(needed);
+  needed.erase(first, last);
+  const std::vector<std::int32_t> spider_owners
+      = std::get<1>(locate_spiders(W, needed));
+
+  // Each owned foot goes to the owner of its spider, as (spider, global
+  // block, space) and (coordinate, weight). The source of a row is the owner
+  // of the foot.
+  std::vector<int> dest;
+  std::vector<std::int64_t> rows;
+  std::vector<U> values;
+  for (std::size_t s = 0; s < V.size(); ++s)
+  {
+    std::shared_ptr<const dolfinx::common::IndexMap> imap
+        = V[s]->dofmap()->index_map;
+    const std::vector<U> x = V[s]->tabulate_dof_coordinates(false);
+    for (std::size_t i = 0; i < dofs[s].size(); ++i)
+    {
+      const std::int32_t dof = dofs[s][i];
+      if (dof >= imap->size_local())
+        continue;
+      const std::size_t k = std::distance(
+          needed.begin(), std::ranges::lower_bound(needed, spiders[s][i]));
+      dest.push_back(spider_owners[k]);
+      rows.insert(rows.end(), {spiders[s][i], imap->local_range()[0] + dof,
+                               static_cast<std::int64_t>(s)});
+      values.insert(values.end(), std::next(x.begin(), 3 * dof),
+                    std::next(x.begin(), 3 * (dof + 1)));
+      values.push_back(weights[s][i]);
+    }
+  }
+  const auto [feet, feet_values, source]
+      = impl::send_rows<std::int64_t, U>(comm, dest, rows, 3, values, 4);
+
+  // The spiders owned here: input index -> local block of W
+  std::shared_ptr<const dolfinx::mesh::Topology> topology
+      = W.mesh()->topology();
+  const std::int32_t num_cells
+      = topology->index_map(topology->dim())->size_local();
+  std::span<const std::int64_t> original
+      = topology->original_cell_index.front();
+  std::map<std::int64_t, std::int32_t> owned;
+  for (std::int32_t c = 0; c < num_cells; ++c)
+  {
+    const std::int32_t dof = W.dofmap()->cell_dofs(c).front();
+    if (dof < W.dofmap()->index_map->size_local())
+      owned.emplace(original[c], dof);
+  }
+  const std::vector<U> x_W = W.tabulate_dof_coordinates(false);
+
+  // One spider at a time: its feet, A and the rows of its dofs
+  std::vector<std::size_t> order(source.size());
+  std::iota(order.begin(), order.end(), 0);
+  std::ranges::stable_sort(order, {},
+                           [&feet](std::size_t i) { return feet[3 * i]; });
+  const int n = num_body;
+  mpc_data<T> data;
+  std::vector<std::int32_t> spaces;
+  data.offsets.push_back(0);
+  std::int64_t singular = -1;
+  for (std::size_t f0 = 0; f0 < order.size();)
+  {
+    const std::int64_t k = feet[3 * order[f0]];
+    std::size_t f1 = f0;
+    while (f1 < order.size() and feet[3 * order[f1]] == k)
+      ++f1;
+    const std::size_t num_feet = f1 - f0;
+    const std::int32_t dof_W = owned.at(k);
+
+    // B[f][j][c]: component j of the rigid motion at foot f per body dof c
+    std::vector<U> B(num_feet * gdim * n);
+    std::vector<U> A(n * n, 0);
+    for (std::size_t f = 0; f < num_feet; ++f)
+    {
+      const std::size_t i = order[f0 + f];
+      std::array<U, 3> r = {0, 0, 0};
+      for (int d = 0; d < gdim; ++d)
+        r[d] = feet_values[4 * i + d] - x_W[3 * dof_W + d];
+      const U w = feet_values[4 * i + 3];
+      for (int j = 0; j < gdim; ++j)
+        for (int c = 0; c < n; ++c)
+          B[(f * gdim + j) * n + c] = impl::rbe2_coefficient<U>(gdim, j, c, r);
+      for (int j = 0; j < gdim; ++j)
+        for (int c = 0; c < n; ++c)
+          for (int d = 0; d < n; ++d)
+            A[c * n + d]
+                += w * B[(f * gdim + j) * n + c] * B[(f * gdim + j) * n + d];
+    }
+    if (!impl::invert(A, n))
+    {
+      singular = std::max(singular, k);
+      f0 = f1;
+      continue;
+    }
+
+    for (int c = 0; c < n; ++c)
+    {
+      data.slaves.push_back(dof_W * n + c);
+      for (std::size_t f = 0; f < num_feet; ++f)
+      {
+        const std::size_t i = order[f0 + f];
+        const U w = feet_values[4 * i + 3];
+        for (int j = 0; j < gdim; ++j)
+        {
+          U coeff = 0;
+          for (int d = 0; d < n; ++d)
+            coeff += A[c * n + d] * w * B[(f * gdim + j) * n + d];
+          data.masters.push_back(feet[3 * i + 1] * gdim + j);
+          data.coeffs.push_back(coeff);
+          data.owners.push_back(source[i]);
+          spaces.push_back(static_cast<std::int32_t>(feet[3 * i + 2]));
+        }
+      }
+      data.offsets.push_back(static_cast<std::int32_t>(data.masters.size()));
+    }
+    f0 = f1;
+  }
+
+  MPI_Allreduce(MPI_IN_PLACE, &singular, 1, MPI_INT64_T, MPI_MAX, comm);
+  if (singular >= 0)
+  {
+    throw std::runtime_error(std::format(
+        "The feet of spider {} do not determine its {}: too few, or {}",
+        singular, rotations ? "translation and rotation" : "translation",
+        rotations ? "on one line" : "all of weight zero"));
+  }
+  return {std::move(data), std::move(spaces)};
+}
+
+/// @brief Recompute the coefficients of an RBE3 constraint from the current
+/// dof coordinates of the feet and the spiders.
+///
+/// The arguments are those given to `create_rbe3`, whose rows replace the
+/// coefficients of the same slaves in `mpc`. Masters are matched by block
+/// and global index, as finalization may reorder those of a slave. For use
+/// after the meshes move.
+///
+/// @param[in,out] mpc The finalized constraint on `W`.
+/// @param[in] blocks The block of each space in `V` among
+/// `mpc.function_spaces()`.
+/// @note Collective.
+template <typename T, std::floating_point U>
+void update_rbe3(
+    MultiPointConstraint<T, U>& mpc, const dolfinx::fem::FunctionSpace<U>& W,
+    const std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
+    std::span<const int> blocks,
+    const std::vector<std::span<const std::int32_t>>& dofs,
+    const std::vector<std::span<const std::int64_t>>& spiders,
+    const std::vector<std::span<const U>>& weights)
+{
+  const auto [data, spaces] = create_rbe3<T, U>(W, V, dofs, spiders, weights);
+  auto [coeffs, offsets] = mpc.all_coefficients();
+  const std::vector<std::int32_t> masters = mpc.all_masters();
+  const std::vector<std::int32_t> master_blocks = mpc.all_master_blocks();
+  const std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>&
+      all_spaces = mpc.function_spaces();
+  int mismatch = blocks.size() != V.size();
+  for (std::size_t i = 0; i < data.slaves.size() and !mismatch; ++i)
+  {
+    // The new row, keyed by (block, global master)
+    std::map<std::pair<int, std::int64_t>, T> row;
+    for (std::int32_t k = data.offsets[i]; k < data.offsets[i + 1]; ++k)
+      row.emplace(std::pair{blocks[spaces[k]], data.masters[k]},
+                  data.coeffs[k]);
+
+    const std::size_t slave = data.slaves[i];
+    mismatch = slave + 1 >= offsets.size()
+               or static_cast<std::size_t>(offsets[slave + 1] - offsets[slave])
+                      != row.size();
+    for (std::int32_t k = offsets[slave]; k < offsets[slave + 1] and !mismatch;
+         ++k)
+    {
+      const int b = master_blocks.empty() ? mpc.block() : master_blocks[k];
+      std::shared_ptr<const dolfinx::fem::DofMap> dofmap
+          = all_spaces[b]->dofmap();
+      const int bs = dofmap->index_map_bs();
+      const std::int32_t local = masters[k] / bs;
+      std::int64_t global;
+      dofmap->index_map->local_to_global(std::span(&local, 1),
+                                         std::span(&global, 1));
+      auto it = row.find({b, global * bs + masters[k] % bs});
+      mismatch = it == row.end();
+      if (!mismatch)
+        coeffs[k] = it->second;
+    }
+  }
+  MPI_Allreduce(MPI_IN_PLACE, &mismatch, 1, MPI_INT, MPI_MAX, W.mesh()->comm());
+  if (mismatch)
+  {
+    throw std::invalid_argument(
+        "The constraint does not hold the RBE3 constraint given");
   }
   mpc.update_coefficients(coeffs);
 }
