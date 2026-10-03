@@ -43,6 +43,14 @@
   the constraint of a spider mesh, tie each spider to the weighted least-squares rigid fit of its feet, which may be on
   several meshes; `update_rbe3` recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe3` and
   `update_rbe3`. New demo: `python/demos/demo_rbe3.py`.
+- **New feature**: constraints between a submesh and its parent. `MultiPointConstraint.create_submesh_constraint(V,
+  master_space, entity_map)` ties every dof of `V` in a cell related through the entity map of
+  `dolfinx.mesh.create_submesh` to `master_space` evaluated there, for submeshes of codimension 0 or 1, either way
+  round, and subspaces on either side. The related cell is a table lookup, so no geometric search is done.
+  `finalize_multipointconstraints` now also accepts a subspace of a block as master space. C++:
+  `dolfinx_mpc::create_submesh_constraint`. New demo: `python/demos/demo_bulk_surface.py`, a bulk problem with a
+  surface diffusion equation on part of its boundary, checked against a Lagrange multiplier. The demos in the
+  documentation are now grouped by theme.
 - **Periodic and contact constraints share one implementation.** `dolfinx_mpc::evaluate_basis_at_points`
   ([cpp/point_basis.h](cpp/point_basis.h)) finds a cell containing each slave point, on this process or another
   located through a global bounding-box tree, and evaluates the basis there; each constraint keeps only how it

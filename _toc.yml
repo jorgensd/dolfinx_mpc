@@ -2,18 +2,26 @@ format: jb-book
 root: README.md
 
 parts:
-  - caption: "Demos"
+  - caption: "Slip and periodic conditions"
     chapters:
     - file: "python/demos/demo_stokes.py"
+    - file: "python/demos/demo_stokes_nest.py"
     - file: "python/demos/demo_linear_wave_problem.py"
+    - file: "python/demos/demo_scaling_coefficients.py"
+  - caption: "Integral constraints"
+    chapters:
     - file: "python/demos/demo_mean_value_constraint.py"
     - file: "python/demos/demo_boundary_average_constraint.py"
     - file: "python/demos/demo_flow_rate_constraint.py"
+  - caption: "Several spaces and meshes"
+    chapters:
     - file: "python/demos/demo_mortar.py"
     - file: "python/demos/demo_mortar_subdomains.py"
+    - file: "python/demos/demo_bulk_surface.py"
+  - caption: "Spiders"
+    chapters:
     - file: "python/demos/demo_spider.py"
-    - file: "python/demos/demo_stokes_nest.py"
-    - file: "python/demos/demo_scaling_coefficients.py"
+    - file: "python/demos/demo_rbe3.py"
   - caption: "Theory"
     chapters:
     - file: "docs/nonlinear_mpc"
