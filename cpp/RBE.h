@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "MultiPointConstraint.h"
+#include "utils.h"
 #include <algorithm>
 #include <array>
 #include <concepts>
@@ -15,8 +17,10 @@
 #include <dolfinx/common/local_range.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/FunctionSpace.h>
+#include <dolfinx/la/Vector.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/Topology.h>
+#include <dolfinx/mesh/cell_types.h>
 #include <format>
 #include <iterator>
 #include <memory>
@@ -26,6 +30,64 @@
 #include <stdexcept>
 #include <tuple>
 #include <vector>
+
+namespace impl
+{
+/// @brief Check the spaces of an RBE2 constraint.
+/// @return (geometric dimension, block size of `W`, whether `W` has
+/// rotations)
+template <std::floating_point U>
+std::tuple<int, int, bool>
+check_rbe2_spaces(const dolfinx::fem::FunctionSpace<U>& V,
+                  const dolfinx::fem::FunctionSpace<U>& W)
+{
+  const int gdim = V.mesh()->geometry().dim();
+  const int bs = V.dofmap()->index_map_bs();
+  if (bs != gdim)
+  {
+    throw std::invalid_argument(std::format(
+        "The tied space must have one component per dimension ({}), it has {}",
+        gdim, bs));
+  }
+  if (W.mesh()->topology()->cell_type() != dolfinx::mesh::CellType::point)
+    throw std::invalid_argument(
+        "The body of a spider must be a space on a point mesh");
+  const int num_body = W.dofmap()->index_map_bs();
+  const int num_rigid = gdim == 3 ? 6 : 3;
+  if (num_body != gdim and num_body != num_rigid)
+  {
+    throw std::invalid_argument(
+        std::format("The body space must have {} components (translations) or "
+                    "{} (translations and rotations), it has {}",
+                    gdim, num_rigid, num_body));
+  }
+  return {gdim, num_body, num_body == num_rigid};
+}
+
+/// @brief Coefficient of body component `c` in foot component `j` of
+/// @f$u = t + \theta \times r@f$, with @f$r = x - x_c@f$.
+///
+/// Components below `gdim` are the translation, the others the rotation
+/// (3, 4, 5 in 3D, 2 in 2D).
+template <std::floating_point U>
+U rbe2_coefficient(int gdim, int j, int c, std::span<const U, 3> r)
+{
+  if (c < gdim)
+    return c == j ? 1 : 0;
+  // (theta x r)_j = sum_c sign[j][c] r[comp[j][c]] theta_c. In 3D
+  // (theta x r)_x = theta_y r_z - theta_z r_y and cyclically, in 2D
+  // (-theta r_y, theta r_x).
+  constexpr std::array<std::array<int, 6>, 3> sign3
+      = {{{0, 0, 0, 0, 1, -1}, {0, 0, 0, -1, 0, 1}, {0, 0, 0, 1, -1, 0}}};
+  constexpr std::array<std::array<int, 6>, 3> comp3
+      = {{{0, 0, 0, 0, 2, 1}, {0, 0, 0, 2, 0, 0}, {0, 0, 0, 1, 0, 0}}};
+  constexpr std::array<std::array<int, 3>, 2> sign2 = {{{0, 0, -1}, {0, 0, 1}}};
+  constexpr std::array<std::array<int, 3>, 2> comp2 = {{{0, 0, 1}, {0, 0, 0}}};
+  if (gdim == 3)
+    return sign3[j][c] * r[comp3[j][c]];
+  return sign2[j][c] * r[comp2[j][c]];
+}
+} // namespace impl
 
 namespace dolfinx_mpc
 {
@@ -206,6 +268,167 @@ locate_spiders(const dolfinx::fem::FunctionSpace<U>& W,
     owners[i] = static_cast<std::int32_t>(rows[2 * i + 1]);
   }
   return {std::move(blocks), std::move(owners), std::move(coordinates)};
+}
+
+/// @brief Tie every component of the blocked `dofs` to the rigid-body
+/// motion of a spider (RBE2).
+///
+/// Foot `i`, at @f$x@f$, follows the spider with input index `spiders[i]`
+/// at @f$x_c@f$: @f$u_j = t_j + (\theta \times (x - x_c))_j@f$. The
+/// translation @f$t@f$ is the first `gdim` components of the spider's block
+/// of dofs in `W`, the rotation @f$\theta@f$ the rest (components 3, 4, 5 in
+/// 3D, 2 in 2D), and @f$x_c@f$ the coordinate of that block. The block,
+/// owner and coordinate of each spider are found with `locate_spiders`.
+///
+/// Every rotation term is kept, also with a zero coefficient, so the masters
+/// do not depend on the configuration and `update_rbe2` can recompute the
+/// coefficients after the meshes move.
+///
+/// @param[in] V Space of the feet, with one component per dimension.
+/// @param[in] dofs The feet, blocked dofs of `V` local to the process,
+/// ghosts included.
+/// @param[in] spiders Input index of the spider of each foot.
+/// @param[in] W Space on the spider mesh.
+/// @param[in] x Coordinates of the dofs of `V` local to the process
+/// (row-major, shape `(num_dofs, 3)`), from
+/// `V.tabulate_dof_coordinates(false)`.
+/// @return The slaves, masters (global dofs of `W`), coefficients, owners
+/// and offsets. The masters are in the block of `W`.
+/// @note Collective.
+template <typename T, std::floating_point U>
+mpc_data<T> create_rbe2(const dolfinx::fem::FunctionSpace<U>& V,
+                        std::span<const std::int32_t> dofs,
+                        std::span<const std::int64_t> spiders,
+                        const dolfinx::fem::FunctionSpace<U>& W,
+                        std::span<const U> x)
+{
+  const auto [gdim, num_body, rotations] = impl::check_rbe2_spaces(V, W);
+  if (dofs.size() != spiders.size())
+  {
+    throw std::invalid_argument(std::format("{} feet but {} spider indices",
+                                            dofs.size(), spiders.size()));
+  }
+
+  std::vector<std::int64_t> needed(spiders.begin(), spiders.end());
+  std::ranges::sort(needed);
+  auto [first, last] = std::ranges::unique(needed);
+  needed.erase(first, last);
+  const auto [blocks, owners, x_c] = locate_spiders(W, needed);
+
+  // The body components in foot component j: its translation, then the
+  // rotations with a term in it
+  std::vector<std::vector<int>> components(gdim);
+  for (int j = 0; j < gdim; ++j)
+  {
+    components[j].push_back(j);
+    for (int c = gdim; rotations and c < num_body; ++c)
+    {
+      const std::array<U, 3> unit = {1, 1, 1};
+      if (impl::rbe2_coefficient<U>(gdim, j, c, unit) != 0)
+        components[j].push_back(c);
+    }
+  }
+
+  mpc_data<T> data;
+  const std::size_t num_terms = components.front().size();
+  data.slaves.reserve(gdim * dofs.size());
+  data.masters.reserve(gdim * num_terms * dofs.size());
+  data.coeffs.reserve(data.masters.capacity());
+  data.owners.reserve(data.masters.capacity());
+  data.offsets.reserve(data.slaves.capacity() + 1);
+  data.offsets.push_back(0);
+  for (std::size_t i = 0; i < dofs.size(); ++i)
+  {
+    const std::size_t k = std::distance(
+        needed.begin(), std::ranges::lower_bound(needed, spiders[i]));
+    std::array<U, 3> r = {0, 0, 0};
+    for (int d = 0; d < gdim; ++d)
+      r[d] = x[3 * dofs[i] + d] - x_c[3 * k + d];
+    for (int j = 0; j < gdim; ++j)
+    {
+      data.slaves.push_back(gdim * dofs[i] + j);
+      for (int c : components[j])
+      {
+        data.masters.push_back(blocks[k] * num_body + c);
+        data.coeffs.push_back(impl::rbe2_coefficient<U>(gdim, j, c, r));
+        data.owners.push_back(owners[k]);
+      }
+      data.offsets.push_back(static_cast<std::int32_t>(data.masters.size()));
+    }
+  }
+  return data;
+}
+
+/// @brief Tie every component of the blocked `dofs` to the rigid-body
+/// motion of a spider (RBE2), tabulating the dof coordinates of `V`.
+///
+/// See the overload taking the coordinates.
+/// @note Collective.
+template <typename T, std::floating_point U>
+mpc_data<T> create_rbe2(const dolfinx::fem::FunctionSpace<U>& V,
+                        std::span<const std::int32_t> dofs,
+                        std::span<const std::int64_t> spiders,
+                        const dolfinx::fem::FunctionSpace<U>& W)
+{
+  const std::vector<U> x = V.tabulate_dof_coordinates(false);
+  return create_rbe2<T, U>(V, dofs, spiders, W, x);
+}
+
+/// @brief Recompute the coefficients of the masters in `W` from the current
+/// dof coordinates of `V` and `W`.
+///
+/// For an RBE2 constraint from `create_rbe2`, after the meshes of `V` and
+/// `W` have moved. The coordinate of a spider owned by another process
+/// arrives by a forward scatter over the extended index map of `W`, which
+/// holds it as a ghost. Every master in `W` is recomputed.
+///
+/// @param[in,out] mpc The finalized constraint on `V`.
+/// @param[in] V Space of the feet, as given to `create_rbe2`.
+/// @param[in] W Space on the spider mesh, as given to `create_rbe2`.
+/// @param[in] block The block of `W` among `mpc.function_spaces()`.
+/// @note Collective.
+template <typename T, std::floating_point U>
+void update_rbe2(MultiPointConstraint<T, U>& mpc,
+                 const dolfinx::fem::FunctionSpace<U>& V,
+                 const dolfinx::fem::FunctionSpace<U>& W, int block)
+{
+  const auto [gdim, num_body, rotations] = impl::check_rbe2_spaces(V, W);
+  const std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>&
+      spaces = mpc.function_spaces();
+  if (block < 0 or static_cast<std::size_t>(block) >= spaces.size())
+  {
+    throw std::out_of_range(
+        std::format("Block {} is not one of the {} blocks of the constraint",
+                    block, spaces.size()));
+  }
+
+  // The spider coordinates, ghosts included
+  dolfinx::la::Vector<U> x_c(spaces[block]->dofmap()->index_map, 3);
+  const std::vector<U> x_W = W.tabulate_dof_coordinates(false);
+  const std::int32_t num_owned = W.dofmap()->index_map->size_local();
+  std::copy_n(x_W.begin(), 3 * num_owned, x_c.array().begin());
+  x_c.scatter_fwd();
+
+  const std::vector<U> x = V.tabulate_dof_coordinates(false);
+  auto [coeffs, offsets] = mpc.all_coefficients();
+  const std::vector<std::int32_t> masters = mpc.all_masters();
+  const std::vector<std::int32_t> blocks = mpc.all_master_blocks();
+  for (std::size_t i = 0; i + 1 < offsets.size(); ++i)
+  {
+    const std::size_t foot = i / gdim;
+    const int j = static_cast<int>(i % gdim);
+    for (std::int32_t k = offsets[i]; k < offsets[i + 1]; ++k)
+    {
+      if ((blocks.empty() ? mpc.block() : blocks[k]) != block)
+        continue;
+      const std::int32_t spider = masters[k] / num_body;
+      std::array<U, 3> r = {0, 0, 0};
+      for (int d = 0; d < gdim; ++d)
+        r[d] = x[3 * foot + d] - x_c.array()[3 * spider + d];
+      coeffs[k] = impl::rbe2_coefficient<U>(gdim, j, masters[k] % num_body, r);
+    }
+  }
+  mpc.update_coefficients(coeffs);
 }
 
 } // namespace dolfinx_mpc

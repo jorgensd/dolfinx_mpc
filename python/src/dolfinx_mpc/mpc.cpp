@@ -247,6 +247,14 @@ void declare_functions(nb::module_& m)
       nb::arg("W"), nb::arg("spiders"),
       "Global block, owner and coordinate of spiders, by input index");
   m.def(
+      "update_rbe2",
+      [](dolfinx_mpc::MultiPointConstraint<T, U>& mpc,
+         const dolfinx::fem::FunctionSpace<U>& V,
+         const dolfinx::fem::FunctionSpace<U>& W, int block)
+      { dolfinx_mpc::update_rbe2<T, U>(mpc, V, W, block); },
+      nb::arg("mpc"), nb::arg("V"), nb::arg("W"), nb::arg("block"),
+      "Recompute the RBE2 coefficients from the current dof coordinates");
+  m.def(
       "create_multipointconstraints",
       [](const std::vector<
              std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
@@ -381,6 +389,27 @@ void declare_functions(nb::module_& m)
 template <typename T, std::floating_point U>
 void declare_mpc_data(nb::module_& m, std::string type)
 {
+  // The scalar type cannot be deduced from the arguments, so it is in the name
+  m.def(
+      ("create_rbe2_" + type).c_str(),
+      [](const dolfinx::fem::FunctionSpace<U>& V,
+         nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig> dofs,
+         nb::ndarray<const std::int64_t, nb::ndim<1>, nb::c_contig> spiders,
+         const dolfinx::fem::FunctionSpace<U>& W,
+         std::optional<nb::ndarray<const U, nb::ndim<2>, nb::c_contig>> x)
+      {
+        std::span<const std::int32_t> _dofs(dofs.data(), dofs.size());
+        std::span<const std::int64_t> _spiders(spiders.data(), spiders.size());
+        if (x)
+        {
+          return dolfinx_mpc::create_rbe2<T, U>(
+              V, _dofs, _spiders, W, std::span<const U>(x->data(), x->size()));
+        }
+        return dolfinx_mpc::create_rbe2<T, U>(V, _dofs, _spiders, W);
+      },
+      nb::arg("V"), nb::arg("dofs"), nb::arg("spiders"), nb::arg("W"),
+      nb::arg("x").none(),
+      "Tie blocked dofs to the rigid-body motion of spiders (RBE2)");
   std::string nbclass_name = "mpc_data_" + type;
   nb::class_<dolfinx_mpc::mpc_data<T>>(m, nbclass_name.c_str(),
                                        "Object with data arrays for mpc")
