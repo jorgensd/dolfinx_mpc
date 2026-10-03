@@ -127,15 +127,20 @@ def apply_lifting(
             values.append(lifting_data[key][1])
         return markers, values
 
+    dtype = _PETSc.ScalarType  # type: ignore
     if b.getType() == "nest":
-        x0 = [] if x0 is None else x0.getNestSubVecs()  # type: ignore
         assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
-        for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
-            markers, values = _lifting_data(a_sub)
-            _a = [None if form is None else form._cpp_object for form in a_sub]  # type:ignore
-            dolfinx_mpc.cpp.mpc.apply_lifting(
-                b_sub.array_w, _a, markers, values, x0, scale, mpc_i._cpp_object, num_threads
-            )
+        # The lifting reads `x0` and writes `b` at ghost dofs too, so both are passed with their ghosts
+        with contextlib.ExitStack() as stack:
+            x0_sub = [] if x0 is None else x0.getNestSubVecs()  # type: ignore
+            x0_r = [stack.enter_context(x.localForm()).array_r for x in x0_sub]
+            for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
+                markers, values = _lifting_data(a_sub)
+                _a = [None if form is None else form._cpp_object for form in a_sub]  # type:ignore
+                with b_sub.localForm() as b_local:
+                    dolfinx_mpc.cpp.mpc.apply_lifting(
+                        b_local.array_w, _a, markers, values, x0_r, dtype(scale), mpc_i._cpp_object, num_threads
+                    )
     elif _is_block_vector(b):
         assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
         x0_blocks = [] if x0 is None else _cpp.la.petsc.get_local_vectors(x0, _block_maps(constraint))  # type: ignore[arg-type]
@@ -146,7 +151,7 @@ def apply_lifting(
                 # Lifting only adds to `b`, so it is applied to zeros and the result added
                 scratch = _block_scratch(b, k)
                 dolfinx_mpc.cpp.mpc.apply_lifting(
-                    scratch, _a, markers, values, x0_blocks, scale, mpc_k._cpp_object, num_threads
+                    scratch, _a, markers, values, x0_blocks, dtype(scale), mpc_k._cpp_object, num_threads
                 )
                 _add_to_block(b_local.array_w, b, k, scratch)
     else:
@@ -207,7 +212,8 @@ def apply_mpc_lifting(
         for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
             _a = [None if f is None else f._cpp_object for f in a_sub]  # type: ignore
             _mpc1 = [c._cpp_object for c in cols]  # type: ignore
-            dolfinx_mpc.cpp.mpc.apply_mpc_lifting(b_sub.array_w, _a, scale, mpc_i._cpp_object, _mpc1, num_threads)
+            with b_sub.localForm() as b_local:
+                dolfinx_mpc.cpp.mpc.apply_mpc_lifting(b_local.array_w, _a, scale, mpc_i._cpp_object, _mpc1, num_threads)
     elif _is_block_vector(b):
         assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
         cols = constraint if constraint1 is None else constraint1
