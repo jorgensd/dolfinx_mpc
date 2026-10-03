@@ -362,7 +362,7 @@ def _assemble_matrix_nest(
     A.assemble()
 
 
-def _assemble_matrix_nest(
+def assemble_matrix_nest(
     A: _PETSc.Mat,  # type: ignore
     a: Sequence[Sequence[Optional[_fem.Form]]],
     constraints: Sequence[MultiPointConstraint],
