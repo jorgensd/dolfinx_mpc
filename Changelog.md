@@ -14,6 +14,12 @@
   instance serves an operator, its preconditioner and its Jacobian. `LinearProblem` and
   `NonlinearProblem` hold one and reuse it, rather than rebuilding on every solve or Newton
   iteration.
+- **Lifting takes dof markers and values.** `dolfinx_mpc::apply_lifting` is one template taking
+  `bc_markers1`/`bc_values1` per block, plus a `bcs` wrapper; the four per-scalar-type overloads
+  are gone. `dolfinx_mpc.apply_lifting` gained `bc_data`; markers are cached, values are re-read
+  on every call. A condition now applies to block `j` if it is defined on (a subspace of)
+  that block's trial space, so a flat list of conditions is accepted.
+- **BUGFIX**: `NonlinearProblem` failed with a non-nest `P`, and with `J=None` for a single form.
 - `LinearProblem` accepts `entity_maps`, as `NonlinearProblem` already did, so forms coupling two meshes need not be compiled by hand.
 - **Forms coupling spaces on different meshes** — a space on a submesh coupled to one on its
   parent, as in a mortar or Lagrange multiplier formulation — can now be assembled with a

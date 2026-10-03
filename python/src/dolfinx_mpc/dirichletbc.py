@@ -22,10 +22,10 @@ __all__ = ["BCData"]
 
 
 class BCData:
-    """Dof markers and diagonal rows for a fixed set of Dirichlet conditions.
+    """Dof markers, diagonal rows and lifting values for a set of Dirichlet conditions.
 
-    Neither depends on the values in a matrix, only on a function space and
-    the conditions. We cache these computations so that multiple
+    Markers and rows depend only on a function space and the conditions, not on
+    the condition values. We cache these computations so that multiple
     assembly calls inside {py:class}`dolfinx_mpc.LinearProblem` or
     {py:class}`dolfinx_mpc.NonlinearProblem` do not repeat them.
     """
@@ -48,6 +48,23 @@ class BCData:
             owned = [bc.dof_indices()[0][: bc.dof_indices()[1]] for bc in self._bcs if V.contains(bc.function_space)]
             self._rows[key] = np.concatenate(owned) if owned else np.empty(0, dtype=np.int32)
         return self._rows[key]
+
+    def lifting(
+        self, V: _fem.FunctionSpace, dtype: npt.DTypeLike
+    ) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.generic]]:
+        """Constrained dof markers and Dirichlet values on the trial space `V`.
+
+        The markers are cached; the values are re-read from the conditions on
+        every call, so a time-dependent condition is picked up. Both are empty
+        when no condition applies to `V`.
+        """
+        markers = self._marker(V)
+        values = np.zeros(markers.size, dtype=dtype)
+        if markers.size > 0:
+            for bc in self._bcs:
+                if V.contains(bc.function_space):
+                    bc.set(values, None, 1)
+        return markers, values
 
     def _marker(self, V: _fem.FunctionSpace) -> npt.NDArray[np.int8]:
         key = id(V._cpp_object)

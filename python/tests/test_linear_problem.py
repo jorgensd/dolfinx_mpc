@@ -163,3 +163,48 @@ def test_bc_markers_are_built_once(monkeypatch):
     for _ in range(3):
         problem.solve()
     assert calls["n"] == after_first_solve
+
+
+def test_dirichlet_values_are_reread_with_cached_markers():
+    """The lifting markers are cached but the Dirichlet values must not be.
+
+    With no source the solution is linear in the boundary data, so doubling the
+    data must double the solution even though the second solve reuses the
+    markers built by the first.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 8, 8)
+    V = fem.functionspace(mesh, ("Lagrange", 1))
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    L = ufl.inner(fem.Constant(mesh, default_scalar_type(0.0)), v) * ufl.dx
+
+    u_bc = fem.Function(V)
+    u_bc.interpolate(lambda x: 1 + x[1] * (1 - x[1]))
+    bc = fem.dirichletbc(u_bc, fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0.0)))
+
+    # Periodic top to bottom, so the constraint is non-trivial
+    def periodic_relation(x):
+        out_x = x.copy()
+        out_x[1] = 1 - x[1]
+        return out_x
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.create_periodic_constraint_geometrical(
+        V, lambda x: np.isclose(x[1], 1.0) & (x[0] > 1e-12), periodic_relation, [bc]
+    )
+    mpc.finalize()
+    problem = dolfinx_mpc.LinearProblem(
+        a,
+        L,
+        mpc,
+        bcs=[bc],
+        petsc_options_prefix="test_bc_values_reread_",
+        petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
+    )
+    u1 = problem.solve().x.array.copy()
+    assert np.linalg.norm(u1) > 0.5
+
+    u_bc.x.array[:] *= 2
+    u2 = problem.solve().x.array
+    tol = 500 * np.finfo(default_scalar_type).eps
+    nt.assert_allclose(u2, 2 * u1, rtol=tol, atol=tol)

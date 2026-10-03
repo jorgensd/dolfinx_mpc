@@ -360,22 +360,31 @@ void declare_petsc_functions(nb::module_& m)
       "apply_lifting",
       [](nb::ndarray<T, nb::ndim<1>, nb::c_contig> b,
          std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
-         const std::vector<std::vector<
-             std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>>>& bcs1,
+         const std::vector<nb::ndarray<const std::int8_t, nb::ndim<1>,
+                                       nb::c_contig>>& bc_markers1,
+         const std::vector<nb::ndarray<const T, nb::ndim<1>, nb::c_contig>>&
+             bc_values1,
          const std::vector<nb::ndarray<const T, nb::ndim<1>, nb::c_contig>>& x0,
          T scale,
          std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
          std::size_t num_threads)
       {
+        std::vector<std::span<const std::int8_t>> _markers;
+        for (const auto& m : bc_markers1)
+          _markers.emplace_back(m.data(), m.size());
+        std::vector<std::span<const T>> _values;
+        for (const auto& v : bc_values1)
+          _values.emplace_back(v.data(), v.size());
         std::vector<std::span<const T>> _x0;
         for (const auto& x : x0)
           _x0.emplace_back(x.data(), x.size());
 
-        dolfinx_mpc::apply_lifting(std::span(b.data(), b.size()), a, bcs1, _x0,
-                                   scale, mpc, num_threads);
+        dolfinx_mpc::apply_lifting<T, U>(std::span(b.data(), b.size()), a,
+                                         _markers, _values, _x0, scale, mpc,
+                                         num_threads);
       },
-      nb::arg("b"), nb::arg("a"), nb::arg("bcs"), nb::arg("x0"),
-      nb::arg("scale"), nb::arg("mpc"), nb::arg("num_threads"),
+      nb::arg("b"), nb::arg("a"), nb::arg("bc_markers1"), nb::arg("bc_values1"),
+      nb::arg("x0"), nb::arg("scale"), nb::arg("mpc"), nb::arg("num_threads"),
       "Assemble apply lifting from form a on vector b");
   m.def(
       "apply_mpc_lifting",

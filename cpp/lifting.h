@@ -8,7 +8,9 @@
 
 #include "MultiPointConstraint.h"
 #include "assemble_vector.h"
+#include <cassert>
 #include <cstdint>
+#include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
@@ -414,44 +416,6 @@ void lift_values(
     //     get_perm = [](std::size_t) { return 0; };
   }
 }
-/// @brief Apply lifting for a set of Dirichlet conditions.
-///
-/// Computes `b <- b - scale * K^T (A (g - x0))` where `g` are the values of
-/// `bcs` on the trial space of `a`.
-/// @param[in,out] b The vector to be modified
-/// @param[in] a The bilinear form generating A
-/// @param[in] bcs Dirichlet conditions on the trial space of `a`
-/// @param[in] x0 Vector subtracted from the bc values. Treated as zero if empty
-/// @param[in] scale Scaling to apply
-/// @param[in] mpc0 Multi point constraint applied to the rows of the vector
-/// @param[in] num_threads The number of threads to use for certain operations
-template <typename T, std::floating_point U>
-void apply_lifting(
-    std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    const std::span<const T>& x0, T scale,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
-    std::size_t num_threads = 1)
-{
-  assert(a->function_spaces().at(1));
-  auto V1 = a->function_spaces().at(1);
-  auto map1 = V1->dofmap()->index_map;
-  assert(map1);
-  const int bs1 = V1->dofmap()->index_map_bs();
-  const std::int32_t crange = bs1 * (map1->size_local() + map1->num_ghosts());
-
-  std::vector<std::int8_t> bc_markers1(crange, false);
-  std::vector<T> bc_values1(crange, 0.0);
-  for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T>>& bc : bcs)
-  {
-    bc->mark_dofs(bc_markers1);
-    bc->set(bc_values1, std::nullopt, 1);
-  }
-
-  lift_values<T, U>(b, a, bc_markers1, bc_values1, x0, scale, mpc0,
-                    num_threads);
-}
-
 /// @brief Apply lifting for the inhomogeneity of a multi point constraint.
 ///
 /// Computes `b <- b - scale * K^T (A g)` where `g` is the constraint offset of
@@ -518,257 +482,130 @@ void apply_mpc_lifting(
 namespace dolfinx_mpc
 {
 
-/// Modify b such that:
+/// @brief Modify `b` such that
 ///
-///   b <- b - scale * K^T (A_j (g_j 0 x0_j))
+///   b <- b - scale * K^T (A_j (g_j - x0_j))
 ///
-/// where j is a block (nest) row index and K^T is the reduction matrix stemming
-/// from the multi point constraint. For non - blocked problems j = 0.
-/// The boundary conditions bcs1 are on the trial spaces V_j.
-/// The forms in [a] must have the same test space as L (from
-/// which b was built), but the trial space may differ. If x0 is not
-/// supplied, then it is treated as 0.
+/// where `j` is a block column index, `K^T` the reduction matrix of the row
+/// constraint `mpc`, and `g_j` the Dirichlet values on the trial space of
+/// `a[j]`. This is the overload the library calls internally.
 /// @param[in,out] b The vector to be modified
-/// @param[in] a The bilinear formss, where a[j] is the form that
-/// generates A[j]
-/// @param[in] bcs List of boundary conditions for each block, i.e. bcs1[2]
-/// are the boundary conditions applied to the columns of a[2] / x0[2]
-/// block.
-/// @param[in] x0 The vectors used in the lifitng.
+/// @param[in] a The bilinear forms, where `a[j]` generates `A_j`
+/// @param[in] bc_markers1 Constrained dof markers on the trial space of `a[j]`,
+/// owned and ghost (unrolled). An empty `bc_markers1[j]` skips block `j`.
+/// @param[in] bc_values1 Dirichlet values on the trial space of `a[j]`, read
+/// only where `bc_markers1[j]` is non-zero. Same length as `bc_markers1[j]`.
+/// @param[in] x0 Vectors subtracted from the values. Treated as zero if empty
 /// @param[in] scale Scaling to apply
-/// @param[in] mpc The multi point constraints
+/// @param[in] mpc The multi point constraint on the rows of `b`
+/// @param[in] num_threads The number of threads to use for certain operations
+template <typename T, std::floating_point U>
 void apply_lifting(
-    std::span<double> b,
-    const std::vector<std::shared_ptr<const dolfinx::fem::Form<double>>> a,
-    const std::vector<
-        std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>>&
-        bcs1,
-    const std::vector<std::span<const double>>& x0, double scale,
-    const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc,
+    std::span<T> b,
+    const std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
+    const std::vector<std::span<const std::int8_t>>& bc_markers1,
+    const std::vector<std::span<const T>>& bc_values1,
+    const std::vector<std::span<const T>>& x0, T scale,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
     std::size_t num_threads = 1)
 {
   if (!x0.empty() and x0.size() != a.size())
   {
-    throw std::runtime_error(
-        "Mismatch in size between x0 and bilinear form in assembler.");
+    throw std::invalid_argument(std::format(
+        "Mismatch between number of forms ({}) and x0 ({}) in lifting.",
+        a.size(), x0.size()));
   }
-
-  if (a.size() != bcs1.size())
+  if (bc_markers1.size() != a.size() or bc_values1.size() != a.size())
   {
-    throw std::runtime_error(
-        "Mismatch in size between a and bcs in assembler.");
+    throw std::invalid_argument(std::format(
+        "Mismatch between number of forms ({}), markers ({}) and values ({}) "
+        "in lifting.",
+        a.size(), bc_markers1.size(), bc_values1.size()));
   }
-  // If all forms are null, there is nothing to do
-  if (std::ranges::all_of(a, [](auto ai) { return !ai; }))
-    return;
 
   for (std::size_t j = 0; j < a.size(); ++j)
   {
-    if (a[j] and !bcs1[j].empty())
+    if (!a[j] or bc_markers1[j].empty())
+      continue;
+
+    std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V1
+        = a[j]->function_spaces().at(1);
+    assert(V1);
+    const dolfinx::common::IndexMap& map1 = *V1->dofmap()->index_map;
+    const std::size_t crange = V1->dofmap()->index_map_bs()
+                               * (map1.size_local() + map1.num_ghosts());
+    if (bc_markers1[j].size() != crange or bc_values1[j].size() != crange)
     {
-
-      if (x0.empty())
-      {
-        impl::apply_lifting<double>(b, a[j], bcs1[j], std::span<const double>(),
-                                    scale, mpc, num_threads);
-      }
-      else
-      {
-        impl::apply_lifting<double>(b, a[j], bcs1[j], x0[j], scale, mpc,
-                                    num_threads);
-      }
+      throw std::invalid_argument(std::format(
+          "Block {}: markers ({}) and values ({}) must span the {} dofs of the "
+          "trial space.",
+          j, bc_markers1[j].size(), bc_values1[j].size(), crange));
     }
-  }
-}
-/// Modify b such that:
-///
-///   b <- b - scale * K^T (A_j (g_j 0 x0_j))
-///
-/// where j is a block (nest) row index and K^T is the reduction matrix stemming
-/// from the multi point constraint. For non - blocked problems j = 0.
-/// The boundary conditions bcs1 are on the trial spaces V_j.
-/// The forms in [a] must have the same test space as L (from
-/// which b was built), but the trial space may differ. If x0 is not
-/// supplied, then it is treated as 0.
-/// @param[in,out] b The vector to be modified
-/// @param[in] a The bilinear formss, where a[j] is the form that
-/// generates A[j]
-/// @param[in] bcs List of boundary conditions for each block, i.e. bcs1[2]
-/// are the boundary conditions applied to the columns of a[2] / x0[2]
-/// block.
-/// @param[in] x0 The vectors used in the lifitng.
-/// @param[in] scale Scaling to apply
-/// @param[in] mpc The multi point constraints
-/// @param[in] num_threads The number of threads to use for certain operations.
-void apply_lifting(
-    std::span<std::complex<double>> b,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::Form<std::complex<double>>>>
-        a,
-    const std::vector<std::vector<std::shared_ptr<
-        const dolfinx::fem::DirichletBC<std::complex<double>>>>>& bcs1,
-    const std::vector<std::span<const std::complex<double>>>& x0,
-    std::complex<double> scale,
 
-    const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&
-        mpc,
-    std::size_t num_threads = 1)
-{
-  if (!x0.empty() and x0.size() != a.size())
-  {
-    throw std::runtime_error(
-        "Mismatch in size between x0 and bilinear form in assembler.");
-  }
-
-  if (a.size() != bcs1.size())
-  {
-    throw std::runtime_error(
-        "Mismatch in size between a and bcs in assembler.");
-  }
-  for (std::size_t j = 0; j < a.size(); ++j)
-  {
-    if (a[j] and !bcs1[j].empty())
-    {
-      if (x0.empty())
-      {
-        impl::apply_lifting<std::complex<double>>(
-            b, a[j], bcs1[j], std::span<const std::complex<double>>(), scale,
-            mpc, num_threads);
-      }
-      else
-      {
-        impl::apply_lifting<std::complex<double>>(b, a[j], bcs1[j], x0[j],
-                                                  scale, mpc, num_threads);
-      }
-    }
+    impl::lift_values<T, U>(b, a[j], bc_markers1[j], bc_values1[j],
+                            x0.empty() ? std::span<const T>() : x0[j], scale,
+                            mpc, num_threads);
   }
 }
 
-/// Modify b such that:
+/// @brief Modify `b` such that
 ///
-///   b <- b - scale * K^T (A_j (g_j 0 x0_j))
+///   b <- b - scale * K^T (A_j (g_j - x0_j))
 ///
-/// where j is a block (nest) row index and K^T is the reduction matrix stemming
-/// from the multi point constraint. For non - blocked problems j = 0.
-/// The boundary conditions bcs1 are on the trial spaces V_j.
-/// The forms in [a] must have the same test space as L (from
-/// which b was built), but the trial space may differ. If x0 is not
-/// supplied, then it is treated as 0.
+/// for the Dirichlet conditions `bcs1[j]` on the trial space of `a[j]`.
+/// @note Rebuilds the markers and values on every call. Callers that lift
+/// repeatedly should build them once and call the marker-taking overload.
 /// @param[in,out] b The vector to be modified
-/// @param[in] a The bilinear formss, where a[j] is the form that
-/// generates A[j]
-/// @param[in] bcs List of boundary conditions for each block, i.e. bcs1[2]
-/// are the boundary conditions applied to the columns of a[2] / x0[2]
-/// block.
-/// @param[in] x0 The vectors used in the lifitng.
+/// @param[in] a The bilinear forms, where `a[j]` generates `A_j`
+/// @param[in] bcs1 Dirichlet conditions on the trial space of each `a[j]`
+/// @param[in] x0 Vectors subtracted from the values. Treated as zero if empty
 /// @param[in] scale Scaling to apply
-/// @param[in] mpc The multi point constraints
-/// @param[in] num_threads The number of threads to use for certain operations.
+/// @param[in] mpc The multi point constraint on the rows of `b`
+/// @param[in] num_threads The number of threads to use for certain operations
+template <typename T, std::floating_point U>
 void apply_lifting(
-    std::span<float> b,
-    const std::vector<std::shared_ptr<const dolfinx::fem::Form<float>>> a,
+    std::span<T> b,
+    const std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
     const std::vector<
-        std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>>&
+        std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>>>&
         bcs1,
-    const std::vector<std::span<const float>>& x0, float scale,
-    const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc,
+    const std::vector<std::span<const T>>& x0, T scale,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
     std::size_t num_threads = 1)
 {
-  if (!x0.empty() and x0.size() != a.size())
+  if (bcs1.size() != a.size())
   {
-    throw std::runtime_error(
-        "Mismatch in size between x0 and bilinear form in assembler.");
+    throw std::invalid_argument(std::format(
+        "Mismatch between number of forms ({}) and bcs ({}) in lifting.",
+        a.size(), bcs1.size()));
   }
 
-  if (a.size() != bcs1.size())
-  {
-    throw std::runtime_error(
-        "Mismatch in size between a and bcs in assembler.");
-  }
+  std::vector<std::vector<std::int8_t>> markers(a.size());
+  std::vector<std::vector<T>> values(a.size());
   for (std::size_t j = 0; j < a.size(); ++j)
   {
-    if (a[j] and !bcs1[j].empty())
+    if (!a[j] or bcs1[j].empty())
+      continue;
+    std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V1
+        = a[j]->function_spaces().at(1);
+    const dolfinx::common::IndexMap& map1 = *V1->dofmap()->index_map;
+    const std::size_t crange = V1->dofmap()->index_map_bs()
+                               * (map1.size_local() + map1.num_ghosts());
+    markers[j].resize(crange, 0);
+    values[j].resize(crange, T(0));
+    for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>& bc :
+         bcs1[j])
     {
-      if (x0.empty())
-      {
-        impl::apply_lifting<float>(b, a[j], bcs1[j], std::span<const float>(),
-                                   scale, mpc, num_threads);
-      }
-      else
-      {
-        impl::apply_lifting<float>(b, a[j], bcs1[j], x0[j], scale, mpc,
-                                   num_threads);
-      }
+      bc->mark_dofs(markers[j]);
+      bc->set(values[j], std::nullopt, 1);
     }
   }
-}
-/// Modify b such that:
-///
-///   b <- b - scale * K^T (A_j (g_j 0 x0_j))
-///
-/// where j is a block (nest) row index and K^T is the reduction matrix stemming
-/// from the multi point constraint. For non - blocked problems j = 0.
-/// The boundary conditions bcs1 are on the trial spaces V_j.
-/// The forms in [a] must have the same test space as L (from
-/// which b was built), but the trial space may differ. If x0 is not
-/// supplied, then it is treated as 0.
-/// @param[in,out] b The vector to be modified
-/// @param[in] a The bilinear formss, where a[j] is the form that
-/// generates A[j]
-/// @param[in] bcs List of boundary conditions for each block, i.e. bcs1[2]
-/// are the boundary conditions applied to the columns of a[2] / x0[2]
-/// block.
-/// @param[in] x0 The vectors used in the lifitng.
-/// @param[in] scale Scaling to apply
-/// @param[in] mpc The multi point constraints
-/// @param[in] num_threads The number of threads to use for certain operations.
-void apply_lifting(
-    std::span<std::complex<float>> b,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::Form<std::complex<float>>>>
-        a,
-    const std::vector<std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>>&
-        bcs1,
-    const std::vector<std::span<const std::complex<float>>>& x0,
-    std::complex<float> scale,
 
-    const std::shared_ptr<
-        const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
-        mpc,
-    std::size_t num_threads = 1)
-{
-  if (!x0.empty() and x0.size() != a.size())
-  {
-    throw std::runtime_error(
-        "Mismatch in size between x0 and bilinear form in assembler.");
-  }
-
-  if (a.size() != bcs1.size())
-  {
-    throw std::runtime_error(
-        "Mismatch in size between a and bcs in assembler.");
-  }
-  for (std::size_t j = 0; j < a.size(); ++j)
-  {
-    if (a[j] and !bcs1[j].empty())
-    {
-      if (x0.empty())
-      {
-        impl::apply_lifting<std::complex<float>>(
-            b, a[j], bcs1[j], std::span<const std::complex<float>>(), scale,
-            mpc, num_threads);
-      }
-      else
-      {
-        impl::apply_lifting<std::complex<float>>(b, a[j], bcs1[j], x0[j], scale,
-                                                 mpc, num_threads);
-      }
-    }
-  }
+  apply_lifting<T, U>(
+      b, a,
+      std::vector<std::span<const std::int8_t>>(markers.begin(), markers.end()),
+      std::vector<std::span<const T>>(values.begin(), values.end()), x0, scale,
+      mpc, num_threads);
 }
 
 /// @brief Modify b to account for the inhomogeneity of a multi point
