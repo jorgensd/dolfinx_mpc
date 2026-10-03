@@ -225,6 +225,85 @@ def test_linear_problem_monolithic():
         np.testing.assert_allclose(_free_owned(mpc, f_block.x.array), _free_owned(mpc, f_nest.x.array), atol=atol)
 
 
+def _nonlinear(kind, options):
+    """A periodic, nonlinear problem with a scalar block each for `u` and `p`, solved with `kind`."""
+    domain = create_unit_square(MPI.COMM_WORLD, 8, 6, dtype=default_real_type)
+    V = fem.functionspace(domain, ("Lagrange", 2))
+    Q = fem.functionspace(domain, ("Lagrange", 1))
+    wall = locate_entities_boundary(domain, 1, lambda x: np.isclose(x[1], 0.0))
+    bc = fem.dirichletbc(default_scalar_type(0.0), fem.locate_dofs_topological(V, 1, wall), V)
+
+    def right_edge(x):
+        return np.isclose(x[0], 1.0)
+
+    def to_left(x):
+        out = x.copy()
+        out[0] -= 1.0
+        return out
+
+    mpcs = []
+    for space, bcs in ((V, [bc]), (Q, [])):
+        mpc = dolfinx_mpc.MultiPointConstraint(space)
+        mpc.create_periodic_constraint_geometrical(space, right_edge, to_left, bcs)
+        mpcs.append(mpc)
+    dolfinx_mpc.finalize_multipointconstraints(mpcs)
+
+    # The unknowns live in the space of the constraints, the arguments in the original spaces
+    uh, ph = (fem.Function(mpc.function_space) for mpc in mpcs)
+    v, q = ufl.TestFunction(V), ufl.TestFunction(Q)
+    x = ufl.SpatialCoordinate(domain)
+    F = [
+        (1 + uh**2) * ufl.inner(ufl.grad(uh), ufl.grad(v)) * ufl.dx
+        + 0.3 * ph * v * ufl.dx
+        - ufl.sin(2 * ufl.pi * x[0]) * v * ufl.dx,
+        (ph - uh**2) * q * ufl.dx + ufl.inner(ufl.grad(ph), ufl.grad(q)) * ufl.dx,
+    ]
+    unknowns, trials = [uh, ph], [ufl.TrialFunction(V), ufl.TrialFunction(Q)]
+    J = [[ufl.derivative(F_i, u_j, du_j) for u_j, du_j in zip(unknowns, trials)] for F_i in F]
+    tol = 100 * np.finfo(default_real_type).eps
+    options = {
+        "snes_type": "newtonls",
+        "snes_linesearch_type": "none",
+        "snes_atol": tol,
+        "snes_rtol": tol,
+        "snes_error_if_not_converged": True,
+        "ksp_error_if_not_converged": True,
+        **options,
+    }
+    problem = dolfinx_mpc.NonlinearProblem(
+        F,
+        unknowns,
+        mpcs,
+        bcs=[bc],
+        J=J,
+        kind=kind,
+        petsc_options_prefix=f"test_nonlinear_{kind}_",
+        petsc_options=options,
+    )
+    return problem, mpcs
+
+
+@pytest.mark.skipif(not PETSc.Sys.hasExternalPackage("mumps"), reason="PETSc was not built with MUMPS")
+def test_nonlinear_problem_monolithic():
+    """`NonlinearProblem` with the monolithic layout reaches the solution of the nest layout."""
+    direct = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+    block, mpcs = _nonlinear(None, direct)
+    assert block.A.getType() != "nest"
+    assert block.b.getAttr("_blocks") is not None
+    nest, _ = _nonlinear("nest", direct)
+    assert nest.A.getType() == "nest"
+
+    solution_block, reason_block, iterations_block = block.solve()
+    solution_nest, reason_nest, iterations_nest = nest.solve()
+    assert reason_block > 0 and reason_nest > 0
+    assert iterations_block == iterations_nest
+
+    atol = 1e3 * np.finfo(default_real_type).eps
+    for mpc, f_block, f_nest in zip(mpcs, solution_block, solution_nest):
+        assert np.linalg.norm(f_block.x.array) > 0
+        np.testing.assert_allclose(_free_owned(mpc, f_block.x.array), _free_owned(mpc, f_nest.x.array), atol=atol)
+
+
 def test_kind_selects_the_layout():
     """`kind` of the unified functions picks nest or monolithic, with the types of a nest as given."""
     a, L, mpcs, bc = _stokes(CellType.tetrahedron, 2, 2)

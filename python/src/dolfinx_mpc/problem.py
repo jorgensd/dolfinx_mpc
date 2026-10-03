@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from functools import partial
+from typing import cast
 
 from petsc4py import PETSc
 
@@ -38,6 +39,7 @@ def assemble_jacobian_mpc(
     x: PETSc.Vec,  # type: ignore
     J: PETSc.Mat,  # type: ignore
     P: PETSc.Mat,  # type: ignore
+    _blocks: tuple[tuple[int, ...], tuple[int, ...]] | None = None,
 ):
     """Assemble the Jacobian matrix and preconditioner.
 
@@ -62,7 +64,12 @@ def assemble_jacobian_mpc(
         x: The vector containing the point to evaluate at
         J: Matrix to assemble the Jacobian into
         P: Matrix to assemble the preconditioner into
+        _blocks: For a monolithic system of several blocks, the offsets of its blocks, see
+            :func:`dolfinx_mpc.create_vector`. SNES may pass a vector other than the one the
+            problem created, so they are set on `x` here.
     """
+    if _blocks is not None:
+        x.setAttr("_blocks", _blocks)
     # Copy existing soultion into the function used in the residual and
     # Jacobian
     _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
@@ -100,6 +107,7 @@ def assemble_residual_mpc(
     _snes: PETSc.SNES,  # type: ignore
     x: PETSc.Vec,  # type: ignore
     F: PETSc.Vec,  # type: ignore
+    _blocks: tuple[tuple[int, ...], tuple[int, ...]] | None = None,
 ):
     """Assemble the residual into the vector `F`.
 
@@ -123,7 +131,13 @@ def assemble_residual_mpc(
         _snes: The solver instance.
         x: The vector containing the point to evaluate the residual at.
         F: Vector to assemble the residual into.
+        _blocks: For a monolithic system of several blocks, the offsets of its blocks, see
+            :func:`dolfinx_mpc.create_vector`. A line search evaluates the residual in vectors
+            duplicated from the one given to SNES, so they are set on `x` and `F` here.
     """
+    if _blocks is not None:
+        x.setAttr("_blocks", _blocks)
+        F.setAttr("_blocks", _blocks)
     # Update input vector before assigning
     _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
     # Assign the input vector to the unknowns
@@ -142,17 +156,15 @@ def assemble_residual_mpc(
     _zero_vector(F)
     assemble_vector(residual, mpc, F)  # type: ignore
 
-    # Lift vector
-    try:
-        # Nest and blocked lifting
+    # Lift vector. Decide between blocked (nest or monolithic) and single form lifting up front, so
+    # that a failure in one of the lifting calls cannot fall through to the other branch
+    if isinstance(jacobian, Sequence):
         bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(jacobian, 1), bcs)  # type: ignore
-        _fem.petsc._assign_block_data(residual, x)  # type: ignore
         apply_lifting(F, jacobian, bcs=bcs1, constraint=mpc, x0=x, scale=-1.0, bc_data=bc_data)  # type: ignore
         _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(residual), bcs)  # type: ignore
         _fem.petsc.set_bc(F, bcs0, x0=x, alpha=-1.0)
-    except (TypeError, ValueError):
-        # Single form lifting
+    else:
         apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0, bc_data=bc_data)  # type: ignore
         _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
         _fem.petsc.set_bc(F, bcs, x0=x, alpha=-1.0)
@@ -192,10 +204,11 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             J: UFL form(s) representing the Jacobian
                 :math:`J_ij = dF_i/du_j`.
             P: UFL form(s) representing the preconditioner.
-            kind: The PETSc matrix type(s) for the Jacobian and
-                preconditioner (``MatType``).
-                See :func:`dolfinx.fem.petsc.create_matrix` for more
-                information.
+            kind: The kind of Jacobian and preconditioner matrix, as in
+                :func:`dolfinx_mpc.create_matrix`. For a single constraint, a PETSc matrix type
+                (``MatType``). For a sequence of constraints, one per block, ``"nest"`` or a nested
+                sequence of matrix types gives a ``nest`` system, and ``None``, ``"mpi"`` or a
+                matrix type a single monolithic matrix and vector with the blocks one after another.
             form_compiler_options: Options used in FFCx compilation of all
                 forms. Run ``ffcx --help`` at the command line to see all
                 available options.
@@ -257,40 +270,22 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         # Set default values if not supplied
         bcs = [] if bcs is None else bcs
         self.mpc = mpc
-        # Create PETSc structures for the residual, Jacobian and solution
-        # vector
-        if kind == "nest" or isinstance(kind, Sequence):
-            assert isinstance(mpc, Sequence)
-            assert isinstance(self._J, Sequence)
-            self._A = create_matrix(self._J, mpc, kind)
-        elif kind is None:
-            assert isinstance(mpc, MultiPointConstraint)
-            self._A = create_matrix(self._J, mpc)
-        else:
-            raise ValueError("Unsupported kind for matrix: {}".format(kind))
+        # Create PETSc structures for the residual, Jacobian and solution vector
+        if not (kind is None or isinstance(kind, (str, Sequence))):
+            raise ValueError(f"Unsupported kind for matrix: {kind!r}")
+        if not isinstance(mpc, Sequence) and (kind == "nest" or (kind is not None and not isinstance(kind, str))):
+            raise ValueError(f"kind={kind!r} needs a sequence of constraints, one per block")
+        self._A = create_matrix(self._J, mpc, kind)
 
-        kind = "nest" if self._A.getType() == "nest" else kind
-        if kind == "nest":
-            assert isinstance(mpc, Sequence)
-            assert isinstance(self._F, Sequence)
-            self._b = create_vector(self._F, mpc, "nest")
-            self._x = create_vector(self._F, mpc, "nest")
-        else:
-            assert isinstance(mpc, MultiPointConstraint)
-            self._b = create_vector(self._F, mpc)
-            self._x = create_vector(self._F, mpc)
+        # The vectors are nested if the matrix is, and monolithic or single otherwise
+        vector_kind = "nest" if self._A.getType() == "nest" else None
+        self._b = create_vector(self._F, mpc, vector_kind)
+        self._x = create_vector(self._F, mpc, vector_kind)
 
         # Create PETSc structure for preconditioner if provided
         prec = self.preconditioner
         if prec is not None:  # type: ignore
-            if kind == "nest":
-                assert isinstance(prec, Sequence)
-                assert isinstance(mpc, Sequence)
-                self._P_mat = create_matrix(prec, mpc, kind)
-            else:
-                assert isinstance(prec, _fem.Form)
-                assert isinstance(mpc, MultiPointConstraint)
-                self._P_mat = create_matrix(prec, mpc)
+            self._P_mat = create_matrix(prec, mpc, kind)
         else:
             self._P_mat = None  # type: ignore
 
@@ -303,12 +298,17 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         # and every Newton iteration reuses it.
         bc_data = BCData(bcs)
 
+        # The block layout of a monolithic system is an attribute of the vectors, which SNES may
+        # replace by duplicates in the callbacks, so it is handed to them
+        blocks = cast("tuple[tuple[int, ...], tuple[int, ...]] | None", self._b.getAttr("_blocks"))
         self.solver.setJacobian(
-            partial(assemble_jacobian_mpc, u, self.J, prec, bcs, mpc, bc_data),
+            partial(assemble_jacobian_mpc, u, self.J, prec, bcs, mpc, bc_data, _blocks=blocks),
             self._A,
             self.P_mat,
         )
-        self.solver.setFunction(partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc, bc_data), self.b)
+        self.solver.setFunction(
+            partial(assemble_residual_mpc, u, self.F, self.J, bcs, mpc, bc_data, _blocks=blocks), self.b
+        )
 
         # Set PETSc options
         self._petsc_options_prefix = petsc_options_prefix
@@ -352,7 +352,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         dolfinx.fem.petsc.assign(self.x, self._u)  # type: ignore
         if isinstance(self.mpc, Sequence):
             for i in range(len(self._u)):
-                self.mpc[i].backsubstitution(self._u[i])
+                self.mpc[i].homogenize(self._u[i])
                 self.mpc[i].backsubstitution(self._u[i])
         else:
             assert isinstance(self._u, _fem.Function)

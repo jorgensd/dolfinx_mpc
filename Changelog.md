@@ -44,6 +44,14 @@
   `nest`, and `kind="mpi"` selects the monolithic layout. Element tensors are inserted with the block-size dispatch
   of DOLFINx, so a vector-valued block works in the local sub-matrix of a monolithic matrix. C++:
   `dolfinx_mpc::create_matrix_block`.
+- `NonlinearProblem` accepts the same `kind`: with one constraint per block, `None` or `"mpi"` gives a monolithic
+  Jacobian and residual, `"nest"` or a nested sequence of matrix types a nest. The SNES callbacks receive the block
+  layout of a monolithic system and set it on the vectors SNES hands them, as DOLFINx does.
+- **BUGFIX**: the residual of a blocked `NonlinearProblem`, nest included, called `dolfinx.fem.petsc._assign_block_data`,
+  which DOLFINx removed. `demo_stokes_nonlinear_nest.py` failed in SNES because of it and is run in CI again.
+- **BUGFIX**: `demo_linear_wave_problem.py` did not zero its right-hand side between time steps. Assembly has been additive since the
+  assemblers stopped zeroing their output, so the vector accumulated and the solution grew exponentially. It zeroes the vector
+  now, uses the unified API, and checks that the energy is conserved.
 - **Deprecated**: `create_matrix_nest`, `assemble_matrix_nest`, `create_vector_nest` and `assemble_vector_nest`. They
   still work and warn; use the functions above with `kind="nest"`, which also select the layout from the matrix or
   vector passed in.
