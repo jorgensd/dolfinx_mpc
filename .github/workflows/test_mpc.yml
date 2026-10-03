@@ -59,6 +59,11 @@ jobs:
       PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.12/dist-packages:/usr/local/lib"
       LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
+      MPC_RUN: coverage run --rcfile=.coveragerc -m mpi4py
+    defaults:
+      run:
+        # The container's default is sh; bash gives arrays, [[ ]] and -eo pipefail
+        shell: bash
     steps:
       - uses: actions/checkout@v7
 
@@ -108,97 +113,53 @@ jobs:
       - name: Install DOLFINx-MPC (Python)
         run: python3 -m pip -v install  --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test,optional,docs]
  
-      - name: Run tests (serial)
-        run: coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
-
-      - name: Run tests (2 processes)
-        run: mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
-
-      - name: Run tests (3 processes)
-        run: mpirun -n 3 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests -xvs
-
-      - name: Run tests (4 processes)
-        run: mpirun -n 4 coverage run --rcfile=.coveragerc -m mpi4py -m pytest python/tests/ -xvs
+      - name: Run tests
+        run: |
+          for n in 1 2 3 4; do
+            echo "::group::pytest on ${n} process(es)"
+            mpirun -n ${n} ${MPC_RUN} -m pytest python/tests -xvs
+            echo "::endgroup::"
+          done
 
       - name: Run benchmarks
         run: |
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_periodic.py --nref=2 --tet --gamg --timings
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_elasticity_edge.py --nref=2 --gamg --timings
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/benchmarks/bench_contact_3D.py
+          mpirun -n 2 ${MPC_RUN} python/benchmarks/bench_periodic.py --nref=2 --tet --gamg --timings
+          mpirun -n 2 ${MPC_RUN} python/benchmarks/bench_elasticity_edge.py --nref=2 --gamg --timings
+          mpirun -n 2 ${MPC_RUN} python/benchmarks/bench_contact_3D.py
 
-      - name: Run demos (serial)
+      - name: Run demos
         run: |
-          coverage run --rcfile=.coveragerc python/demos/demo_stokes_nest.py
-          coverage run --rcfile=.coveragerc python/demos/demo_elasticity.py
-          coverage run --rcfile=.coveragerc python/demos/demo_periodic_geometrical.py
-          coverage run --rcfile=.coveragerc python/demos/demo_stokes.py
-          coverage run --rcfile=.coveragerc python/demos/demo_periodic3d_topological.py
-          coverage run --rcfile=.coveragerc python/demos/demo_elasticity_disconnect_2D.py
-          coverage run --rcfile=.coveragerc python/demos/demo_elasticity_disconnect.py
-          coverage run --rcfile=.coveragerc python/demos/demo_periodic_gep.py
-          coverage run --rcfile=.coveragerc python/demos/demo_mean_value_constraint.py
-          coverage run --rcfile=.coveragerc python/demos/demo_boundary_average_constraint.py
-          coverage run --rcfile=.coveragerc python/demos/demo_flow_rate_constraint.py
-          coverage run --rcfile=.coveragerc python/demos/demo_mortar.py
-          coverage run --rcfile=.coveragerc python/demos/demo_mortar_subdomains.py
-          coverage run --rcfile=.coveragerc python/demos/demo_scaling_coefficients.py
+          # Every python/demos/demo_*.py runs without arguments, except those
+          # listed here: the contact demos run in the next step with each
+          # option set, and the rest are known to be broken
+          skip="demo_contact_2D.py demo_contact_3D.py demo_linear_wave_problem.py demo_stokes_nonlinear_nest.py"
+          for n in 1 2; do
+            for demo in python/demos/demo_*.py; do
+              [[ " ${skip} " == *" $(basename ${demo}) "* ]] && continue
+              echo "::group::${demo} on ${n} process(es)"
+              mpirun -n ${n} ${MPC_RUN} ${demo}
+              echo "::endgroup::"
+            done
+          done
 
-      - name: Run demos (parallel)
+      - name: Run contact demos
         run: |
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_stokes_nest.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_elasticity.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_periodic_geometrical.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_stokes.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_periodic3d_topological.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_elasticity_disconnect_2D.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_elasticity_disconnect.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_periodic_gep.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_mean_value_constraint.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_boundary_average_constraint.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_flow_rate_constraint.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_mortar_subdomains.py
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_scaling_coefficients.py
-
-      - name: Run contact demos 2D (serial)
-        run: |
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --theta 0 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --theta 1.05 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --gmsh --theta 0 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --gmsh --theta 1.05 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --quad --gmsh --theta 0 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_2D.py --quad --gmsh --theta 1.05 --timing
-
-      - name: Run contact demos 2D (parallel)
-        run: |
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_2D.py --theta 0 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_2D.py --theta 1.05 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_2D.py --gmsh --theta 0 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_2D.py --gmsh --theta 1.05 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_2D.py --quad --gmsh --theta 0 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_2D.py --quad --gmsh --theta 1.05 --timing
-
-      - name: Run contact demos 3D (serial)
-        run: |
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --theta 0 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --theta 1.05 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --gmsh --theta 0 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --gmsh --theta 1.05 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --gmsh --no-slip --theta 0 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --gmsh --no-slip --theta 1.05 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 0 --timing
-          coverage run --rcfile=.coveragerc python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 1.05 --timing
-
-      - name: Run contact demos 3D (parallel)
-        run: |
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --theta 0 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --theta 1.05 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --theta 0 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --theta 1.05 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --theta 0 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --theta 1.05 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 0 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_contact_3D.py --gmsh --no-slip --hex --theta 1.05 --timing
-          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_mortar.py
+          declare -A options=(
+            [2D]="|--gmsh|--quad --gmsh"
+            [3D]="|--gmsh|--gmsh --no-slip|--gmsh --no-slip --hex"
+          )
+          for n in 1 2; do
+            for dim in 2D 3D; do
+              IFS="|" read -ra opts <<< "${options[${dim}]}"
+              for opt in "${opts[@]}"; do
+                for theta in 0 1.05; do
+                  echo "::group::demo_contact_${dim}.py ${opt} --theta ${theta} on ${n} process(es)"
+                  mpirun -n ${n} ${MPC_RUN} python/demos/demo_contact_${dim}.py ${opt} --theta ${theta} --timing
+                  echo "::endgroup::"
+                done
+              done
+            done
+          done
 
       - name: Combine coverage reports
         run: |
