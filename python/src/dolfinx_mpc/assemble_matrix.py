@@ -157,7 +157,7 @@ def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Se
         )  # type: ignore
 
 
-def create_matrix_nest(a: Sequence[Sequence[_fem.Form]], constraints: Sequence[MultiPointConstraint]):
+def create_matrix_nest(a: Sequence[Sequence[_fem.Form | None]], constraints: Sequence[MultiPointConstraint]):
     """
     Create a PETSc matrix of type "nest" with appropriate sparsity pattern
     given the provided multi points constraints

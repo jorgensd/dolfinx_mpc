@@ -32,8 +32,8 @@ from .multipointconstraint import MultiPointConstraint
 
 def assemble_jacobian_mpc(
     u: Sequence[_fem.Function] | _fem.Function,
-    jacobian: _fem.Form | Sequence[Sequence[_fem.Form]],
-    preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None,
+    jacobian: _fem.Form | Sequence[Sequence[_fem.Form | None]],
+    preconditioner: _fem.Form | Sequence[Sequence[_fem.Form | None]] | None,
     bcs: Iterable[_fem.DirichletBC],
     mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
     bc_data: BCData,
@@ -295,14 +295,16 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             self._x = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
 
         # Create PETSc structure for preconditioner if provided
-        if self.preconditioner is not None:  # type: ignore
+        prec = self.preconditioner
+        if prec is not None:  # type: ignore
             if kind == "nest":
-                assert isinstance(self.preconditioner, Sequence)
-                assert isinstance(self.mpc, Sequence)
-                self._P_mat = create_matrix_nest(self.preconditioner, self.mpc)
+                assert isinstance(prec, Sequence)
+                assert isinstance(mpc, Sequence)
+                self._P_mat = create_matrix_nest(prec, mpc)
             else:
-                assert isinstance(self._preconditioner, _fem.Form)
-                self._P_mat = _cpp_mpc.create_matrix(self.preconditioner._cpp_object, mpc._cpp_object)
+                assert isinstance(prec, _fem.Form)
+                assert isinstance(mpc, MultiPointConstraint)
+                self._P_mat = _cpp_mpc.create_matrix(prec._cpp_object, mpc._cpp_object)
         else:
             self._P_mat = None  # type: ignore
 
@@ -316,7 +318,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         bc_data = BCData(bcs)
 
         self.solver.setJacobian(
-            partial(assemble_jacobian_mpc, u, self.J, self.preconditioner, bcs, mpc, bc_data),
+            partial(assemble_jacobian_mpc, u, self.J, prec, bcs, mpc, bc_data),
             self._A,
             self.P_mat,
         )
@@ -426,7 +428,8 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
     _u: _fem.Function | list[_fem.Function]
     _a: _fem.Form | Sequence[Sequence[_fem.Form]]
     _L: _fem.Form | Sequence[_fem.Form]
-    _preconditioner: _fem.Form | Sequence[Sequence[_fem.Form]] | None
+    _jacobian: _fem.Form | Sequence[Sequence[_fem.Form | None]]
+    _preconditioner: _fem.Form | Sequence[Sequence[_fem.Form | None]] | None  # type: ignore
     _mpc: MultiPointConstraint | Sequence[MultiPointConstraint]
     _bc_data: BCData
     _A: PETSc.Mat
@@ -585,7 +588,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
                 opts.delValue(k)
             opts.prefixPop()
 
-    def solve(self) -> _fem.Function | list[_fem.Function]:
+    def solve(self) -> _fem.Function | Sequence[_fem.Function]:
         """Solve the problem.
 
         Returns:
@@ -671,4 +674,4 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             self._mpc.homogenize(self.u)
             self._mpc.backsubstitution(self.u)
 
-        return self.u
+        return self._u
