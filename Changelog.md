@@ -43,6 +43,16 @@
   the constraint of a spider mesh, tie each spider to the weighted least-squares rigid fit of its feet, which may be on
   several meshes; `update_rbe3` recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe3` and
   `update_rbe3`. New demo: `python/demos/demo_rbe3.py`.
+- **Periodic and contact constraints share one implementation.** `dolfinx_mpc::evaluate_basis_at_points`
+  ([cpp/point_basis.h](cpp/point_basis.h)) finds a cell containing each slave point, on this process or another
+  located through a global bounding-box tree, and evaluates the basis there; each constraint keeps only how it
+  picks its slaves and builds a row. The constraints are unchanged at 1-4 processes. Contact no longer sends
+  every unfound point to every process with master facets. A slave without masters in
+  `create_contact_slip_condition`, or in `create_contact_inelastic_condition` without `allow_missing_masters`,
+  now raises on every process: in parallel the slip condition previously kept the slave silently, and the
+  inelastic one raised on one process and hung the others. Removed from the C++ API: `recv_data`,
+  `send_master_data_to_owner`, `append_master_data`, `create_neighborhood_comms` and the vector overload of
+  `create_owner_to_ghost_comm`.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to
   `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are
