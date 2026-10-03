@@ -18,16 +18,17 @@ from dolfinx import default_real_type, default_scalar_type, fem, mesh
 
 import dolfinx_mpc
 
-_tol = 1e3 * np.finfo(default_real_type).eps
 _atol = 1e4 * np.finfo(default_real_type).eps
 
 
-def _spiders(points_by_rank):
-    """A spider mesh with `points_by_rank[r]` on process r (modulo the number of processes)."""
+def _spiders(points):
+    """A spider mesh of `points`, split in contiguous chunks over the processes.
+
+    The input index of `points[k]` is then `k`.
+    """
     comm = MPI.COMM_WORLD
-    mine = [p for r, p in enumerate(points_by_rank) if r % comm.size == comm.rank]
-    points = np.array(mine, dtype=default_real_type).reshape(-1, 3)
-    return dolfinx_mpc.create_spider_mesh(comm, points)
+    points = np.asarray(points, dtype=default_real_type).reshape(-1, 3)
+    return dolfinx_mpc.create_spider_mesh(comm, np.array_split(points, comm.size)[comm.rank])
 
 
 def _body_space(spiders, num_components):
@@ -36,8 +37,23 @@ def _body_space(spiders, num_components):
     )
 
 
+def _global_blocks(W, points):
+    """The global block of `W` at each of `points`, by gathering all of `W`. For checks only."""
+    imap = W.dofmap.index_map
+    x = W.tabulate_dof_coordinates()[: imap.size_local]
+    blocks = imap.local_range[0] + np.arange(imap.size_local, dtype=np.int64)
+    gathered = W.mesh.comm.allgather((x, blocks))
+    x_all = np.vstack([g[0] for g in gathered])
+    blocks_all = np.concatenate([g[1] for g in gathered])
+    nearest = np.linalg.norm(x_all[None, :, :] - np.asarray(points)[:, None, :], axis=2).argmin(axis=1)
+    return blocks_all[nearest]
+
+
 def _expected_rows(V, dofs, centre, rotations):
-    """Per foot dof component, the expected {body component: coefficient} of u = t + theta x r."""
+    """Per foot dof component, the expected {body component: coefficient} of u = t + theta x r.
+
+    Every rotation term is present, also with a zero coefficient.
+    """
     gdim = V.mesh.geometry.dim
     r = V.tabulate_dof_coordinates()[dofs, :gdim] - centre[:gdim]
     rows = []
@@ -51,8 +67,7 @@ def _expected_rows(V, dofs, centre, rotations):
             else:
                 terms = ()
             for rot, comp, sign in terms:
-                if sign * r[i, comp] != 0:
-                    row[rot] = sign * r[i, comp]
+                row[rot] = sign * r[i, comp]
             rows.append(row)
     return rows
 
@@ -89,13 +104,11 @@ def test_rbe2_coefficients(gdim, rotations):
         domain = mesh.create_unit_square(comm, 4, 4)
         centre = np.array([1.5, 0.5, 0.0])
     V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
-    spiders = _spiders([centre])
     num = (6 if gdim == 3 else 3) if rotations else gdim
-    W = _body_space(spiders, num)
-    index = dolfinx_mpc.locate_spider(spiders, lambda x: np.isclose(x[0], 1.5))
+    W = _body_space(_spiders([centre]), num)
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W, index)
+    mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W)
     mpc_body = dolfinx_mpc.MultiPointConstraint(W)
     dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_body])
     assert mpc.has_cross_block_masters
@@ -108,8 +121,7 @@ def test_topological_equals_geometrical():
     comm = MPI.COMM_WORLD
     domain = mesh.create_unit_cube(comm, 3, 3, 3)
     V = fem.functionspace(domain, ("Lagrange", 1, (3,)))
-    spiders = _spiders([[1.5, 0.5, 0.5]])
-    W = _body_space(spiders, 6)
+    W = _body_space(_spiders([[1.5, 0.5, 0.5]]), 6)
 
     def build(add):
         mpc = dolfinx_mpc.MultiPointConstraint(V)
@@ -126,40 +138,97 @@ def test_topological_equals_geometrical():
     np.testing.assert_allclose(topo.coefficients()[0], geom.coefficients()[0])
 
 
+def _check_spider_blocks(mpc, mpc_body, num_body, spider_of_dof, blocks):
+    """Each foot's masters are the body dofs of its own spider."""
+    cpp = mpc._cpp_object
+    body_map = mpc_body.function_space.dofmap.index_map
+    for slave in cpp.slaves:
+        dof = slave // cpp.function_space.dofmap.index_map_bs
+        start, end = cpp.masters.offsets[slave], cpp.masters.offsets[slave + 1]
+        local_blocks = cpp.masters.array[start:end] // num_body
+        global_blocks = body_map.local_to_global(local_blocks.astype(np.int32))
+        assert (global_blocks == blocks[spider_of_dof(dof)]).all()
+
+
 def test_two_spiders_on_one_mesh():
     """Two faces of a cube tied to two spiders, whose points may be owned by different processes."""
     comm = MPI.COMM_WORLD
     domain = mesh.create_unit_cube(comm, 3, 3, 3)
     V = fem.functionspace(domain, ("Lagrange", 1, (3,)))
-    left, right = np.array([-0.5, 0.5, 0.5]), np.array([1.5, 0.5, 0.5])
-    spiders = _spiders([left, right])
-    W = _body_space(spiders, 3)
-    i_left = dolfinx_mpc.locate_spider(spiders, lambda x: np.isclose(x[0], -0.5))
-    i_right = dolfinx_mpc.locate_spider(spiders, lambda x: np.isclose(x[0], 1.5))
-    assert {i_left, i_right} == {0, 1}
+    points = np.array([[-0.5, 0.5, 0.5], [1.5, 0.5, 0.5]])
+    W = _body_space(_spiders(points), 3)
 
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.add_rbe2_geometrical(
-        lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0),
-        W,
-        lambda x: np.where(x[0] < 0.5, i_left, i_right),
-    )
+    mpc.add_rbe2_geometrical([lambda x: np.isclose(x[0], 0.0), lambda x: np.isclose(x[0], 1.0)], W)
     mpc_body = dolfinx_mpc.MultiPointConstraint(W)
     dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_body])
 
-    # Each foot's master is the translation of the spider on its own side
+    # Without rotations, each foot component has one master: the same component of its spider
     cpp = mpc._cpp_object
-    body_map = mpc_body.function_space.dofmap.index_map
-    x = V.tabulate_dof_coordinates()
     for slave in cpp.slaves:
-        dof, j = divmod(slave, 3)
         start, end = cpp.masters.offsets[slave], cpp.masters.offsets[slave + 1]
         assert end - start == 1
-        m = cpp.masters.array[start]
-        block = body_map.local_to_global(np.array([m // 3], dtype=np.int32))[0]
-        assert m % 3 == j
-        # The body blocks are numbered with the points of the spider mesh
-        assert block == (i_left if x[dof, 0] < 0.5 else i_right)
+        assert cpp.masters.array[start] % 3 == slave % 3
+    x = V.tabulate_dof_coordinates()
+    _check_spider_blocks(mpc, mpc_body, 3, lambda dof: 0 if x[dof, 0] < 0.5 else 1, _global_blocks(W, points))
+
+
+@pytest.mark.parametrize("num_spiders", [1, 3, 7, 11])
+def test_many_spiders(num_spiders):
+    """Spiders spread over several post offices; with fewer spiders than processes, some hold none."""
+    comm = MPI.COMM_WORLD
+    domain = mesh.create_unit_square(comm, 6, 6)
+    V = fem.functionspace(domain, ("Lagrange", 1, (2,)))
+    points = np.zeros((num_spiders, 3))
+    points[:, 0] = 2.0 + np.arange(num_spiders)
+    W = _body_space(_spiders(points), 3)
+
+    def spider_of(x):
+        return np.round(6 * x[0] + 7 * 6 * x[1]).astype(np.int64) % num_spiders
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.add_rbe2_geometrical([lambda x, k=k: spider_of(x) == k for k in range(num_spiders)], W)
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
+    dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_body])
+
+    x = V.tabulate_dof_coordinates()
+    _check_spider_blocks(mpc, mpc_body, 3, lambda dof: spider_of(x[dof : dof + 1].T)[0], _global_blocks(W, points))
+    # The rotation coefficient uses each foot's own spider
+    cpp = mpc._cpp_object
+    coeffs = cpp.coefficients()[0]
+    for slave in cpp.slaves:
+        dof, j = divmod(slave, 2)
+        start, end = cpp.masters.offsets[slave], cpp.masters.offsets[slave + 1]
+        r = x[dof, :2] - points[spider_of(x[dof : dof + 1].T)[0], :2]
+        rotation = [c for m, c in zip(cpp.masters.array[start:end], coeffs[start:end]) if m % 3 == 2]
+        assert np.allclose(rotation, [-r[1] if j == 0 else r[0]], atol=_atol)
+
+
+def test_spiders_in_input_order():
+    """A spider's index is its position among the points of all processes, process 0 first."""
+    comm = MPI.COMM_WORLD
+    # A different number of points per process, in an order unrelated to the coordinates
+    mine = np.array([[10.0 * comm.rank + 3.0 - i, comm.rank, i] for i in range(comm.rank % 3 + 1)])
+    W = _body_space(dolfinx_mpc.create_spider_mesh(comm, mine), 3)
+    x_W = fem.Function(W)
+    x_W.x.array[:] = W.tabulate_dof_coordinates().reshape(-1)
+    all_points = np.vstack(comm.allgather(mine))
+    for k, point in enumerate(all_points):
+        np.testing.assert_allclose(dolfinx_mpc.spider_values(x_W, k), point)
+
+
+def test_spider_index_out_of_range():
+    """A spider index past the points of the spider mesh raises on every process."""
+    comm = MPI.COMM_WORLD
+    domain = mesh.create_unit_square(comm, 2, 2)
+    V = fem.functionspace(domain, ("Lagrange", 1, (2,)))
+    W = _body_space(_spiders([[1.5, 0.5, 0.0]]), 2)
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    with pytest.raises(IndexError, match="outside the 1 points"):
+        mpc.add_rbe2_geometrical([None, lambda x: np.isclose(x[0], 1.0)], W)
+    with pytest.raises(IndexError, match="no point with input index 3"):
+        dolfinx_mpc.spider_values(fem.Function(W), 3)
+    assert comm.allreduce(1, op=MPI.SUM) == comm.size
 
 
 def test_foot_of_two_spiders():
@@ -167,27 +236,58 @@ def test_foot_of_two_spiders():
     comm = MPI.COMM_WORLD
     domain = mesh.create_unit_cube(comm, 2, 2, 2)
     V = fem.functionspace(domain, ("Lagrange", 1, (3,)))
-    spiders = _spiders([[1.5, 0.5, 0.5], [2.5, 0.5, 0.5]])
-    W = _body_space(spiders, 3)
+    W = _body_space(_spiders([[1.5, 0.5, 0.5], [2.5, 0.5, 0.5]]), 3)
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W, 0)
-    mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W, 1)
+    mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W)
+    mpc.add_rbe2_geometrical([None, lambda x: np.isclose(x[0], 1.0)], W)
     with pytest.raises(ValueError, match="more than one constraint"):
         dolfinx_mpc.finalize_multipointconstraints([mpc, dolfinx_mpc.MultiPointConstraint(W)])
 
 
 def test_spider_mesh():
-    """Coinciding points are merged, and a marker that finds no point or two raises everywhere."""
-    comm = MPI.COMM_WORLD
+    """Coinciding points are merged."""
     merged = _spiders([[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.7, 0.5, 0.5]])
     assert merged.topology.index_map(0).size_global == 2
-    assert dolfinx_mpc.locate_spider(merged, lambda x: np.isclose(x[0], 0.5)) == 0
-    spiders = _spiders([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-    with pytest.raises(ValueError, match="selects 0"):
-        dolfinx_mpc.locate_spider(spiders, lambda x: np.isclose(x[0], 3.0))
-    with pytest.raises(ValueError, match="selects 2"):
-        dolfinx_mpc.locate_spider(spiders, lambda x: np.isclose(x[1], 0.0))
-    assert comm.allreduce(1, op=MPI.SUM) == comm.size
+
+
+@pytest.mark.parametrize("gdim", [2, 3])
+def test_update_rbe2(gdim):
+    """After the meshes move, the updated coefficients are those of a constraint built anew."""
+    comm = MPI.COMM_WORLD
+    if gdim == 3:
+        domain = mesh.create_unit_cube(comm, 3, 3, 3)
+        points = [[1.5, 0.5, 0.5], [-0.5, 0.5, 0.5]]
+    else:
+        domain = mesh.create_unit_square(comm, 4, 4)
+        points = [[1.5, 0.5, 0.0], [-0.5, 0.5, 0.0]]
+    V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
+    W = _body_space(_spiders(points), 6 if gdim == 3 else 3)
+    # Every foot on one plane through each spider: some rotation coefficients start at zero. The
+    # feet are found before the mesh moves, so that both constraints tie the same dofs.
+    fdim = gdim - 1
+    facets = [mesh.locate_entities_boundary(domain, fdim, lambda x, s=s: np.isclose(x[0], s)) for s in (1.0, 0.0)]
+
+    def build():
+        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc.add_rbe2_topological(fdim, facets, W)
+        dolfinx_mpc.finalize_multipointconstraints([mpc, dolfinx_mpc.MultiPointConstraint(W)])
+        return mpc
+
+    mpc = build()
+    before = mpc._cpp_object.all_coefficients()[0].copy()
+
+    # Shear the domain and move the spiders off their planes
+    x = domain.geometry.x
+    x[:, 0] += 0.2 * x[:, 1] ** 2
+    x[:, 1] += 0.1 * x[:, 0]
+    W.mesh.geometry.x[:, :gdim] += np.array([0.05, -0.1, 0.2][:gdim])
+    mpc.update_rbe2()
+    updated = mpc._cpp_object.all_coefficients()[0]
+    reference = build()._cpp_object
+    np.testing.assert_array_equal(mpc._cpp_object.all_masters(), reference.all_masters())
+    np.testing.assert_allclose(updated, reference.all_coefficients()[0], atol=_atol)
+    moved = comm.allreduce(np.abs(updated - before).max(initial=0.0), op=MPI.MAX)
+    assert moved > 0.01
 
 
 @pytest.mark.skipif(not PETSc.Sys.hasExternalPackage("mumps"), reason="PETSc was not built with MUMPS")
@@ -200,8 +300,7 @@ def test_spider_joins_two_meshes(kind):
     V_a = fem.functionspace(cube_a, ("Lagrange", 1, (3,)))
     V_b = fem.functionspace(cube_b, ("Lagrange", 1, (3,)))
     centre = np.array([1.1, 0.5, 0.5])
-    spiders = _spiders([centre])
-    W = _body_space(spiders, 6)
+    W = _body_space(_spiders([centre]), 6)
 
     mpc_a = dolfinx_mpc.MultiPointConstraint(V_a)
     mpc_a.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W)
