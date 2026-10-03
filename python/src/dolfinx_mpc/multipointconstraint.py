@@ -128,7 +128,8 @@ class MultiPointConstraint:
 
             master_space: The function space all masters belong to, if not `V`. It must be the
                 space of another constraint finalized together with this one by
-                :func:`finalize_multipointconstraints`, and `masters` is in its global numbering.
+                :func:`finalize_multipointconstraints`, or a subspace of it, and `masters` is in
+                the global numbering of that constraint's space.
                 The masters of a slave may then be in another block of a blocked problem.
             master_blocks: The block of each master, for masters from several spaces: its position
                 in the list of constraints given to :func:`finalize_multipointconstraints`. Each
@@ -416,6 +417,63 @@ class MultiPointConstraint:
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
+
+    def create_submesh_constraint(
+        self,
+        V: _fem.FunctionSpace,
+        master_space: _fem.FunctionSpace,
+        entity_map: _mesh.EntityMap,
+        bcs: Optional[List[_fem.DirichletBC]] = None,
+        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+        tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
+        num_threads: int = 1,
+    ):
+        r"""
+        Tie the degrees of freedom of `V` to `master_space` on a related mesh: a submesh and its
+        parent, related by `entity_map` as returned by :func:`dolfinx.mesh.create_submesh`.
+
+        Every degree of freedom of `V` in the closure of a cell related to a cell of
+        `master_space` becomes a slave, :math:`u(x_i) = \mathrm{scale}\, u_m(x_i)`, with
+        :math:`u_m` evaluated in the related cell and component `b` tied to component `b`. With `V`
+        on the submesh this is every degree of freedom of `V`, for instance the trace
+        :math:`\bar u = u|_\Gamma` on a submesh of facets; with `V` on the parent it is the
+        degrees of freedom on the submesh. No search is involved: the related cell is a table
+        lookup. For a submesh of facets the parent cell is one attached to the facet, so for a
+        discontinuous `master_space` the side is arbitrary.
+
+        Args:
+            V: The space of the constraint, or a subspace of it
+            master_space: The space of another constraint finalized together with this one by
+                :func:`finalize_multipointconstraints`, or a subspace of it. Its mesh and the mesh
+                of `V` are the two meshes of `entity_map`, either way round.
+            entity_map: Relates the cells of the submesh to entities of the parent, of
+                codimension 0 or 1
+            bcs: Dirichlet conditions on the space of the constraint. Their degrees of freedom
+                are not made slaves.
+            scale: Scaling of the masters
+            tol: A master whose coefficient is not larger than `tol` in magnitude is left out.
+                With `None`, every basis function of the related cell is kept.
+            num_threads: The number of threads to use
+
+        Raises:
+            ValueError: If `entity_map` does not relate the two meshes, relates entities other
+                than the cells of the submesh, is of codimension above 1, or the spaces have
+                different numbers of components. Raised on every process.
+
+        Note:
+            Collective.
+        """
+        self._raise_if_finalized()
+        if not (V is self.V or self.V.contains(V)):
+            raise ValueError("V must be the space of the constraint or a subspace of it")
+        if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+            scale = scale.item()  # type: ignore
+        tol_ = None if tol is None else float(tol)
+        bcs_ = [] if bcs is None else [bc._cpp_object for bc in bcs]
+        mpc_data = dolfinx_mpc.cpp.mpc.create_submesh_constraint(
+            V._cpp_object, master_space._cpp_object, entity_map._cpp_object, bcs_, scale, tol_, num_threads
+        )
+        self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data, master_space=master_space)
 
     def _add_rbe2(self, dofs: list[npt.NDArray[numpy.int32]], W: _fem.FunctionSpace, x=None):
         """Tie `dofs[k]` to spider `k` of `W`, and record `W` for :meth:`update_rbe2`."""
@@ -1152,10 +1210,12 @@ def finalize_multipointconstraints(
             blocks[blocks == -2] = k
             if space is not None:
                 matches = [j for j, other in enumerate(mpcs) if other.V is space]
+                if len(matches) == 0:
+                    matches = [j for j, other in enumerate(mpcs) if other.V.contains(space)]
                 if len(matches) != 1:
                     raise ValueError(
-                        "The master space of a constraint must be the function space of exactly one of the "
-                        "constraints finalized together with it"
+                        "The master space of a constraint must be the function space, or a subspace of "
+                        "the function space, of exactly one of the constraints finalized together with it"
                     )
                 blocks[blocks == -1] = matches[0]
             resolved.append(blocks)

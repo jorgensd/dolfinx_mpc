@@ -5,6 +5,7 @@
 #include <MultiPointConstraint.h>
 #include <RBE.h>
 #include <SlipConstraint.h>
+#include <SubmeshConstraint.h>
 #include <assemble_matrix.h>
 #include <assemble_vector.h>
 #include <lifting.h>

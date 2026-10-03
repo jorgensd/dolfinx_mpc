@@ -19,7 +19,7 @@ import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
 from dolfinx.io import gmsh as gmshio
 
@@ -320,16 +320,19 @@ def test_contact_missing_masters():
     order = np.argsort(facets)
     mt = dolfinx.mesh.meshtags(mesh, fdim, facets[order], values[order])
 
+    # The squared-distance tolerance is also the pull-back tolerance on the quadrilaterals, so it
+    # must be reachable in the working precision
+    eps2 = float(100 * np.finfo(default_real_type).eps)
     nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
     with pytest.raises(RuntimeError, match="No masters found"):
-        dolfinx_mpc.MultiPointConstraint(V).create_contact_slip_condition(mt, 1, 2, nh)
+        dolfinx_mpc.MultiPointConstraint(V).create_contact_slip_condition(mt, 1, 2, nh, eps2=eps2)
     with pytest.raises(RuntimeError, match="No masters found"):
-        dolfinx_mpc.MultiPointConstraint(V).create_contact_inelastic_condition(mt, 1, 2)
+        dolfinx_mpc.MultiPointConstraint(V).create_contact_inelastic_condition(mt, 1, 2, eps2=eps2)
 
-    data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt._cpp_object, 1, 2, 1e-20, True, 1)
+    data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt._cpp_object, 1, 2, eps2, True, 1)
     slaves = np.asarray(data.slaves)
     owned = slaves[slaves < V.dofmap.index_map.size_local * bs]
     x = V.tabulate_dof_coordinates()[owned // bs]
     assert comm.allreduce(len(owned), op=MPI.SUM) == 2 * bs
-    assert np.allclose(x[:, 1], 0)
-    assert np.all(np.isclose(x[:, 0], 0) | np.isclose(x[:, 0], 0.25))
+    assert np.allclose(x[:, 1], 0, atol=eps2)
+    assert np.all(np.isclose(x[:, 0], 0, atol=eps2) | np.isclose(x[:, 0], 0.25, atol=eps2))

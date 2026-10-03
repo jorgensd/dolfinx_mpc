@@ -12,12 +12,14 @@
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/la/petsc.h>
+#include <dolfinx/mesh/EntityMap.h>
 #include <dolfinx/mesh/MeshTags.h>
 #include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/PeriodicConstraint.h>
 #include <dolfinx_mpc/RBE.h>
 #include <dolfinx_mpc/SlipConstraint.h>
+#include <dolfinx_mpc/SubmeshConstraint.h>
 #include <dolfinx_mpc/assemble_matrix.h>
 #include <dolfinx_mpc/assemble_vector.h>
 #include <dolfinx_mpc/lifting.h>
@@ -416,6 +418,21 @@ void declare_functions(nb::module_& m)
       "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a,
       nb::arg("scale").noconvert(), nb::arg("collapse").noconvert(),
       nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert());
+  m.def(
+      "create_submesh_constraint",
+      [](const dolfinx::fem::FunctionSpace<U>& V,
+         const dolfinx::fem::FunctionSpace<U>& W,
+         const dolfinx::mesh::EntityMap& entity_map,
+         const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
+             bcs,
+         T scale, std::optional<U> tol, std::size_t num_threads)
+      {
+        return dolfinx_mpc::create_submesh_constraint<T, U>(
+            V, W, entity_map, bcs, scale, tol, num_threads);
+      },
+      "V"_a, "W"_a, "entity_map"_a, "bcs"_a, nb::arg("scale").noconvert(),
+      nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert(),
+      "Tie the dofs of V to W on a related mesh, through an entity map");
 }
 
 template <typename T, std::floating_point U>
