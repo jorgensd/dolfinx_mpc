@@ -20,9 +20,39 @@ namespace dolfinx_mpc
 template <typename T, std::floating_point U>
 class MultiPointConstraint;
 
+/// @brief The vectors a constrained vector assembly adds into.
+///
+/// Every entry goes through `at(b, dof)`, the vector of block `b`. The rows'
+/// own block, `block`, is the vector at `position`, which is where the form's
+/// own entries go; any other block `b` is `blocks[b]`. Only a constraint
+/// with masters in another block needs more than its own vector, and then
+/// `blocks` lists the vectors in the order the constraints were created in.
+template <typename T>
+struct VectorTarget
+{
+  /// The vectors, owned and ghost entries
+  std::span<const std::span<T>> blocks;
+  /// Position in `blocks` of the vector of the form's rows. It differs from
+  /// `block` when a constraint is assembled outside the system it was created
+  /// in, which is only possible without masters in other blocks.
+  std::size_t position = 0;
+  /// The block of the constraint applied to the rows, as
+  /// `MultiPointConstraint::block()`
+  int block = 0;
+
+  /// The entry of local dof `dof` of block `b`
+  T& at(std::int32_t b, std::int32_t dof) const
+  {
+    const std::size_t k = b == block ? position : static_cast<std::size_t>(b);
+    assert(k < blocks.size());
+    return blocks[k][dof];
+  }
+};
+
 /// Given a local element vector, move all slave contributions to the global
 /// (local to process) vector.
-/// @param [in, out] b The global (local to process) vector
+/// @param [in, out] b The global (local to process) vector, or vectors when a
+/// master is in another block
 /// @param [in, out] b_local The local element vector
 /// @param [in] b_local_copy Copy of the local element vector
 /// @param [in] dofs The cell dofs (blocked)
@@ -32,15 +62,18 @@ class MultiPointConstraint;
 /// @param [in] slaves The slave dofs (local to process)
 /// @param [in] masters Adjacency list with master dofs
 /// @param [in] coeffs Adjacency list with the master coefficients
+/// @param [in] master_blocks Block of each master, parallel to the data of
+/// `masters`
 template <typename T>
 void modify_mpc_vec(
-    const std::span<T>& b, const std::span<T>& b_local,
+    const VectorTarget<T>& b, const std::span<T>& b_local,
     const std::span<T>& b_local_copy, std::span<const std::int32_t> dofs,
     const int num_dofs, const int bs, std::span<const std::int8_t> is_slave,
     std::span<const std::int32_t> slaves,
     const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>&
         masters,
-    const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coeffs)
+    const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>& coeffs,
+    std::span<const std::int32_t> master_blocks)
 {
 
   // NOTE: Should this be moved into the MPC constructor?
@@ -54,15 +87,16 @@ void modify_mpc_vec(
     auto masters_i = masters->links(slaves[i]);
     auto coeffs_i = coeffs->links(slaves[i]);
     assert(masters_i.size() == coeffs_i.size());
+    const std::int32_t offset = masters->offsets()[slaves[i]];
     for (std::size_t j = 0; j < masters_i.size(); j++)
     {
+      T& entry = b.at(master_blocks[offset + j], masters_i[j]);
       if constexpr (std::is_scalar_v<T>)
         // Use standard transpose for type double
-        b[masters_i[j]] += coeffs_i[j] * b_local_copy[local_index[i]];
+        entry += coeffs_i[j] * b_local_copy[local_index[i]];
       else
         // Use Hermitian transpose for type std::complex<double>
-        b[masters_i[j]]
-            += std::conj(coeffs_i[j]) * b_local_copy[local_index[i]];
+        entry += std::conj(coeffs_i[j]) * b_local_copy[local_index[i]];
     }
     // Outside the master loop: a slave whose masters have all been eliminated
     // by a Dirichlet condition has none left, and its row must still be zeroed
@@ -117,6 +151,22 @@ void assemble_vector(
     const std::shared_ptr<
         const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&
         mpc,
+    std::size_t num_threads = 1);
+
+/// @brief Assemble a linear form into the vectors of a blocked system.
+///
+/// The form's own entries go to `b[i]`; a master of the constraint goes to the
+/// vector of its block.
+/// @param[in] b The vector of every block, owned and ghost entries, in the
+/// order the constraints were created in. They are not zeroed.
+/// @param[in] i The block of the form's test space
+/// @param[in] L The linear form
+/// @param[in] mpc The constraint of block `i`
+/// @param[in] num_threads The number of threads to use for certain operations
+template <typename T, std::floating_point U>
+void assemble_vector_blocks(
+    std::span<const std::span<T>> b, int i, const dolfinx::fem::Form<T>& L,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
     std::size_t num_threads = 1);
 
 } // namespace dolfinx_mpc

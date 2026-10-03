@@ -27,6 +27,14 @@ using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
 namespace
 {
 
+/// Insertion into the matrix of a block of a blocked system:
+/// `mat_add(row_block, rows, col_block, cols, values)` with local, unrolled
+/// indices of the given blocks
+template <typename T>
+using mat_add_blocks_fn
+    = std::function<int(int, std::span<const std::int32_t>, int,
+                        std::span<const std::int32_t>, std::span<const T>)>;
+
 /// Given an assembled element matrix Ae, remove all entries (i,j) where both i
 /// and j corresponds to a slave degree of freedom
 /// @param[in,out] Ae_stripped The matrix Ae stripped of all other entries
@@ -116,8 +124,12 @@ void zero_dirichlet(std::span<T> Ae, std::span<const std::int32_t> dofs0,
 /// Modify local element matrix Ae with MPC contributions, and insert non-local
 /// contributions in the correct places
 ///
-/// @param[in] mat_set Function that sets a local matrix into specified
-/// positions of the global matrix A
+/// @param[in] mat_set Function adding values to the matrix of a block,
+/// `mat_set(row_block, rows, col_block, cols, values)`, with unrolled indices
+/// local to those blocks
+/// @param[in] blocks Block of the constraint on the rows and of the one on the
+/// columns, as `MultiPointConstraint::block()`. Entries of the form's own dofs
+/// go there.
 /// @param[in] num_dofs The number of degrees of freedom in each row and column
 /// (blocked)
 /// @param[in, out] Ae The local element matrix
@@ -130,14 +142,15 @@ void zero_dirichlet(std::span<T> Ae, std::span<const std::int32_t> dofs0,
 /// process) to the corresponding coefficients
 /// @param[in] is_slave Marker indicating if a dof (local to process) is a slave
 /// dof
+/// @param[in] master_blocks Row and column block of each master, parallel to
+/// the data of `masters`. A master's local index is in the space of its block,
+/// and its row or column goes to that block of the matrix.
 /// @param[in] scratch_memory Memory used in computations of additional element
 /// matrices and rows. Should be at least 2 * num_rows(Ae) * num_cols(Ae) +
 /// num_cols(Ae) + num_rows(Ae)
 template <typename T>
 void modify_mpc_cell(
-    const std::function<int(std::span<const std::int32_t>,
-                            std::span<const std::int32_t>, std::span<const T>)>&
-        mat_set,
+    const mat_add_blocks_fn<T>& mat_set, const std::array<int, 2>& blocks,
     const std::array<const std::uint32_t, 2>& num_dofs,
     MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
         T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -151,6 +164,7 @@ void modify_mpc_cell(
     const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>,
                      2>& coeffs,
     const std::array<std::span<const std::int8_t>, 2>& is_slave,
+    const std::array<std::span<const std::int32_t>, 2>& master_blocks,
     std::span<T> scratch_memory)
 {
   std::array<std::size_t, 2> num_flattened_masters = {0, 0};
@@ -219,20 +233,24 @@ void modify_mpc_cell(
   std::array<std::vector<std::int32_t>, 2> flattened_masters;
   std::array<std::vector<std::int32_t>, 2> flattened_slaves;
   std::array<std::vector<T>, 2> flattened_coeffs;
+  std::array<std::vector<std::int32_t>, 2> flattened_blocks;
   for (std::int8_t axis = 0; axis < 2; axis++)
   {
     flattened_masters[axis].reserve(num_flattened_masters[axis]);
     flattened_slaves[axis].reserve(num_flattened_masters[axis]);
     flattened_coeffs[axis].reserve(num_flattened_masters[axis]);
+    flattened_blocks[axis].reserve(num_flattened_masters[axis]);
     for (std::size_t i = 0; i < slaves[axis].size(); i++)
     {
       auto _masters = masters[axis]->links(slaves[axis][i]);
       auto _coeffs = coeffs[axis]->links(slaves[axis][i]);
+      const std::int32_t offset = masters[axis]->offsets()[slaves[axis][i]];
       for (std::size_t j = 0; j < _masters.size(); j++)
       {
         flattened_slaves[axis].push_back(local_index[axis][i]);
         flattened_masters[axis].push_back(_masters[j]);
         flattened_coeffs[axis].push_back(_coeffs[j]);
+        flattened_blocks[axis].push_back(master_blocks[axis][offset + j]);
       }
     }
   }
@@ -268,9 +286,9 @@ void modify_mpc_cell(
         unrolled_dofs[j * bs[1] + k] = dofs[1][j] * bs[1] + k;
       }
 
-    // Insert modified entries
+    // Insert modified entries, in the row of the master's block
     row[0] = flattened_masters[0][i];
-    mat_set(row, unrolled_dofs, Acol);
+    mat_set(flattened_blocks[0][i], row, blocks[1], unrolled_dofs, Acol);
 
     // Loop through other masters on the same cell and add in contribution
     for (std::size_t j = 0; j < num_flattened_masters[1]; ++j)
@@ -278,7 +296,7 @@ void modify_mpc_cell(
       col[0] = flattened_masters[1][j];
       A0[0] = coeff_i * flattened_coeffs[1][j]
               * Ae_original(flattened_slaves[0][i], flattened_slaves[1][j]);
-      mat_set(row, col, A0);
+      mat_set(flattened_blocks[0][i], row, flattened_blocks[1][j], col, A0);
     }
   }
 
@@ -298,9 +316,9 @@ void modify_mpc_cell(
         unrolled_dofs[j * bs[0] + k] = dofs[0][j] * bs[0] + k;
       }
 
-    // Insert modified entries
+    // Insert modified entries, in the column of the master's block
     col[0] = flattened_masters[1][i];
-    mat_set(unrolled_dofs, col, Arow);
+    mat_set(blocks[0], unrolled_dofs, flattened_blocks[1][i], col, Arow);
   }
 } // namespace
 
@@ -322,9 +340,7 @@ void assemble_entities(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_block_values,
-    const std::function<int(std::span<const std::int32_t>,
-                            std::span<const std::int32_t>,
-                            const std::span<const T>)>& mat_add_values,
+    const mat_add_blocks_fn<T>& mat_add_values,
     std::span<const std::int32_t> entities0,
     std::span<const std::int32_t> entities1,
     const dolfinx::fem::DofMap& dofmap0, const dolfinx::fem::DofMap& dofmap1,
@@ -343,6 +359,10 @@ void assemble_entities(
   const std::array<
       std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
+  const std::array<std::span<const std::int32_t>, 2> master_blocks
+      = {mpc0->master_blocks(), mpc1->master_blocks()};
+  // The blocks of the form's own rows and columns
+  const std::array<int, 2> blocks = {mpc0->block(), mpc1->block()};
 
   const std::array<const std::uint32_t, 2> num_dofs
       = {static_cast<std::uint32_t>(dofmap0.map().extent(1)),
@@ -375,9 +395,9 @@ void assemble_entities(
     {
       const std::array<std::span<const std::int32_t>, 2> slaves
           = {cell_to_slaves[0]->links(cell0), cell_to_slaves[1]->links(cell1)};
-      modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, {dofs0, dofs1}, bs,
-                         slaves, masters, coefficients, is_slave,
-                         scratch_memory);
+      modify_mpc_cell<T>(mat_add_values, blocks, num_dofs, Ae, {dofs0, dofs1},
+                         bs, slaves, masters, coefficients, is_slave,
+                         master_blocks, scratch_memory);
     }
     mat_add_block_values(dofs0, dofs1, Aeb);
   }
@@ -406,9 +426,7 @@ void assemble_interior_facets(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_block_values,
-    const std::function<int(std::span<const std::int32_t>,
-                            std::span<const std::int32_t>,
-                            const std::span<const T>)>& mat_add_values,
+    const mat_add_blocks_fn<T>& mat_add_values,
     std::span<const std::int32_t> facets0,
     std::span<const std::int32_t> facets1, const dolfinx::fem::DofMap& dofmap0,
     const dolfinx::fem::DofMap& dofmap1, std::span<const std::int8_t> bc0,
@@ -427,6 +445,10 @@ void assemble_interior_facets(
   const std::array<
       std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
+  const std::array<std::span<const std::int32_t>, 2> master_blocks
+      = {mpc0->master_blocks(), mpc1->master_blocks()};
+  // The blocks of the form's own rows and columns
+  const std::array<int, 2> blocks = {mpc0->block(), mpc1->block()};
 
   const std::array<const std::uint32_t, 2> num_dofs
       = {static_cast<std::uint32_t>(dofmap0.map().extent(1)),
@@ -507,9 +529,9 @@ void assemble_interior_facets(
           const std::array<std::span<const std::int32_t>, 2> slaves
               = {cell_to_slaves[0]->links(cells0[s]),
                  cell_to_slaves[1]->links(cells1[t])};
-          modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, {dofs0, dofs1}, bs,
-                             slaves, masters, coefficients, is_slave,
-                             scratch_memory);
+          modify_mpc_cell<T>(mat_add_values, blocks, num_dofs, Ae,
+                             {dofs0, dofs1}, bs, slaves, masters, coefficients,
+                             is_slave, master_blocks, scratch_memory);
         }
         mat_add_block_values(dofs0, dofs1, Ae_block);
       }
@@ -522,11 +544,8 @@ void assemble_matrix_impl(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_block_values,
-    const std::function<int(std::span<const std::int32_t>,
-                            std::span<const std::int32_t>,
-                            const std::span<const T>)>& mat_add_values,
-    const dolfinx::fem::Form<T>& a, std::span<const std::int8_t> bc0,
-    std::span<const std::int8_t> bc1,
+    const mat_add_blocks_fn<T>& mat_add_values, const dolfinx::fem::Form<T>& a,
+    std::span<const std::int8_t> bc0, std::span<const std::int8_t> bc1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
     std::size_t num_threads)
@@ -772,8 +791,19 @@ void _assemble_matrix(
     std::span<const std::int8_t> dof_marker1, std::size_t num_threads)
 {
   dolfinx::common::Timer timer("~MPC: Assemble matrix (C++)");
-  assemble_matrix_impl<T>(mat_add_block, mat_add, a, dof_marker0, dof_marker1,
-                          mpc0, mpc1, num_threads);
+  if (mpc0->has_cross_block_masters() or mpc1->has_cross_block_masters())
+  {
+    throw std::invalid_argument(
+        "A constraint has masters in another block. Assemble into the "
+        "matrices of every block.");
+  }
+  // Every entry is in the form's own block
+  const mat_add_blocks_fn<T> add
+      = [&mat_add](int, std::span<const std::int32_t> rows, int,
+                   std::span<const std::int32_t> cols, std::span<const T> vals)
+  { return mat_add(rows, cols, vals); };
+  assemble_matrix_impl<T>(mat_add_block, add, a, dof_marker0, dof_marker1, mpc0,
+                          mpc1, num_threads);
   timer.stop();
 }
 //-----------------------------------------------------------------------------
@@ -1003,3 +1033,41 @@ void dolfinx_mpc::assemble_matrix(
                   std::span<const std::int8_t>(marker0),
                   std::span<const std::int8_t>(marker1), num_threads);
 }
+//-----------------------------------------------------------------------------
+template <typename T, std::floating_point U>
+void dolfinx_mpc::assemble_matrix_blocks(
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const T>&)>& mat_add_block,
+    const std::function<int(int, std::span<const std::int32_t>, int,
+                            std::span<const std::int32_t>, std::span<const T>)>&
+        mat_add_blocks,
+    const dolfinx::fem::Form<T>& a,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
+    std::span<const std::int8_t> dof_marker0,
+    std::span<const std::int8_t> dof_marker1, std::size_t num_threads)
+{
+  dolfinx::common::Timer timer("~MPC: Assemble matrix (C++)");
+  assemble_matrix_impl<T>(mat_add_block, mat_add_blocks, a, dof_marker0,
+                          dof_marker1, mpc0, mpc1, num_threads);
+}
+//-----------------------------------------------------------------------------
+#define DOLFINX_MPC_ASSEMBLE_MATRIX_BLOCKS(T, U)                               \
+  template void dolfinx_mpc::assemble_matrix_blocks<T, U>(                     \
+      const std::function<int(std::span<const std::int32_t>,                   \
+                              std::span<const std::int32_t>,                   \
+                              const std::span<const T>&)>&,                    \
+      const std::function<int(int, std::span<const std::int32_t>, int,         \
+                              std::span<const std::int32_t>,                   \
+                              std::span<const T>)>&,                           \
+      const dolfinx::fem::Form<T>&,                                            \
+      const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&,   \
+      const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&,   \
+      std::span<const std::int8_t>, std::span<const std::int8_t>,              \
+      std::size_t);
+DOLFINX_MPC_ASSEMBLE_MATRIX_BLOCKS(double, double)
+DOLFINX_MPC_ASSEMBLE_MATRIX_BLOCKS(float, float)
+DOLFINX_MPC_ASSEMBLE_MATRIX_BLOCKS(std::complex<double>, double)
+DOLFINX_MPC_ASSEMBLE_MATRIX_BLOCKS(std::complex<float>, float)
+#undef DOLFINX_MPC_ASSEMBLE_MATRIX_BLOCKS

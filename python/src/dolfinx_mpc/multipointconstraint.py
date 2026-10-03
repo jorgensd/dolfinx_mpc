@@ -115,6 +115,7 @@ class MultiPointConstraint:
     _coeffs: _float_array_types
     _owners: npt.NDArray[numpy.int32]
     _offsets: npt.NDArray[numpy.int32]
+    _master_spaces: List[tuple[npt.NDArray[numpy.int32], Optional[_fem.FunctionSpace]]]
     _bcs: List[_fem.DirichletBC]
     _rhs_coeffs: Optional[_fem.Function]
     _scale_function: Optional[_fem.Function]
@@ -136,6 +137,7 @@ class MultiPointConstraint:
         self._coeffs = numpy.array([], dtype=dtype)  # type: ignore
         self._owners = numpy.array([], dtype=numpy.int32)
         self._offsets = numpy.array([0], dtype=numpy.int32)
+        self._master_spaces = []
         self._bcs = [] if bcs is None else list(bcs)
         if rhs_coeffs is not None:
             if not rhs_coeffs.x.array.dtype == dtype:
@@ -156,6 +158,8 @@ class MultiPointConstraint:
         coeffs: _float_array_types,
         owners: npt.NDArray[numpy.int32],
         offsets: npt.NDArray[numpy.int32],
+        master_space: Optional[_fem.FunctionSpace] = None,
+        master_blocks: Optional[npt.NDArray[numpy.int32]] = None,
     ):
         """
         Add new constraint given by numpy arrays.
@@ -174,10 +178,33 @@ class MultiPointConstraint:
 
                     masters_of_owned_slave[i] = masters[offsets[i]:offsets[i+1]]
 
+            master_space: The function space all masters belong to, if not `V`. It must be the
+                space of another constraint finalized together with this one by
+                :func:`finalize_multipointconstraints`, and `masters` is in its global numbering.
+                The masters of a slave may then be in another block of a blocked problem.
+            master_blocks: The block of each master, for masters from several spaces: its position
+                in the list of constraints given to :func:`finalize_multipointconstraints`. Each
+                master is in the global numbering of its block. Exclusive with `master_space`.
+
+        Note:
+            Collective when `master_space` or `master_blocks` is given: every process must call
+            it with the same `master_space`, or with `master_blocks` (possibly empty).
         """
         assert V == self.V
         self._raise_if_finalized()
+        if master_space is not None and master_blocks is not None:
+            raise ValueError("Give either master_space or master_blocks, not both")
+        if master_blocks is not None and len(master_blocks) != len(masters):
+            raise ValueError("master_blocks must have one entry per master")
 
+        # Recorded on every process, also without local slaves, so that every process resolves the
+        # blocks of the masters the same way when the constraints are finalized
+        if master_blocks is not None:
+            self._master_spaces.append((numpy.asarray(master_blocks, dtype=numpy.int32), None))
+        elif master_space is not None:
+            self._master_spaces.append((numpy.full(len(masters), -1, dtype=numpy.int32), master_space))
+        else:
+            self._master_spaces.append((numpy.full(len(masters), -2, dtype=numpy.int32), None))
         if len(slaves) > 0:
             self._offsets = numpy.append(self._offsets, offsets[1:] + len(self._masters))
             self._slaves = numpy.append(self._slaves, slaves)
@@ -231,9 +258,15 @@ class MultiPointConstraint:
             self._rhs_coeffs.x.array[:] += rhs.x.array
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
-    def add_constraint_from_mpc_data(self, V: _fem.FunctionSpace, mpc_data: Union[_mpc_data_classes, MPCData]):
+    def add_constraint_from_mpc_data(
+        self,
+        V: _fem.FunctionSpace,
+        mpc_data: Union[_mpc_data_classes, MPCData],
+        master_space: Optional[_fem.FunctionSpace] = None,
+    ):
         """
-        Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object
+        Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object. See
+        :meth:`add_constraint` for `master_space`.
         """
         self._raise_if_finalized()
         self.add_constraint(
@@ -243,6 +276,7 @@ class MultiPointConstraint:
             mpc_data.coeffs,
             mpc_data.owners,
             mpc_data.offsets,
+            master_space=master_space,
         )
 
     def finalize(self, filter: Optional[numpy.floating] = None) -> None:
@@ -310,6 +344,22 @@ class MultiPointConstraint:
         """
         self._raise_if_not_finalized()
         return self._cpp_object.has_inhomogeneity
+
+    @property
+    def master_blocks(self) -> npt.NDArray[numpy.int32]:
+        """
+        The block of each master, parallel to ``masters.array``: the position, in the list given
+        to :func:`finalize_multipointconstraints`, of the constraint whose space the master is in.
+        The local index of a master is in the space of its block.
+        """
+        self._raise_if_not_finalized()
+        return self._cpp_object.master_blocks
+
+    @property
+    def has_cross_block_masters(self) -> bool:
+        """Whether a master on any process is in another block than the slaves."""
+        self._raise_if_not_finalized()
+        return self._cpp_object.has_cross_block_masters
 
     def create_periodic_constraint_topological(
         self,
@@ -767,7 +817,7 @@ class MultiPointConstraint:
         self._raise_if_not_finalized()
         return self.V
 
-    def backsubstitution(self, u: Union[_fem.Function, _PETSc.Vec]) -> None:  # type: ignore
+    def backsubstitution(self, u: Union[_fem.Function, Sequence[_fem.Function], _PETSc.Vec]) -> None:  # type: ignore
         """
         For a Function, impose the multi-point constraint by backsubstiution.
         This function is used after solving the reduced problem to obtain the values
@@ -777,8 +827,16 @@ class MultiPointConstraint:
             It is the users responsibility to destroy the PETSc vector
 
         Args:
-            u: The input function
+            u: The input function. For a constraint with masters in another block, the function
+                of every block, in the order given to :func:`finalize_multipointconstraints`;
+                only the function of this constraint's block is changed. The ghosts of the
+                functions holding masters must be up to date.
         """
+        self._raise_if_not_finalized()
+        if isinstance(u, Sequence):
+            self._cpp_object.backsubstitution([u_k.x.array for u_k in u])  # type: ignore
+            u[self._cpp_object.block].x.scatter_forward()
+            return
         try:
             self._cpp_object.backsubstitution(u.x.array)  # type: ignore
             assert isinstance(u, _fem.Function)
@@ -862,6 +920,29 @@ def finalize_multipointconstraints(
             )
             rhs_coeffs.append(mpc._rhs_coeffs.x.array[:num_dofs_local].astype(dtype))
 
+    # The block of each master: -2 marks the constraint's own block, -1 the block of the space
+    # recorded with it, anything else a block given directly. Every process records the same chunks
+    # with the same spaces, so a space that is not one of the blocks raises everywhere.
+    master_blocks = []
+    for k, mpc in enumerate(mpcs):
+        if all(space is None and (blocks == -2).all() for blocks, space in mpc._master_spaces):
+            master_blocks.append(numpy.zeros(0, dtype=numpy.int32))
+            continue
+        resolved = []
+        for blocks, space in mpc._master_spaces:
+            blocks = blocks.copy()
+            blocks[blocks == -2] = k
+            if space is not None:
+                matches = [j for j, other in enumerate(mpcs) if other.V is space]
+                if len(matches) != 1:
+                    raise ValueError(
+                        "The master space of a constraint must be the function space of exactly one of the "
+                        "constraints finalized together with it"
+                    )
+                blocks[blocks == -1] = matches[0]
+            resolved.append(blocks)
+        master_blocks.append(numpy.concatenate(resolved) if resolved else numpy.zeros(0, dtype=numpy.int32))
+
     # Raises ValueError (as the C++ throws std::invalid_argument), identically on every process
     cpp_objects = dolfinx_mpc.cpp.mpc.create_multipointconstraints(
         [mpc.V._cpp_object for mpc in mpcs],
@@ -872,6 +953,7 @@ def finalize_multipointconstraints(
         [mpc._offsets for mpc in mpcs],
         rhs_coeffs,
         [[bc._cpp_object for bc in mpc._bcs] for mpc in mpcs],
+        master_blocks,
         filter,
     )
 
@@ -881,4 +963,4 @@ def finalize_multipointconstraints(
         mpc.V = _fem.FunctionSpace(mpc.V.mesh, mpc.V.ufl_element(), cpp_object.function_space)
         mpc.finalized = True
         # Delete variables that are no longer required
-        del (mpc._slaves, mpc._masters, mpc._coeffs, mpc._owners, mpc._offsets)
+        del (mpc._slaves, mpc._masters, mpc._coeffs, mpc._owners, mpc._offsets, mpc._master_spaces)

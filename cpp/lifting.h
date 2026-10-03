@@ -63,7 +63,7 @@ template <typename T, std::size_t estride, std::floating_point U,
            and std::invocable<LiftLocal&, std::span<T>, std::span<T>, int, int,
                               std::span<const std::int32_t>, std::int32_t,
                               std::int32_t, std::size_t>
-void lift_bc_entities(std::span<T> b,
+void lift_bc_entities(const dolfinx_mpc::VectorTarget<T>& b,
                       std::span<const std::int32_t> active_entities,
                       std::span<const std::int32_t> active_entities0,
                       std::span<const std::int32_t> active_entities1,
@@ -79,6 +79,7 @@ void lift_bc_entities(std::span<T> b,
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       masters = mpc0.masters();
+  std::span<const std::int32_t> master_blocks = mpc0.master_blocks();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
       = mpc0.coefficients();
   std::span<const std::int8_t> is_slave = mpc0.is_slave();
@@ -145,12 +146,13 @@ void lift_bc_entities(std::span<T> b,
       std::ranges::copy(be, be_copy.begin());
       const std::span<T> _be_copy(be_copy);
       dolfinx_mpc::modify_mpc_vec<T>(b, _be, _be_copy, dmap0, dmap0.size(), bs0,
-                                     is_slave, slaves, masters, coefficients);
+                                     is_slave, slaves, masters, coefficients,
+                                     master_blocks);
     }
     // Add local contribution to b
     for (int i = 0; i < num_dofs0; ++i)
       for (int k = 0; k < bs0; ++k)
-        b[bs0 * dmap0[i] + k] += be[bs0 * i + k];
+        b.at(b.block, bs0 * dmap0[i] + k) += be[bs0 * i + k];
   }
 };
 
@@ -171,7 +173,8 @@ void lift_bc_entities(std::span<T> b,
 template <typename T, std::floating_point U, typename LiftLocal>
   requires std::invocable<LiftLocal&, std::span<T>, std::size_t>
 void lift_bc_interior_facets(
-    std::span<T> b, std::span<const std::int32_t> facets0,
+    const dolfinx_mpc::VectorTarget<T>& b,
+    std::span<const std::int32_t> facets0,
     std::span<const std::int32_t> facets1, const dolfinx::fem::DofMap& dofmap0,
     const dolfinx::fem::DofMap& dofmap1,
     std::span<const std::int8_t> bc_markers1,
@@ -180,6 +183,7 @@ void lift_bc_interior_facets(
 {
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       masters = mpc0.masters();
+  std::span<const std::int32_t> master_blocks = mpc0.master_blocks();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
       = mpc0.coefficients();
   std::span<const std::int8_t> is_slave = mpc0.is_slave();
@@ -227,11 +231,12 @@ void lift_bc_interior_facets(
       {
         std::ranges::copy(be_s, be_copy.begin());
         dolfinx_mpc::modify_mpc_vec<T>(b, be_s, be_copy, dmap0, num_dofs0, bs0,
-                                       is_slave, slaves, masters, coefficients);
+                                       is_slave, slaves, masters, coefficients,
+                                       master_blocks);
       }
       for (std::size_t i = 0; i < num_dofs0; ++i)
         for (int k = 0; k < bs0; ++k)
-          b[bs0 * dmap0[i] + k] += be_s[bs0 * i + k];
+          b.at(b.block, bs0 * dmap0[i] + k) += be_s[bs0 * i + k];
     }
   }
 }
@@ -254,7 +259,8 @@ void lift_bc_interior_facets(
 /// @param[in] num_threads The number of threads to use for certain operations
 template <typename T, std::floating_point U>
 void lift_values(
-    std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
+    const dolfinx_mpc::VectorTarget<T>& b,
+    const std::shared_ptr<const dolfinx::fem::Form<T>> a,
     std::span<const std::int8_t> bc_markers1, std::span<const T> bc_values1,
     const std::span<const T>& x0, T scale,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
@@ -590,8 +596,8 @@ void lift_values(
 /// @param[in] num_threads The number of threads to use for certain operations
 template <typename T, std::floating_point U>
 void apply_mpc_lifting(
-    std::span<T> b, const std::shared_ptr<const dolfinx::fem::Form<T>> a,
-    T scale,
+    const dolfinx_mpc::VectorTarget<T>& b,
+    const std::shared_ptr<const dolfinx::fem::Form<T>> a, T scale,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
     std::size_t num_threads = 1)
@@ -655,9 +661,12 @@ namespace dolfinx_mpc
 /// @param[in] scale Scaling to apply
 /// @param[in] mpc The multi point constraint on the rows of `b`
 /// @param[in] num_threads The number of threads to use for certain operations
+/// @note `b` names the vector of the rows' block, and the vector of every
+/// block when the row constraint has masters in another block; see
+/// `VectorTarget`.
 template <typename T, std::floating_point U>
 void apply_lifting(
-    std::span<T> b,
+    const VectorTarget<T>& b,
     const std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
     const std::vector<std::span<const std::int8_t>>& bc_markers1,
     const std::vector<std::span<const T>>& bc_values1,
@@ -702,6 +711,29 @@ void apply_lifting(
                             x0.empty() ? std::span<const T>() : x0[j], scale,
                             mpc, num_threads);
   }
+}
+
+/// @brief As the `VectorTarget` overload, for a row constraint whose masters
+/// are all in its own block.
+template <typename T, std::floating_point U>
+void apply_lifting(
+    std::span<T> b,
+    const std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
+    const std::vector<std::span<const std::int8_t>>& bc_markers1,
+    const std::vector<std::span<const T>>& bc_values1,
+    const std::vector<std::span<const T>>& x0, T scale,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
+    std::size_t num_threads = 1)
+{
+  if (mpc->has_cross_block_masters())
+  {
+    throw std::invalid_argument(
+        "The row constraint has masters in another block. Lift into the "
+        "vectors of every block.");
+  }
+  const std::array<std::span<T>, 1> blocks = {b};
+  apply_lifting<T, U>(VectorTarget<T>{blocks, 0, mpc->block()}, a, bc_markers1,
+                      bc_values1, x0, scale, mpc, num_threads);
 }
 
 /// @brief Modify `b` such that
@@ -794,7 +826,7 @@ void apply_lifting(
 /// @param[in] num_threads The number of threads to use for certain operations
 template <typename T, std::floating_point U>
 void apply_mpc_lifting(
-    std::span<T> b,
+    const VectorTarget<T>& b,
     const std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>> a, T scale,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
     const std::vector<
@@ -814,5 +846,27 @@ void apply_mpc_lifting(
     if (a[j] and mpc1[j])
       impl::apply_mpc_lifting<T, U>(b, a[j], scale, mpc0, mpc1[j], num_threads);
   }
+}
+
+/// @brief As the `VectorTarget` overload, for a row constraint whose masters
+/// are all in its own block.
+template <typename T, std::floating_point U>
+void apply_mpc_lifting(
+    std::span<T> b,
+    const std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>> a, T scale,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::vector<
+        std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>>& mpc1,
+    std::size_t num_threads = 1)
+{
+  if (mpc0->has_cross_block_masters())
+  {
+    throw std::invalid_argument(
+        "The row constraint has masters in another block. Lift into the "
+        "vectors of every block.");
+  }
+  const std::array<std::span<T>, 1> blocks = {b};
+  apply_mpc_lifting<T, U>(VectorTarget<T>{blocks, 0, mpc0->block()}, a, scale,
+                          mpc0, mpc1, num_threads);
 }
 } // namespace dolfinx_mpc

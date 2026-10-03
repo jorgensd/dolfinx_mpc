@@ -243,28 +243,20 @@ def _create_matrix_nest(
     constraints: Sequence[MultiPointConstraint],
     types: Optional[Sequence[Sequence[Optional[str]]]] = None,
 ):
-    """Create a PETSc matrix of type "nest" with the blocks of the types in `types`, if given."""
+    """
+    Create a PETSc matrix of type "nest" with the blocks of the types in `types`, if given.
+
+    A block has a matrix if it has a form or is a diagonal block, which holds the diagonal of its
+    slaves. If a constraint has masters in another block, every block has one, since those masters
+    put entries in blocks without a form.
+    """
     assert len(constraints) == len(a)
     for mpc in constraints:
         mpc._raise_if_not_finalized()
-
-    A_: list[list[_PETSc.Mat | None]] = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
-
-    for i, a_row in enumerate(a):
-        for j, a_ij in enumerate(a_row):
-            if a_ij is None:
-                continue
-            A_[i][j] = cpp.mpc.create_matrix(
-                a_ij._cpp_object,
-                constraints[i]._cpp_object,
-                constraints[j]._cpp_object,
-                None if types is None else types[i][j],
-            )
-
-    return _PETSc.Mat().createNest(
-        A_,  # type: ignore
-        comm=constraints[0].function_space.mesh.comm,
-    )
+    forms = [[None if a_ij is None else a_ij._cpp_object for a_ij in a_i] for a_i in a]
+    mpcs = [mpc._cpp_object for mpc in constraints]
+    _types = None if types is None else [list(t) for t in types]
+    return cpp.mpc.create_matrix_nest(forms, mpcs, mpcs, _types)
 
 
 def create_matrix_nest(a: Sequence[Sequence[_fem.Form | None]], constraints: Sequence[MultiPointConstraint]):
@@ -283,6 +275,69 @@ def create_matrix_nest(a: Sequence[Sequence[_fem.Form | None]], constraints: Seq
     return _create_matrix_nest(a, constraints)
 
 
+def _block_spaces(a: Sequence[Sequence[Optional[_fem.Form]]], num_blocks: int) -> list[Optional[_fem.FunctionSpace]]:
+    """The space of each diagonal block, taken from the forms, or `None` if no form has it."""
+    spaces: list[Optional[_fem.FunctionSpace]] = [None] * num_blocks
+    for i, a_row in enumerate(a):
+        for j, a_ij in enumerate(a_row):
+            if a_ij is None:
+                continue
+            if spaces[i] is None:
+                spaces[i] = a_ij.function_spaces[0]
+            if j < num_blocks and spaces[j] is None:
+                spaces[j] = a_ij.function_spaces[1]
+    return spaces
+
+
+def _assemble_blocks(
+    blocks: Sequence[Sequence[Optional[_PETSc.Mat]]],  # type: ignore
+    a: Sequence[Sequence[Optional[_fem.Form]]],
+    constraints: Sequence[MultiPointConstraint],
+    bc_data: BCData,
+    diagval: _PETSc.ScalarType,  # type: ignore
+    num_threads: Optional[int],
+):
+    """
+    Assemble an array of forms into the matrices of the blocks of a system, then add the diagonal
+    of the slave and Dirichlet rows of each diagonal block.
+
+    The entries of a master go to the block of the master, which may have no form.
+    """
+    for i, a_row in enumerate(a):
+        for j, a_ij in enumerate(a_row):
+            if a_ij is None:
+                continue
+            dof_marker0, dof_marker1 = bc_data.markers(*a_ij.function_spaces)
+            cpp.mpc.assemble_matrix_blocks(
+                blocks,
+                i,
+                j,
+                a_ij._cpp_object,
+                constraints[i]._cpp_object,
+                constraints[j]._cpp_object,
+                dof_marker0,
+                dof_marker1,
+                num_threads,
+            )
+
+    # The diagonal is a property of a block, so it is added once per diagonal block after
+    # every form has been assembled, including for a block that has no form of its own
+    spaces = _block_spaces(a, len(constraints))
+    for i, mpc in enumerate(constraints):
+        V = spaces[i]
+        has_bcs = V is not None and bc_data.markers(V, V)[0].size > 0
+        if a[i][i] is None and has_bcs:
+            raise RuntimeError(
+                f"Diagonal block ({i}, {i}) cannot be 'None' and have a Dirichlet condition applied."
+                " Consider assembling a zero block."
+            )
+        A_ii = blocks[i][i]
+        if A_ii is None:
+            continue
+        bc_blocks = [(A_ii, bc_data.rows(V))] if (has_bcs and V is not None) else []
+        _add_diagonals([(A_ii, mpc)], bc_blocks, diagval)
+
+
 def _assemble_matrix_nest(
     A: _PETSc.Mat,  # type: ignore
     a: Sequence[Sequence[Optional[_fem.Form]]],
@@ -295,32 +350,16 @@ def _assemble_matrix_nest(
     """Assemble an array of forms into a PETSc matrix of type "nest"."""
     if bc_data is None:
         bc_data = BCData([bc for bc in bcs])
-
-    for i, a_row in enumerate(a):
-        for j, a_block in enumerate(a_row):
-            if a_block is not None:
-                _assemble_form(
-                    A.getNestSubMatrix(i, j),
-                    a_block,
-                    (constraints[i], constraints[j]),
-                    bc_data,
-                    num_threads,
-                )
-
-    # The diagonal is a property of a block, so it is added once per diagonal
-    # block after every form has been assembled.
-    slave_blocks = []
-    bc_blocks = []
-    for i, a_row in enumerate(a):
-        a_ii = a_row[i] if i < len(a_row) else None
-        if a_ii is None:
-            continue
-        A_ii = A.getNestSubMatrix(i, i)
-        slave_blocks.append((A_ii, constraints[i]))
-        if a_ii.function_spaces[0] is a_ii.function_spaces[1]:
-            bc_blocks.append((A_ii, bc_data.rows(a_ii.function_spaces[0])))
-
-    _finalize_matrix(A, slave_blocks, bc_blocks, diagval)
+    nr, nc = A.getNestSize()
+    blocks: list[list[Optional[_PETSc.Mat]]] = []  # type: ignore
+    for k in range(nr):
+        row = []
+        for col in range(nc):
+            A_kl = A.getNestSubMatrix(k, col)
+            row.append(None if A_kl.handle == 0 else A_kl)
+        blocks.append(row)
+    _assemble_blocks(blocks, a, constraints, bc_data, diagval, num_threads)
+    A.assemble()
 
 
 def assemble_matrix_nest(
@@ -403,39 +442,12 @@ def _assemble_matrix_block(
     if bc_data is None:
         bc_data = BCData(list(bcs))
     is_ = _block_index_sets(constraints)
-
-    # The space of each diagonal block, for the Dirichlet rows
-    spaces: list[Optional[_fem.FunctionSpace]] = [None] * len(constraints)
-    for i, a_row in enumerate(a):
-        for j, a_ij in enumerate(a_row):
-            if a_ij is None:
-                continue
-            if spaces[i] is None:
-                spaces[i] = a_ij.function_spaces[0]
-            if j < len(spaces) and spaces[j] is None:
-                spaces[j] = a_ij.function_spaces[1]
-
-    for i, a_row in enumerate(a):
-        for j, a_ij in enumerate(a_row):
-            if a_ij is None:
-                continue
-            A_ij = A.getLocalSubMatrix(is_[i], is_[j])
-            _assemble_form(A_ij, a_ij, (constraints[i], constraints[j]), bc_data, num_threads)
-            A.restoreLocalSubMatrix(is_[i], is_[j], A_ij)
-
-    # The diagonal is a property of a block, so it is added once per diagonal block after
-    # every form has been assembled, including for a block that has no form of its own
-    for i, mpc in enumerate(constraints):
-        V = spaces[i]
-        has_bcs = V is not None and bc_data.markers(V, V)[0].size > 0
-        if a[i][i] is None and has_bcs:
-            raise RuntimeError(
-                f"Diagonal block ({i}, {i}) cannot be 'None' and have a Dirichlet condition applied."
-                " Consider assembling a zero block."
-            )
-        A_ii = A.getLocalSubMatrix(is_[i], is_[i])
-        bc_blocks = [(A_ii, bc_data.rows(V))] if (has_bcs and V is not None) else []
-        _add_diagonals([(A_ii, mpc)], bc_blocks, diagval)
-        A.restoreLocalSubMatrix(is_[i], is_[i], A_ii)
-
+    # The local sub-matrix of every block, as a master may put entries in any of them
+    blocks = [[A.getLocalSubMatrix(is_k, is_l) for is_l in is_] for is_k in is_]
+    try:
+        _assemble_blocks(blocks, a, constraints, bc_data, diagval, num_threads)
+    finally:
+        for is_k, row in zip(is_, blocks):
+            for is_l, A_kl in zip(is_, row):
+                A.restoreLocalSubMatrix(is_k, is_l, A_kl)
     A.assemble()

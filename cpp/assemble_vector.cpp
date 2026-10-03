@@ -14,10 +14,12 @@
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/mesh/cell_types.h>
+#include <format>
 #include <functional>
 #include <iostream>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -46,7 +48,8 @@ template <typename T, std::floating_point U, std::size_t estride,
                           std::span<const std::int32_t>, std::int32_t,
                           std::size_t>
 void _assemble_entities_impl(
-    std::span<T> b, std::span<const std::int32_t> active_entities,
+    const dolfinx_mpc::VectorTarget<T>& b,
+    std::span<const std::int32_t> active_entities,
     std::span<const std::int32_t> active_cells0,
     const dolfinx::fem::DofMap& dofmap,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
@@ -56,6 +59,7 @@ void _assemble_entities_impl(
   // Get MPC data
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       masters = mpc->masters();
+  std::span<const std::int32_t> master_blocks = mpc->master_blocks();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
       = mpc->coefficients();
   std::span<const std::int8_t> is_slave = mpc->is_slave();
@@ -92,13 +96,14 @@ void _assemble_entities_impl(
       // contributions
       std::ranges::copy(be, be_copy.begin());
       dolfinx_mpc::modify_mpc_vec<T>(b, _be, _be_copy, dofs, num_dofs, bs,
-                                     is_slave, slaves, masters, coefficients);
+                                     is_slave, slaves, masters, coefficients,
+                                     master_blocks);
     }
 
     // Add local contribution to b
     for (std::size_t i = 0; i < num_dofs; ++i)
       for (int k = 0; k < bs; ++k)
-        b[bs * dofs[i] + k] += be[bs * i + k];
+        b.at(b.block, bs * dofs[i] + k) += be[bs * i + k];
   }
 }
 
@@ -121,13 +126,14 @@ void _assemble_entities_impl(
 template <typename T, std::floating_point U, typename Tabulate>
   requires std::invocable<Tabulate&, std::span<T>, std::size_t>
 void _assemble_interior_facets(
-    std::span<T> b, std::span<const std::int32_t> facets,
+    const dolfinx_mpc::VectorTarget<T>& b, std::span<const std::int32_t> facets,
     std::span<const std::int32_t> facets0, const dolfinx::fem::DofMap& dofmap,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
     Tabulate&& tabulate)
 {
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       masters = mpc->masters();
+  std::span<const std::int32_t> master_blocks = mpc->master_blocks();
   const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
       = mpc->coefficients();
   std::span<const std::int8_t> is_slave = mpc->is_slave();
@@ -154,18 +160,19 @@ void _assemble_interior_facets(
       {
         std::ranges::copy(be_s, be_copy.begin());
         dolfinx_mpc::modify_mpc_vec<T>(b, be_s, be_copy, dofs, num_dofs, bs,
-                                       is_slave, slaves, masters, coefficients);
+                                       is_slave, slaves, masters, coefficients,
+                                       master_blocks);
       }
       for (std::size_t i = 0; i < num_dofs; ++i)
         for (int k = 0; k < bs; ++k)
-          b[bs * dofs[i] + k] += be_s[bs * i + k];
+          b.at(b.block, bs * dofs[i] + k) += be_s[bs * i + k];
     }
   }
 }
 
 template <typename T, std::floating_point U>
 void _assemble_vector(
-    std::span<T> b, const dolfinx::fem::Form<T>& L,
+    const dolfinx_mpc::VectorTarget<T>& b, const dolfinx::fem::Form<T>& L,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
     std::size_t num_threads)
 {
@@ -368,7 +375,26 @@ void _assemble_vector(
     _assemble_interior_facets<T, U>(b, facets, facets0, *dofmap, mpc, tabulate);
   }
 }
+/// Assemble into the vector of a single block, whose constraint has all its
+/// masters in that block
+template <typename T, std::floating_point U>
+void _assemble_vector_single(
+    std::span<T> b, const dolfinx::fem::Form<T>& L,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
+    std::size_t num_threads)
+{
+  if (mpc->has_cross_block_masters())
+  {
+    throw std::invalid_argument(
+        "The constraint has masters in another block. Assemble into the "
+        "vectors of every block.");
+  }
+  const std::array<std::span<T>, 1> blocks = {b};
+  _assemble_vector<T, U>(dolfinx_mpc::VectorTarget<T>{blocks, 0, mpc->block()},
+                         L, mpc, num_threads);
+}
 } // namespace
+
 //-----------------------------------------------------------------------------
 
 void dolfinx_mpc::assemble_vector(
@@ -377,7 +403,7 @@ void dolfinx_mpc::assemble_vector(
         const dolfinx_mpc::MultiPointConstraint<double, double>>& mpc,
     std::size_t num_threads)
 {
-  _assemble_vector<double>(b, L, mpc, num_threads);
+  _assemble_vector_single<double>(b, L, mpc, num_threads);
 }
 
 void dolfinx_mpc::assemble_vector(
@@ -388,7 +414,7 @@ void dolfinx_mpc::assemble_vector(
         mpc,
     std::size_t num_threads)
 {
-  _assemble_vector<std::complex<double>>(b, L, mpc, num_threads);
+  _assemble_vector_single<std::complex<double>>(b, L, mpc, num_threads);
 }
 
 void dolfinx_mpc::assemble_vector(
@@ -397,7 +423,7 @@ void dolfinx_mpc::assemble_vector(
         const dolfinx_mpc::MultiPointConstraint<float, float>>& mpc,
     std::size_t num_threads)
 {
-  _assemble_vector<float>(b, L, mpc, num_threads);
+  _assemble_vector_single<float>(b, L, mpc, num_threads);
 }
 
 void dolfinx_mpc::assemble_vector(
@@ -408,6 +434,54 @@ void dolfinx_mpc::assemble_vector(
         mpc,
     std::size_t num_threads)
 {
-  _assemble_vector<std::complex<float>>(b, L, mpc, num_threads);
+  _assemble_vector_single<std::complex<float>>(b, L, mpc, num_threads);
 }
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+template <typename T, std::floating_point U>
+void dolfinx_mpc::assemble_vector_blocks(
+    std::span<const std::span<T>> b, int i, const dolfinx::fem::Form<T>& L,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
+    std::size_t num_threads)
+{
+  if (i < 0 or static_cast<std::size_t>(i) >= b.size())
+  {
+    throw std::invalid_argument(
+        std::format("Block {} is not one of the {} vectors.", i, b.size()));
+  }
+  if (mpc->has_cross_block_masters()
+      and b.size() != mpc->function_spaces().size())
+  {
+    throw std::invalid_argument(
+        std::format("The constraint has masters in other blocks; expected the "
+                    "vectors of all {} blocks, got {}.",
+                    mpc->function_spaces().size(), b.size()));
+  }
+  _assemble_vector<T, U>(
+      dolfinx_mpc::VectorTarget<T>{b, static_cast<std::size_t>(i),
+                                   mpc->block()},
+      L, mpc, num_threads);
+}
+
+template void dolfinx_mpc::assemble_vector_blocks<double, double>(
+    std::span<const std::span<double>>, int, const dolfinx::fem::Form<double>&,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<double, double>>&,
+    std::size_t);
+template void dolfinx_mpc::assemble_vector_blocks<float, float>(
+    std::span<const std::span<float>>, int, const dolfinx::fem::Form<float>&,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<float, float>>&,
+    std::size_t);
+template void dolfinx_mpc::assemble_vector_blocks<std::complex<double>, double>(
+    std::span<const std::span<std::complex<double>>>, int,
+    const dolfinx::fem::Form<std::complex<double>>&,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<double>, double>>&,
+    std::size_t);
+template void dolfinx_mpc::assemble_vector_blocks<std::complex<float>, float>(
+    std::span<const std::span<std::complex<float>>>, int,
+    const dolfinx::fem::Form<std::complex<float>>&,
+    const std::shared_ptr<
+        const dolfinx_mpc::MultiPointConstraint<std::complex<float>, float>>&,
+    std::size_t);
