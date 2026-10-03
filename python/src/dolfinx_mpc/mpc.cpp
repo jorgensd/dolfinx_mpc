@@ -200,6 +200,55 @@ template <typename T, std::floating_point U>
 void declare_functions(nb::module_& m)
 {
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices<U>);
+  m.def(
+      "create_multipointconstraints",
+      [](const std::vector<
+             std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
+         const std::vector<nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>>&
+             slaves,
+         const std::vector<nb::ndarray<nb::numpy, std::int64_t, nb::ndim<1>>>&
+             masters,
+         const std::vector<nb::ndarray<nb::numpy, T, nb::ndim<1>>>& coeffs,
+         const std::vector<nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>>&
+             owners,
+         const std::vector<nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>>&
+             offsets,
+         const std::vector<nb::ndarray<nb::numpy, T, nb::ndim<1>>>& rhs_coeffs,
+         const std::vector<std::vector<
+             std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>>>& bcs,
+         std::optional<U> filter)
+      {
+        const std::size_t nb = V.size();
+        if (slaves.size() != nb or masters.size() != nb or coeffs.size() != nb
+            or owners.size() != nb or offsets.size() != nb
+            or rhs_coeffs.size() != nb or bcs.size() != nb)
+        {
+          throw std::invalid_argument(
+              "Every argument must have one entry per function space.");
+        }
+        std::vector<dolfinx_mpc::mpc_block_view<T>> data;
+        data.reserve(nb);
+        for (std::size_t k = 0; k < nb; ++k)
+        {
+          data.push_back(
+              {std::span<const std::int32_t>(slaves[k].data(),
+                                             slaves[k].size()),
+               std::span<const std::int64_t>(masters[k].data(),
+                                             masters[k].size()),
+               std::span<const T>(coeffs[k].data(), coeffs[k].size()),
+               std::span<const std::int32_t>(owners[k].data(),
+                                             owners[k].size()),
+               std::span<const std::int32_t>(offsets[k].data(),
+                                             offsets[k].size()),
+               std::span<const T>(rhs_coeffs[k].data(), rhs_coeffs[k].size()),
+               bcs[k]});
+        }
+        return dolfinx_mpc::create_multipointconstraints<T, U>(V, data, filter);
+      },
+      nb::arg("V"), nb::arg("slaves"), nb::arg("masters"), nb::arg("coeffs"),
+      nb::arg("owners"), nb::arg("offsets"), nb::arg("rhs_coeffs"),
+      nb::arg("bcs"), nb::arg("filter").none(),
+      "Create the multi point constraints of several function spaces together");
 
   m.def("create_sparsity_pattern", &dolfinx_mpc::create_sparsity_pattern<T, U>);
 
