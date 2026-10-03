@@ -15,6 +15,7 @@ from .dirichletbc import BCData
 from .assemble_matrix import (
     assemble_matrix,
     assemble_matrix_nest,
+    create_matrix,
     create_matrix_nest,
     create_sparsity_pattern,
 )
@@ -23,6 +24,7 @@ from .assemble_vector import (
     apply_mpc_lifting,
     assemble_vector,
     assemble_vector_nest,
+    create_vector,
     create_vector_nest,
 )
 from .integralcondition import create_integral_constraint
@@ -32,9 +34,11 @@ from .problem import LinearProblem, NonlinearProblem, assemble_jacobian_mpc, ass
 __all__ = [
     "BCData",
     "assemble_matrix",
+    "create_matrix",
     "create_matrix_nest",
     "assemble_matrix_nest",
     "assemble_vector",
+    "create_vector",
     "apply_lifting",
     "apply_mpc_lifting",
     "assemble_vector_nest",

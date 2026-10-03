@@ -100,17 +100,14 @@ def test_mixed_element(cell_type, ghost_mode):
     L_nest = dolfinx.fem.form((L0, L1))
 
     # Assemble MPC nest matrix
-    A_nest = dolfinx_mpc.create_matrix_nest(a_nest, [mpc_v, mpc_q])
-    dolfinx_mpc.assemble_matrix_nest(A_nest, a_nest, [mpc_v, mpc_q], bcs)
-    A_nest.assemble()
+    A_nest = dolfinx_mpc.assemble_matrix(a_nest, [mpc_v, mpc_q], bcs, kind="nest")
 
     # Assemble original nest matrix
     A_org_nest = dolfinx.fem.petsc.assemble_matrix(a_nest, bcs, kind="nest")
     A_org_nest.assemble()
 
     # MPC nested rhs
-    b_nest = dolfinx_mpc.create_vector_nest(L_nest, [mpc_v, mpc_q])
-    dolfinx_mpc.assemble_vector_nest(b_nest, L_nest, [mpc_v, mpc_q])
+    b_nest = dolfinx_mpc.assemble_vector(L_nest, [mpc_v, mpc_q], kind="nest")
     # FIXME: This should be a DOLFINx_MPC operation
     bcs1 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(a_nest, 1), bcs)
     dolfinx.fem.petsc.apply_lifting(b_nest, a_nest, bcs1)

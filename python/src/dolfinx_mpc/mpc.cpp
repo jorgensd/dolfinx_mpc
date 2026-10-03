@@ -374,6 +374,16 @@ void declare_mpc_data(nb::module_& m, std::string type)
           });
 }
 
+/// @brief Test if A has row and column block size 1, in which case blocked and
+/// non-blocked insertion of dof indices are equivalent.
+bool unit_block_size(Mat A)
+{
+  PetscInt bs0 = -1, bs1 = -1;
+  dolfinx::common::petsc::check(MatGetBlockSizes(A, &bs0, &bs1),
+                                "MatGetBlockSizes");
+  return bs0 == 1 and bs1 == 1;
+}
+
 template <typename T = PetscScalar, std::floating_point U>
 void declare_petsc_functions(nb::module_& m)
 {
@@ -399,9 +409,31 @@ void declare_petsc_functions(nb::module_& m)
              dof_marker1,
          std::size_t num_threads)
       {
+        // Blocked indices are only meaningful to a matrix whose local-to-global
+        // map is blocked, as for a stand-alone or nested matrix. The local
+        // sub-matrix of a monolithic matrix has block size 1, and the blocked
+        // indices must be expanded; with a scalar form they are plain indices.
+        std::function<int(std::span<const std::int32_t>,
+                          std::span<const std::int32_t>,
+                          const std::span<const T>&)>
+            set_block;
+        if (!unit_block_size(A))
+          set_block = dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES);
+        else
+        {
+          const int bs0 = a.function_spaces()[0]->dofmap()->bs();
+          const int bs1 = a.function_spaces()[1]->dofmap()->bs();
+          if (bs0 == 1 and bs1 == 1)
+            set_block = dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES);
+          else
+          {
+            set_block = dolfinx::la::petsc::Matrix::set_block_expand_fn(
+                A, bs0, bs1, ADD_VALUES);
+          }
+        }
         dolfinx_mpc::assemble_matrix(
-            dolfinx::la::petsc::Matrix::set_block_fn(A, ADD_VALUES),
-            dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a, mpc0, mpc1,
+            set_block, dolfinx::la::petsc::Matrix::set_fn(A, ADD_VALUES), a,
+            mpc0, mpc1,
             std::span<const std::int8_t>(dof_marker0.data(),
                                          dof_marker0.size()),
             std::span<const std::int8_t>(dof_marker1.data(),
@@ -482,6 +514,18 @@ void declare_petsc_functions(nb::module_& m)
       "Lift the inhomogeneity of a multi point constraint into vector b");
 
   m.def(
+      "create_matrix_block",
+      [](const std::vector<std::vector<const dolfinx::fem::Form<T>*>>& a,
+         const std::vector<
+             std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>>& mpcs0,
+         const std::vector<
+             std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>>& mpcs1,
+         const std::optional<std::string>& type)
+      { return dolfinx_mpc::create_matrix_block<T, U>(a, mpcs0, mpcs1, type); },
+      nb::rv_policy::take_ownership, nb::arg("a"), nb::arg("mpcs0"),
+      nb::arg("mpcs1"), nb::arg("type").none(),
+      "Create a monolithic PETSc Mat for an array of bilinear forms.");
+  m.def(
       "create_matrix",
       [](const dolfinx::fem::Form<T>& a,
          const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>& mpc)
@@ -505,6 +549,22 @@ void declare_petsc_functions(nb::module_& m)
         return _A;
       },
       nb::rv_policy::take_ownership, "Create a PETSc Mat for bilinear form.");
+  m.def(
+      "create_matrix",
+      [](const dolfinx::fem::Form<T>& a,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+         const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
+         const std::optional<std::string>& type)
+      {
+        auto A = dolfinx_mpc::create_matrix(a, mpc0, mpc1,
+                                            type.value_or(std::string()));
+        Mat _A = A.mat();
+        PetscObjectReference((PetscObject)_A);
+        return _A;
+      },
+      nb::rv_policy::take_ownership, nb::arg("a"), nb::arg("mpc0"),
+      nb::arg("mpc1"), nb::arg("type").none(),
+      "Create a PETSc Mat of the given type for bilinear form.");
 }
 
 } // namespace

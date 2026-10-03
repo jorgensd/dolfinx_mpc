@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, cast
 
 from petsc4py import PETSc as _PETSc
 
@@ -15,12 +15,46 @@ import dolfinx.fem as _fem
 import numpy
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer
-from dolfinx.la.petsc import _zero_vector, create_vector
+from dolfinx.la.petsc import _zero_vector
+from dolfinx.la.petsc import create_vector as _create_petsc_vector
 
 import dolfinx_mpc.cpp
 
+from ._kind import Kind, blocked_layout, deprecated
 from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint, _float_classes
+
+
+def _block_maps(constraints: Sequence[MultiPointConstraint]):
+    """Extended index map and block size of each block, as the vector layout is built from."""
+    return [
+        (mpc.function_space.dofmap.index_map._cpp_object, mpc.function_space.dofmap.index_map_bs) for mpc in constraints
+    ]
+
+
+def _is_block_vector(b: _PETSc.Vec) -> bool:  # type: ignore
+    """Whether `b` is a monolithic vector of several blocks, as made by :func:`create_vector_block`."""
+    return b.getType() != "nest" and b.getAttr("_blocks") is not None
+
+
+def _block_offsets(b: _PETSc.Vec) -> tuple[Sequence[int], Sequence[int]]:  # type: ignore
+    """Offsets of the owned and of the ghost entries of each block of the monolithic vector `b`."""
+    return cast("tuple[Sequence[int], Sequence[int]]", b.getAttr("_blocks"))
+
+
+def _block_scratch(b: _PETSc.Vec, k: int) -> numpy.ndarray:  # type: ignore
+    """A zeroed array with the `[owned, ghosts]` layout of block `k` of the monolithic vector `b`."""
+    off_owned, off_ghost = _block_offsets(b)
+    size = (off_owned[k + 1] - off_owned[k]) + (off_ghost[k + 1] - off_ghost[k])
+    return numpy.zeros(size, dtype=_PETSc.ScalarType)  # type: ignore
+
+
+def _add_to_block(b_local: numpy.ndarray, b: _PETSc.Vec, k: int, values: numpy.ndarray):  # type: ignore
+    """Add `values`, laid out `[owned, ghosts]`, to block `k` of the local array of a monolithic vector."""
+    off_owned, off_ghost = _block_offsets(b)
+    size = off_owned[k + 1] - off_owned[k]
+    b_local[off_owned[k] : off_owned[k + 1]] += values[:size]
+    b_local[off_ghost[k] : off_ghost[k + 1]] += values[size:]
 
 
 def apply_lifting(
@@ -102,6 +136,19 @@ def apply_lifting(
             dolfinx_mpc.cpp.mpc.apply_lifting(
                 b_sub.array_w, _a, markers, values, x0, scale, mpc_i._cpp_object, num_threads
             )
+    elif _is_block_vector(b):
+        assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
+        x0_blocks = [] if x0 is None else _cpp.la.petsc.get_local_vectors(x0, _block_maps(constraint))  # type: ignore[arg-type]
+        with b.localForm() as b_local:
+            for k, (a_sub, mpc_k) in enumerate(zip(form, constraint)):
+                markers, values = _lifting_data(a_sub)
+                _a = [None if f is None else f._cpp_object for f in a_sub]  # type:ignore
+                # Lifting only adds to `b`, so it is applied to zeros and the result added
+                scratch = _block_scratch(b, k)
+                dolfinx_mpc.cpp.mpc.apply_lifting(
+                    scratch, _a, markers, values, x0_blocks, scale, mpc_k._cpp_object, num_threads
+                )
+                _add_to_block(b_local.array_w, b, k, scratch)
     else:
         with contextlib.ExitStack() as stack:
             if x0 is None:
@@ -161,6 +208,16 @@ def apply_mpc_lifting(
             _a = [None if f is None else f._cpp_object for f in a_sub]  # type: ignore
             _mpc1 = [c._cpp_object for c in cols]  # type: ignore
             dolfinx_mpc.cpp.mpc.apply_mpc_lifting(b_sub.array_w, _a, scale, mpc_i._cpp_object, _mpc1, num_threads)
+    elif _is_block_vector(b):
+        assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
+        cols = constraint if constraint1 is None else constraint1
+        _mpc1 = [c._cpp_object for c in cols]  # type: ignore
+        with b.localForm() as b_local:
+            for k, (a_sub, mpc_k) in enumerate(zip(form, constraint)):
+                _a = [None if f is None else f._cpp_object for f in a_sub]  # type: ignore
+                scratch = _block_scratch(b, k)
+                dolfinx_mpc.cpp.mpc.apply_mpc_lifting(scratch, _a, scale, mpc_k._cpp_object, _mpc1, num_threads)
+                _add_to_block(b_local.array_w, b, k, scratch)
     else:
         assert isinstance(constraint, MultiPointConstraint)
         cols = [constraint] if constraint1 is None else constraint1
@@ -173,31 +230,79 @@ def apply_mpc_lifting(
     t.stop()
 
 
-def assemble_vector(
-    form: _fem.Form,
-    constraint: MultiPointConstraint,
-    b: Optional[_PETSc.Vec] = None,  # type: ignore
-    num_threads: Optional[int] = 1,
+def create_vector(
+    L: Union[_fem.Form, Sequence[_fem.Form]],
+    constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    kind: Kind = None,
 ) -> _PETSc.Vec:  # type: ignore
     """
-    Assemble a linear form into vector `b` with corresponding multi point constraint
+    Create a PETSc vector appropriate for a linear form, or a sequence of them, under multi point
+    constraints.
+
+    As in :func:`dolfinx.fem.petsc.create_vector`, a single form gives a ghosted vector, while a
+    sequence of forms with `kind` ``"nest"``, or a nested sequence of matrix types, gives a vector
+    of type ``nest`` and any other `kind` a single, monolithic vector. On each process the
+    monolithic vector is ``[b_0, b_1, ..., b_n, b_0g, b_1g, ..., b_ng]``, where ``b_i`` holds the
+    owned entries of block ``i`` and ``b_ig`` its ghosts, which include the masters added by the
+    constraint. The offsets of the blocks are in the attribute ``_blocks``, see
+    :func:`dolfinx.la.petsc.create_vector`.
 
     Args:
-        form: The linear form
-        constraint: The multi point constraint
+        L: A linear form, or a sequence of them, one per block
+        constraint: The multi point constraint, or one per block
+        kind: The kind of vector, as above
+
+    Returns:
+        A PETSc vector, not initialised to zero.
+    """
+    if not isinstance(L, Sequence):
+        assert isinstance(constraint, MultiPointConstraint)
+        return _create_petsc_vector(
+            [(constraint.function_space.dofmap.index_map, constraint.function_space.dofmap.index_map_bs)]
+        )
+    assert isinstance(constraint, Sequence)
+    if blocked_layout(kind)[0] == "nest":
+        return _create_vector_nest(L, constraint)
+    return _create_vector_block(L, constraint)
+
+
+def assemble_vector(
+    form: Union[_fem.Form, Sequence[_fem.Form]],
+    constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    b: Optional[_PETSc.Vec] = None,  # type: ignore
+    num_threads: Optional[int] = 1,
+    kind: Kind = None,
+) -> _PETSc.Vec:  # type: ignore
+    """
+    Assemble a linear form, or a sequence of them, into vector `b` with the corresponding multi
+    point constraints. The kind of vector is selected by `kind`, or by the type of `b` if it is
+    supplied.
+
+    Args:
+        form: The linear form, or a sequence of them, one per block
+        constraint: The multi point constraint, or one per block
         b: PETSc vector to assemble into. Assembly is additive, so `b` is not
             zeroed; use `dolfinx.la.petsc._zero_vector` first to discard its
             contents. If not supplied a new, zeroed vector is created.
+        num_threads: The number of threads to use for certain operations
+        kind: The kind of vector to create when `b` is not supplied, see :func:`create_vector`.
 
     Returns:
         The vector with the assembled linear form (`b` if supplied)
     """
-
     if b is None:
-        b = create_vector([(constraint.function_space.dofmap.index_map, constraint.function_space.dofmap.index_map_bs)])
+        b = create_vector(form, constraint, kind)
         _zero_vector(b)
     t = Timer("~MPC: Assemble vector (C++)")
-    _assemble_form(b, form, constraint, num_threads)
+    if isinstance(form, Sequence):
+        assert isinstance(constraint, Sequence)
+        if b.getType() == "nest":
+            _assemble_vector_nest(b, form, constraint, num_threads)
+        else:
+            _assemble_vector_block(b, form, constraint, num_threads)
+    else:
+        assert isinstance(constraint, MultiPointConstraint)
+        _assemble_form(b, form, constraint, num_threads)
     t.stop()
     return b
 
@@ -218,10 +323,24 @@ def _assemble_form(
         dolfinx_mpc.cpp.mpc.assemble_vector(b_local.array_w, form._cpp_object, constraint._cpp_object, num_threads)
 
 
+def _create_vector_nest(L: Sequence[_fem.Form], constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
+    """Create a PETSc vector of type "nest" appropriate for the provided multi point constraints."""
+    assert len(constraints) == len(L)
+
+    maps = [
+        (constraint.function_space.dofmap.index_map._cpp_object, constraint.function_space.dofmap.index_map_bs)
+        for constraint in constraints
+    ]
+    return _cpp.fem.petsc.create_vector_nest(maps)
+
+
 def create_vector_nest(L: Sequence[_fem.Form], constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
     """
     Create a PETSc vector of type "nest" appropriate for the provided multi
     point constraints
+
+    .. deprecated::
+        Use :func:`create_vector` with ``kind="nest"``.
 
     Args:
         L: A sequence of linear forms
@@ -230,13 +349,23 @@ def create_vector_nest(L: Sequence[_fem.Form], constraints: Sequence[MultiPointC
     Returns:
         PETSc.Vec: A PETSc vector of type "nest"  #type: ignore
     """
-    assert len(constraints) == len(L)
+    deprecated("create_vector_nest", "create_vector(L, constraints, kind='nest')")
+    return _create_vector_nest(L, constraints)
 
-    maps = [
-        (constraint.function_space.dofmap.index_map._cpp_object, constraint.function_space.dofmap.index_map_bs)
-        for constraint in constraints
-    ]
-    return _cpp.fem.petsc.create_vector_nest(maps)
+
+def _assemble_vector_nest(
+    b: _PETSc.Vec,  # type: ignore
+    L: Sequence[_fem.Form],
+    constraints: Sequence[MultiPointConstraint],
+    num_threads: Optional[int] = 1,
+):
+    """Assemble linear forms into a PETSc vector of type "nest". Additive, `b` is not zeroed."""
+    assert len(constraints) == len(L)
+    assert b.getType() == "nest"
+
+    b_sub_vecs = b.getNestSubVecs()
+    for i, L_row in enumerate(L):
+        _assemble_form(b_sub_vecs[i], L_row, constraints[i], num_threads)
 
 
 def assemble_vector_nest(
@@ -248,6 +377,9 @@ def assemble_vector_nest(
     """
     Assemble a linear form into a PETSc vector of type "nest"
 
+    .. deprecated::
+        Use :func:`assemble_vector`, which selects the layout from `b`.
+
     Args:
         b: A PETSc vector of type "nest" to assemble into. Assembly is additive,
             so `b` is not zeroed; use `dolfinx.la.petsc._zero_vector` first to
@@ -255,9 +387,53 @@ def assemble_vector_nest(
         L: A sequence of linear forms
         constraints: An ordered list of multi point constraints
     """
-    assert len(constraints) == len(L)
-    assert b.getType() == "nest"
+    deprecated("assemble_vector_nest", "assemble_vector(L, constraints, b)")
+    _assemble_vector_nest(b, L, constraints, num_threads)
 
-    b_sub_vecs = b.getNestSubVecs()
-    for i, L_row in enumerate(L):
-        _assemble_form(b_sub_vecs[i], L_row, constraints[i], num_threads)
+
+def _create_vector_block(L: Sequence[_fem.Form], constraints: Sequence[MultiPointConstraint]) -> _PETSc.Vec:  # type: ignore
+    """
+    Create a monolithic PETSc vector appropriate for the provided multi point constraints.
+
+    On each process the vector is ``[b_0, b_1, ..., b_n, b_0g, b_1g, ..., b_ng]``, where ``b_i``
+    holds the owned entries of block ``i`` and ``b_ig`` its ghosts, which include the masters
+    added by the constraint. The offsets of the blocks are in the attribute ``_blocks``, see
+    :func:`dolfinx.la.petsc.create_vector`.
+
+    Args:
+        L: A sequence of linear forms, one per block
+        constraints: An ordered list of multi point constraints, one per block
+
+    Returns:
+        A PETSc vector with the layout above, not initialised to zero.
+    """
+    assert len(constraints) == len(L)
+    maps = [(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs) for mpc in constraints]
+    # A vector of one block gets the block layout too, rather than none
+    return _create_petsc_vector(maps, kind=_PETSc.Vec.Type.MPI)  # type: ignore
+
+
+def _assemble_vector_block(
+    b: _PETSc.Vec,  # type: ignore
+    L: Sequence[_fem.Form],
+    constraints: Sequence[MultiPointConstraint],
+    num_threads: Optional[int] = 1,
+):
+    """
+    Assemble linear forms into a monolithic PETSc vector.
+
+    Args:
+        b: A vector made by :func:`create_vector_block` to assemble into. Assembly is additive,
+            so `b` is not zeroed; use `dolfinx.la.petsc._zero_vector` first to discard its
+            contents.
+        L: A sequence of linear forms, one per block
+        constraints: An ordered list of multi point constraints, one per block
+    """
+    assert len(constraints) == len(L)
+    if not _is_block_vector(b):
+        raise ValueError("The vector must be created by create_vector_block")
+    with b.localForm() as b_local:
+        for k, (L_k, mpc_k) in enumerate(zip(L, constraints)):
+            scratch = _block_scratch(b, k)
+            dolfinx_mpc.cpp.mpc.assemble_vector(scratch, L_k._cpp_object, mpc_k._cpp_object, num_threads)
+            _add_to_block(b_local.array_w, b, k, scratch)

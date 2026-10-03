@@ -234,12 +234,8 @@ L: list[dolfinx.fem.Form] = dolfinx.fem.form([L0, L1])
 
 # Assemble LHS matrix and RHS vector
 with dolfinx.common.Timer("~Stokes: Assemble LHS and RHS"):
-    A = dolfinx_mpc.create_matrix_nest(a, [mpc, mpc_q])
-    dolfinx_mpc.assemble_matrix_nest(A, a, [mpc, mpc_q], bcs)
-    A.assemble()
-
-    b = dolfinx_mpc.create_vector_nest(L, [mpc, mpc_q])
-    dolfinx_mpc.assemble_vector_nest(b, L, [mpc, mpc_q])
+    A = dolfinx_mpc.assemble_matrix(a, [mpc, mpc_q], bcs, kind="nest")
+    b = dolfinx_mpc.assemble_vector(L, [mpc, mpc_q], kind="nest")
 
 # Set Dirichlet boundary condition values in the RHS
 bcs1 = dolfinx.fem.bcs_by_block(dolfinx.fem.extract_function_spaces(a, 1), bcs)

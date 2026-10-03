@@ -14,17 +14,14 @@ from petsc4py import PETSc
 import dolfinx.fem.petsc
 import ufl
 from dolfinx import fem as _fem
-from dolfinx.la.petsc import _ghost_update, _zero_vector, create_vector
+from dolfinx.la.petsc import _ghost_update, _zero_vector
 
-from dolfinx_mpc.cpp import mpc as _cpp_mpc
-
-from .assemble_matrix import assemble_matrix, assemble_matrix_nest, create_matrix_nest
+from .assemble_matrix import assemble_matrix, create_matrix
 from .assemble_vector import (
     apply_lifting,
     apply_mpc_lifting,
     assemble_vector,
-    assemble_vector_nest,
-    create_vector_nest,
+    create_vector,
 )
 from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint
@@ -84,17 +81,11 @@ def assemble_jacobian_mpc(
 
     # Assemble Jacobian
     J.zeroEntries()
-    if J.getType() == "nest":
-        assemble_matrix_nest(J, jacobian, mpc, bcs, diagval=1.0, bc_data=bc_data)  # type: ignore
-    else:
-        assemble_matrix(jacobian, mpc, bcs, diagval=1.0, A=J, bc_data=bc_data)  # type: ignore
+    assemble_matrix(jacobian, mpc, bcs, diagval=1.0, A=J, bc_data=bc_data)  # type: ignore
     J.assemble()
     if preconditioner is not None:
         P.zeroEntries()
-        if P.getType() == "nest":
-            assemble_matrix_nest(P, preconditioner, mpc, bcs, diagval=1.0, bc_data=bc_data)  # type: ignore
-        else:
-            assemble_matrix(preconditioner, mpc, bcs, diagval=1.0, A=P, bc_data=bc_data)  # type: ignore
+        assemble_matrix(preconditioner, mpc, bcs, diagval=1.0, A=P, bc_data=bc_data)  # type: ignore
 
         P.assemble()
 
@@ -149,12 +140,7 @@ def assemble_residual_mpc(
         mpc.backsubstitution(u)
     # Assemble the residual
     _zero_vector(F)
-    if x.getType() == "nest":
-        assemble_vector_nest(F, residual, mpc)  # type: ignore
-    else:
-        assert isinstance(residual, _fem.Form)
-        assert isinstance(mpc, MultiPointConstraint)
-        assemble_vector(residual, mpc, F)
+    assemble_vector(residual, mpc, F)  # type: ignore
 
     # Lift vector
     try:
@@ -276,10 +262,10 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         if kind == "nest" or isinstance(kind, Sequence):
             assert isinstance(mpc, Sequence)
             assert isinstance(self._J, Sequence)
-            self._A = create_matrix_nest(self._J, mpc)
+            self._A = create_matrix(self._J, mpc, kind)
         elif kind is None:
             assert isinstance(mpc, MultiPointConstraint)
-            self._A = _cpp_mpc.create_matrix(self._J._cpp_object, mpc._cpp_object)
+            self._A = create_matrix(self._J, mpc)
         else:
             raise ValueError("Unsupported kind for matrix: {}".format(kind))
 
@@ -287,12 +273,12 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
         if kind == "nest":
             assert isinstance(mpc, Sequence)
             assert isinstance(self._F, Sequence)
-            self._b = create_vector_nest(self._F, mpc)
-            self._x = create_vector_nest(self._F, mpc)
+            self._b = create_vector(self._F, mpc, "nest")
+            self._x = create_vector(self._F, mpc, "nest")
         else:
             assert isinstance(mpc, MultiPointConstraint)
-            self._b = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
-            self._x = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
+            self._b = create_vector(self._F, mpc)
+            self._x = create_vector(self._F, mpc)
 
         # Create PETSc structure for preconditioner if provided
         prec = self.preconditioner
@@ -300,11 +286,11 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
             if kind == "nest":
                 assert isinstance(prec, Sequence)
                 assert isinstance(mpc, Sequence)
-                self._P_mat = create_matrix_nest(prec, mpc)
+                self._P_mat = create_matrix(prec, mpc, kind)
             else:
                 assert isinstance(prec, _fem.Form)
                 assert isinstance(mpc, MultiPointConstraint)
-                self._P_mat = _cpp_mpc.create_matrix(prec._cpp_object, mpc._cpp_object)
+                self._P_mat = create_matrix(prec, mpc)
         else:
             self._P_mat = None  # type: ignore
 
@@ -414,6 +400,13 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             in ``entity_maps``, ``emap[i]`` is the entity in ``msh``
             corresponding to entity ``i`` in the integration domain
             mesh.
+        kind: The kind of matrix, as in :func:`dolfinx.fem.petsc.LinearProblem`. For a single
+            constraint, a PETSc matrix type, with ``None`` the default. When ``mpc`` is a sequence,
+            one constraint per block, ``"nest"`` or a nested sequence of matrix types assembles a PETSc
+            ``nest`` matrix and vector, whose blocks have those types, and any other kind, such as
+            ``"mpi"``, a single monolithic matrix and vector with the blocks one after another.
+            ``None``, the default, is ``"nest"``, which is what a problem with one constraint per
+            block has always used.
     Examples:
         Example usage:
 
@@ -452,7 +445,18 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         jit_options: dict | None = None,
         P: ufl.Form | Sequence[Sequence[ufl.Form]] | None = None,
         entity_maps: Sequence[dolfinx.mesh.EntityMap] | None = None,
+        kind: str | Sequence[Sequence[str | None]] | None = None,
     ):
+        # One constraint per block gives a nest or a monolithic system, one constraint a single matrix
+        if not (kind is None or isinstance(kind, (str, Sequence))):
+            raise ValueError(
+                f"Unsupported kind {kind!r}, expected None, a PETSc matrix type or a nested sequence of them"
+            )
+        if isinstance(mpc, Sequence):
+            # Without a kind a problem with one constraint per block keeps the nest layout it always had
+            kind = "nest" if kind is None else kind
+        elif kind == "nest" or (kind is not None and not isinstance(kind, str)):
+            raise ValueError(f"kind={kind!r} needs a sequence of constraints, one per block")
         # Compile forms
         form_compiler_options = {} if form_compiler_options is None else form_compiler_options
         jit_options = {} if jit_options is None else jit_options
@@ -470,21 +474,21 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         )
 
         self._mpc = mpc
-        # Nest assembly
+        # Blocked problems
         if isinstance(mpc, Sequence):
-            is_nest = True
+            is_blocked = True
             # Sanity check
             for mpc_i in mpc:
                 if not mpc_i.finalized:
                     raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
                     # Create function containing solution vector
         else:
-            is_nest = False
+            is_blocked = False
             if not mpc.finalized:
                 raise RuntimeError("The multi point constraint has to be finalized before calling initializer")
 
         # Create function(s) containing solution vector(s)
-        if is_nest:
+        if is_blocked:
             if u is None:
                 assert isinstance(self._mpc, Sequence)
                 self._u = [_fem.Function(self._mpc[i].function_space) for i in range(len(self._mpc))]
@@ -528,34 +532,34 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
             entity_maps=entity_maps,
         )
 
-        if is_nest:
+        if is_blocked:
             assert isinstance(mpc, Sequence)
             assert isinstance(self._L, Sequence)
             assert isinstance(self._a, Sequence)
-            self._A = create_matrix_nest(self._a, mpc)
-            self._b = create_vector_nest(self._L, mpc)
-            self._x = create_vector_nest(self._L, mpc)
+            self._A = create_matrix(self._a, mpc, kind)
+            self._b = create_vector(self._L, mpc, kind)
+            self._x = create_vector(self._L, mpc, kind)
             if self._preconditioner is None:
                 self._P_mat = None
             else:
                 assert isinstance(self._preconditioner, Sequence)
-                self._P_mat = create_matrix_nest(self._preconditioner, mpc)
+                self._P_mat = create_matrix(self._preconditioner, mpc, kind)
         else:
             assert isinstance(mpc, MultiPointConstraint)
             assert isinstance(self._L, _fem.Form)
             assert isinstance(self._a, _fem.Form)
-            self._A = _cpp_mpc.create_matrix(self._a._cpp_object, mpc._cpp_object)
-            self._b = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
-            self._x = create_vector([(mpc.function_space.dofmap.index_map, mpc.function_space.dofmap.index_map_bs)])
+            self._A = create_matrix(self._a, mpc, kind)
+            self._b = create_vector(self._L, mpc)
+            self._x = create_vector(self._L, mpc)
             if self._preconditioner is None:
                 self._P_mat = None
             else:
                 assert isinstance(self._preconditioner, _fem.Form)
-                self._P_mat = _cpp_mpc.create_matrix(self._preconditioner._cpp_object, mpc._cpp_object)
+                self._P_mat = create_matrix(self._preconditioner, mpc, kind)
 
         self.bcs = [] if bcs is None else bcs
 
-        if is_nest:
+        if is_blocked:
             assert isinstance(self.u, Sequence)
             comm = self.u[0].function_space.mesh.comm
         else:
@@ -602,13 +606,9 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         else:
             self._mpc.update_constants()
 
-        # Assemble lhs
+        # Assemble lhs. The layout, single, nest or monolithic, is that of the matrix
         self._A.zeroEntries()
-        if self._A.getType() == "nest":
-            assemble_matrix_nest(self._A, self._a, self._mpc, self.bcs, diagval=1.0, bc_data=self._bc_data)  # type: ignore
-        else:
-            assert isinstance(self._a, _fem.Form)
-            assemble_matrix(self._a, self._mpc, bcs=self.bcs, A=self._A, bc_data=self._bc_data)
+        assemble_matrix(self._a, self._mpc, bcs=self.bcs, diagval=1.0, A=self._A, bc_data=self._bc_data)  # type: ignore
 
         self._A.assemble()
         assert self._A.assembled
@@ -616,22 +616,12 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         # Assemble the preconditioner if provided
         if self._P_mat is not None:
             self._P_mat.zeroEntries()
-            if self._P_mat.getType() == "nest":
-                assert isinstance(self._preconditioner, Sequence)
-                assemble_matrix_nest(self._P_mat, self._preconditioner, self._mpc, self.bcs, bc_data=self._bc_data)  # type: ignore
-            else:
-                assert isinstance(self._preconditioner, _fem.Form)
-                assemble_matrix(self._preconditioner, self._mpc, bcs=self.bcs, A=self._P_mat, bc_data=self._bc_data)
+            assemble_matrix(self._preconditioner, self._mpc, bcs=self.bcs, A=self._P_mat, bc_data=self._bc_data)  # type: ignore
             self._P_mat.assemble()
 
         # Assemble the residual
         _zero_vector(self._b)
-        if self._x.getType() == "nest":
-            assemble_vector_nest(self._b, self._L, self._mpc)  # type: ignore
-        else:
-            assert isinstance(self._L, _fem.Form)
-            assert isinstance(self._mpc, MultiPointConstraint)
-            assemble_vector(self._L, self._mpc, self._b)
+        assemble_vector(self._L, self._mpc, self._b)  # type: ignore
 
         # Lift vector
         # Decide between nest/blocked and single form lifting up front, so that a
