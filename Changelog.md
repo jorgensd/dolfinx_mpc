@@ -37,8 +37,8 @@
   have given wrong results silently, is also rejected.
 - **New feature**: rigid spiders (RBE2). `MultiPointConstraint.add_rbe2_topological` and `add_rbe2_geometrical` tie
   dofs to the rigid-body motion of points of a spider mesh (`dolfinx_mpc.create_spider_mesh`), and `update_rbe2`
-  recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::locate_spiders`. Blocked vector assembly skips
-  a block without a linear form. New demo: `python/demos/demo_spider.py`.
+  recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe2`, `update_rbe2` and
+  `locate_spiders`. Blocked vector assembly skips a block without a linear form. New demo: `python/demos/demo_spider.py`.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to
   `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are
