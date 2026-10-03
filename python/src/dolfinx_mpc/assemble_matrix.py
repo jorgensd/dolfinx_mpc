@@ -172,11 +172,10 @@ def create_matrix_nest(a: Sequence[Sequence[_fem.Form | None]], constraints: Seq
 
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):
-            if a[i][j] is None:
+            a_ij = a[i][j]
+            if a_ij is None:
                 continue
-            A_[i][j] = cpp.mpc.create_matrix(
-                a[i][j]._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object
-            )
+            A_[i][j] = cpp.mpc.create_matrix(a_ij._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object)
 
     A = _PETSc.Mat().createNest(
         A_,  # type: ignore
