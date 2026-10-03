@@ -1,9 +1,13 @@
 name: Test MPC
 
 on:
-  # Trigger tests on push
   workflow_dispatch:
   workflow_call:
+    inputs:
+      coverage_only:
+        description: Only run the configuration that produces the coverage report
+        type: boolean
+        default: false
   pull_request:
     branches:
       - main
@@ -11,39 +15,66 @@ on:
     # '*' is a special character in YAML, so string must be quoted
     - cron: "0 8 * * *"
 
+# A new push to a pull request cancels the run it makes obsolete.
+# Runs on main and the nightly run are never cancelled.
+concurrency:
+  group: test-mpc-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check Python formatting
+        run: |
+          pipx run ruff check
+          pipx run ruff format --check
+
+      - name: Check C++ formatting
+        run: pipx run --spec clang-format==22.1.3 clang-format --dry-run --Werror cpp/*.h cpp/*.cpp python/src/dolfinx_mpc/*.cpp
+
+      # Without DOLFINx installed, its imports are untyped (ignore_missing_imports)
+      - name: Check typing
+        run: |
+          cd python
+          pipx run mypy . --exclude=build
+
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      value: ${{ steps.set.outputs.value }}
+    steps:
+      - id: set
+        run: |
+          if [[ "${{ inputs.coverage_only }}" == "true" ]]; then
+            echo 'value={"build_mode":["Release"],"petsc_arch":["linux-gnu-real64-32"]}' >> "${GITHUB_OUTPUT}"
+          else
+            echo 'value={"build_mode":["Release","Debug"],"petsc_arch":["linux-gnu-complex128-32","linux-gnu-complex64-32","linux-gnu-real64-32","linux-gnu-real32-32"]}' >> "${GITHUB_OUTPUT}"
+          fi
+
+  build:
+    needs: [lint, matrix]
+    runs-on: ubuntu-latest
+    # Guards against an MPI deadlock holding the runner for the 6 hour default
+    timeout-minutes: 120
     container: ghcr.io/fenics/dolfinx/dev-env:current-mpich
 
     strategy:
-      matrix:
-        build_mode: [Release, Debug]
-        petsc_arch:
-          [
-            linux-gnu-complex128-32,
-            linux-gnu-complex64-32,
-            linux-gnu-real64-32,
-            linux-gnu-real32-32,
-          ]
-        # Due to: https://gitlab.com/petsc/petsc/-/issues/1288
-        CXX: [c++]
-        #, clang++]
-        CC: [cc]
-        #, clang]
-        # exclude:
-        #   - CC: cc
-        #     CXX: clang++
-        #   - CC: clang
-        #     CXX: c++
+      # Report every configuration, not just the first failure
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.value) }}
     env:
       DOLFINX_BRANCH: main
       BASIX_BRANCH: main
       UFL_BRANCH: main
       FFCX_BRANCH: main
 
-      CC: ${{ matrix.CC }}
-      CXX: ${{ matrix.CXX }}
+      CC: cc
+      CXX: c++
       PETSC_ARCH: "${{ matrix.petsc_arch }}"
       OMPI_ALLOW_RUN_AS_ROOT: 1
       OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
@@ -56,8 +87,6 @@ jobs:
       HDF5_DIR: "/usr/local/"
       MPC_BUILD_MODE: ${{ matrix.build_mode }}
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
-      PYTHONPATH: "/usr/local/dolfinx-${PETSC_TYPE}/lib/python3.12/dist-packages:/usr/local/lib"
-      LD_LIBRARY_PATH: "/usr/local/petsc/${PETSC_ARCH}/lib/:/usr/local"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
       MPC_RUN: coverage run --rcfile=.coveragerc -m mpi4py
     defaults:
@@ -67,26 +96,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # - name: Install clang
-      #   if: ${{ matrix.CC }} == "clang"
-      #   run: |
-      #     apt-get update
-      #     apt-get install -y clang
-
       - name: upgrade pip
         run: python3 -m pip install  --upgrade setuptools pip
-
-      - name: Check formatting
-        run: |
-          python3 -m pip install  ruff
-          ruff check
-          ruff format
-
-      - name: Check typing
-        run: |
-          python3 -m pip install  mypy
-          cd python
-          python3 -m mypy . --exclude=build
 
       - name: Install h5py
         run: |
@@ -100,9 +111,6 @@ jobs:
           basix: ${{ env.BASIX_BRANCH }}
           ffcx: ${{ env.FFCX_BRANCH }}
           petsc_arch: ${{ env.PETSC_ARCH }}
-      - name: Restrict CFFI
-        run:
-           python3 -m pip install --no-build-isolation "cffi<1.17"
 
       - name: Install DOLFINx-MPC (C++)
         run: |
@@ -112,7 +120,7 @@ jobs:
 
       - name: Install DOLFINx-MPC (Python)
         run: python3 -m pip -v install  --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test,optional,docs]
- 
+
       - name: Run tests
         run: |
           for n in 1 2 3 4; do
@@ -168,7 +176,7 @@ jobs:
           coverage html
 
       - name: Upload coverage report as artifact
-        if: matrix.build_mode == 'Release' && matrix.petsc_arch == 'linux-gnu-real64-32' && matrix.CC == 'cc' && matrix.CXX == 'c++'
+        if: matrix.build_mode == 'Release' && matrix.petsc_arch == 'linux-gnu-real64-32'
         uses: actions/upload-artifact@v7
         with:
           name: code-coverage-report
