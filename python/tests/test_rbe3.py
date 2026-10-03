@@ -168,23 +168,30 @@ def test_update_rbe3(gdim):
     facets = [mesh.locate_entities_boundary(domain, fdim, lambda x, s=s: np.isclose(x[0], s)) for s in (1.0, 0.0)]
 
     def build():
-        mpc_body = dolfinx_mpc.MultiPointConstraint(W)
-        mpc_body.add_rbe3_topological(V, fdim, facets, weights)
-        dolfinx_mpc.finalize_multipointconstraints([dolfinx_mpc.MultiPointConstraint(V), mpc_body])
-        return mpc_body
+        mpcs = [dolfinx_mpc.MultiPointConstraint(V), dolfinx_mpc.MultiPointConstraint(W)]
+        mpcs[1].add_rbe3_topological(V, fdim, facets, weights)
+        dolfinx_mpc.finalize_multipointconstraints(mpcs)
+        return mpcs
 
-    mpc_body = build()
-    before = mpc_body._cpp_object.all_coefficients()[0].copy()
+    mpcs = build()
+    before = _global_rows(mpcs[1], mpcs)
     x = domain.geometry.x
     x[:, 0] += 0.2 * x[:, 1] ** 2
     x[:, 1] += 0.1 * x[:, 0]
     W.mesh.geometry.x[:, :gdim] += np.array([0.05, -0.1, 0.2][:gdim])
-    mpc_body.update_rbe3()
-    updated = mpc_body._cpp_object.all_coefficients()[0]
-    reference = build()._cpp_object
-    np.testing.assert_array_equal(mpc_body._cpp_object.all_masters(), reference.all_masters())
-    np.testing.assert_allclose(updated, reference.all_coefficients()[0], atol=_atol)
-    assert comm.allreduce(np.abs(updated - before).max(initial=0.0), op=MPI.MAX) > 0.01
+    mpcs[1].update_rbe3()
+    updated = _global_rows(mpcs[1], mpcs)
+    # Compared by global master: two constraints may number their ghosts differently
+    reference = build()
+    expected = _global_rows(reference[1], reference)
+    assert set(updated) == set(expected)
+    change = 0.0
+    for key, row in updated.items():
+        assert set(row) == set(expected[key])
+        for m, value in row.items():
+            assert np.isclose(value, expected[key][m], atol=_atol)
+            change = max(change, abs(value - before[key][m]))
+    assert comm.allreduce(change, op=MPI.MAX) > 0.01
 
 
 def _reaction(V, a, u, dofs):
