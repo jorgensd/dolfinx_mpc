@@ -802,7 +802,7 @@ create_multipointconstraints(
   std::vector<std::shared_ptr<MultiPointConstraint<T, U>>> mpcs;
   mpcs.reserve(nb);
   std::vector<int> local_flags;
-  local_flags.reserve(4 * nb);
+  local_flags.reserve(5 * nb);
   for (std::size_t k = 0; k < nb; ++k)
   {
     const mpc_block_view<T>& d = data[k];
@@ -857,15 +857,36 @@ create_multipointconstraints(
       offsets = kept_offsets;
     }
 
+    // A slave constrained twice, as when two periodic conditions share a
+    // corner, has no meaning and would corrupt the offsets below. Build the
+    // block empty instead of throwing, so that this process still takes part
+    // in the collective calls, and report it with the other verdicts.
+    std::vector<std::int32_t> sorted_slaves(d.slaves.begin(), d.slaves.end());
+    std::ranges::sort(sorted_slaves);
+    const int duplicate_slave
+        = std::ranges::adjacent_find(sorted_slaves) != sorted_slaves.end() ? 1
+                                                                           : 0;
+    static constexpr std::int32_t no_offsets[1] = {0};
+    std::span<const std::int32_t> slaves = d.slaves;
+    if (duplicate_slave)
+    {
+      slaves = {};
+      masters = {};
+      coeffs = {};
+      owners = {};
+      offsets = std::span<const std::int32_t>(no_offsets, 1);
+    }
+
     // Never skip a block, even one without masters on this process: creating
     // the extended index map is collective, and so is the reduction below
     mpcs.push_back(std::shared_ptr<MultiPointConstraint<T, U>>(
         new MultiPointConstraint<T, U>()));
     const typename MultiPointConstraint<T, U>::checks flags = mpcs.back()->init(
-        *V[k], d.slaves, masters, coeffs, owners, offsets, d.rhs_coeffs, d.bcs);
+        *V[k], slaves, masters, coeffs, owners, offsets, d.rhs_coeffs, d.bcs);
     local_flags.insert(local_flags.end(),
                        {flags.slave_is_bc, flags.master_is_slave,
-                        flags.unmapped_master, flags.inhomogeneous});
+                        flags.unmapped_master, flags.inhomogeneous,
+                        duplicate_slave});
   }
 
   // One reduction for every verdict of every block
@@ -875,7 +896,15 @@ create_multipointconstraints(
                 V[0]->mesh()->comm());
   for (std::size_t k = 0; k < nb; ++k)
   {
-    if (global_flags[4 * k] != 0)
+    if (global_flags[5 * k + 4] != 0)
+    {
+      throw std::invalid_argument(std::format(
+          "A dof is the slave of more than one constraint (block {}). Give "
+          "each slave one relation, for instance with a single indicator for "
+          "a domain that is periodic in several directions.",
+          k));
+    }
+    if (global_flags[5 * k] != 0)
     {
       throw std::invalid_argument(std::format(
           "A dof is both a slave of the multi point constraint and "
@@ -883,7 +912,7 @@ create_multipointconstraints(
           "one of the two.",
           k));
     }
-    if (global_flags[4 * k + 1] != 0)
+    if (global_flags[5 * k + 1] != 0)
     {
       throw std::invalid_argument(std::format(
           "A master of the multi point constraint (block {}) is also a "
@@ -891,7 +920,7 @@ create_multipointconstraints(
           "of masters that are not constrained.",
           k));
     }
-    if (global_flags[4 * k + 2] != 0)
+    if (global_flags[5 * k + 2] != 0)
     {
       throw std::invalid_argument(std::format(
           "A master of the multi point constraint (block {}) has no local "
@@ -900,7 +929,7 @@ create_multipointconstraints(
     }
   }
   for (std::size_t k = 0; k < nb; ++k)
-    mpcs[k]->finalize_offsets(global_flags[4 * k + 3] != 0);
+    mpcs[k]->finalize_offsets(global_flags[5 * k + 3] != 0);
   return mpcs;
 }
 } // namespace dolfinx_mpc
