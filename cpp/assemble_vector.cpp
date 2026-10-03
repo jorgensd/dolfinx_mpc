@@ -5,12 +5,20 @@
 // SPDX-License-Identifier:    MIT
 
 #include "assemble_vector.h"
+#include <algorithm>
+#include <array>
+#include <concepts>
+#include <cstdint>
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/assembler.h>
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/mesh/cell_types.h>
+#include <functional>
 #include <iostream>
+#include <memory>
+#include <span>
+#include <vector>
 
 using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
     const std::int32_t,
@@ -26,19 +34,23 @@ namespace
 /// @param[in] active_cells0 The corresponding cells for the test function space
 /// @param[in] dofmap The dofmap
 /// @param[in] mpc The multipoint constraint
-/// @param[in] assemble_local_element_matrix Function f(be, entities, entties0,
-/// index) that assembles into a local element matrix for a given entity
+/// @param[in] assemble_local_element_vector Callable `f(be, entity, cell0,
+/// index)` tabulating the (transformed) element vector of an entity. This is
+/// the standard DOLFINx tabulation; everything specific to the constraint
+/// happens here.
 /// @tparam T Scalar type for vector
 /// @tparam e stride Stride for each entity in active_entities
-template <typename T, std::floating_point U, std::size_t estride>
+template <typename T, std::floating_point U, std::size_t estride,
+          typename Tabulate>
+  requires std::invocable<Tabulate&, std::span<T>,
+                          std::span<const std::int32_t>, std::int32_t,
+                          std::size_t>
 void _assemble_entities_impl(
     std::span<T> b, std::span<const std::int32_t> active_entities,
     std::span<const std::int32_t> active_cells0,
     const dolfinx::fem::DofMap& dofmap,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
-    const std::function<void(std::span<T>, std::span<const std::int32_t>,
-                             std::int32_t, std::size_t)>
-        assemble_local_element_vector)
+    Tabulate&& assemble_local_element_vector)
 {
 
   // Get MPC data
@@ -87,6 +99,67 @@ void _assemble_entities_impl(
     for (std::size_t i = 0; i < num_dofs; ++i)
       for (int k = 0; k < bs; ++k)
         b[bs * dofs[i] + k] += be[bs * i + k];
+  }
+}
+
+/// Assemble an interior facet kernel into a vector and apply the multipoint
+/// constraint.
+///
+/// The element vector spans the two cells of the facet. Each half is a cell
+/// vector of the test space, so the constraint is applied to each side on its
+/// own; a side on which the test function has no cell (negative entry in
+/// `facets0`, e.g. on an interface between two subdomains) is skipped.
+/// @param[in, out] b The vector to assemble into
+/// @param[in] facets The facets of the integration mesh, as (cell, local facet)
+/// for each side
+/// @param[in] facets0 The corresponding entities for the test function space
+/// @param[in] dofmap The dofmap of the test function space
+/// @param[in] mpc The multipoint constraint
+/// @param[in] tabulate Callable `tabulate(be, f)` tabulating the (transformed)
+/// element vector of the `f`-th facet. A template parameter rather than a
+/// `std::function`, so the call is inlined.
+template <typename T, std::floating_point U, typename Tabulate>
+  requires std::invocable<Tabulate&, std::span<T>, std::size_t>
+void _assemble_interior_facets(
+    std::span<T> b, std::span<const std::int32_t> facets,
+    std::span<const std::int32_t> facets0, const dolfinx::fem::DofMap& dofmap,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
+    Tabulate&& tabulate)
+{
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
+      masters = mpc->masters();
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
+      = mpc->coefficients();
+  std::span<const std::int8_t> is_slave = mpc->is_slave();
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
+      cell_to_slaves = mpc->cell_to_slaves();
+
+  const std::size_t num_dofs = dofmap.map().extent(1);
+  const int bs = dofmap.bs();
+  const std::size_t ndim = bs * num_dofs;
+  std::vector<T> be(2 * ndim);
+  std::vector<T> be_copy(ndim);
+  for (std::size_t f = 0; f < facets.size() / 4; ++f)
+  {
+    tabulate(std::span<T>(be), f);
+    for (int s = 0; s < 2; ++s)
+    {
+      const std::int32_t cell0 = facets0[4 * f + 2 * s];
+      if (cell0 < 0)
+        continue;
+      std::span<T> be_s(be.data() + s * ndim, ndim);
+      std::span<const std::int32_t> dofs = dofmap.cell_dofs(cell0);
+      std::span<const std::int32_t> slaves = cell_to_slaves->links(cell0);
+      if (!slaves.empty())
+      {
+        std::ranges::copy(be_s, be_copy.begin());
+        dolfinx_mpc::modify_mpc_vec<T>(b, be_s, be_copy, dofs, num_dofs, bs,
+                                       is_slave, slaves, masters, coefficients);
+      }
+      for (std::size_t i = 0; i < num_dofs; ++i)
+        for (int k = 0; k < bs; ++k)
+          b[bs * dofs[i] + k] += be_s[bs * i + k];
+    }
   }
 }
 
@@ -181,13 +254,8 @@ void _assemble_vector(
       auto cell = entity.front();
 
       // Fetch the coordinates of the cell
-      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-          x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-      for (std::size_t i = 0; i < x_dofs.size(); ++i)
-      {
-        std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                            std::next(coordinate_dofs.begin(), 3 * i));
-      }
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cell,
+                                           std::span(coordinate_dofs));
 
       // Tabulate tensor
       std::ranges::fill(be, 0);
@@ -226,13 +294,8 @@ void _assemble_vector(
       // Fetch the coordinates of the cell
       const std::int32_t cell = entity[0];
       const int local_facet = entity[1];
-      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-          x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-      for (std::size_t i = 0; i < x_dofs.size(); ++i)
-      {
-        std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                            std::next(coordinate_dofs.begin(), 3 * i));
-      }
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cell,
+                                           std::span(coordinate_dofs));
 
       // Tabulate tensor. A kernel that asks for the facet permutation would
       // dereference a null pointer if it were not supplied.
@@ -257,22 +320,52 @@ void _assemble_vector(
                                      assemble_local_exterior_facet_vector);
   }
 
-  if (L.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0) > 0)
+  for (int i = 0;
+       i < L.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0); ++i)
   {
-    throw std::runtime_error(
-        "Interior facet integrals currently not supported");
-    // std::function<std::uint8_t(std::size_t)> get_perm;
-    // if (L.needs_facet_permutations())
-    // {
-    //   const int tdim = mesh->topology()->dim();
-    //   mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
-    //   mesh->topology_mutable().create_entity_permutations();
-    //   const std::vector<std::uint8_t>& perms
-    //       = mesh->topology()->get_facet_permutations();
-    //   get_perm = [&perms](std::size_t i) { return perms[i]; };
-    // }
-    // else
-    //   get_perm = [](std::size_t) { return 0; };
+    const auto& fn = L.kernel(dolfinx::fem::IntegralType::interior_facet, i, 0);
+    const auto& [coeffs, cstride]
+        = coefficients.at({dolfinx::fem::IntegralType::interior_facet, i});
+    std::span<const std::int32_t> facets
+        = L.domain(dolfinx::fem::IntegralType::interior_facet, i, 0);
+    std::span<const std::int32_t> facets0
+        = L.domain_arg(dolfinx::fem::IntegralType::interior_facet, 0, i, 0);
+    std::vector<U> facet_coordinate_dofs(2 * 3 * num_dofs_g);
+    const std::size_t ndim = dofmap->bs() * dofmap->map().extent(1);
+
+    const auto tabulate = [&](std::span<T> be, std::size_t f)
+    {
+      const std::array<std::int32_t, 2> cells
+          = {facets[4 * f], facets[4 * f + 2]};
+      const std::array<int, 2> local_facet
+          = {facets[4 * f + 1], facets[4 * f + 3]};
+      std::span<U> cdofs(facet_coordinate_dofs);
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cells[0], cdofs);
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cells[1],
+                                           cdofs.subspan(3 * num_dofs_g));
+      const std::array<std::uint8_t, 2> perm
+          = perms.empty()
+                ? std::array<std::uint8_t, 2>{0, 0}
+                : std::array{
+                      perms[cells[0] * num_facets_per_cell + local_facet[0]],
+                      perms[cells[1] * num_facets_per_cell + local_facet[1]]};
+      std::ranges::fill(be, 0);
+      fn(be.data(), coeffs.data() + f * 2 * cstride, constants.data(),
+         facet_coordinate_dofs.data(), local_facet.data(), perm.data(),
+         nullptr);
+
+      // Each half of the element vector belongs to one cell of the test space
+      if (transform_set)
+      {
+        for (int s = 0; s < 2; ++s)
+        {
+          const std::int32_t cell0 = facets0[4 * f + 2 * s];
+          if (cell0 >= 0)
+            dof_transform(be.subspan(s * ndim, ndim), cell_info0, cell0, 1);
+        }
+      }
+    };
+    _assemble_interior_facets<T, U>(b, facets, facets0, *dofmap, mpc, tabulate);
   }
 }
 } // namespace

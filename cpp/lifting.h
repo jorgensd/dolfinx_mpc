@@ -8,7 +8,10 @@
 
 #include "MultiPointConstraint.h"
 #include "assemble_vector.h"
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <concepts>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/fem/Constant.h>
@@ -20,6 +23,7 @@
 #include <dolfinx/mesh/Geometry.h>
 #include <dolfinx/mesh/cell_types.h>
 #include <format>
+#include <functional>
 #include <memory>
 #include <span>
 #include <stdexcept>
@@ -47,24 +51,28 @@ namespace impl
 /// @param[in] mpc1 Multipoint constraints to apply to the rows of the vector
 /// @param[in] fetch_cells Function that fetches the cell index for each active
 /// entity
-/// @param[in] lift_local_vector Function that lift local matrix Ae into local
-/// vector be, i.e. be <- be - scale * (A (g - x0))
+/// @param[in] lift_local_vector Callable that lifts the local matrix Ae into
+/// the local vector be, i.e. be <- be - scale * (A (g - x0)). This is the
+/// standard DOLFINx lifting; everything specific to the constraint happens
+/// here.
 /// @tparam T Scalartype of local vector
 /// @tparam estride Stride in actiave entities
-template <typename T, std::size_t estride, std::floating_point U>
-void lift_bc_entities(
-    std::span<T> b, std::span<const std::int32_t> active_entities,
-    std::span<const std::int32_t> active_entities0,
-    std::span<const std::int32_t> active_entities1,
-    const dolfinx::fem::DofMap& dofmap0, const dolfinx::fem::DofMap& dofmap1,
-    std::span<const T> bc_values1, std::span<const std::int8_t> bc_markers1,
-    const dolfinx_mpc::MultiPointConstraint<T, U>& mpc0,
-    const std::function<const std::int32_t(std::span<const std::int32_t>)>
-        fetch_cells,
-    const std::function<void(std::span<T>, std::span<T>, const int, const int,
-                             std::span<const std::int32_t>, std::int32_t,
-                             std::int32_t, std::size_t)>
-        lift_local_vector)
+template <typename T, std::size_t estride, std::floating_point U,
+          typename FetchCell, typename LiftLocal>
+  requires std::invocable<FetchCell&, std::span<const std::int32_t>>
+           and std::invocable<LiftLocal&, std::span<T>, std::span<T>, int, int,
+                              std::span<const std::int32_t>, std::int32_t,
+                              std::int32_t, std::size_t>
+void lift_bc_entities(std::span<T> b,
+                      std::span<const std::int32_t> active_entities,
+                      std::span<const std::int32_t> active_entities0,
+                      std::span<const std::int32_t> active_entities1,
+                      const dolfinx::fem::DofMap& dofmap0,
+                      const dolfinx::fem::DofMap& dofmap1,
+                      std::span<const T> bc_values1,
+                      std::span<const std::int8_t> bc_markers1,
+                      const dolfinx_mpc::MultiPointConstraint<T, U>& mpc0,
+                      FetchCell&& fetch_cells, LiftLocal&& lift_local_vector)
 {
   const int bs0 = dofmap0.bs();
   const int bs1 = dofmap1.bs();
@@ -145,6 +153,88 @@ void lift_bc_entities(
         b[bs0 * dmap0[i] + k] += be[bs0 * i + k];
   }
 };
+
+/// Lift Dirichlet values through interior facet integrals into b, applying
+/// the multi point constraint on the rows.
+///
+/// The element vector spans the two cells of each facet. Each half is a cell
+/// vector of the test space, so the constraint is applied to each side on its
+/// own. A negative cell in `facets0`/`facets1` means the argument has no cell
+/// on that side, e.g. on an interface between two subdomains.
+/// @param[in] facets0 Integration entities of the test function space, as
+/// (cell, local facet) for each side
+/// @param[in] facets1 Integration entities of the trial function space
+/// @param[in] lift_local_vector Callable `f(be, f)` setting the joint element
+/// vector `be` of the `f`-th facet to `-scale * A (g - x0)`. This is the
+/// standard DOLFINx lifting; everything specific to the constraint happens
+/// here.
+template <typename T, std::floating_point U, typename LiftLocal>
+  requires std::invocable<LiftLocal&, std::span<T>, std::size_t>
+void lift_bc_interior_facets(
+    std::span<T> b, std::span<const std::int32_t> facets0,
+    std::span<const std::int32_t> facets1, const dolfinx::fem::DofMap& dofmap0,
+    const dolfinx::fem::DofMap& dofmap1,
+    std::span<const std::int8_t> bc_markers1,
+    const dolfinx_mpc::MultiPointConstraint<T, U>& mpc0,
+    LiftLocal&& lift_local_vector)
+{
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
+      masters = mpc0.masters();
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> coefficients
+      = mpc0.coefficients();
+  std::span<const std::int8_t> is_slave = mpc0.is_slave();
+  const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
+      cell_to_slaves = mpc0.cell_to_slaves();
+
+  const int bs0 = dofmap0.bs();
+  const int bs1 = dofmap1.bs();
+  const std::size_t num_dofs0 = dofmap0.map().extent(1);
+  const std::size_t ndim0 = bs0 * num_dofs0;
+  std::vector<T> be(2 * ndim0);
+  std::vector<T> be_copy(ndim0);
+
+  for (std::size_t f = 0; f < facets0.size() / 4; ++f)
+  {
+    const std::array<std::int32_t, 2> cells0
+        = {facets0[4 * f], facets0[4 * f + 2]};
+    const std::array<std::int32_t, 2> cells1
+        = {facets1[4 * f], facets1[4 * f + 2]};
+
+    // Skip the facet unless a trial side carries a lifted value
+    bool has_bc = false;
+    for (int s = 0; s < 2 and !has_bc; ++s)
+    {
+      if (cells1[s] < 0)
+        continue;
+      for (std::int32_t dof : dofmap1.cell_dofs(cells1[s]))
+        for (int k = 0; k < bs1; ++k)
+          has_bc = has_bc or bc_markers1[bs1 * dof + k];
+    }
+    if (!has_bc)
+      continue;
+
+    lift_local_vector(std::span<T>(be), f);
+
+    // Constrain and add each test side
+    for (int s = 0; s < 2; ++s)
+    {
+      if (cells0[s] < 0)
+        continue;
+      std::span<T> be_s(be.data() + s * ndim0, ndim0);
+      std::span<const std::int32_t> dmap0 = dofmap0.cell_dofs(cells0[s]);
+      std::span<const std::int32_t> slaves = cell_to_slaves->links(cells0[s]);
+      if (!slaves.empty())
+      {
+        std::ranges::copy(be_s, be_copy.begin());
+        dolfinx_mpc::modify_mpc_vec<T>(b, be_s, be_copy, dmap0, num_dofs0, bs0,
+                                       is_slave, slaves, masters, coefficients);
+      }
+      for (std::size_t i = 0; i < num_dofs0; ++i)
+        for (int k = 0; k < bs0; ++k)
+          b[bs0 * dmap0[i] + k] += be_s[bs0 * i + k];
+    }
+  }
+}
 
 /// @brief Lift a set of column values into the vector b.
 ///
@@ -272,13 +362,8 @@ void lift_values(
       auto cell = entity.front();
 
       // Fetch the coordinates of the cell
-      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-          x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-      for (std::size_t i = 0; i < x_dofs.size(); ++i)
-      {
-        std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                            std::next(coordinate_dofs.begin(), 3 * i));
-      }
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cell,
+                                           std::span(coordinate_dofs));
 
       // Tabulate tensor
       std::ranges::fill(Ae, 0);
@@ -345,13 +430,8 @@ void lift_values(
       const int local_facet = entity[1];
 
       // Fetch the coordinates of the cell
-      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-          x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-      for (std::size_t i = 0; i < x_dofs.size(); ++i)
-      {
-        std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                            std::next(coordinate_dofs.begin(), 3 * i));
-      }
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cell,
+                                           std::span(coordinate_dofs));
 
       // Tabulate tensor. A kernel that asks for the facet permutation would
       // dereference a null pointer if it were not supplied.
@@ -397,23 +477,99 @@ void lift_values(
         b, active_facets, active_facets0, active_facets1, *dofmap0, *dofmap1,
         bc_values1, bc_markers1, *mpc0, fetch_cells, lift_bc_exterior_facet);
   }
-  if (a->num_integrals(dolfinx::fem::IntegralType::interior_facet, 0) > 0)
+  for (int i = 0;
+       i < a->num_integrals(dolfinx::fem::IntegralType::interior_facet, 0); ++i)
   {
+    const auto& [coeffs, cstride]
+        = coefficients.at({dolfinx::fem::IntegralType::interior_facet, i});
+    const auto& kernel
+        = a->kernel(dolfinx::fem::IntegralType::interior_facet, i, 0);
+    std::span<const std::int32_t> facets
+        = a->domain(dolfinx::fem::IntegralType::interior_facet, i, 0);
+    std::span<const std::int32_t> facets0
+        = a->domain_arg(dolfinx::fem::IntegralType::interior_facet, 0, i, 0);
+    std::span<const std::int32_t> facets1
+        = a->domain_arg(dolfinx::fem::IntegralType::interior_facet, 1, i, 0);
+    const std::size_t ndim0 = dofmap0->bs() * dofmap0->map().extent(1);
+    const std::size_t ndim1 = bs1 * dofmap1->map().extent(1);
+    const std::size_t num_rows = 2 * ndim0;
+    const std::size_t num_cols = 2 * ndim1;
+    std::vector<U> facet_coordinate_dofs(2 * 3 * num_dofs_g);
+    std::vector<T> Ae(num_rows * num_cols);
+    auto lift_bc_interior_facet = [&](std::span<T> be, std::size_t f)
+    {
+      // Entities are (cell, local facet) for each side
+      const std::array<std::int32_t, 2> cells
+          = {facets[4 * f], facets[4 * f + 2]};
+      const std::array<int, 2> local_facet
+          = {facets[4 * f + 1], facets[4 * f + 3]};
+      const std::array<std::int32_t, 2> cells0
+          = {facets0[4 * f], facets0[4 * f + 2]};
+      const std::array<std::int32_t, 2> cells1
+          = {facets1[4 * f], facets1[4 * f + 2]};
+      std::span<U> cdofs(facet_coordinate_dofs);
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cells[0], cdofs);
+      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cells[1],
+                                           cdofs.subspan(3 * num_dofs_g));
+      const std::array<std::uint8_t, 2> perm
+          = perms.empty()
+                ? std::array<std::uint8_t, 2>{0, 0}
+                : std::array{
+                      perms[cells[0] * num_facets_per_cell + local_facet[0]],
+                      perms[cells[1] * num_facets_per_cell + local_facet[1]]};
+      std::ranges::fill(Ae, T(0));
+      kernel(Ae.data(), coeffs.data() + f * 2 * cstride, constants.data(),
+             facet_coordinate_dofs.data(), local_facet.data(), perm.data(),
+             nullptr);
 
-    throw std::runtime_error(
-        "Interior facet integrals currently not supported");
+      // Transform each block row and block column whose cell exists
+      std::span<T> _Ae(Ae);
+      if (transform_set0 and cells0[0] >= 0)
+        dof_transform(_Ae, cell_info0, cells0[0], num_cols);
+      if (transform_set0 and cells0[1] >= 0)
+      {
+        dof_transform(_Ae.subspan(ndim0 * num_cols), cell_info0, cells0[1],
+                      num_cols);
+      }
+      if (transform_set1 and cells1[0] >= 0)
+        dof_transform_to_transpose(_Ae, cell_info1, cells1[0], num_rows);
+      if (transform_set1 and cells1[1] >= 0)
+      {
+        // The second cell's columns are not contiguous, so transform row by
+        // row
+        for (std::size_t row = 0; row < num_rows; ++row)
+        {
+          dof_transform_to_transpose(_Ae.subspan(row * num_cols + ndim1, ndim1),
+                                     cell_info1, cells1[1], 1);
+        }
+      }
 
-    //   std::function<std::uint8_t(std::size_t)> get_perm;
-    //   if (a->needs_facet_permutations())
-    //   {
-    //     mesh->topology_mutable().create_connectivity(tdim - 1, tdim);
-    //     mesh->topology_mutable().create_entity_permutations();
-    //     const std::vector<std::uint8_t>& perms
-    //         = mesh->topology()->get_facet_permutations();
-    //     get_perm = [&perms](std::size_t i) { return perms[i]; };
-    //   }
-    //   else
-    //     get_perm = [](std::size_t) { return 0; };
+      // be <- -scale * A (g - x0), over the lifted columns of each trial side
+      std::ranges::fill(be, T(0));
+      for (int s = 0; s < 2; ++s)
+      {
+        if (cells1[s] < 0)
+          continue;
+        std::span<const std::int32_t> dmap1 = dofmap1->cell_dofs(cells1[s]);
+        for (std::size_t j = 0; j < dmap1.size(); ++j)
+        {
+          for (int k = 0; k < bs1; ++k)
+          {
+            const std::int32_t jj = bs1 * dmap1[j] + k;
+            if (bc_markers1[jj])
+            {
+              const T bc = bc_values1[jj];
+              const T _x0 = x0.empty() ? T(0) : x0[jj];
+              const std::size_t col = s * ndim1 + bs1 * j + k;
+              for (std::size_t m = 0; m < num_rows; ++m)
+                be[m] -= Ae[m * num_cols + col] * scale * (bc - _x0);
+            }
+          }
+        }
+      }
+    };
+    lift_bc_interior_facets<T, U>(b, facets0, facets1, *dofmap0, *dofmap1,
+                                  bc_markers1, *mpc0, lift_bc_interior_facet);
   }
 }
 /// @brief Apply lifting for the inhomogeneity of a multi point constraint.
