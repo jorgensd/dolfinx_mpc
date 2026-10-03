@@ -35,6 +35,26 @@
   once, as when two periodic conditions share a corner, which previously failed on the offsets in serial
   and hung in parallel. A master without a local index in the extended space, which would previously
   have given wrong results silently, is also rejected.
+- **New feature**: monolithic matrices and vectors for a system with one constraint per block. `dolfinx_mpc.create_matrix`,
+  `assemble_matrix`, `create_vector` and `assemble_vector` take a `kind`, as in `dolfinx.fem.petsc`: a single form gives a
+  matrix of that PETSc type, an array of forms with `kind="nest"` (or a nested sequence of matrix types, one per block)
+  a `nest` matrix, and any other kind a single matrix with the blocks one after another, the dofs of each ordered
+  `[owned, ghosts]` with the ghosts of its extended index map. A diagonal block without a form still gets the diagonal
+  entry of its slaves. `LinearProblem` accepts `kind` as well; without one a problem with several constraints stays
+  `nest`, and `kind="mpi"` selects the monolithic layout. Element tensors are inserted with the block-size dispatch
+  of DOLFINx, so a vector-valued block works in the local sub-matrix of a monolithic matrix. C++:
+  `dolfinx_mpc::create_matrix_block`.
+- `NonlinearProblem` accepts the same `kind`: with one constraint per block, `None` or `"mpi"` gives a monolithic
+  Jacobian and residual, `"nest"` or a nested sequence of matrix types a nest. The SNES callbacks receive the block
+  layout of a monolithic system and set it on the vectors SNES hands them, as DOLFINx does.
+- **BUGFIX**: the residual of a blocked `NonlinearProblem`, nest included, called `dolfinx.fem.petsc._assign_block_data`,
+  which DOLFINx removed. `demo_stokes_nonlinear_nest.py` failed in SNES because of it and is run in CI again.
+- **BUGFIX**: `demo_linear_wave_problem.py` did not zero its right-hand side between time steps. Assembly has been additive since the
+  assemblers stopped zeroing their output, so the vector accumulated and the solution grew exponentially. It zeroes the vector
+  now, uses the unified API, and checks that the energy is conserved.
+- **Deprecated**: `create_matrix_nest`, `assemble_matrix_nest`, `create_vector_nest` and `assemble_vector_nest`. They
+  still work and warn; use the functions above with `kind="nest"`, which also select the layout from the matrix or
+  vector passed in.
 - **BUGFIX**: `NonlinearProblem` failed with a non-nest `P`, and with `J=None` for a single form.
 - `LinearProblem` accepts `entity_maps`, as `NonlinearProblem` already did, so forms coupling two meshes need not be compiled by hand.
 - **Forms coupling spaces on different meshes** — a space on a submesh coupled to one on its

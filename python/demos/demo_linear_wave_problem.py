@@ -63,7 +63,7 @@ import dolfinx.la.petsc
 import numpy as np
 import pyvista
 from basix.ufl import element
-from dolfinx import default_scalar_type, plot
+from dolfinx import default_real_type, default_scalar_type, plot
 from dolfinx.fem import Constant, Function, assemble_scalar, form, functionspace
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
 from ufl import (
@@ -81,10 +81,9 @@ from ufl import (
 from dolfinx_mpc import (
     MultiPointConstraint,
     apply_lifting,
-    assemble_matrix_nest,
-    assemble_vector_nest,
-    create_matrix_nest,
-    create_vector_nest,
+    assemble_matrix,
+    assemble_vector,
+    create_vector,
 )
 
 # -
@@ -312,13 +311,13 @@ warp_gif = True
 # ## Mesh, spaces, functions
 # We create a {py:class}`ufl.MixedFunctionSpace` for the functions `V,p`
 
-msh = create_unit_square(MPI.COMM_WORLD, Nx, Nx)
-P1 = element("Lagrange", "triangle", 1)
+msh = create_unit_square(MPI.COMM_WORLD, Nx, Nx, dtype=default_real_type)
+P1 = element("Lagrange", "triangle", 1, dtype=default_real_type)
 XV = functionspace(msh, P1)
 Xp = functionspace(msh, P1)
 Z = MixedFunctionSpace(XV, Xp)
 eps = 0.8
-bfield = Constant(msh, (eps, np.sqrt(1 - eps**2)))
+bfield = Constant(msh, default_scalar_type(((eps), np.sqrt(1 - eps**2))))
 x = SpatialCoordinate(msh)
 n = FacetNormal(msh)
 
@@ -329,7 +328,7 @@ facets = locate_entities_boundary(
     msh, dim=1, marker=lambda x: np.logical_or.reduce((np.isclose(x[1], 1.0), np.isclose(x[1], 0.0)))
 )
 dofs = fem.locate_dofs_topological(V=Xp, entity_dim=1, entities=facets)
-bcs = [fem.dirichletbc(np.array(0.0), dofs=dofs, V=Xp)]
+bcs = [fem.dirichletbc(np.array(0.0, dtype=default_scalar_type), dofs=dofs, V=Xp)]
 
 # ## Periodic BC
 # Along the left and right wall, we set periodic boundary conditions
@@ -382,14 +381,14 @@ mpc_V.finalize()
 # +
 
 # new time step values
-V_new = fem.Function(mpc_V.function_space)
-p_new = fem.Function(mpc_p.function_space)
+V_new = fem.Function(mpc_V.function_space, dtype=default_scalar_type)
+p_new = fem.Function(mpc_p.function_space, dtype=default_scalar_type)
 V, p = TrialFunctions(Z)
 W, q = TestFunctions(Z)
 
 # initial conditions
-V_old = Function(mpc_V.function_space)
-p_old = Function(mpc_p.function_space)
+V_old = Function(mpc_V.function_space, dtype=default_scalar_type)
+p_old = Function(mpc_p.function_space, dtype=default_scalar_type)
 V_old.interpolate(lambda x: 0.0 * x[0])
 p_old.interpolate(lambda x: np.exp(-1 * (((x[0] - 0.5) / 0.15) ** 2 + ((x[1] - 0.5) / 0.15) ** 2)))
 
@@ -408,15 +407,12 @@ E = inner(grad(p), bfield * W) * dx
 F = inner(grad(V), bfield * q) * dx
 N = inner(p, q) * dx
 a = M + dt / 2 * E + dt / 2 * F + N
-a_blocked = form(extract_blocks(a))
+a_blocked = form(extract_blocks(a), dtype=default_scalar_type)
 
-# As the system matrix is time-independent, we use {py:func}`create_matrix_nest<dolfinx_mpc.create_matrix_nest>`
-# to create the system matrix, and {py:func}`assemble_matrix_nest<dolfinx_mpc.assemble_matrix_nest>`
-# to assemble the matrix once, outside the temporal loop.
+# As the system matrix is time-independent, we use {py:func}`assemble_matrix<dolfinx_mpc.assemble_matrix>`
+# with `kind="nest"` to create and assemble the system matrix once, outside the temporal loop.
 
-A = create_matrix_nest(a_blocked, [mpc_V, mpc_p])
-assemble_matrix_nest(A, a_blocked, [mpc_V, mpc_p], bcs)
-A.assemble()
+A = assemble_matrix(a_blocked, [mpc_V, mpc_p], bcs, kind="nest")
 
 # We define the Krylov subspace solver using {py:class}`petsc4py.PETSc.KSP`
 # and use a direct LU solver as preconditioner.
@@ -435,22 +431,36 @@ L = (
     + inner(p_old, q) * dx
     - dt / 2 * inner(grad(V_old), bfield * q) * dx
 )
-L_blocked = form(extract_blocks(L))
-b = create_vector_nest(L_blocked, [mpc_V, mpc_p])
+L_blocked = form(extract_blocks(L), dtype=default_scalar_type)
+b = create_vector(L_blocked, [mpc_V, mpc_p], kind="nest")
 
 # We perform the time dependent solve in a temporal loop.
-# Note that we use {py:func}`assemble_vector_nest<dolfinx_mpc.assemble_vector_nest>`,
+# Note that we use {py:func}`assemble_vector<dolfinx_mpc.assemble_vector>`,
 # {py:func}`apply_lifting<dolfinx_mpc.apply_lifting>`, and
 # {py:meth}`backsubstitution<dolfinx_mpc.MultiPointConstraint.backsubstitution>`
 # to handle the periodic conditions.
+# ```{note}
+# Assembly is additive, as in DOLFINx, so the vector has to be zeroed before it is reassembled at each time
+# step. Without it the right hand side accumulates the contributions of all previous steps, and the
+# solution grows exponentially.
+# ```
 
 # +
+
+
+def energy(V_h, p_h):
+    """The squared L2 norm of the solution, summed over the processes."""
+    local = assemble_scalar(form(inner(V_h, V_h) * dx + inner(p_h, p_h) * dx))
+    return msh.comm.allreduce(local, op=MPI.SUM).real
+
+
 progress_0 = 0
 for i in range(num_steps):
     t += dt
 
     # update RHS
-    assemble_vector_nest(b, L_blocked, [mpc_V, mpc_p])
+    dolfinx.la.petsc._zero_vector(b)
+    assemble_vector(L_blocked, [mpc_V, mpc_p], b)
 
     # Dirichlet BC values in RHS
     apply_lifting(b, a_blocked, bcs, [mpc_V, mpc_p])
@@ -476,13 +486,16 @@ for i in range(num_steps):
     mpc_V.backsubstitution(V_new)
     mpc_p.backsubstitution(p_new)
 
+    # The initial condition is only periodic up to the tails of the Gaussian, so the energy is
+    # compared with that of the first step, whose values are constrained
+    if i == 0:
+        E_reference = energy(V_new, p_new)
+
     # progress
     progress = int(((i + 1) / num_steps) * 100)
     if progress >= progress_0 + 20:
         progress_0 = progress
-        E_local = assemble_scalar(form(inner(V_new, V_new) * dx + inner(p_new, p_new) * dx))
-        E = msh.comm.allreduce(E_local, op=MPI.SUM)
-        PETSc.Sys.Print(f"|--progress: {progress}% \t time: {t:6.5f} \t {E=:.15e}:")  # type: ignore
+        PETSc.Sys.Print(f"|--progress: {progress}% \t time: {t:6.5f} \t E={energy(V_new, p_new):.15e}:")  # type: ignore
 
     # Update solution at previous time step
     V_old.x.array[:] = V_new.x.array
@@ -497,6 +510,11 @@ b.destroy()
 Vp_vec.destroy()
 
 # -
+
+# The Crank-Nicolson scheme conserves the energy $\|u\|^2+\|\phi\|^2$ of this skew-symmetric system, which
+# verifies the solution.
+
+assert abs(energy(V_old, p_old) - E_reference) < 1e4 * np.finfo(default_real_type).eps * E_reference
 
 # We store the GIF to file
 

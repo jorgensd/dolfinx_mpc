@@ -8,7 +8,10 @@
 
 #include "MultiPointConstraint.h"
 #include "mpi_utils.h"
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Scatterer.h>
 #include <dolfinx/common/sort.h>
 #include <dolfinx/fem/CoordinateElement.h>
@@ -22,7 +25,11 @@
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/petsc.h>
 #include <dolfinx/mesh/MeshTags.h>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <span>
+#include <string>
 
 namespace impl
 {
@@ -268,6 +275,33 @@ create_normal_approximation(std::shared_ptr<dolfinx::fem::FunctionSpace<U>> V,
   VecGhostUpdateBegin(n_vec.vec(), INSERT_VALUES, SCATTER_FORWARD);
   VecGhostUpdateEnd(n_vec.vec(), INSERT_VALUES, SCATTER_FORWARD);
   return nh;
+}
+
+/// @brief Reserve the diagonal entry of every owned slave in a pattern.
+///
+/// `slaves()` holds unrolled dof indices while the pattern is indexed by
+/// blocks, so divide through by the block size before inserting. Reserving the
+/// whole diagonal block is a superset of the single scalar entry
+/// `insert_slave_diagonal` writes, which is harmless.
+/// @param[in,out] pattern Pattern of a block whose rows and columns are both
+/// the space of `mpc`
+/// @param[in] mpc The constraint whose slaves are reserved
+template <typename T, std::floating_point U>
+void insert_slave_diagonal_pattern(
+    dolfinx::la::SparsityPattern& pattern,
+    const dolfinx_mpc::MultiPointConstraint<T, U>& mpc)
+{
+  const int bs = mpc.function_space()->dofmap()->index_map_bs();
+  std::span<const std::int32_t> slaves(mpc.slaves().data(),
+                                       mpc.num_local_slaves());
+  std::vector<std::int32_t> slave_blocks;
+  slave_blocks.reserve(slaves.size());
+  std::ranges::transform(slaves, std::back_inserter(slave_blocks),
+                         [bs](std::int32_t dof) { return dof / bs; });
+  std::ranges::sort(slave_blocks);
+  slave_blocks.erase(std::unique(slave_blocks.begin(), slave_blocks.end()),
+                     slave_blocks.end());
+  pattern.insert_diagonal(slave_blocks);
 }
 
 /// Append standard sparsity pattern for a given form to a pre-initialized
@@ -613,24 +647,199 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
   // and a missing entry is a PETSc allocation error at assembly rather than a
   // silently wrong matrix.
   if (mpc0 == mpc1)
-  {
-    // `slaves()` holds unrolled dof indices while the pattern is indexed by
-    // blocks, so divide through by the block size before inserting. Reserving
-    // the whole diagonal block is a superset of the single scalar entry
-    // `insert_slave_diagonal` writes, which is harmless.
-    std::span<const std::int32_t> slaves(mpc0->slaves().data(),
-                                         mpc0->num_local_slaves());
-    std::vector<std::int32_t> slave_blocks;
-    slave_blocks.reserve(slaves.size());
-    std::ranges::transform(slaves, std::back_inserter(slave_blocks),
-                           [bs0](std::int32_t dof) { return dof / bs0; });
-    std::ranges::sort(slave_blocks);
-    slave_blocks.erase(std::unique(slave_blocks.begin(), slave_blocks.end()),
-                       slave_blocks.end());
-    pattern.insert_diagonal(slave_blocks);
-  }
+    insert_slave_diagonal_pattern(pattern, *mpc0);
 
   return pattern;
+}
+
+/// @brief Create a PETSc matrix for a merged block sparsity pattern, with the
+/// dofs of every block ordered `[owned, ghosts]`.
+///
+/// The local-to-global maps list the blocks one after another,
+/// `[owned_0, ghosts_0, owned_1, ghosts_1, ...]`, as
+/// `MatGetLocalSubMatrix` with the index sets of
+/// `dolfinx::la::petsc::create_index_sets` expects.
+///
+/// @note This is a copy of the second half of
+/// `dolfinx::fem::petsc::create_matrix_block` (`dolfinx/fem/petsc.h`), which
+/// builds the pattern from forms. It is separate here so that the two can be
+/// compared, and has to be kept in sync with it.
+/// @param[in] comm The communicator of the matrix
+/// @param[in] pattern The finalized merged pattern of all blocks
+/// @param[in] maps Index map and block size of every block, for the rows and
+/// the columns
+/// @param[in] type The PETSc matrix type, or the default if empty
+/// @return The matrix. The caller is responsible for destroying it.
+inline Mat create_block_matrix(
+    MPI_Comm comm, const dolfinx::la::SparsityPattern& pattern,
+    const std::array<
+        std::vector<std::pair<
+            std::reference_wrapper<const dolfinx::common::IndexMap>, int>>,
+        2>& maps,
+    const std::string& type)
+{
+  // The maps of the rows and the columns coincide for a square system, so the
+  // second is not computed again
+  const bool square
+      = maps[0].size() == maps[1].size()
+        and std::ranges::equal(maps[0], maps[1],
+                               [](const auto& x, const auto& y)
+                               {
+                                 return &x.first.get() == &y.first.get()
+                                        and x.second == y.second;
+                               });
+
+  std::array<std::vector<PetscInt>, 2> l2g;
+  for (int d = 0; d < 2; ++d)
+  {
+    if (d == 1 and square)
+    {
+      l2g[1] = l2g[0];
+      continue;
+    }
+    const auto [rank_offset, local_offset, ghosts, _]
+        = dolfinx::common::stack_index_maps(maps[d]);
+    std::vector<PetscInt>& map = l2g[d];
+    for (std::size_t f = 0; f < maps[d].size(); ++f)
+    {
+      const std::int32_t offset = local_offset[f];
+      const dolfinx::common::IndexMap& imap = maps[d][f].first.get();
+      const int bs = maps[d][f].second;
+      for (std::int32_t i = 0; i < bs * imap.size_local(); ++i)
+        map.push_back(i + rank_offset + offset);
+      map.insert(map.end(), ghosts[f].begin(), ghosts[f].end());
+    }
+  }
+
+  ISLocalToGlobalMapping l2g0 = nullptr, l2g1 = nullptr;
+  dolfinx::common::petsc::check(
+      ISLocalToGlobalMappingCreate(comm, 1, l2g[0].size(), l2g[0].data(),
+                                   PETSC_COPY_VALUES, &l2g0),
+      "ISLocalToGlobalMappingCreate");
+  if (!square)
+  {
+    dolfinx::common::petsc::check(
+        ISLocalToGlobalMappingCreate(comm, 1, l2g[1].size(), l2g[1].data(),
+                                     PETSC_COPY_VALUES, &l2g1),
+        "ISLocalToGlobalMappingCreate");
+  }
+
+  Mat A = dolfinx::la::petsc::create_matrix(comm, pattern, type, l2g0,
+                                            l2g1 ? l2g1 : l2g0);
+  dolfinx::common::petsc::check(ISLocalToGlobalMappingDestroy(&l2g0),
+                                "ISLocalToGlobalMappingDestroy");
+  if (l2g1)
+  {
+    dolfinx::common::petsc::check(ISLocalToGlobalMappingDestroy(&l2g1),
+                                  "ISLocalToGlobalMappingDestroy");
+  }
+  return A;
+}
+
+/// @brief Create a monolithic matrix for a rectangular array of bilinear forms
+/// under multi point constraints.
+///
+/// Block `(i, j)` is the form `a[i][j]` with constraint `mpcs0[i]` on its rows
+/// and `mpcs1[j]` on its columns, so the matrix layout is that of
+/// `dolfinx::fem::petsc::create_matrix_block`, with the extended index maps of
+/// the constraints in place of the original ones. The local-to-global map
+/// orders the dofs `[owned_0, ghosts_0, owned_1, ghosts_1, ...]`, which is what
+/// `MatGetLocalSubMatrix` with the sets of
+/// `dolfinx::la::petsc::create_index_sets` expects.
+///
+/// A diagonal block without a form still reserves the diagonal entries of its
+/// slaves, which `insert_slave_diagonal` writes.
+/// @param[in] a Forms, with `nullptr` for a block that has none
+/// @param[in] mpcs0 Constraint of each block row
+/// @param[in] mpcs1 Constraint of each block column
+/// @param[in] type The PETSc matrix type, or the default if empty
+/// @return The matrix. The caller is responsible for destroying it.
+template <typename T, std::floating_point U>
+Mat create_matrix_block(
+    const std::vector<std::vector<const dolfinx::fem::Form<T>*>>& a,
+    const std::vector<std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>>&
+        mpcs0,
+    const std::vector<std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>>&
+        mpcs1,
+    const std::optional<std::string>& type = std::nullopt)
+{
+  dolfinx::common::Timer timer("~MPC: Create block matrix");
+  if (mpcs0.empty() or mpcs1.empty() or a.size() != mpcs0.size())
+  {
+    throw std::invalid_argument(
+        "Expected one row of forms per row constraint, and at least one row "
+        "and column.");
+  }
+  for (const std::vector<const dolfinx::fem::Form<T>*>& row : a)
+  {
+    if (row.size() != mpcs1.size())
+    {
+      throw std::invalid_argument(
+          "Expected one form per column constraint in every row.");
+    }
+  }
+
+  // Block pattern of the constraints, with the extended index maps
+  std::vector<std::vector<std::unique_ptr<dolfinx::la::SparsityPattern>>>
+      patterns(mpcs0.size());
+  for (std::size_t row = 0; row < mpcs0.size(); ++row)
+  {
+    for (std::size_t col = 0; col < mpcs1.size(); ++col)
+    {
+      if (const dolfinx::fem::Form<T>* form = a[row][col]; form)
+      {
+        patterns[row].push_back(std::make_unique<dolfinx::la::SparsityPattern>(
+            create_sparsity_pattern<T, U>(*form, mpcs0[row], mpcs1[col])));
+      }
+      else if (row == col and mpcs0[row] == mpcs1[col])
+      {
+        // Reserve the diagonal of the slaves of a block without a form. This
+        // must not depend on whether this process has slaves: the merged
+        // pattern below is built collectively, so every process has to agree
+        // on which blocks have a pattern.
+        const auto& V = mpcs0[row]->function_space();
+        std::array<std::shared_ptr<const dolfinx::common::IndexMap>, 2> maps
+            = {V->dofmap()->index_map, V->dofmap()->index_map};
+        const int bs = V->dofmap()->index_map_bs();
+        auto pattern = std::make_unique<dolfinx::la::SparsityPattern>(
+            V->mesh()->comm(), maps, std::array<int, 2>{bs, bs});
+        insert_slave_diagonal_pattern(*pattern, *mpcs0[row]);
+        patterns[row].push_back(std::move(pattern));
+      }
+      else
+        patterns[row].push_back(nullptr);
+    }
+  }
+
+  std::array<std::vector<std::pair<
+                 std::reference_wrapper<const dolfinx::common::IndexMap>, int>>,
+             2>
+      maps;
+  std::array<std::vector<int>, 2> bs_dofs;
+  for (const auto& mpc : mpcs0)
+  {
+    const auto& V = *mpc->function_space();
+    maps[0].emplace_back(*V.dofmap()->index_map, V.dofmap()->index_map_bs());
+    bs_dofs[0].push_back(V.dofmap()->bs());
+  }
+  for (const auto& mpc : mpcs1)
+  {
+    const auto& V = *mpc->function_space();
+    maps[1].emplace_back(*V.dofmap()->index_map, V.dofmap()->index_map_bs());
+    bs_dofs[1].push_back(V.dofmap()->bs());
+  }
+
+  std::vector<std::vector<const dolfinx::la::SparsityPattern*>> p(
+      patterns.size());
+  for (std::size_t row = 0; row < patterns.size(); ++row)
+    for (const auto& pattern : patterns[row])
+      p[row].push_back(pattern.get());
+
+  MPI_Comm comm = mpcs0.front()->function_space()->mesh()->comm();
+  dolfinx::la::SparsityPattern pattern(comm, p, maps, bs_dofs);
+  pattern.finalize();
+
+  return create_block_matrix(comm, pattern, maps, type.value_or(std::string()));
 }
 
 /// Compute the dot product u . vs

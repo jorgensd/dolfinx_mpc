@@ -19,6 +19,7 @@ from dolfinx import default_scalar_type
 
 from dolfinx_mpc import cpp
 
+from ._kind import Kind, blocked_layout, deprecated, single_type
 from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint
 
@@ -51,22 +52,20 @@ def _assemble_form(
     )
 
 
-def _finalize_matrix(
-    A: _PETSc.Mat,  # type: ignore
+def _add_diagonals(
     slave_blocks: Sequence,
     bc_blocks: Sequence[tuple[_PETSc.Mat, npt.NDArray[np.int32]]],
     diagval: _PETSc.ScalarType = 1,  # type: ignore
 ):
     """
-    Add the diagonal entries and assemble `A`.
+    Add the diagonal entries of the slave and Dirichlet rows. Does not assemble.
 
     A diagonal entry belongs to a block of the system, not to a form: a block
     may carry slaves without having a diagonal bilinear form to assemble, and a
     block appearing in several forms must still receive exactly one entry. So
-    this runs once, after every form has been assembled into `A`.
+    this runs once, after every form has been assembled.
 
     Args:
-        A: The matrix, with every form already assembled into it
         slave_blocks: `(sub-matrix, constraint)` pairs whose slave rows get `diagval`
         bc_blocks: `(sub-matrix, rows)` pairs whose Dirichlet rows get `diagval`
         diagval: Value to place on the diagonal
@@ -83,25 +82,49 @@ def _finalize_matrix(
     for A_sub, rows in bc_blocks:
         _cpp.fem.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.ADD_VALUES)  # type: ignore
 
+
+def _finalize_matrix(
+    A: _PETSc.Mat,  # type: ignore
+    slave_blocks: Sequence,
+    bc_blocks: Sequence[tuple[_PETSc.Mat, npt.NDArray[np.int32]]],
+    diagval: _PETSc.ScalarType = 1,  # type: ignore
+):
+    """
+    Add the diagonal entries, see :func:`_add_diagonals`, and assemble `A`.
+
+    Args:
+        A: The matrix, with every form already assembled into it
+        slave_blocks: `(sub-matrix, constraint)` pairs whose slave rows get `diagval`
+        bc_blocks: `(sub-matrix, rows)` pairs whose Dirichlet rows get `diagval`
+        diagval: Value to place on the diagonal
+    """
+    _add_diagonals(slave_blocks, bc_blocks, diagval)
     A.assemble()
 
 
 def assemble_matrix(
-    form: _fem.Form,
+    form: Union[_fem.Form, Sequence[Sequence[Optional[_fem.Form]]]],
     constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
     bcs: Optional[Sequence[_fem.DirichletBC]] = None,
     diagval: _PETSc.ScalarType = 1,  # type: ignore
     A: Optional[_PETSc.Mat] = None,  # type: ignore
     num_threads: Optional[int] = 1,
     bc_data: Optional[BCData] = None,
+    kind: Kind = None,
 ) -> _PETSc.Mat:  # type: ignore
     """
-    Assemble a compiled DOLFINx bilinear form into a PETSc matrix with corresponding multi point constraints
-    and Dirichlet boundary conditions.
+    Assemble a compiled DOLFINx bilinear form, or an array of them, into a PETSc matrix with
+    corresponding multi point constraints and Dirichlet boundary conditions.
+
+    As in :func:`dolfinx.fem.petsc.assemble_matrix`, the kind of matrix is selected by `kind`, or by
+    the type of `A` if it is supplied.
 
     Args:
-        form: The compiled bilinear variational form
-        constraint: The multi point constraint
+        form: The compiled bilinear variational form, or a rank 2 list of them with `None` for a
+            block without a form
+        constraint: For a single form, its multi point constraint, or for a rectangular form a
+            list of 2 constraints on axis 0 & 1. For an array of forms, the constraint of each
+            block, which is used for the rows and the columns.
         bcs: Sequence of Dirichlet boundary conditions
         diagval: Value to set on the diagonal of the matrix
         A: PETSc matrix to assemble into. Assembly is additive, so `A` is not
@@ -110,11 +133,24 @@ def assemble_matrix(
         num_threads: The number of threads to use for certain operations
         bc_data: A :class:`BCData` cache. Built from `bcs` when not supplied;
             pass one to share it with the other assemblies of the same system.
+        kind: The kind of matrix to create when `A` is not supplied, see :func:`create_matrix`.
     Returns:
         _PETSc.Mat: The matrix with the assembled bi-linear form  #type: ignore
     """
     if bc_data is None:
         bc_data = BCData(bcs)
+
+    if isinstance(form, Sequence):
+        if not isinstance(constraint, Sequence):
+            raise ValueError("An array of forms needs one multi point constraint per block")
+        if A is None:
+            A = create_matrix(form, constraint, kind)
+        if A.getType() == "nest":
+            _assemble_matrix_nest(A, form, constraint, diagval=diagval, num_threads=num_threads, bc_data=bc_data)
+        else:
+            _assemble_matrix_block(A, form, constraint, diagval=diagval, num_threads=num_threads, bc_data=bc_data)
+        return A
+
     if not isinstance(constraint, Sequence):
         assert form.function_spaces[0] == form.function_spaces[1]
         constraint = (constraint, constraint)
@@ -122,7 +158,7 @@ def assemble_matrix(
     # Generate matrix with MPC sparsity pattern. A freshly created matrix is
     # already zeroed; an `A` supplied by the caller is added into.
     if A is None:
-        A = cpp.mpc.create_matrix(form._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object)
+        A = create_matrix(form, constraint, kind)
 
     _assemble_form(A, form, constraint, bc_data, num_threads)
 
@@ -132,6 +168,51 @@ def assemble_matrix(
     _finalize_matrix(A, slave_blocks, bc_blocks, diagval)
 
     return A
+
+
+def create_matrix(
+    a: Union[_fem.Form, Sequence[Sequence[Optional[_fem.Form]]]],
+    constraint: Union[MultiPointConstraint, Sequence[MultiPointConstraint]],
+    kind: Kind = None,
+) -> _PETSc.Mat:  # type: ignore
+    """
+    Create a PETSc matrix with the sparsity pattern of a bilinear form, or an array of them, under
+    multi point constraints.
+
+    As in :func:`dolfinx.fem.petsc.create_matrix`, three cases are supported:
+
+    1. A single form gives a matrix of the PETSc type `kind`, the default if `None`.
+    2. An array of forms with `kind` ``"nest"``, or a nested sequence of PETSc matrix types of the
+       same shape as the array, gives a matrix of type ``nest`` whose blocks have those types.
+    3. An array of forms with any other `kind` gives a single, monolithic matrix of PETSc type
+       `kind`, the default if `None` or ``"mpi"``, arranged as
+       :math:`A = [a_{ij}]` with the dofs of each block ordered ``[owned, ghosts]`` and the blocks
+       one after another. The ghosts include the masters added by the constraint of the block.
+       A diagonal block that has no form still reserves the diagonal entry of each of its slaves.
+
+    Args:
+        a: The compiled bilinear form, or a rank 2 list of them with `None` for a block without a form
+        constraint: As in :func:`assemble_matrix`
+        kind: The kind of matrix, as above
+
+    Returns:
+        The matrix, to assemble into with :func:`assemble_matrix`.
+    """
+    if not isinstance(a, Sequence):
+        if not isinstance(constraint, Sequence):
+            constraint = (constraint, constraint)
+        for mpc in constraint:
+            mpc._raise_if_not_finalized()
+        return cpp.mpc.create_matrix(
+            a._cpp_object, constraint[0]._cpp_object, constraint[1]._cpp_object, single_type(kind)
+        )
+
+    if not isinstance(constraint, Sequence):
+        raise ValueError("An array of forms needs one multi point constraint per block")
+    layout, types = blocked_layout(kind)
+    if layout == "nest":
+        return _create_matrix_nest(a, constraint, types)
+    return _create_matrix_block(a, constraint, matrix_type=types)  # type: ignore[arg-type]
 
 
 def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Sequence[MultiPointConstraint]]):
@@ -157,61 +238,63 @@ def create_sparsity_pattern(form: _fem.Form, mpc: Union[MultiPointConstraint, Se
         )  # type: ignore
 
 
+def _create_matrix_nest(
+    a: Sequence[Sequence[Optional[_fem.Form]]],
+    constraints: Sequence[MultiPointConstraint],
+    types: Optional[Sequence[Sequence[Optional[str]]]] = None,
+):
+    """Create a PETSc matrix of type "nest" with the blocks of the types in `types`, if given."""
+    assert len(constraints) == len(a)
+    for mpc in constraints:
+        mpc._raise_if_not_finalized()
+
+    A_: list[list[_PETSc.Mat | None]] = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
+
+    for i, a_row in enumerate(a):
+        for j, a_ij in enumerate(a_row):
+            if a_ij is None:
+                continue
+            A_[i][j] = cpp.mpc.create_matrix(
+                a_ij._cpp_object,
+                constraints[i]._cpp_object,
+                constraints[j]._cpp_object,
+                None if types is None else types[i][j],
+            )
+
+    return _PETSc.Mat().createNest(
+        A_,  # type: ignore
+        comm=constraints[0].function_space.mesh.comm,
+    )
+
+
 def create_matrix_nest(a: Sequence[Sequence[_fem.Form | None]], constraints: Sequence[MultiPointConstraint]):
     """
     Create a PETSc matrix of type "nest" with appropriate sparsity pattern
     given the provided multi points constraints
 
+    .. deprecated::
+        Use :func:`create_matrix` with ``kind="nest"``.
+
     Args:
        a: The compiled bilinear variational form provided in a rank 2 list
         constraints: An ordered list of multi point constraints
     """
-    assert len(constraints) == len(a)
-
-    A_: list[list[_PETSc.Mat | None]] = [[None for _ in range(len(a[0]))] for _ in range(len(a))]
-
-    for i, a_row in enumerate(a):
-        for j, a_block in enumerate(a_row):
-            a_ij = a[i][j]
-            if a_ij is None:
-                continue
-            A_[i][j] = cpp.mpc.create_matrix(a_ij._cpp_object, constraints[i]._cpp_object, constraints[j]._cpp_object)
-
-    A = _PETSc.Mat().createNest(
-        A_,  # type: ignore
-        comm=constraints[0].function_space.mesh.comm,
-    )
-    return A
+    deprecated("create_matrix_nest", "create_matrix(a, constraints, kind='nest')")
+    return _create_matrix_nest(a, constraints)
 
 
-def assemble_matrix_nest(
+def _assemble_matrix_nest(
     A: _PETSc.Mat,  # type: ignore
-    a: Sequence[Sequence[_fem.Form]],
+    a: Sequence[Sequence[Optional[_fem.Form]]],
     constraints: Sequence[MultiPointConstraint],
     bcs: Sequence[_fem.DirichletBC] = [],
     diagval: _PETSc.ScalarType = 1,  # type: ignore
     num_threads: Optional[int] = 1,
     bc_data: Optional[BCData] = None,
 ):
-    """
-    Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
-    "nest" with corresponding multi point constraints and Dirichlet boundary
-    conditions.
-
-    Args:
-        A: PETSc matrix to assemble into. Assembly is additive, so `A` is not
-            zeroed; call `A.zeroEntries()` first to discard its contents.
-        a: The compiled bilinear variational form provided in a rank 2 list
-        constraints: An ordered list of multi point constraints
-        bcs: Sequence of Dirichlet boundary conditions
-        diagval: Value to set on the diagonal of the matrix (Default 1)
-        num_threads: The number of threads to use for certain operations
-        bc_data: A :class:`BCData` cache. Built from `bcs` when not supplied;
-            pass one to share it with the other assemblies of the same system.
-    """
-    _bcs = [bc for bc in bcs]
+    """Assemble an array of forms into a PETSc matrix of type "nest"."""
     if bc_data is None:
-        bc_data = BCData(_bcs)
+        bc_data = BCData([bc for bc in bcs])
 
     for i, a_row in enumerate(a):
         for j, a_block in enumerate(a_row):
@@ -238,3 +321,121 @@ def assemble_matrix_nest(
             bc_blocks.append((A_ii, bc_data.rows(a_ii.function_spaces[0])))
 
     _finalize_matrix(A, slave_blocks, bc_blocks, diagval)
+
+
+def assemble_matrix_nest(
+    A: _PETSc.Mat,  # type: ignore
+    a: Sequence[Sequence[_fem.Form]],
+    constraints: Sequence[MultiPointConstraint],
+    bcs: Sequence[_fem.DirichletBC] = [],
+    diagval: _PETSc.ScalarType = 1,  # type: ignore
+    num_threads: Optional[int] = 1,
+    bc_data: Optional[BCData] = None,
+):
+    """
+    Assemble a compiled DOLFINx bilinear form into a PETSc matrix of type
+    "nest" with corresponding multi point constraints and Dirichlet boundary
+    conditions.
+
+    .. deprecated::
+        Use :func:`assemble_matrix`, which selects the layout from `A`.
+
+    Args:
+        A: PETSc matrix to assemble into. Assembly is additive, so `A` is not
+            zeroed; call `A.zeroEntries()` first to discard its contents.
+        a: The compiled bilinear variational form provided in a rank 2 list
+        constraints: An ordered list of multi point constraints
+        bcs: Sequence of Dirichlet boundary conditions
+        diagval: Value to set on the diagonal of the matrix (Default 1)
+        num_threads: The number of threads to use for certain operations
+        bc_data: A :class:`BCData` cache. Built from `bcs` when not supplied;
+            pass one to share it with the other assemblies of the same system.
+    """
+    deprecated("assemble_matrix_nest", "assemble_matrix(a, constraints, A=A)")
+    _assemble_matrix_nest(A, a, constraints, bcs, diagval, num_threads, bc_data)
+
+
+def _block_index_sets(constraints: Sequence[MultiPointConstraint]):
+    """Index sets selecting each block of a monolithic matrix, in the local numbering of the matrix."""
+    return _cpp.la.petsc.create_index_sets(
+        [
+            (mpc.function_space.dofmap.index_map._cpp_object, mpc.function_space.dofmap.index_map_bs)
+            for mpc in constraints
+        ]
+    )
+
+
+def _create_matrix_block(
+    a: Sequence[Sequence[Optional[_fem.Form]]],
+    constraints: Sequence[MultiPointConstraint],
+    constraints1: Optional[Sequence[MultiPointConstraint]] = None,
+    matrix_type: Optional[str] = None,
+):
+    """Create a monolithic PETSc matrix, see :func:`create_matrix`. The columns use `constraints1` if given."""
+    cols = constraints if constraints1 is None else constraints1
+    for mpc in (*constraints, *cols):
+        mpc._raise_if_not_finalized()
+    forms = [[None if a_ij is None else a_ij._cpp_object for a_ij in a_i] for a_i in a]
+    return cpp.mpc.create_matrix_block(
+        forms,
+        [mpc._cpp_object for mpc in constraints],
+        [mpc._cpp_object for mpc in cols],
+        matrix_type,
+    )
+
+
+def _assemble_matrix_block(
+    A: _PETSc.Mat,  # type: ignore
+    a: Sequence[Sequence[Optional[_fem.Form]]],
+    constraints: Sequence[MultiPointConstraint],
+    bcs: Sequence[_fem.DirichletBC] = [],
+    diagval: _PETSc.ScalarType = 1,  # type: ignore
+    num_threads: Optional[int] = 1,
+    bc_data: Optional[BCData] = None,
+):
+    """
+    Assemble an array of forms into a monolithic PETSc matrix made by :func:`create_matrix`.
+
+    Raises:
+        RuntimeError: If a diagonal block has no form while a Dirichlet condition applies to it,
+            as it would have no diagonal entry to set.
+    """
+    if bc_data is None:
+        bc_data = BCData(list(bcs))
+    is_ = _block_index_sets(constraints)
+
+    # The space of each diagonal block, for the Dirichlet rows
+    spaces: list[Optional[_fem.FunctionSpace]] = [None] * len(constraints)
+    for i, a_row in enumerate(a):
+        for j, a_ij in enumerate(a_row):
+            if a_ij is None:
+                continue
+            if spaces[i] is None:
+                spaces[i] = a_ij.function_spaces[0]
+            if j < len(spaces) and spaces[j] is None:
+                spaces[j] = a_ij.function_spaces[1]
+
+    for i, a_row in enumerate(a):
+        for j, a_ij in enumerate(a_row):
+            if a_ij is None:
+                continue
+            A_ij = A.getLocalSubMatrix(is_[i], is_[j])
+            _assemble_form(A_ij, a_ij, (constraints[i], constraints[j]), bc_data, num_threads)
+            A.restoreLocalSubMatrix(is_[i], is_[j], A_ij)
+
+    # The diagonal is a property of a block, so it is added once per diagonal block after
+    # every form has been assembled, including for a block that has no form of its own
+    for i, mpc in enumerate(constraints):
+        V = spaces[i]
+        has_bcs = V is not None and bc_data.markers(V, V)[0].size > 0
+        if a[i][i] is None and has_bcs:
+            raise RuntimeError(
+                f"Diagonal block ({i}, {i}) cannot be 'None' and have a Dirichlet condition applied."
+                " Consider assembling a zero block."
+            )
+        A_ii = A.getLocalSubMatrix(is_[i], is_[i])
+        bc_blocks = [(A_ii, bc_data.rows(V))] if (has_bcs and V is not None) else []
+        _add_diagonals([(A_ii, mpc)], bc_blocks, diagval)
+        A.restoreLocalSubMatrix(is_[i], is_[i], A_ii)
+
+    A.assemble()

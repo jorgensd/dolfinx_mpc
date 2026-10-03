@@ -139,8 +139,8 @@ jobs:
         run: |
           # Every python/demos/demo_*.py runs without arguments, except those
           # listed here: the contact demos run in the next step with each
-          # option set, and the rest are known to be broken
-          skip="demo_contact_2D.py demo_contact_3D.py demo_linear_wave_problem.py demo_stokes_nonlinear_nest.py"
+          # option set
+          skip="demo_contact_2D.py demo_contact_3D.py"
           for n in 1 2; do
             for demo in python/demos/demo_*.py; do
               [[ " ${skip} " == *" $(basename ${demo}) "* ]] && continue

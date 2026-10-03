@@ -84,12 +84,8 @@ def test_stokes_channelflow(cell_type, els, order):
     rhs_forms = fem.form([L0, L1])
 
     # Assemble - THIS IS WHERE THE BUG OCCURS with MPI and hexahedral cells
-    A = dolfinx_mpc.create_matrix_nest(forms, constraints=[mpc_u, mpc_p])
-    dolfinx_mpc.assemble_matrix_nest(A, forms, constraints=[mpc_u, mpc_p], bcs=[bc])
-    A.assemble()
-
-    b = dolfinx_mpc.create_vector_nest(rhs_forms, constraints=[mpc_u, mpc_p])
-    dolfinx_mpc.assemble_vector_nest(b, rhs_forms, constraints=[mpc_u, mpc_p])
+    A = dolfinx_mpc.assemble_matrix(forms, [mpc_u, mpc_p], bcs=[bc], kind="nest")
+    b = dolfinx_mpc.assemble_vector(rhs_forms, [mpc_u, mpc_p], kind="nest")
 
     # Apply lifting for boundary conditions
     bcs_block = fem.bcs_by_block(fem.extract_function_spaces(forms, 1), [bc])
