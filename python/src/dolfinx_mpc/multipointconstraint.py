@@ -18,72 +18,10 @@ import ufl
 from dolfinx import default_real_type, default_scalar_type
 
 import dolfinx_mpc.cpp
-
+from .container import MPCData, _float_array_types, _mpc_data_classes, _mpc_classes, _float_classes
 from .dictcondition import create_dictionary_constraint
 from .integralcondition import create_integral_constraint
-
-_mpc_classes = Union[
-    dolfinx_mpc.cpp.mpc.MultiPointConstraint_double,
-    dolfinx_mpc.cpp.mpc.MultiPointConstraint_float,
-    dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double,
-    dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float,
-]
-_float_classes = Union[numpy.float32, numpy.float64, numpy.complex128, numpy.complex64]
-_float_array_types = Union[
-    npt.NDArray[numpy.float32],
-    npt.NDArray[numpy.float64],
-    npt.NDArray[numpy.complex64],
-    npt.NDArray[numpy.complex128],
-]
-_mpc_data_classes = Union[
-    dolfinx_mpc.cpp.mpc.mpc_data_double,
-    dolfinx_mpc.cpp.mpc.mpc_data_float,
-    dolfinx_mpc.cpp.mpc.mpc_data_complex_double,
-    dolfinx_mpc.cpp.mpc.mpc_data_complex_float,
-]
-
-
-class MPCData:
-    _cpp_object: _mpc_data_classes
-
-    def __init__(
-        self,
-        slaves: npt.NDArray[numpy.int32],
-        masters: npt.NDArray[numpy.int64],
-        coeffs: _float_array_types,
-        owners: npt.NDArray[numpy.int32],
-        offsets: npt.NDArray[numpy.int32],
-    ):
-        if coeffs.dtype.type == numpy.float32:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_float(slaves, masters, coeffs, owners, offsets)
-        elif coeffs.dtype.type == numpy.float64:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_double(slaves, masters, coeffs, owners, offsets)
-        elif coeffs.dtype.type == numpy.complex64:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_float(slaves, masters, coeffs, owners, offsets)
-        elif coeffs.dtype.type == numpy.complex128:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_double(slaves, masters, coeffs, owners, offsets)
-        else:
-            raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
-
-    @property
-    def slaves(self):
-        return self._cpp_object.slaves
-
-    @property
-    def masters(self):
-        return self._cpp_object.masters
-
-    @property
-    def coeffs(self):
-        return self._cpp_object.coeffs
-
-    @property
-    def owners(self):
-        return self._cpp_object.owners
-
-    @property
-    def offsets(self):
-        return self._cpp_object.offsets
+from .rbe import create_rbe2
 
 
 class MultiPointConstraint:
@@ -468,6 +406,90 @@ class MultiPointConstraint:
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
+
+    def add_rbe2_topological(
+        self,
+        dim: int,
+        entities: npt.NDArray[numpy.int32],
+        W: _fem.FunctionSpace,
+        map: Union[int, npt.NDArray[numpy.integer]] = 0,
+    ):
+        r"""
+        Tie the dofs on mesh entities rigidly to a point, as the RBE2 element of other codes
+        (a rigid "spider").
+
+        Each dof of this constraint's space on `entities` is a "foot" of a spider whose "body" is a
+        point of the point mesh of `W`. Every component of a foot follows the motion of its body,
+
+        .. math::
+
+            u(x) = t + \theta \times (x - x_c),
+
+        where :math:`x_c` is the coordinate of the point, :math:`t` its translation and
+        :math:`\theta` its rotation, the dofs of `W` at the point. Without rotations,
+        :math:`u(x) = t`.
+
+        Args:
+            dim: Topological dimension of the entities
+            entities: Entities (local to the process) whose dofs are tied
+            W: Space on the spider mesh (:func:`dolfinx_mpc.create_spider_mesh`). Its value size
+                is the geometric dimension, for translations only, or 6 in 3D and 3 in 2D, for
+                translations and rotations. `W` must be the space of another constraint
+                finalized together with this one by :func:`finalize_multipointconstraints`.
+            map: The spider each entity is tied to: the index of its point, see
+                :func:`dolfinx_mpc.locate_spider`. One integer for all entities, or one per
+                entity.
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._raise_if_finalized()
+        entities = numpy.asarray(entities, dtype=numpy.int32)
+        points = numpy.broadcast_to(numpy.asarray(map, dtype=numpy.int64), entities.shape)
+        dofs, dof_points = [], []
+        # The dofs of each spider in turn, so that a dof on entities of two spiders is caught as
+        # constrained twice
+        for point in numpy.unique(numpy.concatenate(self.V.mesh.comm.allgather(numpy.unique(points)))):
+            dofs_p = _fem.locate_dofs_topological(self.V, dim, entities[points == point])
+            dofs.append(dofs_p)
+            dof_points.append(numpy.full(len(dofs_p), point, dtype=numpy.int64))
+        mpc_data = create_rbe2(
+            self.V,
+            numpy.concatenate(dofs) if dofs else numpy.zeros(0, dtype=numpy.int32),
+            numpy.concatenate(dof_points) if dof_points else numpy.zeros(0, dtype=numpy.int64),
+            W,
+        )
+        self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data, master_space=W)
+
+    def add_rbe2_geometrical(
+        self,
+        locator: Callable[[numpy.ndarray], numpy.ndarray],
+        W: _fem.FunctionSpace,
+        map: Union[int, Callable[[numpy.ndarray], numpy.ndarray]] = 0,
+    ):
+        r"""
+        Tie the dofs located by `locator` rigidly to a point, as the RBE2 element of other codes
+        (a rigid "spider"). See :meth:`add_rbe2_topological` for the relation.
+
+        Args:
+            locator: Marks the dofs to tie, given their coordinates, shape `(3, num_points)`
+            W: Space on the spider mesh, see :meth:`add_rbe2_topological`
+            map: The spider each dof is tied to: the index of its point, see
+                :func:`dolfinx_mpc.locate_spider`. One integer for all dofs, or a function of the
+                coordinates, shape `(3, num_points)`, returning one index per dof.
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._raise_if_finalized()
+        dofs = _fem.locate_dofs_geometrical(self.V, locator)
+        if callable(map):
+            x = self.V.tabulate_dof_coordinates()[dofs].T
+            points = numpy.asarray(map(x), dtype=numpy.int64).reshape(-1)
+        else:
+            points = numpy.full(len(dofs), map, dtype=numpy.int64)
+        mpc_data = create_rbe2(self.V, numpy.asarray(dofs, dtype=numpy.int32), points, W)
+        self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data, master_space=W)
 
     def create_slip_constraint(
         self,

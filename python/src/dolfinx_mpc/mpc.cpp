@@ -365,6 +365,19 @@ void declare_mpc_data(nb::module_& m, std::string type)
   std::string nbclass_name = "mpc_data_" + type;
   nb::class_<dolfinx_mpc::mpc_data<T>>(m, nbclass_name.c_str(),
                                        "Object with data arrays for mpc")
+      .def(
+          "__init__",
+          [](dolfinx_mpc::mpc_data<T>* self, std::vector<std::int32_t> slaves,
+             std::vector<std::int64_t> masters, std::vector<T> coeffs,
+             std::vector<std::int32_t> owners,
+             std::vector<std::int32_t> offsets)
+          {
+            new (self) dolfinx_mpc::mpc_data<T>{
+                std::move(slaves), std::move(masters), std::move(coeffs),
+                std::move(offsets), std::move(owners)};
+          },
+          nb::arg("slaves"), nb::arg("masters"), nb::arg("coeffs"),
+          nb::arg("owners"), nb::arg("offsets"))
       .def_prop_ro(
           "slaves",
           [](dolfinx_mpc::mpc_data<T>& self)
