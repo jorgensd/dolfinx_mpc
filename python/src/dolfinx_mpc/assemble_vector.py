@@ -389,10 +389,14 @@ def _assemble_vector_blocks(
 ):
     """
     Assemble linear forms into a nest or monolithic vector. Each form goes to the vector of its
-    block, and the masters of its constraint to the vector of their block.
+    block, and the masters of its constraint to the vector of their block. A `None` form is
+    skipped.
     """
     with _block_arrays(b) as arrays:
         for i, (L_i, mpc_i) in enumerate(zip(L, constraints)):
+            # A block without a linear form, such as a block holding only masters, adds nothing
+            if L_i is None:
+                continue
             dolfinx_mpc.cpp.mpc.assemble_vector_blocks(arrays, i, L_i._cpp_object, mpc_i._cpp_object, num_threads)
 
 

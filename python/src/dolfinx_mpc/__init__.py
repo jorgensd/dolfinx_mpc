@@ -30,6 +30,7 @@ from .assemble_vector import (
 from .integralcondition import create_integral_constraint
 from .multipointconstraint import MultiPointConstraint, finalize_multipointconstraints
 from .problem import LinearProblem, NonlinearProblem, assemble_jacobian_mpc, assemble_residual_mpc
+from .rbe import create_spider_mesh, spider_values
 
 __all__ = [
     "BCData",
@@ -51,4 +52,6 @@ __all__ = [
     "NonlinearProblem",
     "assemble_jacobian_mpc",
     "assemble_residual_mpc",
+    "create_spider_mesh",
+    "spider_values",
 ]

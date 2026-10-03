@@ -10,6 +10,7 @@ dolfinx_mpc.egg-info
 .vscode
 debug
 *.png
+*.gif
 *results*
 *.msh
 CMakeFiles
