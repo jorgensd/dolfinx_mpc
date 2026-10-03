@@ -446,6 +446,32 @@ def test_slave_that_is_also_dirichlet_is_rejected():
         mpc.finalize()
 
 
+def test_foreign_dirichlet_condition_is_rejected():
+    """A condition on another space cannot be given to the constraint.
+
+    `gather_bc_markers` and `gather_bc_values` fill arrays sized for the
+    constraint's own space and mark every condition in `_bcs` without
+    filtering, while `DirichletBC::mark_dofs` bounds-checks only under
+    `#ifndef NDEBUG`. A condition belonging elsewhere would therefore be a
+    silent heap write in a Release build, so it is rejected up front. The
+    verdict depends only on function space identity, which is replicated, so
+    every rank raises and the error cannot deadlock.
+    """
+    mesh = create_unit_square(MPI.COMM_WORLD, 2, 2)
+    V = fem.functionspace(mesh, ("Lagrange", 1))
+    W = fem.functionspace(mesh, ("Lagrange", 2))
+
+    u_bc = fem.Function(W)
+    u_bc.x.array[:] = 1.0
+    dofs = fem.locate_dofs_geometrical(W, lambda x: _isclose(x[0], 0))
+    foreign = fem.dirichletbc(u_bc, dofs)
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V, bcs=[foreign])
+    mpc.create_general_constraint({_l2b([0, 0], mesh): {_l2b([1, 0], mesh): 2.0}})
+    with pytest.raises(Exception, match="not\\s+defined on the constraint"):
+        mpc.finalize()
+
+
 @pytest.mark.parametrize("degree", [1, 2])
 def test_dirichletbc_as_pure_mpc(degree):
     """A Dirichlet condition expressed entirely as an affine constraint.

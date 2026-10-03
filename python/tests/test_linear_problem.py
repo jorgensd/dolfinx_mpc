@@ -112,3 +112,54 @@ def test_pipeline(u_from_mpc):
                 petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
             )
             problem.solve()
+
+
+def test_bc_markers_are_built_once(monkeypatch):
+    """Repeated solves must not rebuild the dof markers.
+
+    Markers and diagonal rows depend only on the function spaces and the
+    conditions, both fixed for the lifetime of a `LinearProblem`, so they are
+    computed on first use and reused thereafter. Rebuilding them per assembly
+    is what the marker interface exists to avoid, and a Newton iteration would
+    otherwise pay it on every Jacobian evaluation.
+    """
+    import dolfinx.fem.assemble as _dfa
+
+    calls = {"n": 0}
+    original = _dfa._bc_dof_markers
+
+    def counted(*args, **kwargs):
+        calls["n"] += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(_dfa, "_bc_dof_markers", counted)
+
+    mesh = create_unit_square(MPI.COMM_WORLD, 8, 8)
+    V = fem.functionspace(mesh, ("Lagrange", 1))
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx + ufl.inner(u, v) * ufl.dx
+    L = ufl.inner(fem.Constant(mesh, default_scalar_type(1.0)), v) * ufl.dx
+
+    u_bc = fem.Function(V)
+    u_bc.x.array[:] = 0.0
+    bc = fem.dirichletbc(u_bc, fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 0.0)))
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc.finalize()
+    problem = dolfinx_mpc.LinearProblem(
+        a,
+        L,
+        mpc,
+        bcs=[bc],
+        petsc_options_prefix="test_marker_cache_",
+        petsc_options={"ksp_type": "preonly", "pc_type": "lu"},
+    )
+    # The cache fills on first use, then never again: one array per function
+    # space, shared by the operator and the preconditioner.
+    problem.solve()
+    after_first_solve = calls["n"]
+    assert after_first_solve > 0
+
+    for _ in range(3):
+        problem.solve()
+    assert calls["n"] == after_first_solve
