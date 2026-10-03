@@ -21,6 +21,7 @@
 #include <dolfinx_mpc/assemble_vector.h>
 #include <dolfinx_mpc/lifting.h>
 #include <dolfinx_mpc/utils.h>
+#include <dolfinx_wrappers/array.h>
 #include <dolfinx_wrappers/caster_petsc.h>
 #include <memory>
 #include <nanobind/nanobind.h>
@@ -107,6 +108,35 @@ void declare_mpc(nb::module_& m, std::string type)
                  nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
                      offsets.data(), {offsets.size()}, nb::handle()));
            })
+      .def("all_coefficients",
+           [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
+           {
+             auto [coeffs, offsets] = self.all_coefficients();
+             return std::make_pair(
+                 dolfinx_wrappers::as_nbarray(std::move(coeffs)),
+                 dolfinx_wrappers::as_nbarray(std::move(offsets)));
+           })
+      .def("all_masters",
+           [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
+           { return dolfinx_wrappers::as_nbarray(self.all_masters()); })
+      .def(
+          "update_coefficients",
+          [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
+             nb::ndarray<const T, nb::ndim<1>, nb::c_contig> coeffs)
+          {
+            self.update_coefficients(
+                std::span<const T>(coeffs.data(), coeffs.size()));
+          },
+          "coeffs"_a, "Replace the coefficients of all masters")
+      .def(
+          "scale_coefficients",
+          [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
+             nb::ndarray<const T, nb::ndim<1>, nb::c_contig> factors)
+          {
+            self.scale_coefficients(
+                std::span<const T>(factors.data(), factors.size()));
+          },
+          "factors"_a, "Multiply the coefficients of each slave by a factor")
       .def_prop_ro("constants",
                    [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
                    {
@@ -187,7 +217,7 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, const U tol, std::size_t num_threads)
+         T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
       {
         auto _indicator
             = [&indicator](MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -229,7 +259,7 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, const U tol, std::size_t num_threads)
+         T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
       {
         auto _relation = [&relation](std::span<const U> x) -> std::vector<U>
         {

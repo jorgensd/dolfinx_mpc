@@ -27,6 +27,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace dolfinx_mpc
@@ -283,6 +284,7 @@ public:
       keep_offsets.push_back(0);
       bc_offsets.push_back(0);
 
+      _all_to_split.reserve(masters_local.size());
       for (std::int32_t dof = 0; dof < num_dofs_local; ++dof)
       {
         const std::int32_t start = masters_offsets[dof];
@@ -294,11 +296,19 @@ public:
 
           if (bc_marker[master])
           {
+            // Negative to avoid duplicate storage of the indices
+            // If k=_all_to_split[j]<0 then its coefficient is
+            // stored at -k-1 in _bc_coeff_map
+            _all_to_split.push_back(
+                -static_cast<std::int32_t>(bc_masters.size()) - 1);
             bc_masters.push_back(master);
             bc_coeffs.push_back(_coeff_data[j]);
           }
           else
           {
+            // Coeff stored as k=_all_to_split[j]>=0 in _coeff_map->array()
+            _all_to_split.push_back(
+                static_cast<std::int32_t>(keep_masters.size()));
             keep_masters.push_back(master);
             keep_coeffs.push_back(_coeff_data[j]);
             keep_owners.push_back(_owner_data[j]);
@@ -307,6 +317,10 @@ public:
         keep_offsets.push_back(static_cast<std::int32_t>(keep_masters.size()));
         bc_offsets.push_back(static_cast<std::int32_t>(bc_masters.size()));
       }
+      if (bc_masters.empty())
+        _all_to_split.clear();
+      else
+        _all_offsets = std::move(masters_offsets);
     }
     // Whether a master was eliminated by a Dirichlet condition has to be read
     // before bc_coeffs is moved from below.
@@ -433,6 +447,115 @@ public:
                       rhs_coeffs.size(), _rhs_coeffs.size()));
     }
     std::ranges::copy(rhs_coeffs, _rhs_coeffs.begin());
+  }
+
+  /// @brief Coefficients of all masters per local dof, including masters
+  /// eliminated by a Dirichlet condition, in the order supplied at
+  /// construction.
+  ///
+  /// This is the layout taken by `update_coefficients`.
+  /// @return (coefficients, offsets), where the coefficients of dof `i` are
+  /// `coefficients[offsets[i]:offsets[i+1]]`
+  std::pair<std::vector<T>, std::vector<std::int32_t>> all_coefficients() const
+  {
+    if (_all_to_split.empty())
+      return {_coeff_map->array(), _coeff_map->offsets()};
+
+    const std::vector<T>& keep = _coeff_map->array();
+    const std::vector<T>& bc = _bc_coeff_map->array();
+    std::vector<T> coeffs(_all_to_split.size());
+    std::ranges::transform(_all_to_split, coeffs.begin(),
+                           [&keep, &bc](std::int32_t k)
+                           { return k >= 0 ? keep[k] : bc[-k - 1]; });
+    return {std::move(coeffs), _all_offsets};
+  }
+
+  /// @brief Masters (local index in the MPC function space) in the layout of
+  /// `all_coefficients`.
+  std::vector<std::int32_t> all_masters() const
+  {
+    if (_all_to_split.empty())
+      return _master_map->array();
+
+    const std::vector<std::int32_t>& keep = _master_map->array();
+    const std::vector<std::int32_t>& bc = _bc_master_map->array();
+    std::vector<std::int32_t> masters(_all_to_split.size());
+    std::ranges::transform(_all_to_split, masters.begin(),
+                           [&keep, &bc](std::int32_t k)
+                           { return k >= 0 ? keep[k] : bc[-k - 1]; });
+    return masters;
+  }
+
+  /// @brief Replace the coefficient of every master, including masters
+  /// eliminated by a Dirichlet condition, and recompute the constraint
+  /// offsets.
+  ///
+  /// The masters are fixed at construction; a master dropped by `tol` or
+  /// `filter` cannot be given a coefficient. Coefficients are updated in
+  /// place.
+  /// @param[in] coeffs New coefficients in the layout of `all_coefficients`,
+  /// for all dofs local to the process (owned and ghost)
+  /// @note Collective if the constraint has an inhomogeneity and Dirichlet
+  /// conditions.
+  void update_coefficients(std::span<const T> coeffs)
+  {
+    std::vector<T>& keep = _coeff_map->array();
+    if (_all_to_split.empty())
+    {
+      if (coeffs.size() != keep.size())
+      {
+        throw std::invalid_argument(std::format(
+            "coeffs has {} entries, expected {}", coeffs.size(), keep.size()));
+      }
+      std::ranges::copy(coeffs, keep.begin());
+    }
+    else
+    {
+      if (coeffs.size() != _all_to_split.size())
+      {
+        throw std::invalid_argument(
+            std::format("coeffs has {} entries, expected {}", coeffs.size(),
+                        _all_to_split.size()));
+      }
+      std::vector<T>& bc = _bc_coeff_map->array();
+      for (std::size_t j = 0; j < coeffs.size(); ++j)
+      {
+        const std::int32_t k = _all_to_split[j];
+        if (k >= 0)
+          keep[k] = coeffs[j];
+        else
+          bc[-k - 1] = coeffs[j];
+      }
+    }
+    update_constants();
+  }
+
+  /// @brief Multiply the coefficients of every master of slave @f$s@f$ by
+  /// `factors[s]`, and recompute the constraint offsets.
+  ///
+  /// Applies to masters eliminated by a Dirichlet condition as well. The user
+  /// supplied inhomogeneity is not scaled. Repeated calls compound.
+  /// @param[in] factors Factor for every dof local to the process (owned and
+  /// ghost). Only entries of slaves are read.
+  /// @note Collective if the constraint has an inhomogeneity and Dirichlet
+  /// conditions.
+  void scale_coefficients(std::span<const T> factors)
+  {
+    if (factors.size() != _is_slave.size())
+    {
+      throw std::invalid_argument(
+          std::format("factors has {} entries, expected {} (one per dof local "
+                      "to the process, owned and ghost)",
+                      factors.size(), _is_slave.size()));
+    }
+    for (std::int32_t slave : _slaves)
+    {
+      for (T& c : _coeff_map->links(slave))
+        c *= factors[slave];
+      for (T& c : _bc_coeff_map->links(slave))
+        c *= factors[slave];
+    }
+    update_constants();
   }
 
   /// @brief Whether any process carries a non-zero constraint offset.
@@ -569,7 +692,15 @@ private:
   // are constrained by a Dirichlet condition, and their coefficients
   std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       _bc_master_map;
-  std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> _bc_coeff_map;
+  std::shared_ptr<dolfinx::graph::AdjacencyList<T>> _bc_coeff_map;
+
+  // Per local dof, all masters (kept and eliminated) in the order supplied at
+  // construction. Entry j of that layout is stored at _all_to_split[j] in
+  // _coeff_map if non-negative, else at -_all_to_split[j]-1 in _bc_coeff_map.
+  // Both are empty when no master was split off, as the layout then is that
+  // of _coeff_map.
+  std::vector<std::int32_t> _all_offsets;
+  std::vector<std::int32_t> _all_to_split;
 
   // Map from slave cell to index in _slaves for a given slave cell
   std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
@@ -580,8 +711,9 @@ private:
   // Map from slave (local to process) to masters (local to process)
   std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>
       _master_map;
-  // Map from slave (local to process)to coefficients
-  std::shared_ptr<const dolfinx::graph::AdjacencyList<T>> _coeff_map;
+  // Map from slave (local to process) to coefficients. Non-const so that
+  // coefficients can be updated in place, keeping views into them valid.
+  std::shared_ptr<dolfinx::graph::AdjacencyList<T>> _coeff_map;
   // Map from slave( local to process) to rank of process owning master
   std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
 };
