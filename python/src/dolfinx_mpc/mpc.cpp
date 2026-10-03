@@ -48,6 +48,18 @@ namespace
 
 {
 
+/// Spans over a list of 1D arrays
+template <typename V>
+std::vector<std::span<const V>>
+as_spans(const std::vector<nb::ndarray<const V, nb::ndim<1>, nb::c_contig>>& a)
+{
+  std::vector<std::span<const V>> spans;
+  spans.reserve(a.size());
+  for (const auto& a_i : a)
+    spans.emplace_back(a_i.data(), a_i.size());
+  return spans;
+}
+
 // Templating over mesh resolution
 template <typename T, std::floating_point U>
 void declare_mpc(nb::module_& m, std::string type)
@@ -255,6 +267,26 @@ void declare_functions(nb::module_& m)
       nb::arg("mpc"), nb::arg("V"), nb::arg("W"), nb::arg("block"),
       "Recompute the RBE2 coefficients from the current dof coordinates");
   m.def(
+      "update_rbe3",
+      [](dolfinx_mpc::MultiPointConstraint<T, U>& mpc,
+         const dolfinx::fem::FunctionSpace<U>& W,
+         const std::vector<
+             std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
+         const std::vector<int>& blocks,
+         const std::vector<
+             nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig>>& dofs,
+         const std::vector<nb::ndarray<const std::int64_t, nb::ndim<1>,
+                                       nb::c_contig>>& spiders,
+         const std::vector<nb::ndarray<const U, nb::ndim<1>, nb::c_contig>>&
+             weights)
+      {
+        dolfinx_mpc::update_rbe3<T, U>(mpc, W, V, blocks, as_spans(dofs),
+                                       as_spans(spiders), as_spans(weights));
+      },
+      nb::arg("mpc"), nb::arg("W"), nb::arg("V"), nb::arg("blocks"),
+      nb::arg("dofs"), nb::arg("spiders"), nb::arg("weights"),
+      "Recompute the RBE3 coefficients from the current dof coordinates");
+  m.def(
       "create_multipointconstraints",
       [](const std::vector<
              std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
@@ -410,6 +442,26 @@ void declare_mpc_data(nb::module_& m, std::string type)
       nb::arg("V"), nb::arg("dofs"), nb::arg("spiders"), nb::arg("W"),
       nb::arg("x").none(),
       "Tie blocked dofs to the rigid-body motion of spiders (RBE2)");
+  m.def(
+      ("create_rbe3_" + type).c_str(),
+      [](const dolfinx::fem::FunctionSpace<U>& W,
+         const std::vector<
+             std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
+         const std::vector<
+             nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig>>& dofs,
+         const std::vector<nb::ndarray<const std::int64_t, nb::ndim<1>,
+                                       nb::c_contig>>& spiders,
+         const std::vector<nb::ndarray<const U, nb::ndim<1>, nb::c_contig>>&
+             weights)
+      {
+        auto [data, spaces] = dolfinx_mpc::create_rbe3<T, U>(
+            W, V, as_spans(dofs), as_spans(spiders), as_spans(weights));
+        return nb::make_tuple(std::move(data),
+                              dolfinx_wrappers::as_nbarray(std::move(spaces)));
+      },
+      nb::arg("W"), nb::arg("V"), nb::arg("dofs"), nb::arg("spiders"),
+      nb::arg("weights"),
+      "Tie the dofs of spiders to the motion of their feet (RBE3)");
   std::string nbclass_name = "mpc_data_" + type;
   nb::class_<dolfinx_mpc::mpc_data<T>>(m, nbclass_name.c_str(),
                                        "Object with data arrays for mpc")

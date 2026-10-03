@@ -24,7 +24,7 @@ from dolfinx import default_scalar_type
 from .container import _mpc_data_classes
 from .cpp import mpc as _cpp_mpc
 
-__all__ = ["create_rbe2", "create_spider_mesh", "spider_values"]
+__all__ = ["create_rbe2", "create_rbe3", "create_spider_mesh", "spider_values"]
 
 
 def create_spider_mesh(comm: MPI.Comm, points: npt.ArrayLike, tol: float | None = None) -> _mesh.Mesh:
@@ -116,6 +116,47 @@ def create_rbe2(
         np.ascontiguousarray(spiders, dtype=np.int64),
         W._cpp_object,
         None if x is None else np.ascontiguousarray(x),
+    )
+
+
+def create_rbe3(
+    W: _fem.FunctionSpace,
+    V: list[_fem.FunctionSpace],
+    dofs: list[npt.NDArray[np.int32]],
+    spiders: list[npt.NDArray[np.int64]],
+    weights: list[npt.NDArray[np.floating]],
+    dtype: npt.DTypeLike | None = None,
+) -> tuple[_mpc_data_classes, npt.NDArray[np.int32]]:
+    r"""The constraint tying the dofs of spiders to the motion of their feet (RBE3).
+
+    Each spider moves with the rigid motion that best fits its feet,
+    :math:`\min_{t, \theta} \sum_i w_i |u_i - t - \theta \times (x_i - x_c)|^2`. Without rotations,
+    :math:`t` is the weighted mean of the feet. Wraps `dolfinx_mpc::create_rbe3`.
+
+    Args:
+        W: The space on the spider mesh, holding the slaves
+        V: The spaces of the feet, with one component per dimension
+        dofs: The feet in each space, blocked dofs local to the process
+        spiders: The spider of each foot, its input index (see :func:`create_spider_mesh`)
+        weights: The weight of each foot, non-negative
+        dtype: The scalar type of the coefficients. Defaults to the default scalar type.
+
+    Returns:
+        The slaves, masters, coefficients, owners and offsets, and the position in `V` of the
+        space of each master.
+
+    Note:
+        Collective.
+    """
+    _dtype = np.dtype(default_scalar_type if dtype is None else dtype).type
+    real = W.mesh.geometry.x.dtype
+    create = getattr(_cpp_mpc, f"create_rbe3_{_type_names[_dtype]}")
+    return create(
+        W._cpp_object,
+        [V_s._cpp_object for V_s in V],
+        [np.ascontiguousarray(d, dtype=np.int32) for d in dofs],
+        [np.ascontiguousarray(k, dtype=np.int64) for k in spiders],
+        [np.ascontiguousarray(w, dtype=real) for w in weights],
     )
 
 
