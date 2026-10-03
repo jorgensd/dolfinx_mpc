@@ -35,14 +35,10 @@
   once, as when two periodic conditions share a corner, which previously failed on the offsets in serial
   and hung in parallel. A master without a local index in the extended space, which would previously
   have given wrong results silently, is also rejected.
-- **New feature**: rigid spiders (RBE2). `MultiPointConstraint.add_rbe2_topological(dim, entities, W, map=0)` and
-  `add_rbe2_geometrical(locator, W, map=0)` tie every component of the located dofs to the rigid-body motion
-  `u = t + theta x (x - x_c)` of a point `x_c`, the body of a spider, whose dofs `t` (and `theta`, if the space has
-  6 components in 3D or 3 in 2D) live in a space `W` on a spider mesh. The bodies of all spiders are the points of one
-  mesh, from `dolfinx_mpc.create_spider_mesh` (coinciding points are merged); `dolfinx_mpc.locate_spider` gives the
-  index of a spider for `map`, and `dolfinx_mpc.spider_values` its values on every process. Blocked vector assembly
-  skips a block without a linear form. New demo: `python/demos/demo_spider.py`, two cubes of different cell types
-  joined only by a spider.
+- **New feature**: rigid spiders (RBE2). `MultiPointConstraint.add_rbe2_topological` and `add_rbe2_geometrical` tie
+  dofs to the rigid-body motion of points of a spider mesh (`dolfinx_mpc.create_spider_mesh`), and `update_rbe2`
+  recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::locate_spiders`. Blocked vector assembly skips
+  a block without a linear form. New demo: `python/demos/demo_spider.py`.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to
   `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are

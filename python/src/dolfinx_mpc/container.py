@@ -1,7 +1,9 @@
 from typing import Union
-import dolfinx_mpc.cpp.mpc
-import numpy.typing as npt
+
 import numpy
+import numpy.typing as npt
+
+import dolfinx_mpc.cpp.mpc
 
 _mpc_data_classes = Union[
     dolfinx_mpc.cpp.mpc.mpc_data_double,
