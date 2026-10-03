@@ -16,6 +16,7 @@
 #include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/PeriodicConstraint.h>
+#include <dolfinx_mpc/RBE.h>
 #include <dolfinx_mpc/SlipConstraint.h>
 #include <dolfinx_mpc/assemble_matrix.h>
 #include <dolfinx_mpc/assemble_vector.h>
@@ -121,6 +122,9 @@ void declare_mpc(nb::module_& m, std::string type)
       .def("all_masters",
            [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
            { return dolfinx_wrappers::as_nbarray(self.all_masters()); })
+      .def("all_master_blocks",
+           [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
+           { return dolfinx_wrappers::as_nbarray(self.all_master_blocks()); })
       .def(
           "update_coefficients",
           [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
@@ -227,6 +231,21 @@ template <typename T, std::floating_point U>
 void declare_functions(nb::module_& m)
 {
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices<U>);
+  m.def(
+      "locate_spiders",
+      [](const dolfinx::fem::FunctionSpace<U>& W,
+         nb::ndarray<const std::int64_t, nb::ndim<1>, nb::c_contig> spiders)
+      {
+        auto [blocks, owners, x] = dolfinx_mpc::locate_spiders<U>(
+            W, std::span(spiders.data(), spiders.size()));
+        const std::size_t n = blocks.size();
+        return nb::make_tuple(
+            dolfinx_wrappers::as_nbarray(std::move(blocks)),
+            dolfinx_wrappers::as_nbarray(std::move(owners)),
+            dolfinx_wrappers::as_nbarray(std::move(x), {n, 3}));
+      },
+      nb::arg("W"), nb::arg("spiders"),
+      "Global block, owner and coordinate of spiders, by input index");
   m.def(
       "create_multipointconstraints",
       [](const std::vector<

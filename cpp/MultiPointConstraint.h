@@ -278,6 +278,19 @@ public:
     return masters;
   }
 
+  /// @brief Block of each master in the layout of `all_coefficients`.
+  std::vector<std::int32_t> all_master_blocks() const
+  {
+    if (_all_to_split.empty())
+      return _master_blocks;
+
+    std::vector<std::int32_t> blocks(_all_to_split.size());
+    std::ranges::transform(
+        _all_to_split, blocks.begin(), [this](std::int32_t k)
+        { return k >= 0 ? _master_blocks[k] : _bc_master_blocks[-k - 1]; });
+    return blocks;
+  }
+
   /// @brief Replace the coefficient of every master, including masters
   /// eliminated by a Dirichlet condition, and recompute the constraint
   /// offsets.
