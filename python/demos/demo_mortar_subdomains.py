@@ -327,8 +327,9 @@ for degree in (1, 2):
             print(
                 f"P{degree}  N={resolution:3d}   |u-u_ex|_L2 = {err_u:.3e}{rate}   |lambda-lambda_ex|_L2 = {err_l:.3e}"
             )
-        last_rate = None if previous is None else np.log2(previous / err_u)
+        last_rate: None | float = None if previous is None else np.log2(previous / err_u)
         previous = err_u
+    assert last_rate is not None
     assert last_rate > degree + 0.9
 # -
 
