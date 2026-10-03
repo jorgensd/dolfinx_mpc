@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <assemble_utils.h>
+#include <concepts>
 #include <cstdint>
 #include <dolfinx/fem/Constant.h>
 #include <dolfinx/fem/DirichletBC.h>
@@ -304,37 +305,34 @@ void modify_mpc_cell(
 } // namespace
 
 //-----------------------------------------------------------------------------
-template <typename T, std::floating_point U>
-void assemble_exterior_facets(
+/// Assemble integrals over entities with one cell per argument (cells and
+/// exterior facets), applying the multi point constraint.
+/// @tparam estride Stride of an entity in `entities0`/`entities1`: 1 for
+/// cells, 2 for exterior facets given as (cell, local facet)
+/// @param[in] entities0 Integration entities of the test function space
+/// @param[in] entities1 Integration entities of the trial function space
+/// @param[in] tabulate Callable `tabulate(Ae, e)` filling `Ae` with the
+/// element matrix of the `e`-th entity, ndim0 x ndim1 and row-major, with dof
+/// transformations applied. This is the standard DOLFINx tabulation;
+/// everything specific to the constraint happens here.
+template <typename T, std::floating_point U, std::size_t estride,
+          typename Tabulate>
+  requires std::invocable<Tabulate&, std::span<T>, std::size_t>
+void assemble_entities(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_block_values,
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_values,
-    const dolfinx::mesh::Mesh<U>& mesh, std::span<const std::int32_t> facets,
-    std::span<const std::int32_t> facets0,
-    std::span<const std::int32_t> facets1,
-    const std::function<void(const std::span<T>&,
-                             const std::span<const std::uint32_t>&,
-                             std::int32_t, int)>& apply_dof_transformation,
-    const dolfinx::fem::DofMap& dofmap0,
-    const std::function<
-        void(const std::span<T>&, const std::span<const std::uint32_t>&,
-             std::int32_t, int)>& apply_dof_transformation_to_transpose,
-    const dolfinx::fem::DofMap& dofmap1, std::span<const std::int8_t> bc0,
-    std::span<const std::int8_t> bc1,
-    const std::function<void(T*, const T*, const T*, const U*, const int*,
-                             const std::uint8_t*, void*)>& kernel,
-    const std::span<const T> coeffs, int cstride,
-    const std::vector<T>& constants,
-    const std::span<const std::uint32_t>& cell_info0,
-    const std::span<const std::uint32_t>& cell_info1,
-    std::span<const std::uint8_t> perms, int num_facets_per_cell,
+    std::span<const std::int32_t> entities0,
+    std::span<const std::int32_t> entities1,
+    const dolfinx::fem::DofMap& dofmap0, const dolfinx::fem::DofMap& dofmap1,
+    std::span<const std::int8_t> bc0, std::span<const std::int8_t> bc1,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
+    Tabulate&& tabulate)
 {
-  // Get MPC data
   const std::array<
       std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       masters = {mpc0->masters(), mpc1->masters()};
@@ -342,75 +340,33 @@ void assemble_exterior_facets(
       coefficients = {mpc0->coefficients(), mpc1->coefficients()};
   const std::array<std::span<const std::int8_t>, 2> is_slave
       = {mpc0->is_slave(), mpc1->is_slave()};
-
   const std::array<
       std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
-  // Get mesh data
-  if (mesh.geometry().dofmaps().size() != 1)
-    throw std::runtime_error(
-        "Currently only supports meshes with one geometry dofmap.");
-  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-      const std::int32_t,
-      MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = mesh.geometry().dofmaps().front();
-
-  const int num_dofs_g = x_dofmap.extent(1);
-  std::span<const U> x_g = mesh.geometry().x();
-
-  // Iterate over all facets
-  std::vector<U> coordinate_dofs(3 * num_dofs_g);
-  const auto num_dofs0 = (std::uint32_t)dofmap0.map().extent(1);
-  const auto num_dofs1 = (std::uint32_t)dofmap1.map().extent(1);
-  int bs0 = dofmap0.bs();
-  int bs1 = dofmap1.bs();
-  const std::uint32_t ndim0 = bs0 * num_dofs0;
-  const std::uint32_t ndim1 = bs1 * num_dofs1;
-  const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
-  const std::array<const int, 2> bs = {bs0, bs1};
+  const std::array<const std::uint32_t, 2> num_dofs
+      = {static_cast<std::uint32_t>(dofmap0.map().extent(1)),
+         static_cast<std::uint32_t>(dofmap1.map().extent(1))};
+  const std::array<const int, 2> bs = {dofmap0.bs(), dofmap1.bs()};
+  const std::size_t ndim0 = bs[0] * num_dofs[0];
+  const std::size_t ndim1 = bs[1] * num_dofs[1];
 
   std::vector<T> Aeb(ndim0 * ndim1);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
       Ae(Aeb.data(), ndim0, ndim1);
-  const std::span<T> _Ae(Aeb);
-  const bool is_transform0_set
-      = dolfinx::fem::is_transform_set(apply_dof_transformation);
-  const bool is_transform1_set
-      = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
   std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
-  for (std::size_t l = 0; l < facets.size(); l += 2)
+  assert(entities0.size() == entities1.size());
+  for (std::size_t e = 0; e < entities0.size() / estride; ++e)
   {
-    const std::int32_t cell0 = facets0[l];
-    const std::int32_t cell1 = facets1[l];
-    const std::int32_t cell = facets[l];
-    const int local_facet = facets[l + 1];
-
-    // Get cell vertex coordinates
-
-    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    for (std::size_t i = 0; i < x_dofs.size(); ++i)
-    {
-      std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                          std::next(coordinate_dofs.begin(), 3 * i));
-    }
-    // Tabulate tensor.
-    const std::uint8_t perm
-        = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
-    std::ranges::fill(Aeb, 0);
-    kernel(Aeb.data(), coeffs.data() + l / 2 * cstride, constants.data(),
-           coordinate_dofs.data(), &local_facet, &perm, nullptr);
-    if (is_transform0_set)
-      apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
-    if (is_transform1_set)
-      apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
+    const std::int32_t cell0 = entities0[e * estride];
+    const std::int32_t cell1 = entities1[e * estride];
+    tabulate(std::span<T>(Aeb), e);
 
     // Zero rows/columns for essential bcs
-    auto dmap0 = dofmap0.cell_dofs(cell0);
-    auto dmap1 = dofmap1.cell_dofs(cell1);
-    zero_dirichlet<T>(_Ae, dmap0, bs0, bc0, dmap1, bs1, bc1);
+    std::span<const std::int32_t> dofs0 = dofmap0.cell_dofs(cell0);
+    std::span<const std::int32_t> dofs1 = dofmap1.cell_dofs(cell1);
+    zero_dirichlet<T>(Aeb, dofs0, bs[0], bc0, dofs1, bs[1], bc1);
 
     // Modify local element matrix Ae and insert contributions into master
     // locations
@@ -419,26 +375,33 @@ void assemble_exterior_facets(
     {
       const std::array<std::span<const std::int32_t>, 2> slaves
           = {cell_to_slaves[0]->links(cell0), cell_to_slaves[1]->links(cell1)};
-      const std::array<std::span<const std::int32_t>, 2> dofs = {dmap0, dmap1};
-      modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
-                         masters, coefficients, is_slave, scratch_memory);
+      modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, {dofs0, dofs1}, bs,
+                         slaves, masters, coefficients, is_slave,
+                         scratch_memory);
     }
-    mat_add_block_values(dmap0, dmap1, Aeb);
+    mat_add_block_values(dofs0, dofs1, Aeb);
   }
-} // namespace
+}
 //-----------------------------------------------------------------------------
-/// Assemble interior facet integrals.
+/// Assemble interior facet integrals, applying the multi point constraint.
 ///
 /// The element tensor of a facet is the 2x2 block matrix
 /// [A++, A+-; A-+, A--], where block (s, t) couples the test function on the
 /// cell of side s with the trial function on the cell of side t. Each block is
 /// an ordinary cell-cell element matrix, so the constraint is applied to each
 /// block on its own with `modify_mpc_cell`. Assembly is linear in the element
-/// tensor, so this equals constraining the whole tensor, and it avoids the
-/// joint dof list, in which a dof on the facet appears once per cell. A block
-/// is skipped when an argument has no cell on its side (a negative cell, e.g.
-/// on an interface between two subdomains).
-template <typename T, std::floating_point U>
+/// tensor, so this equals constraining the whole tensor. A block is skipped
+/// when an argument has no cell on its side (a negative cell, e.g. on an
+/// interface between two subdomains).
+/// @param[in] facets0 Integration entities of the test function space, as
+/// (cell, local facet) for each side
+/// @param[in] facets1 Integration entities of the trial function space
+/// @param[in] tabulate Callable `tabulate(Ab, f)` filling `Ab` with the
+/// element tensor of the `f`-th facet, (2 * ndim0) x (2 * ndim1) and
+/// row-major, with dof transformations applied. This is the standard DOLFINx
+/// tabulation; everything specific to the constraint happens here.
+template <typename T, std::floating_point U, typename Tabulate>
+  requires std::invocable<Tabulate&, std::span<T>, std::size_t>
 void assemble_interior_facets(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
@@ -446,27 +409,13 @@ void assemble_interior_facets(
     const std::function<int(std::span<const std::int32_t>,
                             std::span<const std::int32_t>,
                             const std::span<const T>)>& mat_add_values,
-    const dolfinx::mesh::Mesh<U>& mesh, std::span<const std::int32_t> facets,
     std::span<const std::int32_t> facets0,
-    std::span<const std::int32_t> facets1,
-    const std::function<void(const std::span<T>&,
-                             const std::span<const std::uint32_t>&,
-                             std::int32_t, int)>& apply_dof_transformation,
-    const dolfinx::fem::DofMap& dofmap0,
-    const std::function<
-        void(const std::span<T>&, const std::span<const std::uint32_t>&,
-             std::int32_t, int)>& apply_dof_transformation_to_transpose,
+    std::span<const std::int32_t> facets1, const dolfinx::fem::DofMap& dofmap0,
     const dolfinx::fem::DofMap& dofmap1, std::span<const std::int8_t> bc0,
     std::span<const std::int8_t> bc1,
-    const std::function<void(T*, const T*, const T*, const U*, const int*,
-                             const std::uint8_t*, void*)>& kernel,
-    const std::span<const T> coeffs, int cstride,
-    const std::vector<T>& constants,
-    const std::span<const std::uint32_t>& cell_info0,
-    const std::span<const std::uint32_t>& cell_info1,
-    std::span<const std::uint8_t> perms, int num_facets_per_cell,
     const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
+    Tabulate&& tabulate)
 {
   const std::array<
       std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
@@ -479,25 +428,16 @@ void assemble_interior_facets(
       std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
       cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
 
-  if (mesh.geometry().dofmaps().size() != 1)
-    throw std::runtime_error(
-        "Currently only supports meshes with one geometry dofmap.");
-  mdspan2_t x_dofmap = mesh.geometry().dofmaps().front();
-  const std::size_t num_dofs_g = x_dofmap.extent(1);
-  std::span<const U> x_g = mesh.geometry().x();
-  std::vector<U> coordinate_dofs(2 * 3 * num_dofs_g);
-
   const std::array<const std::uint32_t, 2> num_dofs
       = {static_cast<std::uint32_t>(dofmap0.map().extent(1)),
          static_cast<std::uint32_t>(dofmap1.map().extent(1))};
   const std::array<const int, 2> bs = {dofmap0.bs(), dofmap1.bs()};
   const std::size_t ndim0 = bs[0] * num_dofs[0];
   const std::size_t ndim1 = bs[1] * num_dofs[1];
-  const std::size_t num_rows = 2 * ndim0;
   const std::size_t num_cols = 2 * ndim1;
 
   // The joint tensor, and one (ndim0, ndim1) block of it
-  std::vector<T> Ab(num_rows * num_cols);
+  std::vector<T> Ab(2 * ndim0 * num_cols);
   std::vector<T> Ae_block(ndim0 * ndim1);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
@@ -506,69 +446,17 @@ void assemble_interior_facets(
   std::vector<std::int32_t> joint_dofs0(2 * num_dofs[0]);
   std::vector<std::int32_t> joint_dofs1(2 * num_dofs[1]);
 
-  const bool transform0_set
-      = dolfinx::fem::is_transform_set(apply_dof_transformation);
-  const bool transform1_set
-      = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
   // Whether a cell exists on a side and carries a slave
   auto has_slaves
       = [](const dolfinx::graph::AdjacencyList<std::int32_t>& c,
            std::int32_t cell) { return cell >= 0 and c.num_links(cell) > 0; };
-  for (std::size_t f = 0; f < facets.size() / 4; ++f)
+  for (std::size_t f = 0; f < facets0.size() / 4; ++f)
   {
-    // Entities are (cell, local facet) for each side
-    const std::array<std::int32_t, 2> cells
-        = {facets[4 * f], facets[4 * f + 2]};
-    const std::array<int, 2> local_facet
-        = {facets[4 * f + 1], facets[4 * f + 3]};
     const std::array<std::int32_t, 2> cells0
         = {facets0[4 * f], facets0[4 * f + 2]};
     const std::array<std::int32_t, 2> cells1
         = {facets1[4 * f], facets1[4 * f + 2]};
-
-    for (int s = 0; s < 2; ++s)
-    {
-      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-          x_dofmap, cells[s], MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-      for (std::size_t i = 0; i < x_dofs.size(); ++i)
-      {
-        std::ranges::copy_n(
-            std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-            std::next(coordinate_dofs.begin(), 3 * (s * num_dofs_g + i)));
-      }
-    }
-    const std::array<std::uint8_t, 2> perm
-        = perms.empty()
-              ? std::array<std::uint8_t, 2>{0, 0}
-              : std::array{
-                    perms[cells[0] * num_facets_per_cell + local_facet[0]],
-                    perms[cells[1] * num_facets_per_cell + local_facet[1]]};
-    std::ranges::fill(Ab, T(0));
-    kernel(Ab.data(), coeffs.data() + f * 2 * cstride, constants.data(),
-           coordinate_dofs.data(), local_facet.data(), perm.data(), nullptr);
-
-    // Transform each block row and block column whose cell exists
-    if (transform0_set and cells0[0] >= 0)
-      apply_dof_transformation(Ab, cell_info0, cells0[0], num_cols);
-    if (transform0_set and cells0[1] >= 0)
-    {
-      std::span<T> sub(Ab.data() + ndim0 * num_cols, ndim0 * num_cols);
-      apply_dof_transformation(sub, cell_info0, cells0[1], num_cols);
-    }
-    if (transform1_set and cells1[0] >= 0)
-    {
-      apply_dof_transformation_to_transpose(Ab, cell_info1, cells1[0],
-                                            num_rows);
-    }
-    if (transform1_set and cells1[1] >= 0)
-    {
-      // The second cell's columns are not contiguous, so transform row by row
-      for (std::size_t row = 0; row < num_rows; ++row)
-      {
-        std::span<T> sub(Ab.data() + row * num_cols + ndim1, ndim1);
-        apply_dof_transformation_to_transpose(sub, cell_info1, cells1[1], 1);
-      }
-    }
+    tabulate(std::span<T>(Ab), f);
 
     const bool all_cells = cells0[0] >= 0 and cells0[1] >= 0 and cells1[0] >= 0
                            and cells1[1] >= 0;
@@ -626,129 +514,6 @@ void assemble_interior_facets(
         mat_add_block_values(dofs0, dofs1, Ae_block);
       }
     }
-  }
-}
-//-----------------------------------------------------------------------------
-template <typename T, std::floating_point U>
-void assemble_cells_impl(
-    const std::function<int(std::span<const std::int32_t>,
-                            std::span<const std::int32_t>,
-                            const std::span<const T>)>& mat_add_block_values,
-    const std::function<int(std::span<const std::int32_t>,
-                            std::span<const std::int32_t>,
-                            const std::span<const T>)>& mat_add_values,
-    const dolfinx::mesh::Geometry<U>& geometry,
-    std::span<const std::int32_t> active_cells,
-    std::span<const std::int32_t> active_cells0,
-    std::span<const std::int32_t> active_cells1,
-    std::function<void(std::span<T>, const std::span<const std::uint32_t>,
-                       const std::int32_t, const int)>
-        apply_dof_transformation,
-    const dolfinx::fem::DofMap& dofmap0,
-    std::function<void(std::span<T>, const std::span<const std::uint32_t>,
-                       const std::int32_t, const int)>
-        apply_dof_transformation_to_transpose,
-    const dolfinx::fem::DofMap& dofmap1, std::span<const std::int8_t> bc0,
-    std::span<const std::int8_t> bc1,
-    const std::function<void(T*, const T*, const T*, const U*, const int*,
-                             const std::uint8_t*, void*)>& kernel,
-    const std::span<const T>& coeffs, int cstride,
-    const std::vector<T>& constants,
-    const std::span<const std::uint32_t>& cell_info0,
-    const std::span<const std::uint32_t>& cell_info1,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
-    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1)
-{
-  // Get MPC data
-  const std::array<
-      std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>, 2>
-      masters = {mpc0->masters(), mpc1->masters()};
-  const std::array<std::shared_ptr<const dolfinx::graph::AdjacencyList<T>>, 2>
-      coefficients = {mpc0->coefficients(), mpc1->coefficients()};
-  const std::array<std::span<const std::int8_t>, 2> is_slave
-      = {mpc0->is_slave(), mpc1->is_slave()};
-
-  const std::array<
-      const std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>>,
-      2>
-      cell_to_slaves = {mpc0->cell_to_slaves(), mpc1->cell_to_slaves()};
-
-  // Prepare cell geometry
-  if (geometry.dofmaps().size() != 1)
-    throw std::runtime_error(
-        "Currently only supports meshes with one geometry dofmap.");
-  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-      const std::int32_t,
-      MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      x_dofmap = geometry.dofmaps().front();
-  const std::size_t num_dofs_g = x_dofmap.extent(1);
-  std::span<const U> x_g = geometry.x();
-
-  // Iterate over active cells
-  std::vector<U> coordinate_dofs(3 * num_dofs_g);
-  const auto num_dofs0 = (std::uint32_t)dofmap0.map().extent(1);
-  const auto num_dofs1 = (std::uint32_t)dofmap1.map().extent(1);
-  const std::array<const int, 2> bs = {dofmap0.bs(), dofmap1.bs()};
-  const std::uint32_t ndim0 = num_dofs0 * bs.front();
-  const std::uint32_t ndim1 = num_dofs1 * bs.back();
-  const std::array<const std::uint32_t, 2> num_dofs = {num_dofs0, num_dofs1};
-
-  std::vector<T> Aeb(ndim0 * ndim1);
-  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-      T, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>
-      Ae(Aeb.data(), ndim0, ndim1);
-  const std::span<T> _Ae(Aeb);
-  std::vector<T> scratch_memory(2 * ndim0 * ndim1 + ndim0 + ndim1);
-
-  const bool transform0_set
-      = dolfinx::fem::is_transform_set(apply_dof_transformation);
-  const bool transform1_set
-      = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
-  for (std::size_t index = 0; index < active_cells0.size(); index++)
-  {
-    const std::int32_t cell = active_cells[index];
-    const std::int32_t cell0 = active_cells0[index];
-    const std::int32_t cell1 = active_cells1[index];
-
-    // Get cell coordinates/geometry
-    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        x_dofmap, cell, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    for (std::size_t i = 0; i < x_dofs.size(); ++i)
-    {
-      std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
-                          std::next(coordinate_dofs.begin(), 3 * i));
-    }
-
-    // Tabulate tensor
-    std::ranges::fill(Aeb, 0);
-    kernel(Aeb.data(), coeffs.data() + index * cstride, constants.data(),
-           coordinate_dofs.data(), nullptr, nullptr, nullptr);
-    if (transform0_set)
-    {
-      apply_dof_transformation(_Ae, cell_info0, cell0, ndim1);
-    }
-    if (transform1_set)
-    {
-      apply_dof_transformation_to_transpose(_Ae, cell_info1, cell1, ndim0);
-    }
-
-    // Zero rows/columns for essential bcs
-    std::span<const std::int32_t> dofs0 = dofmap0.cell_dofs(cell0);
-    std::span<const std::int32_t> dofs1 = dofmap1.cell_dofs(cell1);
-    zero_dirichlet<T>(_Ae, dofs0, bs.front(), bc0, dofs1, bs.back(), bc1);
-
-    // Modify local element matrix Ae and insert contributions into master
-    // locations
-    if ((cell_to_slaves[0]->num_links(cell0) > 0)
-        || (cell_to_slaves[1]->num_links(cell1) > 0))
-    {
-      const std::array<std::span<const std::int32_t>, 2> slaves
-          = {cell_to_slaves[0]->links(cell0), cell_to_slaves[1]->links(cell1)};
-      const std::array<std::span<const std::int32_t>, 2> dofs = {dofs0, dofs1};
-      modify_mpc_cell<T>(mat_add_values, num_dofs, Ae, dofs, bs, slaves,
-                         masters, coefficients, is_slave, scratch_memory);
-    }
-    mat_add_block_values(dofs0, dofs1, _Ae);
   }
 }
 //-----------------------------------------------------------------------------
@@ -837,43 +602,91 @@ void assemble_matrix_impl(
     mesh->topology_mutable()->create_entity_permutations(fdim, num_threads);
     perms = std::span(mesh->topology()->get_entity_permutations(fdim));
   }
+  // Standard DOLFINx tabulation data shared by all integral types
+  if (mesh->geometry().dofmaps().size() != 1)
+    throw std::runtime_error(
+        "Currently only supports meshes with one geometry dofmap.");
+  mdspan2_t x_dofmap = mesh->geometry().dofmaps().front();
+  const std::size_t num_dofs_g = x_dofmap.extent(1);
+  std::span<const U> x_g = mesh->geometry().x();
+  // Room for the two cells of an interior facet
+  std::vector<U> coordinate_dofs(2 * 3 * num_dofs_g);
+  const std::size_t ndim0 = dofmap0->bs() * dofmap0->map().extent(1);
+  const std::size_t ndim1 = dofmap1->bs() * dofmap1->map().extent(1);
+  const bool transform0_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation);
+  const bool transform1_set
+      = dolfinx::fem::is_transform_set(apply_dof_transformation_to_transpose);
+
+  // Copy the coordinates of `cell` into slot `slot` of `coordinate_dofs`
+  auto gather_coordinates = [&](std::int32_t cell, std::size_t slot)
+  {
+    dolfinx_mpc::gather_cell_coordinates(
+        x_dofmap, x_g, cell,
+        std::span(coordinate_dofs).subspan(3 * slot * num_dofs_g));
+  };
+
   for (int i = 0; i < a.num_integrals(dolfinx::fem::IntegralType::cell, 0); ++i)
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::cell, i, 0);
     const auto& [coeffs, cstride]
         = coefficients.at({dolfinx::fem::IntegralType::cell, i});
-    std::span<const std::int32_t> active_cells
+    std::span<const std::int32_t> cells
         = a.domain(dolfinx::fem::IntegralType::cell, i, 0);
-    std::span<const std::int32_t> active_cells0
+    std::span<const std::int32_t> cells0
         = a.domain_arg(dolfinx::fem::IntegralType::cell, 0, i, 0);
-    std::span<const std::int32_t> active_cells1
+    std::span<const std::int32_t> cells1
         = a.domain_arg(dolfinx::fem::IntegralType::cell, 1, i, 0);
-    assemble_cells_impl<T>(
-        mat_add_block_values, mat_add_values, mesh->geometry(), active_cells,
-        active_cells0, active_cells1, apply_dof_transformation, *dofmap0,
-        apply_dof_transformation_to_transpose, *dofmap1, bc0, bc1, fn, coeffs,
-        cstride, constants, cell_info0, cell_info1, mpc0, mpc1);
+    auto tabulate = [&](std::span<T> Ae, std::size_t e)
+    {
+      gather_coordinates(cells[e], 0);
+      std::ranges::fill(Ae, T(0));
+      fn(Ae.data(), coeffs.data() + e * cstride, constants.data(),
+         coordinate_dofs.data(), nullptr, nullptr, nullptr);
+      if (transform0_set)
+        apply_dof_transformation(Ae, cell_info0, cells0[e], ndim1);
+      if (transform1_set)
+        apply_dof_transformation_to_transpose(Ae, cell_info1, cells1[e], ndim0);
+    };
+    assemble_entities<T, U, 1>(mat_add_block_values, mat_add_values, cells0,
+                               cells1, *dofmap0, *dofmap1, bc0, bc1, mpc0, mpc1,
+                               tabulate);
   }
 
   for (int i = 0;
        i < a.num_integrals(dolfinx::fem::IntegralType::exterior_facet, 0); ++i)
-
   {
     const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i, 0);
     const auto& [coeffs, cstride]
         = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
     std::span<const std::int32_t> facets
         = a.domain(dolfinx::fem::IntegralType::exterior_facet, i, 0);
-    std::span<const std::int32_t> active_facets0
+    std::span<const std::int32_t> facets0
         = a.domain_arg(dolfinx::fem::IntegralType::exterior_facet, 0, i, 0);
-    std::span<const std::int32_t> active_facets1
+    std::span<const std::int32_t> facets1
         = a.domain_arg(dolfinx::fem::IntegralType::exterior_facet, 1, i, 0);
-    assemble_exterior_facets<T>(
-        mat_add_block_values, mat_add_values, *mesh, facets, active_facets0,
-        active_facets1, apply_dof_transformation, *dofmap0,
-        apply_dof_transformation_to_transpose, *dofmap1, bc0, bc1, fn, coeffs,
-        cstride, constants, cell_info0, cell_info1, perms, num_facets_per_cell,
-        mpc0, mpc1);
+    auto tabulate = [&](std::span<T> Ae, std::size_t e)
+    {
+      // Entities are (cell, local facet) pairs
+      const std::int32_t cell = facets[2 * e];
+      const int local_facet = facets[2 * e + 1];
+      gather_coordinates(cell, 0);
+      const std::uint8_t perm
+          = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
+      std::ranges::fill(Ae, T(0));
+      fn(Ae.data(), coeffs.data() + e * cstride, constants.data(),
+         coordinate_dofs.data(), &local_facet, &perm, nullptr);
+      if (transform0_set)
+        apply_dof_transformation(Ae, cell_info0, facets0[2 * e], ndim1);
+      if (transform1_set)
+      {
+        apply_dof_transformation_to_transpose(Ae, cell_info1, facets1[2 * e],
+                                              ndim0);
+      }
+    };
+    assemble_entities<T, U, 2>(mat_add_block_values, mat_add_values, facets0,
+                               facets1, *dofmap0, *dofmap1, bc0, bc1, mpc0,
+                               mpc1, tabulate);
   }
 
   for (int i = 0;
@@ -888,12 +701,59 @@ void assemble_matrix_impl(
         = a.domain_arg(dolfinx::fem::IntegralType::interior_facet, 0, i, 0);
     std::span<const std::int32_t> facets1
         = a.domain_arg(dolfinx::fem::IntegralType::interior_facet, 1, i, 0);
-    assemble_interior_facets<T>(
-        mat_add_block_values, mat_add_values, *mesh, facets, facets0, facets1,
-        apply_dof_transformation, *dofmap0,
-        apply_dof_transformation_to_transpose, *dofmap1, bc0, bc1, fn, coeffs,
-        cstride, constants, cell_info0, cell_info1, perms, num_facets_per_cell,
-        mpc0, mpc1);
+    const std::size_t num_rows = 2 * ndim0;
+    const std::size_t num_cols = 2 * ndim1;
+    auto tabulate = [&](std::span<T> Ab, std::size_t f)
+    {
+      // Entities are (cell, local facet) for each side
+      const std::array<std::int32_t, 2> cells
+          = {facets[4 * f], facets[4 * f + 2]};
+      const std::array<int, 2> local_facet
+          = {facets[4 * f + 1], facets[4 * f + 3]};
+      const std::array<std::int32_t, 2> cells0
+          = {facets0[4 * f], facets0[4 * f + 2]};
+      const std::array<std::int32_t, 2> cells1
+          = {facets1[4 * f], facets1[4 * f + 2]};
+      gather_coordinates(cells[0], 0);
+      gather_coordinates(cells[1], 1);
+      const std::array<std::uint8_t, 2> perm
+          = perms.empty()
+                ? std::array<std::uint8_t, 2>{0, 0}
+                : std::array{
+                      perms[cells[0] * num_facets_per_cell + local_facet[0]],
+                      perms[cells[1] * num_facets_per_cell + local_facet[1]]};
+      std::ranges::fill(Ab, T(0));
+      fn(Ab.data(), coeffs.data() + f * 2 * cstride, constants.data(),
+         coordinate_dofs.data(), local_facet.data(), perm.data(), nullptr);
+
+      // Transform each block row and block column whose cell exists
+      if (transform0_set and cells0[0] >= 0)
+        apply_dof_transformation(Ab, cell_info0, cells0[0], num_cols);
+      if (transform0_set and cells0[1] >= 0)
+      {
+        apply_dof_transformation(Ab.subspan(ndim0 * num_cols), cell_info0,
+                                 cells0[1], num_cols);
+      }
+      if (transform1_set and cells1[0] >= 0)
+      {
+        apply_dof_transformation_to_transpose(Ab, cell_info1, cells1[0],
+                                              num_rows);
+      }
+      if (transform1_set and cells1[1] >= 0)
+      {
+        // The second cell's columns are not contiguous, so transform row by
+        // row
+        for (std::size_t row = 0; row < num_rows; ++row)
+        {
+          apply_dof_transformation_to_transpose(
+              Ab.subspan(row * num_cols + ndim1, ndim1), cell_info1, cells1[1],
+              1);
+        }
+      }
+    };
+    assemble_interior_facets<T, U>(mat_add_block_values, mat_add_values,
+                                   facets0, facets1, *dofmap0, *dofmap1, bc0,
+                                   bc1, mpc0, mpc1, tabulate);
   }
 }
 //-----------------------------------------------------------------------------
