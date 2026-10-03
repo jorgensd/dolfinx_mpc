@@ -235,7 +235,7 @@ uh_1, uh_2, lh = problem.solve()
 # +
 def l2_error(uh, u_ex):
     error = fem.form(ufl.inner(uh - u_ex, uh - u_ex) * ufl.dx)
-    return np.sqrt(msh.comm.allreduce(fem.assemble_scalar(error), op=MPI.SUM))
+    return np.sqrt(msh.comm.allreduce(fem.assemble_scalar(error), op=MPI.SUM).real)
 
 
 error_u = np.hypot(l2_error(uh_1, u_exact(x_1)), l2_error(uh_2, u_exact(x_2)))
@@ -309,10 +309,6 @@ def solve_mortar(N: int, degree: int) -> tuple[float, float]:
         petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
     )
     uh_1, uh_2, lh = problem.solve()
-
-    def l2_error(uh, u_ex):
-        error = fem.form(ufl.inner(uh - u_ex, uh - u_ex) * ufl.dx)
-        return np.sqrt(msh.comm.allreduce(fem.assemble_scalar(error), op=MPI.SUM))
 
     error_u = np.hypot(l2_error(uh_1, u_exact(x_1)), l2_error(uh_2, u_exact(x_2)))
     return error_u, l2_error(lh, ufl.cos(2 * ufl.pi * ufl.SpatialCoordinate(gamma)[1]))
