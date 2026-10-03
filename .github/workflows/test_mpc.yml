@@ -141,6 +141,7 @@ jobs:
           coverage run --rcfile=.coveragerc python/demos/demo_flow_rate_constraint.py
           coverage run --rcfile=.coveragerc python/demos/demo_mortar.py
           coverage run --rcfile=.coveragerc python/demos/demo_mortar_subdomains.py
+          coverage run --rcfile=.coveragerc python/demos/demo_scaling_coefficients.py
 
       - name: Run demos (parallel)
         run: |
@@ -156,6 +157,7 @@ jobs:
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_boundary_average_constraint.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_flow_rate_constraint.py
           mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_mortar_subdomains.py
+          mpirun -n 2 coverage run --rcfile=.coveragerc -m mpi4py python/demos/demo_scaling_coefficients.py
 
       - name: Run contact demos 2D (serial)
         run: |

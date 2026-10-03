@@ -14,6 +14,7 @@ import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
+import ufl
 from dolfinx import default_real_type, default_scalar_type
 
 import dolfinx_mpc.cpp
@@ -116,6 +117,7 @@ class MultiPointConstraint:
     _offsets: npt.NDArray[numpy.int32]
     _bcs: List[_fem.DirichletBC]
     _rhs_coeffs: Optional[_fem.Function]
+    _scale_function: Optional[_fem.Function]
     V: _fem.FunctionSpace
     finalized: bool
     _cpp_object: _mpc_classes
@@ -141,6 +143,7 @@ class MultiPointConstraint:
             if rhs_coeffs.function_space != V:
                 raise ValueError("rhs_coeffs must be a Function in the space of the constraint")
         self._rhs_coeffs = rhs_coeffs
+        self._scale_function = None
         self.V = V
         self.finalized = False
         self._dtype = dtype
@@ -351,7 +354,7 @@ class MultiPointConstraint:
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),  # type: ignore
-        tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
+        tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
         num_threads: Optional[int] = 1,
     ):
         """
@@ -367,12 +370,16 @@ class MultiPointConstraint:
             scale: Float for scaling bc
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
-                collision searches to determine periodic degrees of freedom.
+                collision searches to determine periodic degrees of freedom. With `None`, every basis value is
+                kept, so that the coefficients can later be changed with :func:`scale_coefficients` or
+                :func:`update_coefficients` without having lost masters. The padding then defaults to
+                `500` machine epsilon.
             num_threads: The number of threads to use for certain operations
         """
         bcs_ = [bc._cpp_object for bc in bcs]
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
+        tol_ = None if tol is None else float(tol)
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
                 self.V._cpp_object,
@@ -382,7 +389,7 @@ class MultiPointConstraint:
                 bcs_,
                 scale,
                 False,
-                float(tol),
+                tol_,
                 num_threads=num_threads,
             )
         elif self.V.contains(V):
@@ -394,7 +401,7 @@ class MultiPointConstraint:
                 bcs_,
                 scale,
                 True,
-                float(tol),
+                tol_,
                 num_threads=num_threads,
             )
         else:
@@ -408,7 +415,7 @@ class MultiPointConstraint:
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
         scale: _float_classes = default_scalar_type(1.0),  # type: ignore
-        tol: _float_classes = 500 * numpy.finfo(default_real_type).eps,
+        tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
         num_threads: Optional[int] = 1,
     ):
         """
@@ -425,19 +432,23 @@ class MultiPointConstraint:
             scale: Float for scaling bc
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
-                collision searches to determine periodic degrees of freedom.
+                collision searches to determine periodic degrees of freedom. With `None`, every basis value is
+                kept, so that the coefficients can later be changed with :func:`scale_coefficients` or
+                :func:`update_coefficients` without having lost masters. The padding then defaults to
+                `500` machine epsilon.
             num_threads: The number of threads to use for certain operations.
         """
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
+        tol_ = None if tol is None else float(tol)
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         if V is self.V:
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                self.V._cpp_object, indicator, relation, bcs, scale, False, float(tol), num_threads
+                self.V._cpp_object, indicator, relation, bcs, scale, False, tol_, num_threads
             )
         elif self.V.contains(V):
             mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                V._cpp_object, indicator, relation, bcs, scale, True, float(tol), num_threads
+                V._cpp_object, indicator, relation, bcs, scale, True, tol_, num_threads
             )
         else:
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
@@ -669,6 +680,93 @@ class MultiPointConstraint:
         """
         self._raise_if_not_finalized()
         return self._cpp_object.coefficients()
+
+    def all_coefficients(self) -> Tuple[_float_array_types, npt.NDArray[numpy.int32]]:
+        """
+        Returns the coefficients of all masters, including those eliminated by a Dirichlet condition,
+        in the order supplied before :func:`finalize`, and the offsets for the ith degree of freedom.
+        This is the layout taken by :func:`update_coefficients`. The corresponding masters are given
+        by :func:`all_masters`.
+
+        Examples:
+
+            .. highlight:: python
+            .. code-block:: python
+
+                coeffs, offsets = mpc.all_coefficients()
+                coeffs_of_slave_i = coeffs[offsets[i]:offsets[i+1]]
+        """
+        self._raise_if_not_finalized()
+        return self._cpp_object.all_coefficients()
+
+    def all_masters(self) -> npt.NDArray[numpy.int32]:
+        """
+        Returns the masters (local index in :attr:`function_space`) in the layout of
+        :func:`all_coefficients`.
+        """
+        self._raise_if_not_finalized()
+        return self._cpp_object.all_masters()
+
+    def update_coefficients(self, coeffs: _float_array_types) -> None:
+        """
+        Replace the coefficient of every master, including masters eliminated by a Dirichlet
+        condition, and recompute the constraint offset :math:`g`.
+
+        The masters are fixed at creation. A master dropped by `tol` or by the `filter` of
+        :func:`finalize` cannot be given a coefficient, so create the constraint with `tol=None`
+        and no filter if the coefficients are to be changed.
+
+        Args:
+            coeffs: The new coefficients, in the layout of :func:`all_coefficients`, for all degrees
+                of freedom local to the process (owned and ghost).
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._raise_if_not_finalized()
+        self._cpp_object.update_coefficients(numpy.ascontiguousarray(coeffs, dtype=self._dtype))
+
+    def scale_coefficients(
+        self,
+        scale: Union[_float_classes, float, complex, ufl.core.expr.Expr, _fem.Expression],
+    ) -> None:
+        """
+        Multiply the coefficients of all masters of each slave :math:`s` by a factor
+        :math:`f_s`, and recompute the constraint offset :math:`g`. For a periodic constraint
+        :math:`u(x_s) = f_s u(relation(x_s))`, which for instance gives a Floquet-Bloch condition
+        with :math:`f=e^{i k\\cdot L}`.
+
+        The factors are stored in a function in the space of the constraint, and :math:`f_s` is
+        the degree of freedom :math:`s` of that function: the value at the slave for a Lagrange
+        space, the corresponding moment for e.g. a Nédélec space.
+
+        Repeated calls compound. Masters eliminated by a Dirichlet condition are scaled as well,
+        the user supplied `rhs_coeffs` are not.
+
+        Args:
+            scale: A scalar, a :class:`dolfinx.fem.Function` in the constraint's space (copied
+                by interpolation), a UFL expression, compiled into a :class:`dolfinx.fem.Expression`
+                at the interpolation points of the space, or such a compiled expression. Pass a
+                compiled expression to avoid recompilation when the factor is updated through
+                :class:`dolfinx.fem.Constant`'s in it.
+
+        Note:
+            Collective. Must be called by every process.
+        """
+        self._raise_if_not_finalized()
+        if self._scale_function is None:
+            self._scale_function = _fem.Function(self.V, dtype=self._dtype)
+        f = self._scale_function
+        if isinstance(scale, (_fem.Expression, _fem.Function)):
+            f.interpolate(scale)
+        elif isinstance(scale, ufl.core.expr.Expr):
+            f.interpolate(_fem.Expression(scale, self.V.element.interpolation_points, dtype=self._dtype))
+        else:
+            f.x.array[:] = scale
+        f.x.scatter_forward()
+        # The extended index map appends master ghosts after the ghosts of the input space
+        num_dofs_local = len(self._cpp_object.is_slave)
+        self._cpp_object.scale_coefficients(f.x.array[:num_dofs_local])
 
     @property
     def num_local_slaves(self):

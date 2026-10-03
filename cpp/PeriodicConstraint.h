@@ -6,6 +6,8 @@
 
 #include "ContactConstraint.h"
 #include <dolfinx/fem/DirichletBC.h>
+#include <limits>
+#include <optional>
 
 namespace impl
 {
@@ -23,7 +25,9 @@ namespace impl
 /// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
 /// contribution that is less than this value is ignored. The tolerance is also
 /// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom.
+/// searches to determine periodic degrees of freedom. If unset, every basis
+/// value is kept (so the coefficients can later be rescaled without losing
+/// masters) and the padding defaults to 500 machine epsilon.
 /// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
@@ -32,9 +36,11 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     std::span<std::int32_t> slave_blocks,
     const std::function<std::vector<U>(std::span<const U>)>& relation, T scale,
     const std::function<const std::int32_t(const std::int32_t&)>& parent_map,
-    const dolfinx::fem::FunctionSpace<U>& parent_space, const U tol,
+    const dolfinx::fem::FunctionSpace<U>& parent_space, std::optional<U> tol,
     std::size_t num_threads)
 {
+  // Bounding box padding is needed even when no coefficient is cut
+  const U padding = tol.value_or(500 * std::numeric_limits<U>::epsilon());
 
   // Map a list of indices in collapsed space back to the parent space
   auto sub_to_parent = [&parent_map](const std::vector<std::int32_t>& sub_dofs)
@@ -132,16 +138,16 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   // Create bounding-box tree over owned cells
   std::vector<std::int32_t> r(num_cells_local);
   std::iota(r.begin(), r.end(), 0);
-  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, tol, r);
+  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, padding, r);
   auto process_tree = tree.create_global_tree(mesh->comm());
   auto colliding_bbox_processes
       = dolfinx::geometry::compute_collisions<U>(process_tree, mapped_T_b);
 
   std::vector<std::int32_t> local_cell_collisions
-      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, mapped_T_b, tol);
+      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, mapped_T_b, padding);
   dolfinx::common::Timer t0("~~Periodic: Local cell and eval basis");
   auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-      V, mapped_T_b, local_cell_collisions, tol, num_threads);
+      V, mapped_T_b, local_cell_collisions, padding, num_threads);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
       tabulated_basis_values(basis_values.data(), basis_shape);
@@ -193,7 +199,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
           const std::int32_t cell_block = cell_blocks[j];
           // NOTE: Assuming 0 value size
           if (const T val = scale * tabulated_basis_values(i, j, 0);
-              std::abs(val) > tol)
+              !tol or std::abs(val) > *tol)
           {
             num_masters++;
             masters.push_back(global_parent_dofs[j * bs + b]);
@@ -361,10 +367,11 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   num_masters_per_slave_remote.reserve(bs * coords_recvb.size() / 3);
 
   std::vector<std::int32_t> remote_cell_collisions
-      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb, tol);
+      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb,
+                                              padding);
   auto [remote_basis_valuesb, r_basis_shape]
       = dolfinx_mpc::evaluate_basis_functions<U>(
-          V, coords_recvb, remote_cell_collisions, tol, num_threads);
+          V, coords_recvb, remote_cell_collisions, padding, num_threads);
   MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
       remote_basis_values(remote_basis_valuesb.data(), r_basis_shape);
@@ -407,7 +414,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
           {
             // NOTE: Assuming value_size 0
             if (const T val = scale * remote_basis_values(j, k, 0);
-                std::abs(val) > tol)
+                !tol or std::abs(val) > *tol)
             {
               num_masters++;
               masters_remote.push_back(global_parent_dofs[k * bs + b]);
@@ -502,7 +509,9 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 /// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
 /// contribution that is less than this value is ignored. The tolerance is also
 /// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom.
+/// searches to determine periodic degrees of freedom. If unset, every basis
+/// value is kept (so the coefficients can later be rescaled without losing
+/// masters) and the padding defaults to 500 machine epsilon.
 /// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
@@ -516,7 +525,7 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
         indicator,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse, const U tol, std::size_t num_threads)
+    T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
 {
   std::vector<std::int32_t> reduced_blocks;
   if (collapse)
@@ -588,7 +597,9 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
 /// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
 /// contribution that is less than this value is ignored. The tolerance is also
 /// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom.
+/// searches to determine periodic degrees of freedom. If unset, every basis
+/// value is kept (so the coefficients can later be rescaled without losing
+/// masters) and the padding defaults to 500 machine epsilon.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> topological_condition(
@@ -597,7 +608,7 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const std::int32_t tag,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse, const U tol, std::size_t num_threads)
+    T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
 {
   std::vector<std::int32_t> entities = meshtag->find(tag);
   V->mesh()->topology_mutable()->create_connectivity(
@@ -678,7 +689,7 @@ mpc_data<double> create_periodic_condition_geometrical(
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     double scale, bool collapse,
-    const double tol = 500 * std::numeric_limits<double>::epsilon(),
+    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::geometrical_condition<double, double>(
@@ -698,7 +709,7 @@ mpc_data<std::complex<double>> create_periodic_condition_geometrical(
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
     std::complex<double> scale, bool collapse,
-    const double tol = 500 * std::numeric_limits<double>::epsilon(),
+    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::geometrical_condition<std::complex<double>, double>(
@@ -713,7 +724,7 @@ mpc_data<double> create_periodic_condition_topological(
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
         bcs,
     double scale, bool collapse,
-    const double tol = 500 * std::numeric_limits<double>::epsilon(),
+    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::topological_condition<double, double>(
@@ -729,7 +740,7 @@ mpc_data<std::complex<double>> create_periodic_condition_topological(
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
         bcs,
     std::complex<double> scale, bool collapse,
-    const double tol = 500 * std::numeric_limits<double>::epsilon(),
+    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::topological_condition<std::complex<double>, double>(
@@ -748,7 +759,7 @@ mpc_data<float> create_periodic_condition_geometrical(
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
         bcs,
     float scale, bool collapse,
-    const float tol = 500 * std::numeric_limits<float>::epsilon(),
+    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::geometrical_condition<float, float>(
@@ -768,7 +779,7 @@ mpc_data<std::complex<float>> create_periodic_condition_geometrical(
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
     std::complex<float> scale, bool collapse,
-    const float tol = 500 * std::numeric_limits<float>::epsilon(),
+    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::geometrical_condition<std::complex<float>, float>(
@@ -783,7 +794,7 @@ mpc_data<float> create_periodic_condition_topological(
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
         bcs,
     float scale, bool collapse,
-    const float tol = 500 * std::numeric_limits<float>::epsilon(),
+    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::topological_condition<float, float>(
@@ -799,7 +810,7 @@ mpc_data<std::complex<float>> create_periodic_condition_topological(
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
     std::complex<float> scale, bool collapse,
-    const float tol = 500 * std::numeric_limits<float>::epsilon(),
+    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
     std::size_t num_threads = 1)
 {
   return impl::topological_condition<std::complex<float>, float>(
