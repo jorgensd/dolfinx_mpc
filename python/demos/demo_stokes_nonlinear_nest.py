@@ -202,7 +202,7 @@ P = 2 * mu * ufl.inner(sym_grad(u), sym_grad(v)) * ufl.dx
 P -= ufl.inner(ufl.outer(n, n) * ufl.dot(2 * mu * sym_grad(u), n), v) * ds
 P += ufl.inner(p, q) * ufl.dx
 
-tol = 1e-7
+tol = 1e1 * np.finfo(default_real_type).eps
 problem = dolfinx_mpc.NonlinearProblem(
     ufl.extract_blocks(F),
     [uh, ph],
@@ -218,7 +218,7 @@ problem = dolfinx_mpc.NonlinearProblem(
         "snes_linesearch_type": "none",
         "ksp_error_if_not_converged": True,
         "ksp_type": "minres",
-        "ksp_rtol": 1e-8,
+        "ksp_rtol": tol,
         "pc_type": "fieldsplit",
         "pc_fieldsplit_type": "additive",
     },
@@ -318,7 +318,7 @@ with dolfinx.common.Timer("~Stokes: Verification of problem by global matrix red
         d = scipy.sparse.linalg.spsolve(KTAK, reduced_L)
         # Back substitution to full solution vector
         uh_numpy = K @ d
-        assert np.allclose(np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2))
+        assert np.allclose(np.linalg.norm(uh_numpy, 2), np.linalg.norm(up_mpc, 2), atol=1e1 * tol)
 
 # -------------------- List timings --------------------------
 dolfinx.common.list_timings(MPI.COMM_WORLD)
