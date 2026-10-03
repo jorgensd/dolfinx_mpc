@@ -24,6 +24,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+      
+      # The scan action unpacks the scanner, and the container has no unzip
+      - name: Install unzip
+        run: |
+          apt-get update
+          apt-get install -y unzip
 
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
