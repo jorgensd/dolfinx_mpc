@@ -31,8 +31,10 @@
   for all of them. `MultiPointConstraint.finalize` is the one-space case and behaves as before; in C++,
   `create_multipointconstraints` is the factory and the constructor delegates to it. New errors, raised
   identically on every process: meshes on communicators of different size or rank order, and a master
-  that is itself a slave, which `backsubstitution` does not resolve. A master without a local index in
-  the extended space, which would previously have given wrong results silently, is also rejected.
+  that is itself a slave, which `backsubstitution` does not resolve, and a slave constrained more than
+  once, as when two periodic conditions share a corner, which previously failed on the offsets in serial
+  and hung in parallel. A master without a local index in the extended space, which would previously
+  have given wrong results silently, is also rejected.
 - **BUGFIX**: `NonlinearProblem` failed with a non-nest `P`, and with `J=None` for a single form.
 - `LinearProblem` accepts `entity_maps`, as `NonlinearProblem` already did, so forms coupling two meshes need not be compiled by hand.
 - **Forms coupling spaces on different meshes** — a space on a submesh coupled to one on its
