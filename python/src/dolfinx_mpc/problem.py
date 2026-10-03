@@ -28,6 +28,27 @@ from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint
 
 
+def _backsubstitute(
+    mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
+    u: _fem.Function | Sequence[_fem.Function],
+):
+    """Set the slave values of `u` from its masters, for one block or for every block.
+
+    A constraint with masters in another block reads them from the functions of all blocks, so
+    every block is homogenized before any is back-substituted.
+    """
+    if isinstance(mpc, MultiPointConstraint):
+        assert isinstance(u, _fem.Function)
+        mpc.homogenize(u)
+        mpc.backsubstitution(u)
+        return
+    assert isinstance(u, Sequence)
+    for mpc_i, u_i in zip(mpc, u):
+        mpc_i.homogenize(u_i)
+    for mpc_i, u_i in zip(mpc, u):
+        mpc_i.backsubstitution(u if mpc_i.has_cross_block_masters else u_i)
+
+
 def assemble_jacobian_mpc(
     u: Sequence[_fem.Function] | _fem.Function,
     jacobian: _fem.Form | Sequence[Sequence[_fem.Form | None]],
@@ -75,16 +96,7 @@ def assemble_jacobian_mpc(
     _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
     # Assign the input vector to the unknowns
     _fem.petsc.assign(x, u)  # type: ignore
-    if isinstance(u, Sequence):
-        assert isinstance(mpc, Sequence)
-        for i in range(len(u)):
-            mpc[i].homogenize(u[i])
-            mpc[i].backsubstitution(u[i])
-    else:
-        assert isinstance(u, _fem.Function)
-        assert isinstance(mpc, MultiPointConstraint)
-        mpc.homogenize(u)
-        mpc.backsubstitution(u)
+    _backsubstitute(mpc, u)  # type: ignore
 
     # Assemble Jacobian
     J.zeroEntries()
@@ -142,16 +154,7 @@ def assemble_residual_mpc(
     _ghost_update(x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
     # Assign the input vector to the unknowns
     _fem.petsc.assign(x, u)  # type: ignore
-    if isinstance(u, Sequence):
-        assert isinstance(mpc, Sequence)
-        for i in range(len(u)):
-            mpc[i].homogenize(u[i])
-            mpc[i].backsubstitution(u[i])
-    else:
-        assert isinstance(u, _fem.Function)
-        assert isinstance(mpc, MultiPointConstraint)
-        mpc.homogenize(u)
-        mpc.backsubstitution(u)
+    _backsubstitute(mpc, u)  # type: ignore
     # Assemble the residual
     _zero_vector(F)
     assemble_vector(residual, mpc, F)  # type: ignore
@@ -350,14 +353,7 @@ class NonlinearProblem(dolfinx.fem.petsc.NonlinearProblem):
 
         # Move solution back to function
         dolfinx.fem.petsc.assign(self.x, self._u)  # type: ignore
-        if isinstance(self.mpc, Sequence):
-            for i in range(len(self._u)):
-                self.mpc[i].homogenize(self._u[i])
-                self.mpc[i].backsubstitution(self._u[i])
-        else:
-            assert isinstance(self._u, _fem.Function)
-            self.mpc.homogenize(self._u)
-            self.mpc.backsubstitution(self._u)
+        _backsubstitute(self.mpc, self._u)  # type: ignore
 
         converged_reason = self.solver.getConvergedReason()
         return self._u, converged_reason, self.solver.getIterationNumber()  # type: ignore
@@ -653,15 +649,6 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         _ghost_update(self._x, PETSc.InsertMode.INSERT, PETSc.ScatterMode.FORWARD)  # type: ignore
         _fem.petsc.assign(self._x, self.u)  # type: ignore
 
-        if isinstance(self.u, Sequence):
-            assert isinstance(self._mpc, Sequence)
-            for i in range(len(self.u)):
-                self._mpc[i].homogenize(self.u[i])
-                self._mpc[i].backsubstitution(self.u[i])
-        else:
-            assert isinstance(self.u, _fem.Function)
-            assert isinstance(self._mpc, MultiPointConstraint)
-            self._mpc.homogenize(self.u)
-            self._mpc.backsubstitution(self.u)
+        _backsubstitute(self._mpc, self.u)  # type: ignore
 
         return self._u

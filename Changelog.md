@@ -35,6 +35,23 @@
   once, as when two periodic conditions share a corner, which previously failed on the offsets in serial
   and hung in parallel. A master without a local index in the extended space, which would previously
   have given wrong results silently, is also rejected.
+- **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
+  that space) or `master_blocks` (a block per master, its position in the list given to
+  `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are
+  finalized together, the extended index map of each block gaining the masters every block puts there. Assembly,
+  lifting and back-substitution put a master's contributions in its own block, so a block-diagonal form can give a
+  reduced system with off-diagonal blocks. Such a system is assembled with `assemble_matrix`/`assemble_vector` on the
+  array of forms, `kind="nest"` or monolithic; the matrix of a single form rejects a constraint with masters elsewhere.
+  `backsubstitution` takes the functions of every block. A Dirichlet condition on a master is taken from the master's
+  block. The sparsity pattern now covers every block of the system (`dolfinx_mpc::create_sparsity_patterns`). C++
+  callers assemble a block with `dolfinx_mpc::assemble_matrix_blocks`, routing the masters' entries to the matrices of
+  the system with `dolfinx_mpc::make_mat_add_blocks`.
+- **New**: C++ tests (`cpp/test`, Catch2) and C++ demos (`cpp/demo`), built against the installed library and run in
+  CI. The first of each covers masters in another block: the test checks every block against a dense `K^T A K` with
+  `la::MatrixCSR`, and `demo_cross_block` solves such a system with PETSc.
+- **Changed**: a nest matrix now always has its diagonal blocks, which receive the diagonal of their slaves also when the
+  block has no form; previously such slave rows were empty. With masters in another block every block of the nest
+  exists. `create_matrix_nest` is built in C++ (`dolfinx_mpc::create_matrix_nest`).
 - **New feature**: monolithic matrices and vectors for a system with one constraint per block. `dolfinx_mpc.create_matrix`,
   `assemble_matrix`, `create_vector` and `assemble_vector` take a `kind`, as in `dolfinx.fem.petsc`: a single form gives a
   matrix of that PETSc type, an array of forms with `kind="nest"` (or a nested sequence of matrix types, one per block)

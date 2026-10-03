@@ -34,7 +34,7 @@ jobs:
           pipx run ruff format --check
 
       - name: Check C++ formatting
-        run: pipx run --spec clang-format==22.1.3 clang-format --dry-run --Werror cpp/*.h cpp/*.cpp python/src/dolfinx_mpc/*.cpp
+        run: pipx run --spec clang-format==22.1.3 clang-format --dry-run --Werror cpp/*.h cpp/*.cpp cpp/test/*.cpp cpp/demo/*/*.cpp python/src/dolfinx_mpc/*.cpp
 
       # Without DOLFINx installed, its imports are untyped (ignore_missing_imports)
       - name: Check typing
@@ -117,6 +117,26 @@ jobs:
           cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -DCMAKE_CXX_FLAGS="${MPC_CMAKE_CXX_FLAGS}" -S cpp/
           cmake --build build-dir
           cmake --install build-dir
+
+      - name: Build and run C++ tests
+        run: |
+          cmake -G Ninja -B build-test -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -S cpp/test
+          cmake --build build-test
+          for n in 1 2 3; do
+            echo "::group::C++ tests on ${n} process(es)"
+            mpirun -n ${n} build-test/unittests
+            echo "::endgroup::"
+          done
+
+      - name: Build and run C++ demos
+        run: |
+          cmake -G Ninja -B build-demo -DCMAKE_BUILD_TYPE=${MPC_BUILD_MODE} -S cpp/demo
+          cmake --build build-demo
+          for n in 1 2; do
+            echo "::group::C++ demos on ${n} process(es)"
+            mpirun -n ${n} build-demo/cross_block/demo_cross_block
+            echo "::endgroup::"
+          done
 
       - name: Install DOLFINx-MPC (Python)
         run: python3 -m pip -v install  --config-settings=cmake.build-type=${MPC_BUILD_MODE} --no-build-isolation  -e python/[test,optional,docs]

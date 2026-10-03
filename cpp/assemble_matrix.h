@@ -11,8 +11,10 @@
 #include <cstdint>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/Form.h>
+#include <format>
 #include <functional>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 namespace dolfinx_mpc
@@ -300,5 +302,98 @@ void assemble_matrix(
         std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
         bcs,
     std::size_t num_threads = 1);
+
+/// @brief Route the insertions of a constrained form to the matrices of the
+/// blocks of a system.
+///
+/// The form `a[i][j]` of a blocked system has its rows constrained by `mpc0`
+/// and its columns by `mpc1`. Its own entries belong to block `(i, j)`, while a
+/// master of either constraint may be in another block, given by its
+/// `MultiPointConstraint::master_blocks()`. The returned function sends each
+/// insertion to the matrix of the block it belongs to, and is the
+/// `mat_add_blocks` argument of `assemble_matrix_blocks`.
+///
+/// A block is identified by its position in the system, which for a master in
+/// another block is its block index: the constraints must then be the blocks
+/// of the system in the order they were created in. A master in the
+/// constraint's own block goes to `(i, j)` whatever the order.
+///
+/// @param[in] mat_add Function adding values to the matrix of block `(k, l)`,
+/// `mat_add[k][l](rows, cols, values)`, with unrolled indices local to those
+/// blocks. A block without a matrix has an empty function.
+/// @param[in] i Position of the form's row block in the system
+/// @param[in] j Position of the form's column block in the system
+/// @param[in] mpc0 Constraint on the rows of the form
+/// @param[in] mpc1 Constraint on the columns of the form
+/// @return `mat_add_blocks(row_block, rows, col_block, cols, values)`. It
+/// throws `std::runtime_error` if an insertion falls in a block without a
+/// matrix, which means the sparsity pattern did not include it.
+template <typename T, std::floating_point U>
+std::function<int(int, std::span<const std::int32_t>, int,
+                  std::span<const std::int32_t>, std::span<const T>)>
+make_mat_add_blocks(
+    std::vector<std::vector<
+        std::function<int(std::span<const std::int32_t>,
+                          std::span<const std::int32_t>, std::span<const T>)>>>
+        mat_add,
+    std::size_t i, std::size_t j,
+    const dolfinx_mpc::MultiPointConstraint<T, U>& mpc0,
+    const dolfinx_mpc::MultiPointConstraint<T, U>& mpc1)
+{
+  if (i >= mat_add.size() or j >= mat_add[i].size() or !mat_add[i][j])
+  {
+    throw std::invalid_argument(
+        std::format("Block ({}, {}) of the form has no matrix.", i, j));
+  }
+  return [mat_add = std::move(mat_add), i, j, block0 = mpc0.block(),
+          block1 = mpc1.block()](int rb, std::span<const std::int32_t> rows,
+                                 int cb, std::span<const std::int32_t> cols,
+                                 std::span<const T> vals) -> int
+  {
+    const std::size_t r = rb == block0 ? i : static_cast<std::size_t>(rb);
+    const std::size_t c = cb == block1 ? j : static_cast<std::size_t>(cb);
+    if (r >= mat_add.size() or c >= mat_add[r].size() or !mat_add[r][c])
+    {
+      throw std::runtime_error(std::format(
+          "A master puts entries in block ({}, {}), which has no matrix.", r,
+          c));
+    }
+    return mat_add[r][c](rows, cols, vals);
+  };
+}
+
+/// @brief Assemble a bilinear form into the matrices of a blocked system,
+/// given constrained dofs.
+///
+/// The entries of the form's own block go through `mat_add_block`, with
+/// blocked indices. A constraint with masters in other blocks adds the rows and
+/// columns of those masters to other blocks of the system, so every entry the
+/// constraint adds goes through `mat_add_blocks` with the blocks it belongs to.
+/// @param[in] mat_add_block Adds an element matrix to the form's own block,
+/// with blocked indices
+/// @param[in] mat_add_blocks `mat_add_blocks(row_block, rows, col_block, cols,
+/// values)` adds values to the given block, with unrolled local indices of
+/// those blocks. A block is the index of a constraint among those created
+/// together; the form's own blocks are `mpc0->block()` and `mpc1->block()`.
+/// @param[in] a The bilinear form to assemble
+/// @param[in] mpc0 Constraint applied to the rows
+/// @param[in] mpc1 Constraint applied to the columns
+/// @param[in] dof_marker0 Constrained dof markers on the test space of `a`, or
+/// empty if none are constrained
+/// @param[in] dof_marker1 Constrained dof markers on the trial space of `a`
+/// @param[in] num_threads The number of threads to use for certain operations.
+template <typename T, std::floating_point U>
+void assemble_matrix_blocks(
+    const std::function<int(std::span<const std::int32_t>,
+                            std::span<const std::int32_t>,
+                            const std::span<const T>&)>& mat_add_block,
+    const std::function<int(int, std::span<const std::int32_t>, int,
+                            std::span<const std::int32_t>, std::span<const T>)>&
+        mat_add_blocks,
+    const dolfinx::fem::Form<T>& a,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+    const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc1,
+    std::span<const std::int8_t> dof_marker0,
+    std::span<const std::int8_t> dof_marker1, std::size_t num_threads = 1);
 
 } // namespace dolfinx_mpc

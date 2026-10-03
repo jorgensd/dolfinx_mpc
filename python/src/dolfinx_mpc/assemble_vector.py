@@ -57,6 +57,39 @@ def _add_to_block(b_local: numpy.ndarray, b: _PETSc.Vec, k: int, values: numpy.n
     b_local[off_ghost[k] : off_ghost[k + 1]] += values[size:]
 
 
+@contextlib.contextmanager
+def _block_arrays(b: _PETSc.Vec):  # type: ignore
+    """
+    The writable local array, owned and ghost entries, of every block of a nest or monolithic
+    vector.
+
+    For a monolithic vector, whose blocks are not contiguous, these are zeroed scratch arrays that
+    are added to `b` on exit. All assembly into them only adds, so this equals working in place.
+    """
+    if b.getType() == "nest":
+        with contextlib.ExitStack() as stack:
+            yield [stack.enter_context(b_k.localForm()).array_w for b_k in b.getNestSubVecs()]
+    else:
+        num_blocks = len(_block_offsets(b)[0]) - 1
+        scratch = [_block_scratch(b, k) for k in range(num_blocks)]
+        yield scratch
+        with b.localForm() as b_local:
+            for k, values in enumerate(scratch):
+                _add_to_block(b_local.array_w, b, k, values)
+
+
+@contextlib.contextmanager
+def _block_arrays_read(x: Optional[_PETSc.Vec], constraints: Sequence[MultiPointConstraint]):  # type: ignore
+    """The local array, owned and ghost entries, of every block of a nest or monolithic vector."""
+    if x is None:
+        yield []
+    elif x.getType() == "nest":
+        with contextlib.ExitStack() as stack:
+            yield [stack.enter_context(x_k.localForm()).array_r for x_k in x.getNestSubVecs()]
+    else:
+        yield _cpp.la.petsc.get_local_vectors(x, _block_maps(constraints))
+
+
 def apply_lifting(
     b: _PETSc.Vec,
     form: Union[Sequence[Sequence[Optional[_fem.Form]]], Sequence[Optional[_fem.Form]]],
@@ -127,33 +160,17 @@ def apply_lifting(
             values.append(lifting_data[key][1])
         return markers, values
 
-    dtype = _PETSc.ScalarType  # type: ignore
-    if b.getType() == "nest":
+    if b.getType() == "nest" or _is_block_vector(b):
+        # Each block row lifts into its own vector, and its constraint puts the masters into the
+        # vector of their block, so every block's array is passed
         assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
-        # The lifting reads `x0` and writes `b` at ghost dofs too, so both are passed with their ghosts
-        with contextlib.ExitStack() as stack:
-            x0_sub = [] if x0 is None else x0.getNestSubVecs()  # type: ignore
-            x0_r = [stack.enter_context(x.localForm()).array_r for x in x0_sub]
-            for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
-                markers, values = _lifting_data(a_sub)
-                _a = [None if form is None else form._cpp_object for form in a_sub]  # type:ignore
-                with b_sub.localForm() as b_local:
-                    dolfinx_mpc.cpp.mpc.apply_lifting(
-                        b_local.array_w, _a, markers, values, x0_r, dtype(scale), mpc_i._cpp_object, num_threads
-                    )
-    elif _is_block_vector(b):
-        assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
-        x0_blocks = [] if x0 is None else _cpp.la.petsc.get_local_vectors(x0, _block_maps(constraint))  # type: ignore[arg-type]
-        with b.localForm() as b_local:
-            for k, (a_sub, mpc_k) in enumerate(zip(form, constraint)):
+        with _block_arrays(b) as arrays, _block_arrays_read(x0, constraint) as x0_arrays:  # type: ignore[arg-type]
+            for i, (a_sub, mpc_i) in enumerate(zip(form, constraint)):
                 markers, values = _lifting_data(a_sub)
                 _a = [None if f is None else f._cpp_object for f in a_sub]  # type:ignore
-                # Lifting only adds to `b`, so it is applied to zeros and the result added
-                scratch = _block_scratch(b, k)
-                dolfinx_mpc.cpp.mpc.apply_lifting(
-                    scratch, _a, markers, values, x0_blocks, dtype(scale), mpc_k._cpp_object, num_threads
+                dolfinx_mpc.cpp.mpc.apply_lifting_blocks(
+                    arrays, i, _a, markers, values, x0_arrays, scale, mpc_i._cpp_object, num_threads
                 )
-                _add_to_block(b_local.array_w, b, k, scratch)
     else:
         with contextlib.ExitStack() as stack:
             if x0 is None:
@@ -206,24 +223,16 @@ def apply_mpc_lifting(
     if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
         scale = scale.item()  # type: ignore
 
-    if b.getType() == "nest":
-        assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
-        cols = constraint if constraint1 is None else constraint1
-        for b_sub, a_sub, mpc_i in zip(b.getNestSubVecs(), form, constraint):
-            _a = [None if f is None else f._cpp_object for f in a_sub]  # type: ignore
-            _mpc1 = [c._cpp_object for c in cols]  # type: ignore
-            with b_sub.localForm() as b_local:
-                dolfinx_mpc.cpp.mpc.apply_mpc_lifting(b_local.array_w, _a, scale, mpc_i._cpp_object, _mpc1, num_threads)
-    elif _is_block_vector(b):
+    if b.getType() == "nest" or _is_block_vector(b):
         assert isinstance(form, Sequence) and isinstance(constraint, Sequence)
         cols = constraint if constraint1 is None else constraint1
         _mpc1 = [c._cpp_object for c in cols]  # type: ignore
-        with b.localForm() as b_local:
-            for k, (a_sub, mpc_k) in enumerate(zip(form, constraint)):
+        with _block_arrays(b) as arrays:
+            for i, (a_sub, mpc_i) in enumerate(zip(form, constraint)):
                 _a = [None if f is None else f._cpp_object for f in a_sub]  # type: ignore
-                scratch = _block_scratch(b, k)
-                dolfinx_mpc.cpp.mpc.apply_mpc_lifting(scratch, _a, scale, mpc_k._cpp_object, _mpc1, num_threads)
-                _add_to_block(b_local.array_w, b, k, scratch)
+                dolfinx_mpc.cpp.mpc.apply_mpc_lifting_blocks(
+                    arrays, i, _a, scale, mpc_i._cpp_object, _mpc1, num_threads
+                )
     else:
         assert isinstance(constraint, MultiPointConstraint)
         cols = [constraint] if constraint1 is None else constraint1
@@ -369,9 +378,22 @@ def _assemble_vector_nest(
     assert len(constraints) == len(L)
     assert b.getType() == "nest"
 
-    b_sub_vecs = b.getNestSubVecs()
-    for i, L_row in enumerate(L):
-        _assemble_form(b_sub_vecs[i], L_row, constraints[i], num_threads)
+    _assemble_vector_blocks(b, L, constraints, num_threads)
+
+
+def _assemble_vector_blocks(
+    b: _PETSc.Vec,  # type: ignore
+    L: Sequence[_fem.Form],
+    constraints: Sequence[MultiPointConstraint],
+    num_threads: Optional[int] = 1,
+):
+    """
+    Assemble linear forms into a nest or monolithic vector. Each form goes to the vector of its
+    block, and the masters of its constraint to the vector of their block.
+    """
+    with _block_arrays(b) as arrays:
+        for i, (L_i, mpc_i) in enumerate(zip(L, constraints)):
+            dolfinx_mpc.cpp.mpc.assemble_vector_blocks(arrays, i, L_i._cpp_object, mpc_i._cpp_object, num_threads)
 
 
 def assemble_vector_nest(
@@ -438,8 +460,4 @@ def _assemble_vector_block(
     assert len(constraints) == len(L)
     if not _is_block_vector(b):
         raise ValueError("The vector must be created by create_vector_block")
-    with b.localForm() as b_local:
-        for k, (L_k, mpc_k) in enumerate(zip(L, constraints)):
-            scratch = _block_scratch(b, k)
-            dolfinx_mpc.cpp.mpc.assemble_vector(scratch, L_k._cpp_object, mpc_k._cpp_object, num_threads)
-            _add_to_block(b_local.array_w, b, k, scratch)
+    _assemble_vector_blocks(b, L, constraints, num_threads)

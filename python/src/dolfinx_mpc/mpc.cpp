@@ -23,6 +23,7 @@
 #include <dolfinx_mpc/utils.h>
 #include <dolfinx_wrappers/array.h>
 #include <dolfinx_wrappers/caster_petsc.h>
+#include <format>
 #include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -38,6 +39,7 @@
 #include <petsc4py/petsc4py.h>
 #include <petscmat.h>
 #include <petscvec.h>
+#include <stdexcept>
 namespace nb = nanobind;
 using namespace nb::literals;
 
@@ -176,6 +178,31 @@ void declare_mpc(nb::module_& m, std::string type)
           { self.backsubstitution(std::span<T>(u.data(), u.size())); },
           "u"_a, "Backsubstitute slave values into vector")
       .def(
+          "backsubstitution",
+          [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
+             std::vector<nb::ndarray<T, nb::ndim<1>, nb::c_contig>> u)
+          {
+            std::vector<std::span<T>> _u;
+            for (auto& u_k : u)
+              _u.emplace_back(u_k.data(), u_k.size());
+            self.backsubstitution(_u);
+          },
+          "u"_a,
+          "Backsubstitute slave values, reading masters from the vector of "
+          "their block")
+      .def_prop_ro("block", &dolfinx_mpc::MultiPointConstraint<T, U>::block)
+      .def_prop_ro(
+          "master_blocks",
+          [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
+          {
+            std::span<const std::int32_t> blocks = self.master_blocks();
+            return nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
+                blocks.data(), {blocks.size()}, nb::handle());
+          })
+      .def_prop_ro(
+          "has_cross_block_masters",
+          &dolfinx_mpc::MultiPointConstraint<T, U>::has_cross_block_masters)
+      .def(
           "homogenize",
           [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
              nb::ndarray<T, nb::ndim<1>, nb::c_contig> u)
@@ -216,12 +243,15 @@ void declare_functions(nb::module_& m)
          const std::vector<nb::ndarray<nb::numpy, T, nb::ndim<1>>>& rhs_coeffs,
          const std::vector<std::vector<
              std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>>>& bcs,
+         const std::vector<nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>>&
+             master_blocks,
          std::optional<U> filter)
       {
         const std::size_t nb = V.size();
         if (slaves.size() != nb or masters.size() != nb or coeffs.size() != nb
             or owners.size() != nb or offsets.size() != nb
-            or rhs_coeffs.size() != nb or bcs.size() != nb)
+            or rhs_coeffs.size() != nb or bcs.size() != nb
+            or master_blocks.size() != nb)
         {
           throw std::invalid_argument(
               "Every argument must have one entry per function space.");
@@ -241,13 +271,15 @@ void declare_functions(nb::module_& m)
                std::span<const std::int32_t>(offsets[k].data(),
                                              offsets[k].size()),
                std::span<const T>(rhs_coeffs[k].data(), rhs_coeffs[k].size()),
-               bcs[k]});
+               bcs[k],
+               std::span<const std::int32_t>(master_blocks[k].data(),
+                                             master_blocks[k].size())});
         }
         return dolfinx_mpc::create_multipointconstraints<T, U>(V, data, filter);
       },
       nb::arg("V"), nb::arg("slaves"), nb::arg("masters"), nb::arg("coeffs"),
       nb::arg("owners"), nb::arg("offsets"), nb::arg("rhs_coeffs"),
-      nb::arg("bcs"), nb::arg("filter").none(),
+      nb::arg("bcs"), nb::arg("master_blocks"), nb::arg("filter").none(),
       "Create the multi point constraints of several function spaces together");
 
   m.def("create_sparsity_pattern", &dolfinx_mpc::create_sparsity_pattern<T, U>);
@@ -374,6 +406,15 @@ void declare_mpc_data(nb::module_& m, std::string type)
           });
 }
 
+/// Position of block `i` among `n` vectors, checked
+std::size_t block_position(int i, std::size_t n)
+{
+  if (i < 0 or static_cast<std::size_t>(i) >= n)
+    throw std::invalid_argument(
+        std::format("Block {} is not one of the {} vectors.", i, n));
+  return static_cast<std::size_t>(i);
+}
+
 /// @brief Test if A has row and column block size 1, in which case blocked and
 /// non-blocked insertion of dof indices are equivalent.
 bool unit_block_size(Mat A)
@@ -443,6 +484,171 @@ void declare_petsc_functions(nb::module_& m)
       nb::arg("A"), nb::arg("a"), nb::arg("mpc0"), nb::arg("mpc1"),
       nb::arg("dof_marker0"), nb::arg("dof_marker1"), nb::arg("num_threads"),
       "Assemble a bilinear form into a matrix, given constrained dof markers");
+  m.def(
+      "assemble_matrix_blocks",
+      [](const std::vector<std::vector<std::optional<Mat>>>& A_, int i, int j,
+         const dolfinx::fem::Form<T>& a,
+         const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&
+             mpc0,
+         const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&
+             mpc1,
+         const nb::ndarray<const std::int8_t, nb::ndim<1>, nb::c_contig>&
+             dof_marker0,
+         const nb::ndarray<const std::int8_t, nb::ndim<1>, nb::c_contig>&
+             dof_marker1,
+         std::size_t num_threads)
+      {
+        // A block without a matrix is None
+        std::vector<std::vector<Mat>> A(A_.size());
+        for (std::size_t k = 0; k < A_.size(); ++k)
+          for (const std::optional<Mat>& Akl : A_[k])
+            A[k].push_back(Akl.value_or(nullptr));
+        const std::size_t nr = A.size();
+        if (i < 0 or j < 0 or static_cast<std::size_t>(i) >= nr
+            or static_cast<std::size_t>(j) >= A[i].size() or !A[i][j])
+        {
+          throw std::invalid_argument(
+              std::format("Block ({}, {}) of the form has no matrix.", i, j));
+        }
+
+        // The form's own block, with the blocked insertion of its matrix
+        Mat Aij = A[i][j];
+        std::function<int(std::span<const std::int32_t>,
+                          std::span<const std::int32_t>,
+                          const std::span<const T>&)>
+            set_block;
+        if (!unit_block_size(Aij))
+          set_block = dolfinx::la::petsc::Matrix::set_block_fn(Aij, ADD_VALUES);
+        else
+        {
+          const int bs0 = a.function_spaces()[0]->dofmap()->bs();
+          const int bs1 = a.function_spaces()[1]->dofmap()->bs();
+          if (bs0 == 1 and bs1 == 1)
+            set_block = dolfinx::la::petsc::Matrix::set_fn(Aij, ADD_VALUES);
+          else
+          {
+            set_block = dolfinx::la::petsc::Matrix::set_block_expand_fn(
+                Aij, bs0, bs1, ADD_VALUES);
+          }
+        }
+
+        // Every block, with unrolled indices, for the entries of the masters
+        std::vector<std::vector<std::function<int(std::span<const std::int32_t>,
+                                                  std::span<const std::int32_t>,
+                                                  std::span<const T>)>>>
+            set(nr);
+        for (std::size_t k = 0; k < nr; ++k)
+        {
+          for (Mat Akl : A[k])
+          {
+            set[k].emplace_back();
+            if (Akl)
+              set[k].back()
+                  = dolfinx::la::petsc::Matrix::set_fn(Akl, ADD_VALUES);
+          }
+        }
+        auto set_blocks = dolfinx_mpc::make_mat_add_blocks<T, U>(
+            std::move(set), i, j, *mpc0, *mpc1);
+
+        dolfinx_mpc::assemble_matrix_blocks<T, U>(
+            set_block, set_blocks, a, mpc0, mpc1,
+            std::span<const std::int8_t>(dof_marker0.data(),
+                                         dof_marker0.size()),
+            std::span<const std::int8_t>(dof_marker1.data(),
+                                         dof_marker1.size()),
+            num_threads);
+      },
+      nb::arg("A"), nb::arg("i"), nb::arg("j"), nb::arg("a"), nb::arg("mpc0"),
+      nb::arg("mpc1"), nb::arg("dof_marker0"), nb::arg("dof_marker1"),
+      nb::arg("num_threads"),
+      "Assemble the bilinear form of block (i, j) into the matrices `A` of "
+      "every block, placing the entries of masters in the block they belong "
+      "to");
+  m.def(
+      "assemble_vector_blocks",
+      [](std::vector<nb::ndarray<T, nb::ndim<1>, nb::c_contig>> b, int i,
+         const dolfinx::fem::Form<T>& L,
+         const std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>&
+             mpc,
+         std::size_t num_threads)
+      {
+        std::vector<std::span<T>> _b;
+        for (auto& b_k : b)
+          _b.emplace_back(b_k.data(), b_k.size());
+        dolfinx_mpc::assemble_vector_blocks<T, U>(_b, i, L, mpc, num_threads);
+      },
+      nb::arg("b"), nb::arg("i"), nb::arg("L"), nb::arg("mpc"),
+      nb::arg("num_threads"),
+      "Assemble the linear form of block i into the vectors of every block");
+  m.def(
+      "apply_lifting_blocks",
+      [](std::vector<nb::ndarray<T, nb::ndim<1>, nb::c_contig>> b, int i,
+         std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a,
+         const std::vector<nb::ndarray<const std::int8_t, nb::ndim<1>,
+                                       nb::c_contig>>& bc_markers1,
+         const std::vector<nb::ndarray<const T, nb::ndim<1>, nb::c_contig>>&
+             bc_values1,
+         const std::vector<nb::ndarray<const T, nb::ndim<1>, nb::c_contig>>& x0,
+         T scale,
+         std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc,
+         std::size_t num_threads)
+      {
+        std::vector<std::span<T>> _b;
+        for (auto& b_k : b)
+          _b.emplace_back(b_k.data(), b_k.size());
+        std::vector<std::span<const std::int8_t>> _markers;
+        for (const auto& m : bc_markers1)
+          _markers.emplace_back(m.data(), m.size());
+        std::vector<std::span<const T>> _values;
+        for (const auto& v : bc_values1)
+          _values.emplace_back(v.data(), v.size());
+        std::vector<std::span<const T>> _x0;
+        for (const auto& x : x0)
+          _x0.emplace_back(x.data(), x.size());
+        dolfinx_mpc::apply_lifting<T, U>(
+            dolfinx_mpc::VectorTarget<T>{_b, block_position(i, _b.size()),
+                                         mpc->block()},
+            a, _markers, _values, _x0, scale, mpc, num_threads);
+      },
+      nb::arg("b"), nb::arg("i"), nb::arg("a"), nb::arg("bc_markers1"),
+      nb::arg("bc_values1"), nb::arg("x0"), nb::arg("scale"), nb::arg("mpc"),
+      nb::arg("num_threads"),
+      "Lift Dirichlet values into the vector of block i, and the masters of "
+      "its constraint into the vector of their block");
+  m.def(
+      "apply_mpc_lifting_blocks",
+      [](std::vector<nb::ndarray<T, nb::ndim<1>, nb::c_contig>> b, int i,
+         std::vector<std::shared_ptr<const dolfinx::fem::Form<T>>>& a, T scale,
+         std::shared_ptr<const dolfinx_mpc::MultiPointConstraint<T, U>>& mpc0,
+         std::vector<std::shared_ptr<
+             const dolfinx_mpc::MultiPointConstraint<T, U>>>& mpc1,
+         std::size_t num_threads)
+      {
+        std::vector<std::span<T>> _b;
+        for (auto& b_k : b)
+          _b.emplace_back(b_k.data(), b_k.size());
+        dolfinx_mpc::apply_mpc_lifting<T, U>(
+            dolfinx_mpc::VectorTarget<T>{_b, block_position(i, _b.size()),
+                                         mpc0->block()},
+            a, scale, mpc0, mpc1, num_threads);
+      },
+      nb::arg("b"), nb::arg("i"), nb::arg("a"), nb::arg("scale"),
+      nb::arg("mpc0"), nb::arg("mpc1"), nb::arg("num_threads"),
+      "Lift the constraint offsets into the vector of block i, and the masters "
+      "of its constraint into the vector of their block");
+  m.def(
+      "create_matrix_nest",
+      [](const std::vector<std::vector<const dolfinx::fem::Form<T>*>>& a,
+         const std::vector<
+             std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>>& mpcs0,
+         const std::vector<
+             std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>>>& mpcs1,
+         const std::optional<
+             std::vector<std::vector<std::optional<std::string>>>>& types)
+      { return dolfinx_mpc::create_matrix_nest<T, U>(a, mpcs0, mpcs1, types); },
+      nb::rv_policy::take_ownership, nb::arg("a"), nb::arg("mpcs0"),
+      nb::arg("mpcs1"), nb::arg("types").none(),
+      "Create a nest PETSc Mat for an array of bilinear forms.");
   m.def(
       "insert_diagonal_slaves",
       [](Mat A, const dolfinx_mpc::MultiPointConstraint<T, U>& mpc,
