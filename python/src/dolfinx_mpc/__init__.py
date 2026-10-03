@@ -11,6 +11,7 @@ from __future__ import annotations
 import dolfinx_mpc.cpp
 
 # New local assemblies
+from .dirichletbc import BCData
 from .assemble_matrix import (
     assemble_matrix,
     assemble_matrix_nest,
@@ -29,6 +30,7 @@ from .multipointconstraint import MultiPointConstraint
 from .problem import LinearProblem, NonlinearProblem, assemble_jacobian_mpc, assemble_residual_mpc
 
 __all__ = [
+    "BCData",
     "assemble_matrix",
     "create_matrix_nest",
     "assemble_matrix_nest",
