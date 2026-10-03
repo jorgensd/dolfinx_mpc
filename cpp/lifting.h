@@ -557,7 +557,8 @@ void apply_lifting(
 /// repeatedly should build them once and call the marker-taking overload.
 /// @param[in,out] b The vector to be modified
 /// @param[in] a The bilinear forms, where `a[j]` generates `A_j`
-/// @param[in] bcs1 Dirichlet conditions on the trial space of each `a[j]`
+/// @param[in] bcs1 Dirichlet conditions for each `a[j]`. Only those defined on
+/// the trial space of `a[j]`, or a subspace of it, are applied.
 /// @param[in] x0 Vectors subtracted from the values. Treated as zero if empty
 /// @param[in] scale Scaling to apply
 /// @param[in] mpc The multi point constraint on the rows of `b`
@@ -591,11 +592,19 @@ void apply_lifting(
     const dolfinx::common::IndexMap& map1 = *V1->dofmap()->index_map;
     const std::size_t crange = V1->dofmap()->index_map_bs()
                                * (map1.size_local() + map1.num_ghosts());
-    markers[j].resize(crange, 0);
-    values[j].resize(crange, T(0));
     for (const std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>& bc :
          bcs1[j])
     {
+      // `mark_dofs` writes into an array sized for the condition's own space
+      // and bounds-checks only in debug builds, so a condition on another space
+      // must not reach it
+      if (!V1->contains(*bc->function_space()))
+        continue;
+      if (markers[j].empty())
+      {
+        markers[j].resize(crange, 0);
+        values[j].resize(crange, T(0));
+      }
       bc->mark_dofs(markers[j]);
       bc->set(values[j], std::nullopt, 1);
     }
