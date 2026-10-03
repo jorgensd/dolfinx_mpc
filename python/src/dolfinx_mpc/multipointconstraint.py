@@ -22,7 +22,7 @@ import dolfinx_mpc.cpp
 from .container import MPCData, _float_array_types, _float_classes, _mpc_classes, _mpc_data_classes
 from .dictcondition import create_dictionary_constraint
 from .integralcondition import create_integral_constraint
-from .rbe import create_rbe2, update_rbe2_coefficients
+from .rbe import create_rbe2
 
 
 class MultiPointConstraint:
@@ -86,8 +86,7 @@ class MultiPointConstraint:
                 raise ValueError("rhs_coeffs must be a Function in the space of the constraint")
         self._rhs_coeffs = rhs_coeffs
         self._scale_function = None
-        # Per space on a spider mesh: [W, the tied space, the constraint of W, its block], the last
-        # two set by finalize
+        # Per space on a spider mesh: [W, the tied space, the block of W], the block set by finalize
         self._rbe2 = []
         self.V = V
         self.finalized = False
@@ -425,7 +424,7 @@ class MultiPointConstraint:
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data, master_space=W)
         if not any(W is entry[0] for entry in self._rbe2):
-            self._rbe2.append([W, self.V, None, None])
+            self._rbe2.append([W, self.V, None])
 
     def add_rbe2_topological(
         self,
@@ -522,13 +521,8 @@ class MultiPointConstraint:
         self._raise_if_not_finalized()
         if len(self._rbe2) == 0:
             raise ValueError("The constraint has no RBE2 constraints")
-        coeffs, offsets = self._cpp_object.all_coefficients()
-        coeffs = numpy.array(coeffs, dtype=self._dtype)
-        masters = self._cpp_object.all_masters()
-        blocks = self._cpp_object.all_master_blocks()
-        for W, V, body, block in self._rbe2:
-            update_rbe2_coefficients(V, W, body.V, block, masters, blocks, coeffs, offsets)
-        self.update_coefficients(coeffs)
+        for W, V, block in self._rbe2:
+            dolfinx_mpc.cpp.mpc.update_rbe2(self._cpp_object, V._cpp_object, W._cpp_object, block)
 
     def create_slip_constraint(
         self,
@@ -1018,11 +1012,10 @@ def finalize_multipointconstraints(
         filter,
     )
 
-    # The constraint of each space on a spider mesh, matched before the spaces are replaced
+    # The block of each space on a spider mesh, matched before the spaces are replaced
     for mpc in mpcs:
         for entry in mpc._rbe2:
-            body = [j for j, other in enumerate(mpcs) if other.V is entry[0]]
-            entry[2], entry[3] = mpcs[body[0]], body[0]
+            entry[2] = next(j for j, other in enumerate(mpcs) if other.V is entry[0])
 
     for mpc, cpp_object in zip(mpcs, cpp_objects):
         mpc._cpp_object = cpp_object
