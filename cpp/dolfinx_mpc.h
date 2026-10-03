@@ -5,6 +5,6 @@
 #include <MultiPointConstraint.h>
 #include <SlipConstraint.h>
 #include <assemble_matrix.h>
-#include <utils.h>
-#include <lifting.h>
 #include <assemble_vector.h>
+#include <lifting.h>
+#include <utils.h>

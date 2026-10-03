@@ -11,14 +11,17 @@ permissions:
   pages: write
   id-token: write
 
-# Allow one concurrent deployment
+# Allow one concurrent deployment, without cancelling one that is in progress
 concurrency:
   group: "pages"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   run-coverage:
     uses: ./.github/workflows/test_mpc.yml
+    with:
+      # Only the real64 Release run uploads the coverage report used below
+      coverage_only: true
 
   build-docs:
     uses: ./.github/workflows/build_docs.yml
@@ -39,8 +42,8 @@ jobs:
           name: documentation
           path: "./public"
 
-      - name: Download docs artifact
-        # docs artifact is uploaded by build-docs job
+      - name: Download coverage report
+        # coverage artifact is uploaded by run-coverage job
         uses: actions/download-artifact@v8
         with:
           name: code-coverage-report
@@ -50,9 +53,6 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: "./public"
-
-      - name: Checkout
-        uses: actions/checkout@v7
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
