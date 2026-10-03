@@ -25,6 +25,14 @@
   are gone. `dolfinx_mpc.apply_lifting` gained `bc_data`; markers are cached, values are re-read
   on every call. A condition now applies to block `j` if it is defined on (a subspace of)
   that block's trial space, so a flat list of conditions is accepted.
+- **New feature**: `dolfinx_mpc.finalize_multipointconstraints(mpcs, filter=None)` finalizes the
+  constraints of several function spaces together, for instance the blocks of a
+  `ufl.MixedFunctionSpace`, each on its own mesh. The checks that need communication are reduced once
+  for all of them. `MultiPointConstraint.finalize` is the one-space case and behaves as before; in C++,
+  `create_multipointconstraints` is the factory and the constructor delegates to it. New errors, raised
+  identically on every process: meshes on communicators of different size or rank order, and a master
+  that is itself a slave, which `backsubstitution` does not resolve. A master without a local index in
+  the extended space, which would previously have given wrong results silently, is also rejected.
 - **BUGFIX**: `NonlinearProblem` failed with a non-nest `P`, and with `J=None` for a single form.
 - `LinearProblem` accepts `entity_maps`, as `NonlinearProblem` already did, so forms coupling two meshes need not be compiled by hand.
 - **Forms coupling spaces on different meshes** — a space on a submesh coupled to one on its

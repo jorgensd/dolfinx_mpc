@@ -5,7 +5,7 @@
 # SPDX-License-Identifier:    MIT
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from petsc4py import PETSc as _PETSc
 
@@ -264,47 +264,12 @@ class MultiPointConstraint:
         Note:
             Filtering changes the constraint that is enforced, by exactly the
             terms that are dropped. It is local and adds no communication.
+
+        Note:
+            To finalize the constraints of several function spaces, for instance the blocks of a
+            :class:`ufl.MixedFunctionSpace`, use :func:`finalize_multipointconstraints`.
         """
-        self._raise_if_finalized()
-
-        num_dofs_local = self.V.dofmap.index_map_bs * (
-            self.V.dofmap.index_map.size_local + self.V.dofmap.index_map.num_ghosts
-        )
-        if self._rhs_coeffs is None:
-            rhs_coeffs = numpy.zeros(0, dtype=self._dtype)
-        else:
-            rhs_coeffs = self._rhs_coeffs.x.array[:num_dofs_local].astype(self._dtype)
-        bcs = [bc._cpp_object for bc in self._bcs]
-
-        try:
-            cpp_class = {
-                numpy.float32: dolfinx_mpc.cpp.mpc.MultiPointConstraint_float,
-                numpy.float64: dolfinx_mpc.cpp.mpc.MultiPointConstraint_double,
-                numpy.complex64: dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float,
-                numpy.complex128: dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_double,
-            }[numpy.dtype(self._dtype).type]
-        except KeyError:
-            raise ValueError(f"Unsupported dtype {self._dtype} for coefficients")
-
-        # Initialize C++ object and create slave->cell maps
-        self._cpp_object = cpp_class(
-            self.V._cpp_object,
-            self._slaves,
-            self._masters,
-            self._coeffs.astype(self._dtype),
-            self._owners,
-            self._offsets,
-            rhs_coeffs,
-            bcs,
-            filter,
-        )
-
-        # Replace function space
-        self.V = _fem.FunctionSpace(self.V.mesh, self.V.ufl_element(), self._cpp_object.function_space)
-
-        self.finalized = True
-        # Delete variables that are no longer required
-        del (self._slaves, self._masters, self._coeffs, self._owners, self._offsets)
+        finalize_multipointconstraints([self], filter)
 
     def update_constants(self) -> None:
         """
@@ -848,3 +813,72 @@ class MultiPointConstraint:
         """
         if not self.finalized:
             raise RuntimeError("MultiPointConstraint has not been finalized")
+
+
+def finalize_multipointconstraints(
+    mpcs: Sequence[MultiPointConstraint], filter: Optional[numpy.floating] = None
+) -> None:
+    """
+    Finalize the multi point constraints of several function spaces together.
+
+    Entry ``k`` of ``mpcs`` constrains its own function space, for instance the ``k``-th block of a
+    :class:`ufl.MixedFunctionSpace`. Each is finalized as by :meth:`MultiPointConstraint.finalize`,
+    but the checks that need communication are reduced once for all of them, and the meshes of the
+    spaces may be distinct, as long as they live on congruent communicators.
+
+    Args:
+        mpcs: The constraints to finalize. None may be finalized already, and they must all use the
+            same ``dtype``.
+        filter: See :meth:`MultiPointConstraint.finalize`. Applied to every constraint.
+
+    Raises:
+        ValueError: If the input is inconsistent, or if a dof is both a slave and constrained by a
+            Dirichlet condition, a master is also a slave, or the meshes are on communicators
+            of different size or rank order. Raised on every process.
+
+    Note:
+        Collective. Must be called by every process, with the constraints in the same order.
+    """
+    mpcs = list(mpcs)
+    if len(mpcs) == 0:
+        raise ValueError("At least one constraint is required")
+    if len({id(mpc) for mpc in mpcs}) != len(mpcs):
+        raise ValueError("The same constraint was given more than once")
+    for mpc in mpcs:
+        mpc._raise_if_finalized()
+    dtype = numpy.dtype(mpcs[0]._dtype)
+    if any(numpy.dtype(mpc._dtype) != dtype for mpc in mpcs):
+        raise ValueError("All constraints must have the same dtype")
+    if dtype.type not in (numpy.float32, numpy.float64, numpy.complex64, numpy.complex128):
+        raise ValueError(f"Unsupported dtype {dtype} for coefficients")
+
+    rhs_coeffs = []
+    for mpc in mpcs:
+        if mpc._rhs_coeffs is None:
+            rhs_coeffs.append(numpy.zeros(0, dtype=dtype))
+        else:
+            num_dofs_local = mpc.V.dofmap.index_map_bs * (
+                mpc.V.dofmap.index_map.size_local + mpc.V.dofmap.index_map.num_ghosts
+            )
+            rhs_coeffs.append(mpc._rhs_coeffs.x.array[:num_dofs_local].astype(dtype))
+
+    # Raises ValueError (as the C++ throws std::invalid_argument), identically on every process
+    cpp_objects = dolfinx_mpc.cpp.mpc.create_multipointconstraints(
+        [mpc.V._cpp_object for mpc in mpcs],
+        [mpc._slaves for mpc in mpcs],
+        [mpc._masters for mpc in mpcs],
+        [mpc._coeffs.astype(dtype) for mpc in mpcs],
+        [mpc._owners for mpc in mpcs],
+        [mpc._offsets for mpc in mpcs],
+        rhs_coeffs,
+        [[bc._cpp_object for bc in mpc._bcs] for mpc in mpcs],
+        filter,
+    )
+
+    for mpc, cpp_object in zip(mpcs, cpp_objects):
+        mpc._cpp_object = cpp_object
+        # Replace function space
+        mpc.V = _fem.FunctionSpace(mpc.V.mesh, mpc.V.ufl_element(), cpp_object.function_space)
+        mpc.finalized = True
+        # Delete variables that are no longer required
+        del (mpc._slaves, mpc._masters, mpc._coeffs, mpc._owners, mpc._offsets)
