@@ -1,5 +1,6 @@
 from typing import Union
 
+import dolfinx
 import numpy
 import numpy.typing as npt
 
@@ -25,6 +26,32 @@ _mpc_classes = Union[
     dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float,
 ]
 _float_classes = Union[numpy.float32, numpy.float64, numpy.complex128, numpy.complex64]
+
+
+def _scalar_type(real_type: npt.DTypeLike, dtype: npt.DTypeLike | None = None) -> type:
+    """The scalar type of a constraint on a mesh with coordinates of `real_type`.
+
+    Args:
+        real_type: The type of the mesh coordinates
+        dtype: The scalar type asked for. Defaults to the default scalar type of DOLFINx, real or
+            complex, at the precision of the mesh.
+
+    Raises:
+        ValueError: If `dtype` is not one of float32, float64, complex64 and complex128, or its
+            precision differs from the mesh's.
+    """
+    real = numpy.dtype(real_type)
+    if dtype is None:
+        is_complex = numpy.issubdtype(dolfinx.default_scalar_type, numpy.complexfloating)
+        dtype = numpy.promote_types(real, numpy.complex64) if is_complex else real
+    scalar = numpy.dtype(dtype)
+    if scalar.type not in (numpy.float32, numpy.float64, numpy.complex64, numpy.complex128):
+        raise ValueError(f"Unsupported scalar type {scalar} for a constraint")
+    if numpy.finfo(scalar).dtype != real:
+        raise ValueError(
+            f"A constraint of scalar type {scalar} needs a mesh of {numpy.finfo(scalar).dtype}, not {real}"
+        )
+    return scalar.type
 
 
 class MPCData:

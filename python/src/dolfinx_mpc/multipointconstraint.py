@@ -19,7 +19,7 @@ from dolfinx import default_real_type, default_scalar_type
 
 import dolfinx_mpc.cpp
 
-from .container import MPCData, _float_array_types, _float_classes, _mpc_classes, _mpc_data_classes
+from .container import MPCData, _float_array_types, _float_classes, _mpc_classes, _mpc_data_classes, _scalar_type
 from .dictcondition import create_dictionary_constraint
 from .integralcondition import create_integral_constraint
 from .rbe import create_rbe2
@@ -37,7 +37,9 @@ class MultiPointConstraint:
 
     Args:
         V: The function space
-        dtype: The dtype of the underlying functions
+        dtype: The scalar type of the coefficients, used by everything built from this
+            constraint. Defaults to the default scalar type of DOLFINx, real or complex, at the
+            precision of the mesh of `V`. Its precision must be that of the mesh.
         bcs: Dirichlet boundary conditions for the problem. A master degree of
             freedom that is constrained by one of these is removed from the
             equation of its slave, and its contribution folded into the
@@ -68,10 +70,11 @@ class MultiPointConstraint:
     def __init__(
         self,
         V: _fem.FunctionSpace,
-        dtype: npt.DTypeLike = default_scalar_type,
+        dtype: npt.DTypeLike | None = None,
         bcs: Optional[List[_fem.DirichletBC]] = None,
         rhs_coeffs: Optional[_fem.Function] = None,
     ):
+        dtype = _scalar_type(V.mesh.geometry.x.dtype, dtype)
         self._slaves = numpy.array([], dtype=numpy.int32)
         self._masters = numpy.array([], dtype=numpy.int64)
         self._coeffs = numpy.array([], dtype=dtype)  # type: ignore
@@ -296,6 +299,11 @@ class MultiPointConstraint:
         """
         self._raise_if_not_finalized()
         return self._cpp_object.master_blocks
+
+    @property
+    def dtype(self) -> type:
+        """The scalar type of the coefficients, also that of everything built from the constraint."""
+        return self._dtype
 
     @property
     def has_cross_block_masters(self) -> bool:

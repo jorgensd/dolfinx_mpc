@@ -19,9 +19,8 @@ import dolfinx.fem as _fem
 import dolfinx.mesh as _mesh
 import numpy as np
 import numpy.typing as npt
-from dolfinx import default_scalar_type
 
-from .container import _mpc_data_classes
+from .container import _mpc_data_classes, _scalar_type
 from .cpp import mpc as _cpp_mpc
 
 __all__ = ["create_rbe2", "create_spider_mesh", "spider_values"]
@@ -98,7 +97,8 @@ def create_rbe2(
         dofs: The feet, blocked dofs of `V` local to the process, ghosts included
         spiders: The spider of each foot, its input index (see :func:`create_spider_mesh`)
         W: The space on the spider mesh
-        dtype: The scalar type of the coefficients. Defaults to the default scalar type.
+        dtype: The scalar type of the coefficients. Defaults to the default scalar type of
+            DOLFINx, real or complex, at the precision of the meshes.
         x: The coordinates of all dofs of `V` local to the process, from
             `V.tabulate_dof_coordinates()`, if already at hand
 
@@ -108,14 +108,16 @@ def create_rbe2(
     Note:
         Collective.
     """
-    _dtype = np.dtype(default_scalar_type if dtype is None else dtype).type
-    create = getattr(_cpp_mpc, f"create_rbe2_{_type_names[_dtype]}")
+    real_type = V.mesh.geometry.x.dtype
+    if W.mesh.geometry.x.dtype != real_type:
+        raise ValueError("The mesh of the feet and the spider mesh must have the same coordinate type")
+    create = getattr(_cpp_mpc, f"create_rbe2_{_type_names[_scalar_type(real_type, dtype)]}")
     return create(
         V._cpp_object,
         np.ascontiguousarray(dofs, dtype=np.int32),
         np.ascontiguousarray(spiders, dtype=np.int64),
         W._cpp_object,
-        None if x is None else np.ascontiguousarray(x),
+        None if x is None else np.ascontiguousarray(x, dtype=real_type),
     )
 
 
