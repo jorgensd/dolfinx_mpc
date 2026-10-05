@@ -15,6 +15,7 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import basix.ufl
+import dolfinx.fem.petsc
 import numpy as np
 import pytest
 import ufl
@@ -516,3 +517,85 @@ def test_spider_joins_two_meshes(kind):
         r = V.tabulate_dof_coordinates()[dofs] - centre
         expected = t + np.cross(theta, r) if len(dofs) > 0 else np.zeros((0, 3))
         np.testing.assert_allclose(u.x.array.reshape(-1, 3)[dofs], expected, atol=tol)
+
+
+def _held_spider(bcs_on_constraint: bool):
+    """A cube whose face x = 1 is tied to a spider, the spider held by a Dirichlet condition.
+
+    Only the constraint couples the spider to the cube, so no form has the spider's space. The
+    condition is always given to the problem, and to the spider's constraint if
+    `bcs_on_constraint`.
+    """
+    comm = MPI.COMM_WORLD
+    cube = mesh.create_box(
+        comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [3, 3, 3], mesh.CellType.tetrahedron, dtype=default_real_type
+    )
+    V = fem.functionspace(cube, ("Lagrange", 1, (3,)))
+    centre = np.array([1.2, 0.5, 0.5], dtype=default_real_type)
+    spiders = _spiders([centre])
+    W = _body_space(spiders, 6)
+    # A rigid motion with a translation and a rotation, so that the eliminated masters carry a
+    # nonzero offset
+    held = np.array([0.1, -0.05, 0.02, 0.0, 0.1, -0.2], dtype=default_scalar_type)
+    cells = np.arange(spiders.topology.index_map(0).size_local, dtype=np.int32)
+    bc = fem.dirichletbc(held, fem.locate_dofs_topological(W, 0, cells), W)
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=default_scalar_type)
+    mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W)
+    mpc_spider = dolfinx_mpc.MultiPointConstraint(W, dtype=default_scalar_type, bcs=[bc] if bcs_on_constraint else None)
+    dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_spider])
+
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    L = ufl.inner(fem.Constant(cube, np.array([0.0, 0.0, -1.0], dtype=default_scalar_type)), v) * ufl.dx
+    return V, centre, held, bc, [mpc, mpc_spider], a, L
+
+
+@pytest.mark.skipif(not PETSc.Sys.hasExternalPackage("mumps"), reason="PETSc was not built with MUMPS")
+@pytest.mark.parametrize("kind", ["nest", "mpi"])
+def test_spider_held_by_dirichlet_condition(kind):
+    """A Dirichlet condition on a spider, whose space has no form, holds the face it is tied to: the
+    solution is that of the cube with the face held at the spider's rigid motion. Regression test:
+    the diagonal of a block without a form was not set, a singular system."""
+    V, centre, held, bc, mpcs, a, L = _held_spider(bcs_on_constraint=True)
+    options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+    problem = dolfinx_mpc.LinearProblem(
+        [[fem.form(a, dtype=default_scalar_type), None], [None, None]],
+        [fem.form(L, dtype=default_scalar_type), None],
+        mpcs,
+        bcs=[bc],
+        kind=kind,
+        petsc_options_prefix=f"test_held_spider_{kind}_",
+        petsc_options=options,
+    )
+    u, body = problem.solve()
+    np.testing.assert_allclose(dolfinx_mpc.spider_values(body, 0), held)
+
+    # The same face held directly
+    t, theta = held[:3], held[3:]
+    face_motion = fem.Function(V, dtype=default_scalar_type)
+    face_motion.interpolate(lambda x: t[:, None] + np.cross(theta, (x - centre[:, None]).T).T)
+    face = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1.0))
+    reference = dolfinx.fem.petsc.LinearProblem(
+        a,
+        L,
+        bcs=[fem.dirichletbc(face_motion, face)],
+        petsc_options_prefix=f"test_held_spider_reference_{kind}_",
+        petsc_options=options,
+    ).solve()
+    num_owned = V.dofmap.index_map.size_local * 3
+    tol = 1e4 * np.finfo(default_real_type).eps
+    np.testing.assert_allclose(u.x.array[:num_owned], reference.x.array[:num_owned], atol=tol)
+
+
+@pytest.mark.parametrize("kind", ["nest", "mpi"])
+def test_dirichlet_condition_on_kept_master_raises(kind):
+    """A Dirichlet condition given to the assembly but not to the constraint of the master's space
+    leaves the master in the constraint, and assembly would add the slave's entries to a
+    constrained row. Regression test: this gave a wrong solution silently; it raises on every
+    process."""
+    V, _, _, bc, mpcs, a, _ = _held_spider(bcs_on_constraint=False)
+    with pytest.raises(ValueError, match="constrains a master"):
+        dolfinx_mpc.assemble_matrix(
+            [[fem.form(a, dtype=default_scalar_type), None], [None, None]], mpcs, bcs=[bc], kind=kind
+        )
