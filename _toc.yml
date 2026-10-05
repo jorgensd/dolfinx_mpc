@@ -12,6 +12,7 @@ parts:
     - file: "python/demos/demo_mortar.py"
     - file: "python/demos/demo_mortar_subdomains.py"
     - file: "python/demos/demo_spider.py"
+    - file: "python/demos/demo_spider_hinge.py"
     - file: "python/demos/demo_stokes_nest.py"
     - file: "python/demos/demo_scaling_coefficients.py"
   - caption: "Theory"

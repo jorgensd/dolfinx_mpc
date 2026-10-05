@@ -297,7 +297,7 @@ def _block_spaces(
                 spaces[i] = a_ij.function_spaces[0]
             if j < len(constraints) and spaces[j] is None:
                 spaces[j] = a_ij.function_spaces[1]
-    return [mpc._input_space if V is None else V for V, mpc in zip(spaces, constraints)]
+    return [mpc.input_space if V is None else V for V, mpc in zip(spaces, constraints)]
 
 
 def _raise_if_constrained_masters(

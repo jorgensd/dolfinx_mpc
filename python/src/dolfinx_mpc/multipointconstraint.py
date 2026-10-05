@@ -883,6 +883,18 @@ class MultiPointConstraint:
         self._raise_if_not_finalized()
         return self.V
 
+    @property
+    def input_space(self) -> _fem.FunctionSpace:
+        """
+        The function space the constraint was created with.
+
+        Forms and Dirichlet conditions are stated on this space, while functions holding a
+        solution live in :attr:`function_space`, its extension by the masters of the constraint.
+        For a system of several blocks, ``[mpc.input_space for mpc in mpcs]`` gives the spaces in
+        the order of the blocks, for instance for a :class:`ufl.MixedFunctionSpace`.
+        """
+        return self._input_space
+
     def backsubstitution(self, u: Union[_fem.Function, Sequence[_fem.Function], _PETSc.Vec]) -> None:  # type: ignore
         """
         For a Function, impose the multi-point constraint by backsubstiution.
