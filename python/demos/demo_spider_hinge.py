@@ -273,16 +273,16 @@ dolfinx_mpc.finalize_multipointconstraints(mpcs)
 # with $a$ the direction of the pin, $k$ large, and $k_t$ the stiffness against turning
 # about the pin, zero for a free pin. The fixed pin is held by its Dirichlet conditions,
 # so its spring only acts against turning, $K_P = k_t\, a a^T$ on the rotation of spider P.
-# With $z_P$, $z_A$ and $z_B$ the test functions of the spiders, the springs of both pins
+# The springs involve only the spiders. With $w = (w_P, w_A, w_B)$ the unknowns of the
+# three spiders and $z = (z_P, z_A, z_B)$ their test functions, the springs of both pins
 # form the bilinear form
 #
 # $$
-# s(u, v) = \int K \delta(w_A, w_B) \cdot \delta(z_A, z_B) + \int K_P w_P \cdot z_P,
+# s(w, z) = \int K \delta(w_A, w_B) \cdot \delta(z_A, z_B) + \int K_P w_P \cdot z_P,
 # $$
 #
 # the first integrated over spider mesh A, reaching spider B through the pair, the second
-# over spider mesh P, where $u$ and $v$ hold the unknowns and the test functions of the
-# whole system, below. The function `springs` builds it for given stiffnesses. Both
+# over spider mesh P. The function `springs(K_pins, w, z)` builds it for given stiffnesses. Both
 # springs are locked, $k_t = k$, for the static deflection, and free, $k_t = 0$, for the
 # swing, the two stages of the solution below.
 
@@ -338,20 +338,67 @@ def springs(K_pins, w, z):
 # with the density $\rho_b$ and the Lamé parameters of beam $b$, from its Young's modulus
 # $E_b$ and Poisson's ratio $\nu_b$, and gravity $g$. The bores of each beam follow its
 # spiders, and the spiders act on each other, and on the ground, only through the
-# springs. With $u = (u_1, u_2, w_P, w_A, w_B)$ and test functions
-# $v = (v_1, v_2, z_P, z_A, z_B)$, the weak form is
+# springs. With the unknowns $u = (u_1, u_2, w)$ and the test functions
+# $v = (v_1, v_2, z)$ of the whole system, the beams' and the spiders' $w = (w_P, w_A, w_B)$
+# and $z = (z_P, z_A, z_B)$, the weak form is
 #
 # $$
 # \begin{aligned}
-# M(\ddot u, v) + a(u, v) + s(u, v) &= F(v),\\
+# M(\ddot u, v) + a(u, v) + s(w, z) &= F(v),\\
 # M(u, v) &= \sum_b \int_{\Omega_b} \rho_b u_b \cdot v_b,\\
 # a(u, v) &= \sum_b \int_{\Omega_b} \sigma_b(u_b) : \varepsilon(v_b),\\
 # F(v) &= \sum_b \int_{\Omega_b} \rho_b g \cdot v_b,
 # \end{aligned}
 # $$
 #
-# with $s$ the springs of {ref}`demo-spider-hinge-spring-coupling`, above.
-#
+# with $s$ the springs of {ref}`demo-spider-hinge-spring-coupling`, above. $M$, $a$ and $F$
+# involve only the beams, and $s$ only the spiders.
+
+# The materials, gravity, and the forms of the weak form over the five spaces of the
+# constraints, in the order of the blocks of the system. The springs need the stiffness $k$,
+# large next to the beams', and are made locked and free.
+
+# +
+materials = {"E": (2.0e4, 0.7e5), "nu": (0.3, 0.25), "rho": (1.0, 1.2)}
+beams = (beam_1, beam_2)
+g = 9.81
+down = np.array([0.0, 0.0, -1.0])
+
+
+def sigma(u, b: int):
+    """The stress of displacement `u` in the material of beam `b`."""
+    E, nu = materials["E"][b], materials["nu"][b]
+    mu, lmbda = E / (2 * (1 + nu)), E * nu / ((1 + nu) * (1 - 2 * nu))
+    return 2 * mu * ufl.sym(ufl.grad(u)) + lmbda * ufl.tr(ufl.sym(ufl.grad(u))) * ufl.Identity(3)
+
+
+mixed = ufl.MixedFunctionSpace(*(mpc.input_space for mpc in mpcs))
+trials, tests = ufl.TrialFunctions(mixed), ufl.TestFunctions(mixed)
+u_1, u_2, w_P, w_A, w_B = trials
+v_1, v_2, z_P, z_A, z_B = tests
+dx_1, dx_2 = ufl.dx(beam_1), ufl.dx(beam_2)
+
+M = materials["rho"][0] * ufl.inner(u_1, v_1) * dx_1 + materials["rho"][1] * ufl.inner(u_2, v_2) * dx_2
+a = ufl.inner(sigma(u_1, 0), ufl.sym(ufl.grad(v_1))) * dx_1
+a += ufl.inner(sigma(u_2, 1), ufl.sym(ufl.grad(v_2))) * dx_2
+# F by block: gravity has no spider blocks
+gravity = [fem.Constant(m, (rho * g * down).astype(default_scalar_type)) for m, rho in zip(beams, materials["rho"])]
+F = [
+    ufl.inner(gravity[0], v_1) * dx_1,
+    ufl.inner(gravity[1], v_2) * dx_2,
+    ufl.ZeroBaseForm((z_P,)),
+    ufl.ZeroBaseForm((z_A,)),
+    ufl.ZeroBaseForm((z_B,)),
+]
+
+# The lower pin's spring, on spider mesh A, and the fixed pin's, on spider mesh P
+k = 1e3 * max(materials["E"])
+K_locked = (fem.Constant(spiders_A, spring_stiffness(k)), fem.Constant(spiders_P, torsion(k)))
+K_free = (fem.Constant(spiders_A, spring_stiffness(0.0)), fem.Constant(spiders_P, torsion(0.0)))
+s_locked = springs(K_locked, trials[2:], tests[2:])
+s_free = springs(K_free, trials[2:], tests[2:])
+# -
+
 # ## Discretization
 #
 # ### In space
@@ -392,8 +439,9 @@ def springs(K_pins, w, z):
 # By baking this energy into the model, the pendulum can be solved efficiently within
 # a linear framework in two stages:
 #
-# 1. The static deflection $u_0$ under gravity, $a(u_0, v) + s_\text{locked}(u_0, v) = F(v)$,
-#    calculates the initial stress $\sigma_0 = \sigma_b(u_{0,b})$ on each beam. Because the
+# 1. The static deflection $u_0 = (u_{0,1}, u_{0,2}, w_0)$ under gravity,
+#    $a(u_0, v) + s_\text{locked}(w_0, z) = F(v)$, calculates the initial stress
+#    $\sigma_0 = \sigma_b(u_{0,b})$ on each beam. Because the
 #    beams are symmetric about $x = 0$, gravity exerts no initial moment. This allows us
 #    to compute the deflection with the pins safely locked against turning, ensuring the
 #    static problem is well-posed.
@@ -403,12 +451,30 @@ def springs(K_pins, w, z):
 #    the geometric stiffness of the prestress:
 #
 #    $$
-#    \hat K(u, v) = a(u, v) + a_{\sigma_0}(u, v) + s_\text{free}(u, v).
+#    \hat K(u, v) = a(u, v) + a_{\sigma_0}(u, v) + s_\text{free}(w, z).
 #    $$
 #
 #    Because gravity is already balanced by $\sigma_0$, it does not appear as a body force
 #    in this dynamic stage.
-#
+
+# The prestress $\sigma_0$ is written in terms of the functions `u_0`, in the constraints'
+# spaces, that will hold the static deflection, so the forms of the swing can be made now.
+
+# +
+
+
+def in_constraint_spaces():
+    """One function per block, in the space of its constraint."""
+    return [fem.Function(mpc.function_space, dtype=default_scalar_type) for mpc in mpcs]
+
+
+u_0 = in_constraint_spaces()
+sigma_0 = (sigma(u_0[0], 0), sigma(u_0[1], 1))
+a_sigma_0 = ufl.inner(ufl.grad(u_1) * sigma_0[0], ufl.grad(v_1)) * dx_1
+a_sigma_0 += ufl.inner(ufl.grad(u_2) * sigma_0[1], ufl.grad(v_2)) * dx_2
+K_hat = a + a_sigma_0 + s_free
+# -
+
 # ### In time
 #
 # The whole coupled system, beams and spiders alike, is stepped with one time step
@@ -462,123 +528,12 @@ def springs(K_pins, w, z):
 #
 # The pendulum is released at rest, $\dot u^0 = 0$, from the displacement $u^0$ given
 # below.
-#
-# ## Energy conservation
-# The total energy of the system at time step $n$ can be written as the sum of the
-# kinetic and stored energy:
-#
-# $$
-# E^n = \frac12 \dot u^n \cdot M \dot u^n + \frac12 u^n \cdot \hat K u^n
-# $$
-#
-# We can derive that the energy is conserved with our discrete time stepping scheme by
-# multiply (ii) by $\Delta t$ and take its dot product with the average velocity over the step,
-# $\frac12 (\dot u^{n+1} + \dot u^n)$:
-#
-# $$
-# \frac12 \left(\dot u^{n+1} + \dot u^n\right) \cdot M \left(\dot u^{n+1} - \dot u^n\right)
-# = -\frac{\Delta t}{2} \left(\dot u^{n+1} + \dot u^n\right) \cdot \frac12 \hat K \left(u^{n+1} + u^n\right).
-# $$
-#
-# On the left, expanding the product gives four terms, and the two mixed ones cancel, as
-# $\dot u^{n+1} \cdot M \dot u^n = \dot u^n \cdot M \dot u^{n+1}$ for the symmetric $M$:
-#
-# $$
-# \begin{aligned}
-# \frac12 \left(\dot u^{n+1} + \dot u^n\right) \cdot M \left(\dot u^{n+1} - \dot u^n\right)
-# &= \frac12 \dot u^{n+1} \cdot M \dot u^{n+1} - \frac12 \dot u^n \cdot M \dot u^n,
-# \end{aligned}
-# $$
-#
-# which gives us the change of the kinetic energy over the step of the left side.
-# On the right, (i) says that $\frac{\Delta t}{2} (\dot u^{n+1} + \dot u^n) = u^{n+1} - u^n$,
-# so the right-hand side is $-\frac12 (u^{n+1} - u^n) \cdot \hat K (u^{n+1} + u^n)$, and the
-# same expansion with the symmetric $\hat K$ gives
-#
-# $$
-# \begin{aligned}
-# -\frac12 \left(u^{n+1} - u^n\right) \cdot \hat K \left(u^{n+1} + u^n\right)
-# &= -\left(\frac12 u^{n+1} \cdot \hat K u^{n+1} - \frac12 u^n \cdot \hat K u^n\right),
-# \end{aligned}
-# $$
-#
-# minus the change of the stored energy. The two sides are equal, so
-#
-# $$
-# \frac12 \dot u^{n+1} \cdot M \dot u^{n+1} + \frac12 u^{n+1} \cdot \hat K u^{n+1}
-# = \frac12 \dot u^n \cdot M \dot u^n + \frac12 u^n \cdot \hat K u^n,
-# $$
-#
-# that is $E^{n+1} = E^n$: the kinetic energy gained in a step is the stored energy lost,
-# for any $\Delta t$. In floating point it holds up to the rounding of the solves, which
-# the demo checks below.
+
+# The left- and right-hand sides of (iv), with the right-hand side in terms of the functions
+# holding $u^n$ and $\dot u^n$, `u_n` and `u_dot_n`.
 
 # +
-materials = {"E": (2.0e4, 0.7e5), "nu": (0.3, 0.25), "rho": (1.0, 1.2)}
-beams = (beam_1, beam_2)
-g = 9.81
 dt, num_steps = 0.02, 150
-
-
-def sigma(u, b: int):
-    """The stress of displacement `u` in the material of beam `b`."""
-    E, nu = materials["E"][b], materials["nu"][b]
-    mu, lmbda = E / (2 * (1 + nu)), E * nu / ((1 + nu) * (1 - 2 * nu))
-    return 2 * mu * ufl.sym(ufl.grad(u)) + lmbda * ufl.tr(ufl.sym(ufl.grad(u))) * ufl.Identity(3)
-
-
-# The stiffness of the springs, large next to the beams', and of the lower pin's spring, on spider
-# mesh A, and of the fixed pin's, on spider mesh P, locked for the static deflection and free for the swing
-k = 1e3 * max(materials["E"])
-K_locked = (fem.Constant(spiders_A, spring_stiffness(k)), fem.Constant(spiders_P, torsion(k)))
-K_free = (fem.Constant(spiders_A, spring_stiffness(0.0)), fem.Constant(spiders_P, torsion(0.0)))
-# -
-
-# ## The forms
-#
-# The forms are written over the five spaces of the constraints, in the order of the
-# blocks of the system, and split into blocks when compiled, with the names of the text:
-# `M`, `a`, `s_locked`, `s_free`, `F`, `a_sigma_0` and `K_hat`. The prestress `sigma_0` is
-# written in terms of the functions `u_0` that will hold the static deflection, and the
-# right-hand side of a step in terms of those holding $u^n$ and $\dot u^n$, `u_n` and
-# `u_dot_n`, all in the constraints' spaces.
-
-# +
-mixed = ufl.MixedFunctionSpace(*(mpc.input_space for mpc in mpcs))
-trials, tests = ufl.TrialFunctions(mixed), ufl.TestFunctions(mixed)
-u_1, u_2, w_P, w_A, w_B = trials
-v_1, v_2, z_P, z_A, z_B = tests
-dx_1, dx_2 = ufl.dx(beam_1), ufl.dx(beam_2)
-
-
-def in_constraint_spaces():
-    """One function per block, in the space of its constraint."""
-    return [fem.Function(mpc.function_space, dtype=default_scalar_type) for mpc in mpcs]
-
-
-a = ufl.inner(sigma(u_1, 0), ufl.sym(ufl.grad(v_1))) * dx_1
-a += ufl.inner(sigma(u_2, 1), ufl.sym(ufl.grad(v_2))) * dx_2
-M = materials["rho"][0] * ufl.inner(u_1, v_1) * dx_1 + materials["rho"][1] * ufl.inner(u_2, v_2) * dx_2
-s_locked = springs(K_locked, trials[2:], tests[2:])
-s_free = springs(K_free, trials[2:], tests[2:])
-
-# The static deflection, a(u_0, v) + s_locked(u_0, v) = F(v), with gravity, which has no spider blocks
-down = np.array([0.0, 0.0, -1.0])
-gravity = [fem.Constant(m, (rho * g * down).astype(default_scalar_type)) for m, rho in zip(beams, materials["rho"])]
-F = [
-    ufl.inner(gravity[0], v_1) * dx_1,
-    ufl.inner(gravity[1], v_2) * dx_2,
-    ufl.ZeroBaseForm((z_P,)),
-    ufl.ZeroBaseForm((z_A,)),
-    ufl.ZeroBaseForm((z_B,)),
-]
-
-# The swing: the prestress sigma_0 of the static deflection u_0, and free pins
-u_0 = in_constraint_spaces()
-sigma_0 = (sigma(u_0[0], 0), sigma(u_0[1], 1))
-a_sigma_0 = ufl.inner(ufl.grad(u_1) * sigma_0[0], ufl.grad(v_1)) * dx_1
-a_sigma_0 += ufl.inner(ufl.grad(u_2) * sigma_0[1], ufl.grad(v_2)) * dx_2
-K_hat = a + a_sigma_0 + s_free
 # The displacement u^n, the velocity u_dot^n and the new displacement u^{n+1}
 u_n, u_dot_n, u_new = in_constraint_spaces(), in_constraint_spaces(), in_constraint_spaces()
 
@@ -699,6 +654,56 @@ x = dolfinx_mpc.create_vector(L_step, mpcs, kind="mpi")
 pinned_by_block = fem.bcs_by_block([mpc.input_space for mpc in mpcs], pinned)
 # -
 
+# ## Energy conservation
+# The total energy of the system at time step $n$ can be written as the sum of the
+# kinetic and stored energy:
+#
+# $$
+# E^n = \frac12 \dot u^n \cdot M \dot u^n + \frac12 u^n \cdot \hat K u^n
+# $$
+#
+# We can derive that the energy is conserved with our discrete time stepping scheme by
+# multiply (ii) by $\Delta t$ and take its dot product with the average velocity over the step,
+# $\frac12 (\dot u^{n+1} + \dot u^n)$:
+#
+# $$
+# \frac12 \left(\dot u^{n+1} + \dot u^n\right) \cdot M \left(\dot u^{n+1} - \dot u^n\right)
+# = -\frac{\Delta t}{2} \left(\dot u^{n+1} + \dot u^n\right) \cdot \frac12 \hat K \left(u^{n+1} + u^n\right).
+# $$
+#
+# On the left, expanding the product gives four terms, and the two mixed ones cancel, as
+# $\dot u^{n+1} \cdot M \dot u^n = \dot u^n \cdot M \dot u^{n+1}$ for the symmetric $M$:
+#
+# $$
+# \begin{aligned}
+# \frac12 \left(\dot u^{n+1} + \dot u^n\right) \cdot M \left(\dot u^{n+1} - \dot u^n\right)
+# &= \frac12 \dot u^{n+1} \cdot M \dot u^{n+1} - \frac12 \dot u^n \cdot M \dot u^n,
+# \end{aligned}
+# $$
+#
+# which gives us the change of the kinetic energy over the step of the left side.
+# On the right, (i) says that $\frac{\Delta t}{2} (\dot u^{n+1} + \dot u^n) = u^{n+1} - u^n$,
+# so the right-hand side is $-\frac12 (u^{n+1} - u^n) \cdot \hat K (u^{n+1} + u^n)$, and the
+# same expansion with the symmetric $\hat K$ gives
+#
+# $$
+# \begin{aligned}
+# -\frac12 \left(u^{n+1} - u^n\right) \cdot \hat K \left(u^{n+1} + u^n\right)
+# &= -\left(\frac12 u^{n+1} \cdot \hat K u^{n+1} - \frac12 u^n \cdot \hat K u^n\right),
+# \end{aligned}
+# $$
+#
+# minus the change of the stored energy. The two sides are equal, so
+#
+# $$
+# \frac12 \dot u^{n+1} \cdot M \dot u^{n+1} + \frac12 u^{n+1} \cdot \hat K u^{n+1}
+# = \frac12 \dot u^n \cdot M \dot u^n + \frac12 u^n \cdot \hat K u^n,
+# $$
+#
+# that is $E^{n+1} = E^n$: the kinetic energy gained in a step is the stored energy lost,
+# for any $\Delta t$. In floating point it holds up to the rounding of the solves, which
+# the demo checks as it steps.
+#
 # The energy, as one form per domain: the two beams, and the springs on spider meshes A and P.
 # Spring A reaches spider B through the pair.
 
