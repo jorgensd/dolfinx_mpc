@@ -45,11 +45,12 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
     V = functionspace(mesh, ("CG", degree))
 
     # Create Dirichlet boundary condition
+    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
 
     def dirichletboundary(x):
         return np.logical_or(
-            np.logical_or(np.isclose(x[1], 0), np.isclose(x[1], 1)),
-            np.logical_or(np.isclose(x[2], 0), np.isclose(x[2], 1)),
+            np.logical_or(np.isclose(x[1], 0, atol=tol), np.isclose(x[1], 1, atol=tol)),
+            np.logical_or(np.isclose(x[2], 0, atol=tol), np.isclose(x[2], 1, atol=tol)),
         )
 
     mesh.topology.create_connectivity(2, 1)
@@ -58,7 +59,7 @@ def demo_periodic3D(tetra, r_lvl=0, out_hdf5=None, xdmf=False, boomeramg=False, 
     bcs = [bc]
 
     def PeriodicBoundary(x):
-        return np.isclose(x[0], 1)
+        return np.isclose(x[0], 1, atol=tol)
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)
