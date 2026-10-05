@@ -62,6 +62,7 @@ class MultiPointConstraint:
     _scale_function: Optional[_fem.Function]
     _rbe2: List[list]
     V: _fem.FunctionSpace
+    _input_space: _fem.FunctionSpace
     finalized: bool
     _cpp_object: _mpc_classes
     _dtype: npt.DTypeLike
@@ -92,6 +93,8 @@ class MultiPointConstraint:
         # Per space on a spider mesh: [W, the tied space, the block of W], the block set by finalize
         self._rbe2 = []
         self.V = V
+        # Kept after finalize replaces `V` by the extended space, which contains no Dirichlet condition
+        self._input_space = V
         self.finalized = False
         self._dtype = dtype
 

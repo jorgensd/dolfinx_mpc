@@ -8,11 +8,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Optional, Union
 
+from mpi4py import MPI
 from petsc4py import PETSc as _PETSc
 
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
 import dolfinx.fem.petsc  # noqa: F401
+import dolfinx.la
 import numpy as np
 import numpy.typing as npt
 from dolfinx import default_scalar_type
@@ -160,9 +162,12 @@ def assemble_matrix(
     if A is None:
         A = create_matrix(form, constraint, kind)
 
+    V0, V1 = form.function_spaces
+    for mpc, V in {id(c): (c, W) for c, W in zip(constraint, (V0, V1))}.values():
+        if not mpc._cpp_object.has_cross_block_masters:
+            _raise_if_constrained_masters([mpc], [V], bc_data)
     _assemble_form(A, form, constraint, bc_data, num_threads)
 
-    V0, V1 = form.function_spaces
     slave_blocks = [(A, constraint[0])] if constraint[0] is constraint[1] else []
     bc_blocks = [(A, bc_data.rows(V0))] if V0 is V1 else []
     _finalize_matrix(A, slave_blocks, bc_blocks, diagval)
@@ -275,18 +280,83 @@ def create_matrix_nest(a: Sequence[Sequence[_fem.Form | None]], constraints: Seq
     return _create_matrix_nest(a, constraints)
 
 
-def _block_spaces(a: Sequence[Sequence[Optional[_fem.Form]]], num_blocks: int) -> list[Optional[_fem.FunctionSpace]]:
-    """The space of each diagonal block, taken from the forms, or `None` if no form has it."""
-    spaces: list[Optional[_fem.FunctionSpace]] = [None] * num_blocks
+def _block_spaces(
+    a: Sequence[Sequence[Optional[_fem.Form]]], constraints: Sequence[MultiPointConstraint]
+) -> list[_fem.FunctionSpace]:
+    """The space of each diagonal block, from the forms, or from its constraint if no form has it.
+
+    A block without a form still has a space: its constraint's, which may carry Dirichlet
+    conditions, and whose dofs may be masters of other blocks.
+    """
+    spaces: list[Optional[_fem.FunctionSpace]] = [None] * len(constraints)
     for i, a_row in enumerate(a):
         for j, a_ij in enumerate(a_row):
             if a_ij is None:
                 continue
             if spaces[i] is None:
                 spaces[i] = a_ij.function_spaces[0]
-            if j < num_blocks and spaces[j] is None:
+            if j < len(constraints) and spaces[j] is None:
                 spaces[j] = a_ij.function_spaces[1]
-    return spaces
+    return [mpc._input_space if V is None else V for V, mpc in zip(spaces, constraints)]
+
+
+def _raise_if_constrained_masters(
+    constraints: Sequence[MultiPointConstraint], spaces: Sequence[_fem.FunctionSpace], bc_data: BCData
+):
+    """Raise if a Dirichlet condition of the assembly constrains a master the constraints kept.
+
+    Assembly adds the entries of a slave's row and column to those of its masters after the
+    constrained rows and columns are zeroed, so a constrained master must have been eliminated, by
+    giving the condition to the constraint of the master's block before finalizing it. The verdict
+    is cached in `bc_data`.
+
+    Args:
+        constraints: The constraint of each block, in the order they were finalized in if a
+            constraint has masters in another block
+        spaces: The space of each block, on which the conditions are stated
+        bc_data: The Dirichlet conditions of the assembly
+
+    Raises:
+        ValueError: On every process, if a kept master is constrained.
+
+    Note:
+        Collective.
+    """
+    key = tuple(id(mpc._cpp_object) for mpc in constraints)
+    if key in bc_data._checked:
+        return
+    # The markers of each block on its extended space: the owned dofs are numbered as in the
+    # space of the conditions, the ghosts are the extended space's own
+    markers: list[Optional[npt.NDArray[np.bool_]]] = []
+    for mpc, V in zip(constraints, spaces):
+        owned_markers = bc_data.markers(V, V)[0]
+        if owned_markers.size == 0:
+            markers.append(None)
+            continue
+        dofmap = mpc.function_space.dofmap
+        marker = dolfinx.la.vector(dofmap.index_map, dofmap.index_map_bs, dtype=np.float64)
+        num_owned = dofmap.index_map.size_local * dofmap.index_map_bs
+        marker.array[:num_owned] = owned_markers[:num_owned]
+        marker.scatter_forward()
+        markers.append(marker.array > 0)
+
+    constrained = False
+    if any(marker is not None for marker in markers):
+        for k, mpc in enumerate(constraints):
+            masters = mpc._cpp_object.masters.array
+            blocks = np.asarray(mpc._cpp_object.master_blocks)
+            if blocks.size == 0:
+                blocks = np.full(masters.size, k, dtype=np.int32)
+            for j, marker in enumerate(markers):
+                if marker is not None and marker[masters[blocks == j]].any():
+                    constrained = True
+    if constraints[0].function_space.mesh.comm.allreduce(constrained, op=MPI.LOR):
+        raise ValueError(
+            "A Dirichlet condition of the assembly constrains a master of a multi point constraint. "
+            "Give the condition to the constraint of the master's space as well, "
+            "MultiPointConstraint(V, bcs=...), before finalizing, so that the master is eliminated."
+        )
+    bc_data._checked.add(key)
 
 
 def _assemble_blocks(
@@ -302,7 +372,13 @@ def _assemble_blocks(
     of the slave and Dirichlet rows of each diagonal block.
 
     The entries of a master go to the block of the master, which may have no form.
+
+    Raises:
+        ValueError: On every process, if a Dirichlet condition constrains a master that the
+            constraints kept.
     """
+    spaces = _block_spaces(a, constraints)
+    _raise_if_constrained_masters(constraints, spaces, bc_data)
     for i, a_row in enumerate(a):
         for j, a_ij in enumerate(a_row):
             if a_ij is None:
@@ -321,21 +397,14 @@ def _assemble_blocks(
             )
 
     # The diagonal is a property of a block, so it is added once per diagonal block after
-    # every form has been assembled, including for a block that has no form of its own
-    spaces = _block_spaces(a, len(constraints))
+    # every form has been assembled, including for a block that has no form of its own, whose
+    # pattern reserves its whole diagonal
     for i, mpc in enumerate(constraints):
-        V = spaces[i]
-        has_bcs = V is not None and bc_data.markers(V, V)[0].size > 0
-        if a[i][i] is None and has_bcs:
-            raise RuntimeError(
-                f"Diagonal block ({i}, {i}) cannot be 'None' and have a Dirichlet condition applied."
-                " Consider assembling a zero block."
-            )
         A_ii = blocks[i][i]
         if A_ii is None:
             continue
-        bc_blocks = [(A_ii, bc_data.rows(V))] if (has_bcs and V is not None) else []
-        _add_diagonals([(A_ii, mpc)], bc_blocks, diagval)
+        rows = bc_data.rows(spaces[i])
+        _add_diagonals([(A_ii, mpc)], [(A_ii, rows)] if rows.size > 0 else [], diagval)
 
 
 def _assemble_matrix_nest(
@@ -436,8 +505,8 @@ def _assemble_matrix_block(
     Assemble an array of forms into a monolithic PETSc matrix made by :func:`create_matrix`.
 
     Raises:
-        RuntimeError: If a diagonal block has no form while a Dirichlet condition applies to it,
-            as it would have no diagonal entry to set.
+        ValueError: On every process, if a Dirichlet condition constrains a master that the
+            constraints kept.
     """
     if bc_data is None:
         bc_data = BCData(list(bcs))
