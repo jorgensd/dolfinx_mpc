@@ -813,7 +813,7 @@ writers = [VTXWriter(comm, f"demo_spider_hinge_{k + 1}.bp", [u_n[k]], engine="BP
 writers.append(VTXWriter(comm, "demo_spider_hinge_pins.bp", [u_pins], engine="BP4"))
 
 
-def spider_turns(u) -> tuple[float, float]:
+def spider_turns(u) -> tuple[float, ...]:
     """The turns of beam 1, at spider P, and of beam 2, at spider B, about the pins."""
     return tuple(float(np.dot(dolfinx_mpc.spider_values(u[k], 0).real[3:], axis)) for k in (2, 4))
 
