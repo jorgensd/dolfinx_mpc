@@ -329,10 +329,12 @@ def _raise_if_constrained_masters(
     # space of the conditions, the ghosts are the extended space's own
     markers: list[Optional[npt.NDArray[np.bool_]]] = []
     for mpc, V in zip(constraints, spaces):
-        owned_markers = bc_data.markers(V, V)[0]
-        if owned_markers.size == 0:
+        # Decided by the spaces of the conditions, the same on every process, as the scatter is
+        # collective; the markers of a process without dofs are empty
+        if not any(V.contains(bc.function_space) for bc in bc_data._bcs):
             markers.append(None)
             continue
+        owned_markers = bc_data.markers(V, V)[0]
         dofmap = mpc.function_space.dofmap
         marker = dolfinx.la.vector(dofmap.index_map, dofmap.index_map_bs, dtype=np.float64)
         num_owned = dofmap.index_map.size_local * dofmap.index_map_bs
