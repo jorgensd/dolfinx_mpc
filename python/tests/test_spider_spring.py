@@ -7,8 +7,11 @@
 
 Spring `k` joins spider `k` of mesh A to spider `k` of mesh B, which start at the same point. The
 spring is a form, :math:`\\int K (w_A - w_B) \\cdot (v_A - v_B)` over mesh A, with a symmetric 6x6
-stiffness coupling translations and rotations. The tests assemble through PETSc, so they use its
+stiffness coupling translations and rotations. The tests that assemble through PETSc use its
 scalar type.
+
+A spring between spiders a fixed offset apart, a rigid link free to turn about an axis, is tested
+through its energy, for every scalar type.
 """
 
 from __future__ import annotations
@@ -252,3 +255,108 @@ def test_stiff_spring_hinge():
     assert rates[-1] > 0.9
     assert abs(turns[-1]) > 100 * gaps[-1]
     assert abs(turns[-1] - turns[-2]) < 0.5 * abs(turns[-2] - turns[-3])
+
+
+# The spring of two spiders a fixed offset `d` apart: stiff against spider B leaving the rigid
+# extension of spider A, t_B = t_A + theta_A x d and theta_B = theta_A, except for turning about the
+# axis `a`. The tests evaluate its energy as a functional, so they need no PETSc and run for every
+# scalar type.
+_scalar_types = [np.float32, np.float64, np.complex64, np.complex128]
+_axis = np.array([0.0, 1.0, 0.0])
+_offset = np.array([0.1, 0.3, -0.2])
+
+
+def _link_gap(w_A, w_B, d):
+    """The motion of spider B away from the rigid extension of spider A."""
+    t_A, theta_A = ufl.as_vector([w_A[i] for i in range(3)]), ufl.as_vector([w_A[i] for i in range(3, 6)])
+    t_B, theta_B = ufl.as_vector([w_B[i] for i in range(3)]), ufl.as_vector([w_B[i] for i in range(3, 6)])
+    translation = t_B - t_A - ufl.cross(theta_A, d)
+    rotation = theta_B - theta_A
+    return ufl.as_vector([translation[i] for i in range(3)] + [rotation[i] for i in range(3)])
+
+
+def _link_stiffness(k, k_t):
+    K = np.zeros((6, 6))
+    K[:3, :3] = k * np.eye(3)
+    K[3:, 3:] = k * (np.eye(3) - np.outer(_axis, _axis)) + k_t * np.outer(_axis, _axis)
+    return K
+
+
+def _rigid_links(dtype, k_t):
+    """Springs `k` from spider `k` of A to spider `k` of B, at a skew offset, and their energy."""
+    comm = MPI.COMM_WORLD
+    real_type = np.finfo(dtype).dtype.type
+    num = 2 * comm.size + 1
+    points_A = np.column_stack([np.linspace(1.0, 2.0, num), np.full(num, 0.5), np.full(num, 0.5)])
+    points_A = points_A.astype(real_type)
+    points_B = (points_A + _offset).astype(real_type)
+    spiders_A = dolfinx_mpc.create_spider_mesh(comm, points_A, dtype=real_type)
+    spiders_B = dolfinx_mpc.create_spider_mesh(comm, points_B, dtype=real_type)
+    pair = dolfinx_mpc.create_spider_pair(spiders_A, spiders_B)
+    element = basix.ufl.element("DG", "point", 0, shape=(6,), dtype=real_type)
+    W_A, W_B = fem.functionspace(spiders_A, element), fem.functionspace(spiders_B, element)
+    w_A, w_B = fem.Function(W_A, dtype=dtype), fem.Function(W_B, dtype=dtype)
+
+    K = _link_stiffness(1e2, k_t)
+    d = fem.Constant(spiders_A, _offset.astype(dtype))
+    gap = _link_gap(w_A, w_B, d)
+    energy_form = fem.form(
+        0.5 * ufl.inner(fem.Constant(spiders_A, K.astype(dtype)) * gap, gap) * ufl.dx(spiders_A),
+        entity_maps=[pair],
+        dtype=dtype,
+    )
+
+    def energy() -> float:
+        return comm.allreduce(fem.assemble_scalar(energy_form), op=MPI.SUM).real
+
+    return num, points_A, w_A, w_B, K, energy
+
+
+def _rigid_motion(t, theta, centre):
+    """The spider dofs (t + theta x (x - centre), theta) of a rigid motion, at points `x`."""
+    return lambda x: np.vstack(
+        [t[:, None] + np.cross(theta, (x - centre[:, None]).T).T, np.tile(theta[:, None], x.shape[1])]
+    )
+
+
+@pytest.mark.parametrize("dtype", _scalar_types)
+@pytest.mark.parametrize("k_t", [0.0, 3.0])
+def test_rigid_link_spring_rigid_motion(dtype, k_t):
+    """A rigid motion of the springs and the spiders stores no energy, and turning spider B about
+    the axis by phi stores k_t phi^2 / 2 per spring, none for a free pin."""
+    num, _, w_A, w_B, _, energy = _rigid_links(dtype, k_t)
+    t, theta, centre = np.array([0.2, -0.1, 0.3]), np.array([0.05, -0.2, 0.1]), np.array([1.5, 0.0, 0.2])
+    w_A.interpolate(_rigid_motion(t, theta, centre))
+    w_B.interpolate(_rigid_motion(t, theta, centre))
+    scale = 1e2 * (np.abs(t).max() + np.abs(theta).max()) ** 2 * num
+    tol = 1e3 * np.finfo(dtype).eps * scale
+    assert abs(energy()) < tol
+
+    # Spider B turned by phi about the axis, about its own point, so its translation is unchanged
+    phi = 0.3
+    turn = np.concatenate([np.zeros(3), phi * _axis])
+    w_B.interpolate(lambda x: _rigid_motion(t, theta, centre)(x) + turn[:, None])
+    assert np.isclose(energy(), 0.5 * k_t * phi**2 * num, atol=tol)
+
+
+@pytest.mark.parametrize("dtype", _scalar_types)
+def test_rigid_link_spring_energy(dtype):
+    """For any motion of the spiders the energy is that of the gaps delta computed spring by spring,
+    delta^H K delta / 2."""
+    num, points_A, w_A, w_B, K, energy = _rigid_links(dtype, k_t=3.0)
+    imaginary = 0.5j if np.issubdtype(dtype, np.complexfloating) else 0.0
+
+    def motion(shift):
+        return lambda x: np.vstack(
+            [np.sin(shift + (i + 1) * x[0]) + imaginary * np.cos(shift + x[0] + i) for i in range(6)]
+        )
+
+    w_A.interpolate(motion(0.0))
+    w_B.interpolate(motion(1.0))
+    expected = 0.0
+    for k in range(num):
+        value_A, value_B = dolfinx_mpc.spider_values(w_A, k), dolfinx_mpc.spider_values(w_B, k)
+        delta = np.concatenate([value_B[:3] - value_A[:3] - np.cross(value_A[3:], _offset), value_B[3:] - value_A[3:]])
+        expected += 0.5 * np.vdot(delta, K @ delta).real
+    tol = 1e3 * np.finfo(dtype).eps * np.abs(K).max() * num
+    assert np.isclose(energy(), expected, rtol=tol, atol=tol)

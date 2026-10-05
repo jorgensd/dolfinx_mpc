@@ -34,7 +34,7 @@ def _row_spaces(L, mpc) -> list:
     A block without a linear form still has rows, on which its Dirichlet conditions are set.
     """
     spaces = _fem.forms.extract_function_spaces(L)
-    return [c._input_space if V is None else V for V, c in zip(spaces, mpc)]
+    return [c.input_space if V is None else V for V, c in zip(spaces, mpc)]
 
 
 def _backsubstitute(
