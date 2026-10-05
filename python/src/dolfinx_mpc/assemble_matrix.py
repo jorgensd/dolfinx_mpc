@@ -349,6 +349,10 @@ def _raise_if_constrained_masters(
             blocks = np.asarray(mpc._cpp_object.master_blocks)
             if blocks.size == 0:
                 blocks = np.full(masters.size, k, dtype=np.int32)
+            else:
+                # A master in the constraint's own block is in block `k` of the system, also when
+                # the constraint was finalized on its own; any other block is the master's
+                blocks = np.where(blocks == mpc._cpp_object.block, k, blocks)
             for j, marker in enumerate(markers):
                 if marker is not None and marker[masters[blocks == j]].any():
                     constrained = True
