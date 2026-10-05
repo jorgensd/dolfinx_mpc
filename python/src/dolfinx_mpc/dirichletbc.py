@@ -34,6 +34,8 @@ class BCData:
         self._bcs = list(bcs) if bcs else []
         self._markers: dict[int, npt.NDArray[np.int8]] = {}
         self._rows: dict[int, npt.NDArray[np.int32]] = {}
+        # The constraints, by the ids of their C++ objects, checked against these conditions
+        self._checked: set[tuple[int, ...]] = set()
 
     def markers(
         self, V0: _fem.FunctionSpace, V1: _fem.FunctionSpace
