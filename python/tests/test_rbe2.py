@@ -35,13 +35,9 @@ def _tol(dtype):
 
 
 def _spiders(points, real_type=default_real_type):
-    """A spider mesh of `points`, split in contiguous chunks over the processes.
-
-    The input index of `points[k]` is then `k`.
-    """
-    comm = MPI.COMM_WORLD
+    """A spider mesh of `points`, given on every process. The input index of `points[k]` is `k`."""
     points = np.asarray(points, dtype=real_type).reshape(-1, 3)
-    return dolfinx_mpc.create_spider_mesh(comm, np.array_split(points, comm.size)[comm.rank])
+    return dolfinx_mpc.create_spider_mesh(MPI.COMM_WORLD, points)
 
 
 def _body_space(spiders, num_components):
@@ -226,22 +222,43 @@ def test_many_spiders(num_spiders, dtype):
 
 
 @pytest.mark.parametrize("dtype", scalar_types)
-def test_spiders_in_input_order(dtype):
-    """A spider's index is its position among the points of all processes, process 0 first."""
+@pytest.mark.parametrize("others", ["same", "empty"])
+def test_spiders_in_input_order(dtype, others):
+    """Spider `k` is row `k` of the first process's points, whichever way the others pass them."""
     comm = MPI.COMM_WORLD
     real_type = _real_type(dtype)
-    # A different number of points per process, in an order unrelated to the coordinates
-    mine = np.array(
-        [[10.0 * comm.rank + 3.0 - i, comm.rank, i] for i in range(comm.rank % 3 + 1)], dtype=real_type
-    ).reshape(-1, 3)
-    W = _body_space(dolfinx_mpc.create_spider_mesh(comm, mine), 3)
+    # More points than processes, in an order unrelated to the coordinates
+    points = np.array([[3.0 - i, (5 * i) % 7, i] for i in range(2 * comm.size + 1)], dtype=real_type)
+    given = points if (comm.rank == 0 or others == "same") else np.zeros((0, 3), dtype=real_type)
+    W = _body_space(dolfinx_mpc.create_spider_mesh(comm, given), 3)
+    assert W.mesh.topology.index_map(0).size_global == len(points)
     x_W = fem.Function(W, dtype=dtype)
     x_W.x.array[:] = W.tabulate_dof_coordinates().reshape(-1)
-    all_points = np.vstack(comm.allgather(mine))
-    for k, point in enumerate(all_points):
+    for k, point in enumerate(points):
         values = dolfinx_mpc.spider_values(x_W, k)
         assert values.dtype == dtype
         np.testing.assert_allclose(values, point, rtol=_tol(dtype))
+
+
+def test_spider_mesh_input_must_agree():
+    """Points on another process that differ from the first process's raise on every process."""
+    comm = MPI.COMM_WORLD
+    if comm.size == 1:
+        pytest.skip("Needs a second process")
+    points = np.array([[0.5, 0.5, 0.5], [1.5, 0.5, 0.5]], dtype=default_real_type)
+    given = points if comm.rank == 0 else points + 0.1
+    with pytest.raises(ValueError, match="points of the first process"):
+        dolfinx_mpc.create_spider_mesh(comm, given)
+
+
+def test_spider_mesh_dtype_from_first_process():
+    """The coordinate type is that of the first process's points, on every process."""
+    comm = MPI.COMM_WORLD
+    given = np.array([[0.5, 0.5, 0.5]], dtype=np.float32) if comm.rank == 0 else np.zeros((0, 3))
+    spiders = dolfinx_mpc.create_spider_mesh(comm, given)
+    assert comm.allreduce(spiders.geometry.x.dtype == np.float32, op=MPI.LAND)
+    explicit = dolfinx_mpc.create_spider_mesh(comm, given, dtype=np.float64)
+    assert explicit.geometry.x.dtype == np.float64
 
 
 def test_spider_index_out_of_range():
@@ -288,10 +305,71 @@ def test_scalar_type():
 
 @pytest.mark.parametrize("real_type", [np.float32, np.float64])
 def test_spider_mesh(real_type):
-    """Coinciding points are merged, and the mesh has the points' precision."""
-    merged = _spiders([[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.7, 0.5, 0.5]], real_type)
-    assert merged.topology.index_map(0).size_global == 2
-    assert merged.geometry.x.dtype == real_type
+    """Coinciding points are distinct spiders, and the mesh has the points' precision."""
+    points = [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.7, 0.5, 0.5]]
+    spiders = _spiders(points, real_type)
+    assert spiders.topology.index_map(0).size_global == 3
+    assert spiders.geometry.x.dtype == real_type
+    x = fem.Function(_body_space(spiders, 3), dtype=real_type)
+    x.x.array[:] = x.function_space.tabulate_dof_coordinates().reshape(-1)
+    for k, point in enumerate(points):
+        np.testing.assert_allclose(dolfinx_mpc.spider_values(x, k), point)
+
+
+@pytest.mark.parametrize("dtype", scalar_types)
+def test_move_mesh(dtype):
+    """Every geometry node moves by the displacement at the node, given as a function, an
+    expression or a callable."""
+    comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
+
+    def displacement(x):
+        return np.vstack([0.1 * x[0] * x[1], 0.2 * x[0] - 0.05 * x[1] ** 2])
+
+    for kind in ("function", "expression", "callable"):
+        domain = mesh.create_unit_square(comm, 4, 3, mesh.CellType.quadrilateral, dtype=real_type)
+        x0 = domain.geometry.x.copy()
+        if kind == "function":
+            V = fem.functionspace(domain, ("Lagrange", 2, (2,)))
+            u = fem.Function(V, dtype=dtype)
+            u.interpolate(displacement)
+        elif kind == "expression":
+            x = ufl.SpatialCoordinate(domain)
+            u = ufl.as_vector([0.1 * x[0] * x[1], 0.2 * x[0] - 0.05 * x[1] ** 2])
+        else:
+            u = displacement
+        dolfinx_mpc.spider.move(domain, u)
+        expected = x0[:, :2] + displacement(x0.T).T
+        np.testing.assert_allclose(domain.geometry.x[:, :2], expected, atol=_tol(real_type))
+        np.testing.assert_array_equal(domain.geometry.x[:, 2], x0[:, 2])
+
+
+@pytest.mark.parametrize("dtype", scalar_types)
+@pytest.mark.parametrize("num_components", [3, 6])
+def test_move_spiders(dtype, num_components):
+    """Each spider moves by its own translation, the first components of its dofs, whatever the
+    order of the dofs."""
+    comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
+    points = np.array([[0.5 * i, 1.0, -0.5 * i] for i in range(2 * comm.size + 1)], dtype=real_type)
+    spiders = _spiders(points, real_type)
+    W = _body_space(spiders, num_components)
+    w = fem.Function(W, dtype=dtype)
+    # A translation per spider, from its coordinate; the rotations, if any, are not used
+    x_W = W.tabulate_dof_coordinates()
+    values = np.zeros((len(x_W), num_components), dtype=dtype)
+    values[:, :3] = np.column_stack([x_W[:, 0] + 1, 2 * x_W[:, 2], -x_W[:, 0]])
+    if num_components == 6:
+        values[:, 3:] = 7.0
+    w.x.array[:] = values.reshape(-1)
+    expected = [dolfinx_mpc.spider_values(w, k) for k in range(len(points))]
+    dolfinx_mpc.spider.move(spiders, w)
+    x_moved = fem.Function(_body_space(spiders, 3), dtype=real_type)
+    x_moved.x.array[:] = x_moved.function_space.tabulate_dof_coordinates().reshape(-1)
+    for k, point in enumerate(points):
+        np.testing.assert_allclose(
+            dolfinx_mpc.spider_values(x_moved, k), point + expected[k][:3].real, atol=_tol(real_type)
+        )
 
 
 @pytest.mark.parametrize("dtype", scalar_types)
