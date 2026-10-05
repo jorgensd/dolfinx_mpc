@@ -39,6 +39,9 @@ parse:
     - html_image
 
 sphinx:
+  # Copies the demos' animations for the gallery on the front page
+  local_extensions:
+    demo_gallery: docs/_ext
   extra_extensions:
   - 'sphinx.ext.autodoc'
   - 'sphinx.ext.napoleon'
