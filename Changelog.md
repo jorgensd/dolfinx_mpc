@@ -42,7 +42,9 @@
   `locate_spiders`. Blocked vector assembly skips a block without a linear form. New demo: `python/demos/demo_spider.py`.
   The spider utilities are in `dolfinx_mpc.spider`: `create_spider_mesh` takes the points on the first process (the
   others pass none or the same, checked on every process), keeps coinciding points as distinct spiders and agrees on one
-  coordinate type; `move(mesh, u)` moves a mesh, or the spiders by their translations, by a displacement. The scalar type
+  coordinate type; `create_spider_pair` relates spider k of two spider meshes of the same size, as an entity map for
+  forms coupling them, such as springs; `move(mesh, u)` moves a mesh, or the spiders by their translations, by a
+  displacement. The scalar type
   of a constraint is set once, by `MultiPointConstraint(V, dtype=...)`, which defaults to the precision of the mesh.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to

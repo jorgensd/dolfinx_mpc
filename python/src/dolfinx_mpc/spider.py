@@ -24,8 +24,9 @@ import numpy as np
 import numpy.typing as npt
 import ufl
 from dolfinx import default_real_type
+from dolfinx.common import local_range
 
-__all__ = ["create_spider_mesh", "move", "spider_values"]
+__all__ = ["create_spider_mesh", "create_spider_pair", "move", "spider_values"]
 
 
 def create_spider_mesh(comm: MPI.Comm, points: npt.ArrayLike, dtype: npt.DTypeLike | None = None) -> _mesh.Mesh:
@@ -34,7 +35,9 @@ def create_spider_mesh(comm: MPI.Comm, points: npt.ArrayLike, dtype: npt.DTypeLi
     The points are given on the first process. Every other process passes either no points or the
     same points. Spider `k` is the point in row `k`, its input index; coinciding points are
     distinct spiders, for instance two spiders joined by a spring. The points are spread over the
-    processes in contiguous chunks, so the spiders' dofs are owned across the processes.
+    processes as the post office splits an index range: of `M` points, process `r` owns those in
+    :func:`dolfinx.common.local_range(r, M, size) <dolfinx.common.local_range>`. Spider `k` of any
+    two spider meshes of `M` points is therefore on the same process.
 
     Args:
         comm: The communicator of the meshes the spiders join
@@ -69,7 +72,54 @@ def create_spider_mesh(comm: MPI.Comm, points: npt.ArrayLike, dtype: npt.DTypeLi
     )
     if not comm.allreduce(same, op=MPI.LAND):
         raise ValueError("Every process must pass no points or the points of the first process")
-    return _mesh.create_point_mesh(comm, np.array_split(reference, comm.size)[comm.rank])
+    start, end = local_range(comm.rank, len(reference), comm.size)
+    return _mesh.create_point_mesh(comm, reference[start:end])
+
+
+def _local_input_indices(spiders: _mesh.Mesh) -> npt.NDArray[np.int64]:
+    """The input index of each point of a spider mesh local to the process."""
+    imap = spiders.topology.index_map(0)
+    return np.asarray(spiders.topology.original_cell_index[: imap.size_local + imap.num_ghosts], dtype=np.int64)
+
+
+def create_spider_pair(spiders_A: _mesh.Mesh, spiders_B: _mesh.Mesh) -> _mesh.EntityMap:
+    r"""Relate spider `k` of one spider mesh to spider `k` of another, for every `k`.
+
+    The pairs are, for instance, the two ends of springs: order the points of the two meshes so that
+    row `k` of each holds the two ends of spring `k`. A form coupling the spaces on the two meshes,
+    such as a spring :math:`\int K (w_A - w_B) \cdot (v_A - v_B)`, is integrated over `spiders_A`
+    with the returned map in `entity_maps`. Each mesh keeps its own geometry, so the two spiders of
+    a pair may start at the same point and move apart.
+
+    Both meshes must have the same number of spiders. :func:`create_spider_mesh` then puts spider
+    `k` of both on the same process.
+
+    Args:
+        spiders_A: The spider mesh integrated over
+        spiders_B: The other spider mesh
+
+    Returns:
+        The entity map with `spiders_A` as topology and `spiders_B` as sub-topology.
+
+    Raises:
+        ValueError: If the meshes have different numbers of spiders, or spider `k` of the two is on
+            different processes, as for a point mesh not made by :func:`create_spider_mesh`. Raised
+            on every process.
+
+    Note:
+        Collective.
+    """
+    num_A = spiders_A.topology.index_map(0).size_global
+    num_B = spiders_B.topology.index_map(0).size_global
+    if num_A != num_B:
+        raise ValueError(f"The spider meshes must have the same number of spiders, not {num_A} and {num_B}")
+
+    # The local point of spiders_A with the input index of each local point of spiders_B
+    local_A = {k: i for i, k in enumerate(_local_input_indices(spiders_A).tolist())}
+    b_to_a = np.array([local_A.get(k, -1) for k in _local_input_indices(spiders_B).tolist()], dtype=np.int32)
+    if not spiders_A.comm.allreduce(bool((b_to_a >= 0).all()), op=MPI.LAND):
+        raise ValueError("Spider k of the two meshes is on different processes. Create both with create_spider_mesh.")
+    return _mesh.entity_map(spiders_A.topology, spiders_B.topology, 0, b_to_a)
 
 
 def move(
