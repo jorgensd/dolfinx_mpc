@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 import ufl
 from dolfinx import default_real_type, default_scalar_type, fem, mesh
+from dolfinx.common import local_range
 
 import dolfinx_mpc
 
@@ -314,6 +315,49 @@ def test_spider_mesh(real_type):
     x.x.array[:] = x.function_space.tabulate_dof_coordinates().reshape(-1)
     for k, point in enumerate(points):
         np.testing.assert_allclose(dolfinx_mpc.spider_values(x, k), point)
+
+
+def _input_indices(spiders):
+    imap = spiders.topology.index_map(0)
+    return np.asarray(spiders.topology.original_cell_index[: imap.size_local + imap.num_ghosts])
+
+
+def test_spider_mesh_partition():
+    """Of M points, a process owns those in its local range, as the post office splits an index range,
+    so spider k of two meshes of M points is on the same process."""
+    comm = MPI.COMM_WORLD
+    for num in (1, comm.size, 3 * comm.size + 1):
+        spiders = _spiders(np.column_stack([np.arange(num), np.zeros(num), np.zeros(num)]))
+        start, end = local_range(comm.rank, num, comm.size)
+        np.testing.assert_array_equal(np.sort(_input_indices(spiders)), np.arange(start, end))
+
+
+def test_spider_pair():
+    """Spider k of one spider mesh is related to spider k of the other."""
+    comm = MPI.COMM_WORLD
+    num = 3 * comm.size + 1
+    points = np.column_stack([np.arange(num), np.zeros(num), np.zeros(num)])
+    spiders_A, spiders_B = _spiders(points), _spiders(points[::-1])
+    emap = dolfinx_mpc.create_spider_pair(spiders_A, spiders_B)
+    local_B = _input_indices(spiders_B)
+    mapped = emap.sub_topology_to_topology(np.arange(len(local_B), dtype=np.int32), False)
+    np.testing.assert_array_equal(_input_indices(spiders_A)[mapped], local_B)
+
+
+def test_spider_pair_errors():
+    """Meshes of different numbers of spiders, or with spider k on different processes, raise on every
+    process."""
+    comm = MPI.COMM_WORLD
+    num = 3 * comm.size
+    points = np.column_stack([np.arange(num), np.zeros(num), np.zeros(num)]).astype(default_real_type)
+    spiders_A = _spiders(points)
+    with pytest.raises(ValueError, match="same number of spiders"):
+        dolfinx_mpc.create_spider_pair(spiders_A, _spiders(points[:-1]))
+    if comm.size > 1:
+        # Every point on the first process
+        on_first = mesh.create_point_mesh(comm, points if comm.rank == 0 else np.zeros((0, 3), dtype=points.dtype))
+        with pytest.raises(ValueError, match="different processes"):
+            dolfinx_mpc.create_spider_pair(spiders_A, on_first)
 
 
 @pytest.mark.parametrize("dtype", scalar_types)
