@@ -1014,8 +1014,8 @@ energies = energy_forms(u_n, u_dot_n)
 
 # ## Releasing the pendulum
 #
-# The pendulum starts at rest, beam 1 turned by $\theta_1 = 10°$ about the fixed pin and
-# beam 2 by a further $\theta_2 = -10°$ about the lower pin: the rigid motions
+# The pendulum starts at rest, beam 1 turned by $\theta_1 = 8°$ about the fixed pin and
+# beam 2 by a further $\theta_2 = -8°$ about the lower pin: the rigid motions
 # $\theta_1 a \times (x - x_P)$, and $\theta_2 a \times (x - x_B)$ on top of it for beam 2
 # and spider B. They satisfy the constraints and leave the springs unstretched, so the
 # energy they start with is that of $\sigma_0$ alone, the pendulum's potential.
@@ -1042,7 +1042,7 @@ def rigid_turns(phi_1: float, phi_2: float, u):
         f.x.array[:] = np.tile(np.concatenate([t, theta]), f.x.array.size // 6)
 
 
-theta_1, theta_2 = np.deg2rad(10.0), np.deg2rad(-10.0)
+theta_1, theta_2 = np.deg2rad(8.0), np.deg2rad(-8.0)
 rigid_turns(theta_1, theta_2, u_n)
 
 for k in range(2):
@@ -1078,8 +1078,6 @@ if comm.rank == 0:
     grids = [pyvista.merge([piece[k] for piece in gathered_grids], merge_points=False) for k in range(3)]
     plotter = pyvista.Plotter(off_screen=True, window_size=(450, 600))
     plotter.open_gif("demo_spider_hinge.gif", fps=1 / (2 * dt))
-    # Set from the first frame, and kept, so that the colours compare between frames
-    clim: list[float] = []
 
 
 def write_frame(t: float):
