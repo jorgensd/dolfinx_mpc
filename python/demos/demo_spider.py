@@ -45,20 +45,24 @@ import dolfinx_mpc
 # +
 comm = MPI.COMM_WORLD
 N = 6
-cube_tet = mesh.create_box(comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [N, N, N], mesh.CellType.tetrahedron)
-cube_hex = mesh.create_box(comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [N, N, N], mesh.CellType.hexahedron)
+cube_tet = mesh.create_box(
+    comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [N, N, N], mesh.CellType.tetrahedron, dtype=default_real_type
+)
+cube_hex = mesh.create_box(
+    comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [N, N, N], mesh.CellType.hexahedron, dtype=default_real_type
+)
 V_tet = fem.functionspace(cube_tet, ("Lagrange", 1, (3,)))
 V_hex = fem.functionspace(cube_hex, ("Lagrange", 1, (3,)))
 # -
 
 # The bodies of all spiders are the points of one mesh, made by
-# {py:func}`create_spider_mesh<dolfinx_mpc.create_spider_mesh>`. Each process
-# passes the points it owns; here the first process owns the only one.
-# Coinciding points are merged. A spider is named by its input index, its
-# position among the points of all processes, process 0 first, so this one is
-# spider 0. The space on the mesh has six components per point: the translation
-# $t$ and the rotation $\theta$; with three, the spider only translates. The
-# spider's position $x_c$ is the coordinate of its dofs in this space.
+# {py:func}`create_spider_mesh<dolfinx_mpc.create_spider_mesh>`. The points are
+# given on the first process; every other process passes none, as here, or the
+# same ones. A spider is named by its input index, its row in those points, so
+# this one is spider 0. Coinciding points stay distinct spiders. The space on the
+# mesh has six components per point: the translation $t$ and the rotation
+# $\theta$; with three, the spider only translates. The spider's position $x_c$
+# is the coordinate of its dofs in this space.
 
 # +
 x_c = np.array([1.1, 0.5, 0.5], dtype=default_real_type)
@@ -81,12 +85,12 @@ W = fem.functionspace(spiders, basix.ufl.element("DG", "point", 0, shape=(6,), d
 
 # +
 tol = 1e3 * np.finfo(default_real_type).eps
-mpc_tet = dolfinx_mpc.MultiPointConstraint(V_tet)
+mpc_tet = dolfinx_mpc.MultiPointConstraint(V_tet, dtype=default_scalar_type)
 mpc_tet.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0, atol=tol), W)
-mpc_hex = dolfinx_mpc.MultiPointConstraint(V_hex)
+mpc_hex = dolfinx_mpc.MultiPointConstraint(V_hex, dtype=default_scalar_type)
 facets = mesh.locate_entities_boundary(cube_hex, 2, lambda x: np.isclose(x[0], 1.2, atol=tol))
 mpc_hex.add_rbe2_topological(2, facets, W)
-mpc_body = dolfinx_mpc.MultiPointConstraint(W)
+mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=default_scalar_type)
 mpcs = [mpc_tet, mpc_hex, mpc_body]
 dolfinx_mpc.finalize_multipointconstraints(mpcs)
 # -
@@ -262,32 +266,12 @@ assert hex_error < atol
 # constraint is kept, also where its coefficient is zero, so the masters stay the
 # same and the matrix layout is reused.
 #
-# A mesh is moved through the space of its coordinate element, whose dofs per
-# cell are the cell's geometry nodes.
+# {py:func}`dolfinx_mpc.spider.move` moves a mesh by a displacement, through the
+# space of its coordinate element, whose dofs in each cell are the cell's geometry
+# nodes. Given the increment on the spider space, it moves each spider by its
+# translation.
 
 # +
-
-
-def move(domain, du):
-    """Add the displacement `du` to the geometry of `domain`."""
-    V_x = fem.functionspace(domain, domain.ufl_domain().ufl_coordinate_element())
-    du_x = fem.Function(V_x)
-    du_x.interpolate(du)
-    gdim = domain.geometry.dim
-    nodes = domain.geometry.dofmaps[0].reshape(-1)
-    domain.geometry.x[nodes, :gdim] += du_x.x.array.reshape(-1, gdim)[V_x.dofmap.list.reshape(-1)]
-
-
-def move_spiders(W, body):
-    """Move each point of the spider mesh by the translation of its spider."""
-    num_points = spiders.topology.index_map(0).size_local
-    nodes = spiders.geometry.dofmaps[0][:num_points, 0]
-    dofs = W.dofmap.list[:num_points, 0]
-    bs = W.dofmap.index_map_bs
-    t = body.x.array.reshape(-1, bs)[dofs, :3]
-    spiders.geometry.x[nodes] += t
-
-
 num_steps = 10
 spider_load.value[:] = 0.0
 traction.value[:] = [0.0, 0.0, -2.0]
@@ -337,10 +321,10 @@ for step in range(num_steps + 1):
         )
         assert error < atol, f"Feet off the rigid motion by {error:.2e} at step {step}"
         for domain, du, total in ((cube_tet, du_tet, u_total[0]), (cube_hex, du_hex, u_total[1])):
-            move(domain, du)
-            total += du.x.array.reshape(-1, 3)[: len(total)]
-        move_spiders(W, du_spider)
-        x_spider += values[:3]
+            dolfinx_mpc.spider.move(domain, du)
+            total += du.x.array.reshape(-1, 3)[: len(total)].real
+        dolfinx_mpc.spider.move(spiders, du_spider)
+        x_spider += values[:3].real
         mpc_tet.update_rbe2()
         mpc_hex.update_rbe2()
     # Collective: every process gathers, only the root draws

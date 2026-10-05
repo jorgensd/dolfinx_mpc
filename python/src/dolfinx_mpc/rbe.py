@@ -3,68 +3,18 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
-"""Spiders: points whose dofs are tied to many dofs of another space (RBE2, RBE3).
-
-A spider has a *body*, a point of a point mesh, and *feet*, the dofs it is tied to. The bodies of
-all spiders of a problem are the points of one point mesh, made by :func:`create_spider_mesh`. A
-spider is named by its input index, the original cell index of its point, and its coordinate is
-the coordinate of its dofs in the space on the point mesh: moving the point mesh moves the spider.
-"""
+"""Constraints tying dofs to spiders (RBE2): points of a spider mesh, see :mod:`dolfinx_mpc.spider`."""
 
 from __future__ import annotations
 
-from mpi4py import MPI
-
 import dolfinx.fem as _fem
-import dolfinx.mesh as _mesh
 import numpy as np
 import numpy.typing as npt
 
 from .container import _mpc_data_classes, _scalar_type
 from .cpp import mpc as _cpp_mpc
 
-__all__ = ["create_rbe2", "create_spider_mesh", "spider_values"]
-
-
-def create_spider_mesh(comm: MPI.Comm, points: npt.ArrayLike, tol: float | None = None) -> _mesh.Mesh:
-    """Create the point mesh holding the bodies of spiders.
-
-    Each process passes the points it owns, so the bodies' dofs can be spread over the processes.
-    A spider is named by its input index: its position among the points of all processes, those of
-    process 0 first. This is the original cell index of its point.
-
-    Coinciding points are merged: the first, in that numbering, is kept and the others dropped,
-    so a point given twice, on one process or on several, is one spider. The input index counts the
-    kept points only.
-
-    Args:
-        comm: The communicator of the meshes the spiders join
-        points: The points owned by this process, shape `(num_points, 3)`. May be empty.
-        tol: Points closer than this coincide. Defaults to a multiple of the machine precision
-            of the points' type, relative to the extent of all points.
-
-    Returns:
-        A mesh of points, from :func:`dolfinx.mesh.create_point_mesh`.
-
-    Note:
-        Collective.
-    """
-    points = np.asarray(points)
-    dtype = points.dtype if np.issubdtype(points.dtype, np.floating) else np.float64
-    points = points.astype(dtype).reshape(-1, 3)
-
-    # Spiders are few, so every process sees all points and drops the same duplicates
-    gathered = comm.allgather(points)
-    all_points = np.vstack(gathered)
-    if tol is None:
-        extent = np.abs(all_points).max() if len(all_points) > 0 else 1.0
-        tol = 1e3 * np.finfo(dtype).eps * max(extent, 1.0)
-    distance = np.linalg.norm(all_points[:, None, :] - all_points[None, :, :], axis=2)
-    # A point is a duplicate if it coincides with an earlier one
-    duplicate = np.tril(distance < tol, k=-1).any(axis=1)
-    start = sum(len(p) for p in gathered[: comm.rank])
-    keep = ~duplicate[start : start + len(points)]
-    return _mesh.create_point_mesh(comm, points[keep])
+__all__ = ["create_rbe2"]
 
 
 _type_names = {
@@ -119,35 +69,3 @@ def create_rbe2(
         W._cpp_object,
         None if x is None else np.ascontiguousarray(x, dtype=real_type),
     )
-
-
-def spider_values(u: _fem.Function, spider: int) -> np.ndarray:
-    """The values of a function on a spider mesh at one spider, on every process.
-
-    A process only holds a spider's values if it owns the spider's dofs or has feet tied to it, so
-    the owner broadcasts them.
-
-    Args:
-        u: A function on a space of a mesh from :func:`create_spider_mesh`
-        spider: The input index of the spider
-
-    Returns:
-        The values at the spider, one per component of the space.
-
-    Note:
-        Collective.
-    """
-    V = u.function_space
-    comm = V.mesh.comm
-    topology = V.mesh.topology
-    num_cells = topology.index_map(topology.dim).size_local
-    cell = np.flatnonzero(np.asarray(topology.original_cell_index[:num_cells]) == spider)
-    owner = comm.allreduce(comm.rank if len(cell) > 0 else -1, op=MPI.MAX)
-    if owner < 0:
-        raise IndexError(f"The spider mesh has no point with input index {spider}")
-    values = None
-    if comm.rank == owner:
-        bs = V.dofmap.index_map_bs
-        dof = V.dofmap.list[cell[0], 0]
-        values = u.x.array[bs * dof : bs * (dof + 1)].copy()
-    return comm.bcast(values, root=owner)
