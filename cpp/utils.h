@@ -27,6 +27,7 @@
 #include <dolfinx/mesh/MeshTags.h>
 #include <functional>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -766,10 +767,23 @@ std::vector<std::vector<dolfinx::la::SparsityPattern>> create_sparsity_patterns(
     }
   }
 
-  // The slave diagonal of each diagonal block, form or no form
+  // The slave diagonal of each diagonal block. A diagonal block without a
+  // form reserves its whole owned diagonal, for the Dirichlet rows of its
+  // space, which only the assembly knows.
   for (std::size_t k = 0; k < std::min(mpcs0.size(), mpcs1.size()); ++k)
-    if (mpcs0[k] == mpcs1[k])
+  {
+    if (mpcs0[k] != mpcs1[k])
+      continue;
+    if (a[k][k])
       insert_slave_diagonal_pattern(patterns[k][k], *mpcs0[k]);
+    else
+    {
+      std::vector<std::int32_t> owned(
+          mpcs0[k]->function_space()->dofmap()->index_map->size_local());
+      std::iota(owned.begin(), owned.end(), 0);
+      patterns[k][k].insert_diagonal(owned);
+    }
+  }
 
   return patterns;
 }
