@@ -4,9 +4,12 @@
 #
 # **License** MIT
 #
-# Two separately meshed elastic beams hang from each other as a double pendulum. Beam 1
+# In this demo we will explore coupling two separately meshes elastic beams that are coupled to
+# each other through a stiff spring, forming a double pendulum. Beam 1
 # turns about a fixed pin through a bore at its top. A second pin, through a bore lower
 # down in beam 1, carries beam 2, which hangs beside beam 1 and turns about that pin.
+# All the pins are created by using RBE2 spiders, as in {doc}`demo_spider`,
+# and the two spiders of the lower pin are coupled by a stiff spring.
 # We start by importing the required dependencies:
 
 # + tags =["hide-input"]
@@ -27,20 +30,52 @@ import dolfinx_mpc
 
 # -
 
+# ## The beams
+#
+# Two beams hang from two pins that run along $y$; gravity points along $-z$. Each beam is a
+# box of depth $H$ along $x$, centred on $x = 0$, with a bore of radius $r$ around each pin
+# it hangs on or carries:
+#
+# - **Beam 1**, of width $W_0$ along the pins, $y \in [0, W_0]$, hangs from the fixed pin at
+#   height $z = 0$ and reaches down to $z = -L$. A second bore, for the lower pin, is at
+#   $z = -0.8 L$.
+# - **Beam 2**, of width $W_1$, hangs beside beam 1, a gap $s$ away along the pins,
+#   $y \in [W_0 + s, W_0 + s + W_1]$, from a bore on the lower pin, and reaches a length $L_2$
+#   below it.
+#
+# Above its top bore, each beam has a margin $e = 2.5 r$ of material. On the axis of each
+# pin, at the middle of each beam's bore, the points $x_P$, $x_A$ and $x_B$ are the spiders
+# of the next section.
+
+# +
+comm = MPI.COMM_WORLD
+L, W_0, H = 2.0, 0.4, 0.3  # Beam 1: length below its top bore, width along the pins, depth
+L_2, W_1 = 1.5, 0.25  # Beam 2: length below its bore, width along the pins
+radius, gap = 0.08, 0.05  # The bores' radius, and the gap between the beams along the pins
+margin = 2.5 * radius  # The material above a beam's top bore
+z_top, z_pin = 0.0, -0.8 * L  # The heights of the fixed pin and of the lower pin
+
+# Each beam's extent along the pins (y) and along gravity (z), and the heights of its bores
+beam_1_y, beam_1_z, beam_1_bores = (0.0, W_0), (-L, z_top + margin), [z_top, z_pin]
+beam_2_y, beam_2_z, beam_2_bores = (W_0 + gap, W_0 + gap + W_1), (z_pin - L_2, z_pin + margin), [z_pin]
+
+# The spiders, on the pins' axes at x = 0, at the middle of each bore along the pin
+x_P = np.array([0.0, 0.5 * sum(beam_1_y), z_top], dtype=default_real_type)
+x_A = np.array([0.0, 0.5 * sum(beam_1_y), z_pin], dtype=default_real_type)
+x_B = np.array([0.0, 0.5 * sum(beam_2_y), z_pin], dtype=default_real_type)
+# -
+
 
 # ## The spiders
 #
-# The pins are not meshed. The surface of each bore is tied rigidly to a spider on the
-# axis of its pin (RBE2, as in {doc}`demo_spider`), so the bores keep their shape. The
-# spiders are points:
-#
-# - $x_P = (0, W_0/2, 0)$ on the fixed pin, at the middle of the upper bore of beam 1;
-# - $x_A = (0, W_0/2, -0.8 L)$ and $x_B = (0, W_0 + s + W_1/2, -0.8 L)$ on the lower pin,
-#   at the middle of the bores of beam 1, of width $W_0$, and of beam 2, of width $W_1$, a
-#   gap $s$ apart, so $d = x_B - x_A = (0, (W_0 + W_1)/2 + s, 0)$ runs along the pin.
-#
-# The pins run along $y$ through these points, and the bores of the beams are cut around
-# them. Each spider has six unknowns, its translation $t$ and its rotation $\theta$.
+# The pins are rigid, and they are not part of the simulation mesh: neither the pins nor
+# anything inside the bores is meshed. Instead, the surface of each bore is tied rigidly to
+# a spider (RBE2, as in {doc}`demo_spider`), so that the bore keeps its shape and moves as
+# one rigid body with its spider. The spiders are the points $x_P$, $x_A$ and $x_B$ defined
+# above, on the pins' axes at the middle of each bore: $x_P$ in beam 1's upper bore, and
+# $x_A$ and $x_B$ in the lower bores of beam 1 and beam 2, so that $d = x_B - x_A$ runs
+# along the lower pin. Each spider has six unknowns, its translation $t$ and its rotation
+# $\theta$.
 #
 # - **The fixed pin** lets beam 1 turn about it, but not move: the translation of spider P
 #   is pinned, $t_P = 0$, by Dirichlet conditions on its translation dofs. Its rotations
@@ -56,16 +91,6 @@ import dolfinx_mpc
 # spider B, for the spring.
 
 # +
-comm = MPI.COMM_WORLD
-L, W_0, W_1, H, L_2 = 2.0, 0.4, 0.25, 0.3, 1.5
-radius, gap = 0.08, 0.05
-margin = 2.5 * radius
-
-x_P = np.array([0.0, 0.5 * W_0, 0.0], dtype=default_real_type)
-x_A = np.array([0.0, 0.5 * W_0, -0.8 * L], dtype=default_real_type)
-x_B = np.array([0.0, W_0 + gap + 0.5 * W_1, -0.8 * L], dtype=default_real_type)
-# Each pin, (spider, y0, y1), from y0 to y1 along y, a little beyond the beams it carries
-pins = ((x_P, -0.05, W_0 + 0.05), (x_A, -0.05, W_0 + gap + W_1 + 0.05))
 spiders_P, spiders_A, spiders_B = (dolfinx_mpc.create_spider_mesh(comm, x.reshape(1, 3)) for x in (x_P, x_A, x_B))
 pair = dolfinx_mpc.create_spider_pair(spiders_A, spiders_B)
 # -
@@ -78,14 +103,9 @@ W_P, W_A, W_B = (fem.functionspace(spiders, element) for spiders in (spiders_P, 
 
 # ## Meshing the two beams with bores
 #
-# Gravity points along $-z$. Beam 1 hangs from the fixed pin and occupies
-# $[-H/2, H/2] \times [0, W_0] \times [-L, e]$, with bores of radius $r$ around the pins
-# through spiders P and A. Beam 2, of length $L_2$ below its bore, occupies
-# $[W_0 + s, W_0 + s + W_1]$ in $y$, beside beam 1, and hangs from a bore around the lower
-# pin through spider B. They are meshed
-# separately with second order cells: beam 1 with tetrahedra, beam 2 with hexahedra, by
-# extruding a quadrilateral mesh of its side along the pin. The facets of bore $k$ are
-# tagged $k + 1$.
+# Each beam is meshed separately from its extent and the heights of its bores, above, with
+# second order cells: beam 1 with tetrahedra, beam 2 with hexahedra, by extruding a
+# quadrilateral mesh of its side along the pin. The facets of bore $k$ are tagged $k + 1$.
 
 
 # + tags=["hide-input"]
@@ -137,12 +157,8 @@ def beam(z0: float, z1: float, y0: float, y1: float, bores: list[float], size: f
 
 # -
 
-# The bores are centred on the spiders' pins
-
-beam_1, tags_1 = beam(-L, x_P[2] + margin, 0.0, W_0, [x_P[2], x_A[2]], 0.08, "beam_1")
-beam_2, tags_2 = beam(
-    x_B[2] - L_2, x_B[2] + margin, W_0 + gap, W_0 + W_1 + gap, [x_B[2]], 0.05, "beam_2", hexahedra=True
-)
+beam_1, tags_1 = beam(*beam_1_z, *beam_1_y, beam_1_bores, 0.08, "beam_1")
+beam_2, tags_2 = beam(*beam_2_z, *beam_2_y, beam_2_bores, 0.05, "beam_2", hexahedra=True)
 
 # The meshes of the beams, and the spider nodes as spheres, taken from the spider meshes.
 # Each process makes a grid of the cells it owns, from the geometry of the mesh alone, and
@@ -223,7 +239,9 @@ if comm.rank == 0:
 
 # ## The constraints
 #
-# The displacement of each beam is in a space of second order vector Lagrange elements.
+# Both beams are discretized in the same way: the displacement of each is in a space of
+# second order vector Lagrange elements on its second order mesh, of tetrahedra and of
+# hexahedra respectively.
 # The upper bore of beam 1 follows spider P, its lower bore spider A, and the bore of
 # beam 2 spider B. Spiders A and B have no constraint of their own, and we therefore create
 # empty {py:class}`MultiPointConstraint<dolfinx_mpc.MultiPointConstraint>`s for them.
@@ -261,13 +279,14 @@ dolfinx_mpc.finalize_multipointconstraints(mpcs)
 # With $w = (t, \theta)$ the translation and rotation of a spider, the two spiders of
 # the lower pin, at $x_A$ in beam 1 and $x_B$ in beam 2, are held together if spider B
 # moves as a rigid extension of spider A, $t_B = t_A + \theta_A \times d$ with
-# $d = x_B - x_A$, and $\theta_B = \theta_A$. The spring stores
+# $d = x_B - x_A$, and $\theta_B = \theta_A$. The spring stores the energy
+# $\frac12 \delta \cdot K \delta$, with
 #
 # $$
-# \frac12 \delta \cdot K \delta, \qquad
-# \delta = \begin{pmatrix} t_B - t_A - \theta_A \times d \\ \theta_B - \theta_A \end{pmatrix},
-# \qquad
-# K = \begin{pmatrix} k I & 0 \\ 0 & k (I - a a^T) + k_t a a^T \end{pmatrix},
+# \begin{aligned}
+# \delta &= \begin{pmatrix} t_B - t_A - \theta_A \times d \\ \theta_B - \theta_A \end{pmatrix},\\
+# K &= \begin{pmatrix} k I & 0 \\ 0 & k (I - a a^T) + k_t a a^T \end{pmatrix},
+# \end{aligned}
 # $$
 #
 # with $a$ the direction of the pin, $k$ large, and $k_t$ the stiffness against turning
@@ -278,7 +297,7 @@ dolfinx_mpc.finalize_multipointconstraints(mpcs)
 # form the bilinear form
 #
 # $$
-# s(w, z) = \int K \delta(w_A, w_B) \cdot \delta(z_A, z_B) + \int K_P w_P \cdot z_P,
+# s(w, z) = \int K \delta(w_A, w_B) \cdot \delta(z_A, z_B)~\mathrm{d}x + \int K_P w_P \cdot z_P~\mathrm{d}x,
 # $$
 #
 # the first integrated over spider mesh A, reaching spider B through the pair, the second
@@ -327,36 +346,69 @@ def springs(K_pins, w, z):
 
 # ## The variational problem
 #
-# On each beam $\Omega_b$, $b = 1, 2$, the displacement $u_b$ satisfies linear
-# elastodynamics,
-#
-# $$
-# \rho_b \ddot u_b - \nabla \cdot \sigma_b(u_b) = \rho_b g, \qquad
-# \sigma_b(u) = 2 \mu_b \varepsilon(u) + \lambda_b \operatorname{tr} \varepsilon(u) I,
-# $$
-#
-# with the density $\rho_b$ and the Lamé parameters of beam $b$, from its Young's modulus
-# $E_b$ and Poisson's ratio $\nu_b$, and gravity $g$. The bores of each beam follow its
-# spiders, and the spiders act on each other, and on the ground, only through the
-# springs. With the unknowns $u = (u_1, u_2, w)$ and the test functions
-# $v = (v_1, v_2, z)$ of the whole system, the beams' and the spiders' $w = (w_P, w_A, w_B)$
-# and $z = (z_P, z_A, z_B)$, the weak form is
+# The motion of the system follows from its energies. With the unknowns $u = (u_1, u_2, w)$
+# of the whole system, the displacements $u_b$ of the beams $\Omega_b$, $b = 1, 2$, and the
+# spiders' $w = (w_P, w_A, w_B)$, the kinetic energy is $\frac12 M(\dot u, \dot u)$ and the
+# potential energy is
 #
 # $$
 # \begin{aligned}
-# M(\ddot u, v) + a(u, v) + s(w, z) &= F(v),\\
-# M(u, v) &= \sum_b \int_{\Omega_b} \rho_b u_b \cdot v_b,\\
-# a(u, v) &= \sum_b \int_{\Omega_b} \sigma_b(u_b) : \varepsilon(v_b),\\
-# F(v) &= \sum_b \int_{\Omega_b} \rho_b g \cdot v_b,
+# \Pi(u) &= \sum_b \int_{\Omega_b} W_b\left(\mathcal{E}(u_b)\right)~\mathrm{d}x - F(u) + \frac12 s(w, w),\\
+# W_b(\mathcal{E}) &= \mu_b\, \mathcal{E} : \mathcal{E}
+# + \frac{\lambda_b}{2} \left(\operatorname{tr} \mathcal{E}\right)^2,\\
+# \mathcal{E}(u) &= \varepsilon(u) + \frac12 \nabla u^T \nabla u,
 # \end{aligned}
 # $$
 #
-# with $s$ the springs of {ref}`demo-spider-hinge-spring-coupling`, above. $M$, $a$ and $F$
-# involve only the beams, and $s$ only the spiders.
+# with $W_b$ the strain energy density of beam $b$, of Lamé parameters $\mu_b$ and
+# $\lambda_b$ from its Young's modulus $E_b$ and Poisson's ratio $\nu_b$, $\mathcal{E}$ the
+# Green–Lagrange strain, $F$ the work of gravity $g$, and $s$ the springs of
+# {ref}`demo-spider-hinge-spring-coupling`, above. Here
+#
+# $$
+# \begin{aligned}
+# M(u, v) &= \sum_b \int_{\Omega_b} \rho_b u_b \cdot v_b~\mathrm{d}x,\\
+# F(v) &= \sum_b \int_{\Omega_b} \rho_b g \cdot v_b~\mathrm{d}x,
+# \end{aligned}
+# $$
+#
+# with $\rho_b$ the density of beam $b$. By Hamilton's principle, the motion makes
+# $\int \left(\frac12 M(\dot u, \dot u) - \Pi(u)\right)~\mathrm{d}t$ stationary.
+#
+# The meshes are the reference configuration: the beams as built, before gravity acts. We
+# decompose the displacement from it into two parts, $u_0 + u$:
+#
+# - $u_0$, the static deflection under gravity, which brings the beams to the hanging
+#   state, at rest;
+# - $u$, the small motion about the hanging state: the swing.
+#
+# Both follow from $\Pi$. As $u_0$ is small, both are computed on the reference
+# configuration, and the animation below shows the swing $u$.
+#
+# $M$, $a$, $a_{\sigma_0}$ and $F$, below, involve only the beams, and $s$ only the spiders.
 
-# The materials, gravity, and the forms of the weak form over the five spaces of the
-# constraints, in the order of the blocks of the system. The springs need the stiffness $k$,
-# large next to the beams', and are made locked and free.
+# ### The hanging state
+#
+# The deflection $u_0 = (u_{0,1}, u_{0,2}, w_0)$ minimizes $\Pi$. It is small, so
+# $\mathcal{E} \approx \varepsilon$, and the minimum satisfies
+#
+# $$
+# \begin{aligned}
+# a(u_0, v) + s_\text{locked}(w_0, z) &= F(v),\\
+# a(u, v) &= \sum_b \int_{\Omega_b} \sigma_b(u_b) : \varepsilon(v_b)~\mathrm{d}x,
+# \end{aligned}
+# $$
+#
+# for all test functions $v = (v_1, v_2, z)$, with the stress
+# $\sigma_b(u) = 2 \mu_b \varepsilon(u) + \lambda_b \operatorname{tr} \varepsilon(u) I$.
+# Because the beams are symmetric about $x = 0$, gravity has no moment about either pin,
+# so the deflection is the same with the pins locked against turning, which makes the
+# static problem well posed. It gives the prestress $\sigma_{0,b} = \sigma_b(u_{0,b})$.
+
+# The forms of the hanging state, over the five spaces of the constraints, in the order of
+# the blocks of the system: the materials, gravity, and the locked springs, with the
+# stiffness $k$ large next to the beams'. The static deflection is solved into functions
+# `u_0` in the constraints' spaces.
 
 # +
 materials = {"E": (2.0e4, 0.7e5), "nu": (0.3, 0.25), "rho": (1.0, 1.2)}
@@ -378,89 +430,22 @@ u_1, u_2, w_P, w_A, w_B = trials
 v_1, v_2, z_P, z_A, z_B = tests
 dx_1, dx_2 = ufl.dx(beam_1), ufl.dx(beam_2)
 
-M = materials["rho"][0] * ufl.inner(u_1, v_1) * dx_1 + materials["rho"][1] * ufl.inner(u_2, v_2) * dx_2
 a = ufl.inner(sigma(u_1, 0), ufl.sym(ufl.grad(v_1))) * dx_1
 a += ufl.inner(sigma(u_2, 1), ufl.sym(ufl.grad(v_2))) * dx_2
-# F by block: gravity has no spider blocks
-gravity = [fem.Constant(m, (rho * g * down).astype(default_scalar_type)) for m, rho in zip(beams, materials["rho"])]
+# F by block: gravity has no spider blocks. One constant serves both beams.
+gravity = fem.Constant(beam_1, (g * down).astype(default_scalar_type))
 F = [
-    ufl.inner(gravity[0], v_1) * dx_1,
-    ufl.inner(gravity[1], v_2) * dx_2,
+    ufl.inner(materials["rho"][0] * gravity, v_1) * dx_1,
+    ufl.inner(materials["rho"][1] * gravity, v_2) * dx_2,
     ufl.ZeroBaseForm((z_P,)),
     ufl.ZeroBaseForm((z_A,)),
     ufl.ZeroBaseForm((z_B,)),
 ]
 
-# The lower pin's spring, on spider mesh A, and the fixed pin's, on spider mesh P
+# The lower pin's spring, on spider mesh A, and the fixed pin's, on spider mesh P, locked
 k = 1e3 * max(materials["E"])
 K_locked = (fem.Constant(spiders_A, spring_stiffness(k)), fem.Constant(spiders_P, torsion(k)))
-K_free = (fem.Constant(spiders_A, spring_stiffness(0.0)), fem.Constant(spiders_P, torsion(0.0)))
 s_locked = springs(K_locked, trials[2:], tests[2:])
-s_free = springs(K_free, trials[2:], tests[2:])
-# -
-
-# ## Discretization
-#
-# ### In space
-#
-# Both beams are discretized in the same way, with second-order vector Lagrange elements
-# on their second-order meshes, of tetrahedra and of hexahedra respectively. Each spider
-# has six unknowns, $w = (t, \theta)$: three translations $t$ and three rotations
-# $\theta$.
-#
-# #### Pre-stressing the beams
-#
-# Standard linear elasticity evaluates forces on the undeformed geometry. If we decompose
-# the displacement of a beam into a rigid translation and a rotation about its pin,
-# $u = t + \theta \times r$ with $r = x - x_P$, the linear strain of the pure rotation
-# $\theta \times r$ is exactly zero, i.e., $a(\theta \times r, v) = 0$. This means that a
-# rigid rotation does not generate any internal resistance or restoring force to the swing
-# motion. Furthermore, because external loads are integrated over the undeformed beam,
-# the computed moment of gravity remains constant rather than updating to reflect the
-# displaced position $x + u$.
-#
-# Instead, we rely on stress stiffening. Physically, when a pendulum swings sideways,
-# it moves in an arc, meaning its mass must lift slightly upward against the downward
-# pull of gravity. This means work is done against the initial tension (prestress $\sigma_0$)
-# in the hanging beam.
-#
-# Mathematically, this is captured by the nonlinear portion of the strain tensor.
-# While a pure rotation produces zero linear strain, it produces a nonzero second-order
-# strain, $\frac12 \nabla u^T \nabla u$. Rotating the beam against the initial tension
-# $\sigma_0$ stores potential energy equal to $\int \sigma_0 : (\frac12 \nabla u^T \nabla u)$.
-# Because the spatial gradient $\nabla u$ is nonzero for a rotation, this interaction
-# provides the restoring potential of the pendulum to second order in $\theta$. Its
-# second variation is the geometric stiffness
-#
-# $$
-# a_{\sigma_0}(u, v) = \sum_b \int_{\Omega_b} \nabla u_b \, \sigma_{0,b} : \nabla v_b.
-# $$
-#
-# By baking this energy into the model, the pendulum can be solved efficiently within
-# a linear framework in two stages:
-#
-# 1. The static deflection $u_0 = (u_{0,1}, u_{0,2}, w_0)$ under gravity,
-#    $a(u_0, v) + s_\text{locked}(w_0, z) = F(v)$, calculates the initial stress
-#    $\sigma_0 = \sigma_b(u_{0,b})$ on each beam. Because the
-#    beams are symmetric about $x = 0$, gravity exerts no initial moment. This allows us
-#    to compute the deflection with the pins safely locked against turning, ensuring the
-#    static problem is well-posed.
-#
-# 2. Small motions $u$ about this hanging state, now with the pins free, satisfy the
-#    equation $M(\ddot u, v) + \hat K(u, v) = 0$. The augmented stiffness $\hat K$ includes
-#    the geometric stiffness of the prestress:
-#
-#    $$
-#    \hat K(u, v) = a(u, v) + a_{\sigma_0}(u, v) + s_\text{free}(w, z).
-#    $$
-#
-#    Because gravity is already balanced by $\sigma_0$, it does not appear as a body force
-#    in this dynamic stage.
-
-# The prestress $\sigma_0$ is written in terms of the functions `u_0`, in the constraints'
-# spaces, that will hold the static deflection, so the forms of the swing can be made now.
-
-# +
 
 
 def in_constraint_spaces():
@@ -469,13 +454,386 @@ def in_constraint_spaces():
 
 
 u_0 = in_constraint_spaces()
+# -
+
+# The static deflection, with the pins locked:
+
+# +
+static = dolfinx_mpc.LinearProblem(
+    ufl.extract_blocks(a + s_locked),
+    F,
+    mpcs,
+    bcs=pinned,
+    u=u_0,
+    kind="mpi",
+    entity_maps=[pair],
+    petsc_options_prefix="demo_spider_hinge_static_",
+    petsc_options={
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps",
+        "ksp_error_if_not_converged": True,
+    },
+)
+u_1_0, u_2_0, w_P_0, w_A_0, w_B_0 = static.solve()
+# -
+
+# ````{admonition} Verification of the hanging state
+# :class: dropdown
+#
+# Beam 2 hangs from the lower spring alone. Ordered as the spiders' unknowns $w = (t, \theta)$,
+# translations first, the spring's generalized force in the hanging state splits into its
+# force $f$ and its moment $\mu$,
+#
+# $$
+# \begin{pmatrix} f \\ \mu \end{pmatrix} = K \delta(w_{A,0}, w_{B,0}).
+# $$
+#
+# We therefore expect the force to equal the weight of beam 2, and the moment about the
+# pin to vanish, as gravity has no moment about the pin:
+#
+# $$
+# \begin{aligned}
+# f &= -m_2 g\, e_z,\\
+# a \cdot \mu &= 0.
+# \end{aligned}
+# $$
+#
+# Here $m_2 = \int_{\Omega_2} \rho_2~\mathrm{d}x$ is the mass of beam 2, with its bore. The
+# demo asserts both, to the tolerance `tol`: the force relative to $m_2 g$, and the moment
+# relative to $m_2 g L_2$, a bound on the moment of beam 2's weight about the pin.
+# ````
+
+# The code for the verification described in the dropdown above can be inspected
+# by expanding the cell below.
+
+# + tags=["hide-cell"]
+
+
+def integrate(form) -> float:
+    """The value of a functional, summed over the processes."""
+    return comm.allreduce(fem.assemble_scalar(fem.form(form, dtype=default_scalar_type)), op=MPI.SUM).real
+
+
+mass_2 = integrate(materials["rho"][1] * ufl.dx(beam_2))
+values_A, values_B = dolfinx_mpc.spider_values(w_A_0, 0).real, dolfinx_mpc.spider_values(w_B_0, 0).real
+delta = np.concatenate([values_B[:3] - values_A[:3] - np.cross(values_A[3:], x_B - x_A), values_B[3:] - values_A[3:]])
+spring_force = (spring_stiffness(k).real @ delta)[:3]
+spring_moment = np.dot((spring_stiffness(k).real @ delta)[3:], axis)
+weight_2 = mass_2 * g * down
+lever_2 = mass_2 * g * L_2
+tol = max(1e-3, 2e5 * np.finfo(default_real_type).eps)
+if comm.rank == 0:
+    print(f"Spring force {spring_force.round(5)} next to the weight of beam 2 {weight_2.round(5)}")
+    print(f"Spring moment about the pin {spring_moment:.2e} next to m_2 g L_2 = {lever_2:.2e}")
+assert np.allclose(spring_force, weight_2, atol=tol * np.abs(weight_2).max())
+assert abs(spring_moment) < tol * lever_2
+# -
+
+# #### Visualization of the pins
+#
+# Both pins are meshed, as two cylinders of the bores' radius in one mesh, with the cells of
+# each tagged by its pin, only for viewing. Each moves as one rigid body with its spider,
+# $t + \theta \times (x - x_c)$: the fixed pin with spider P, the lower pin with spider A.
+
+
+# + tags=["hide-input"]
+# Each pin, (spider, y0, y1), from y0 to y1 along y, a little beyond the beams it carries
+pins = ((x_P, beam_1_y[0] - 0.05, beam_1_y[1] + 0.05), (x_A, beam_1_y[0] - 0.05, beam_2_y[1] + 0.05))
+
+
+def pin_mesh(size: float):
+    """The pins as cylinders along y, `(centre, y0, y1)` each, of second order, the cells of pin k
+    tagged k + 1."""
+    gmsh.model.add("pins")
+    if comm.rank == 0:
+        for tag, (x_c, y0, y1) in enumerate(pins, start=1):
+            cylinder = gmsh.model.occ.addCylinder(x_c[0], y0, x_c[2], 0, y1 - y0, 0, radius)
+            gmsh.model.occ.synchronize()
+            gmsh.model.addPhysicalGroup(3, [cylinder], tag=tag)
+        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", size)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(2)
+    data = gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=3, dtype=default_real_type)
+    gmsh.model.remove()
+    return data.mesh, data.cell_tags
+
+
+pin_domain, pin_tags = pin_mesh(0.05)
+V_pins = fem.functionspace(pin_domain, ("Lagrange", 2, (3,)))
+u_pins = fem.Function(V_pins, dtype=default_scalar_type, name="u")
+
+
+def move_pins(u):
+    """Move each pin rigidly with its spider in `u`. Collective."""
+    for tag, (k, (x_c, _, _)) in enumerate(zip((2, 3), pins), start=1):
+        values = dolfinx_mpc.spider_values(u[k], 0)
+        t, theta = values[:3], values[3:]
+        u_pins.interpolate(
+            lambda x: (t[:, None] + np.cross(theta, (x - x_c[:, None]).T).T).astype(default_scalar_type),
+            cells0=pin_tags.find(tag),
+        )
+    u_pins.x.scatter_forward()
+
+
+# -
+
+# #### Visualization of the hanging state
+#
+# The beams are coloured by their von Mises stress, $\sigma_m = \sqrt{\frac32 s : s}$, with
+# $s = \sigma - \frac13 \operatorname{tr}(\sigma) I$ the deviatoric stress. As the
+# displacement is of second order on second order cells, the stress varies within a cell;
+# it is shown by its value at each cell's midpoint, interpolated into a space of cell-wise
+# constants (DG-0), and drawn on the displaced grid.
+
+
+# + tags=["hide-input"]
+def von_mises(u, b: int):
+    """The von Mises stress of the displacement `u` of beam `b`."""
+    s = sigma(u, b) - ufl.tr(sigma(u, b)) / 3 * ufl.Identity(3)
+    return ufl.sqrt(3 / 2 * ufl.inner(s, s))
+
+
+Q = [fem.functionspace(m, ("DG", 0)) for m in beams]
+
+
+def von_mises_functions(us):
+    """The von Mises stress of the displacements `us` of the beams: the DG-0 functions that hold
+    it, and the expressions that fill them."""
+    functions = [fem.Function(Q_b, dtype=default_scalar_type) for Q_b in Q]
+    expressions = [
+        fem.Expression(von_mises(u, b), Q[b].element.interpolation_points, dtype=default_scalar_type)
+        for b, u in enumerate(us)
+    ]
+    return functions, expressions
+
+
+def owned_cell_values(f: fem.Function) -> np.ndarray:
+    """The values of a DG-0 function in the cells this process owns, in the cells' order, which is
+    that of the grid of :func:`pyvista_ugrid`."""
+    num_owned = f.function_space.mesh.topology.index_map(3).size_local
+    return f.x.array[f.function_space.dofmap.list[:num_owned, 0]].real.copy()
+
+
+# -
+
+# The deflection under gravity, magnified, coloured by the von Mises stress of the hanging
+# state, the prestress $\sigma_0$, over the outline of the undeformed beams in grey, with the
+# pins in translucent red, so that the bores around them show. The pins are the meshed
+# cylinders above, moved with their spiders.
+
+# + tags=["hide-input"]
+stress_0, stress_0_expressions = von_mises_functions(u_0[:2])
+for f, expression in zip(stress_0, stress_0_expressions):
+    f.interpolate(expression)
+move_pins(u_0)
+grids = []
+for V, u in ((V_1, u_1_0), (V_2, u_2_0), (V_pins, u_pins)):
+    grid = pyvista_ugrid(V)
+    grid["u"] = u.x.array.reshape(-1, 3)[: grid.n_points].real
+    grids.append(grid)
+for grid, f in zip(grids, stress_0):
+    grid.cell_data["von Mises"] = owned_cell_values(f)
+gathered = comm.gather(grids, root=0)
+if comm.rank == 0:
+    plotter = pyvista.Plotter(window_size=(700, 900))
+    # One grid per beam and one for the pins, from the pieces of all processes, so that no
+    # partition boundary is drawn
+    *merged, merged_pins = [
+        pyvista.merge([piece[b] for piece in gathered if piece[b].n_points > 0]).clean(tolerance=1e-6) for b in range(3)
+    ]
+    factor = 0.1 / max(np.abs(grid["u"]).max() for grid in merged)
+    clim = [0.0, max(grid.cell_data["von Mises"].max() for grid in merged)]
+    for grid in merged:
+        add_cells(plotter, grid.warp_by_vector("u", factor=factor), scalars="von Mises", clim=clim, cmap="viridis")
+        # The outline of the undeformed beam: the edges of its box and the rims of its bores
+        outline = (
+            cell_edges(grid)
+            .extract_surface()
+            .extract_feature_edges(
+                boundary_edges=False, manifold_edges=False, non_manifold_edges=False, feature_angle=30
+            )
+        )
+        plotter.add_mesh(outline, color="gray", line_width=2)
+    # Translucent, so that the bore around each pin shows
+    plotter.add_mesh(merged_pins.warp_by_vector("u", factor=factor), color="red", opacity=0.5)
+    plotter.camera_position = [(4.5, -6.0, -0.4), (0.0, 0.45, -1.45), (0.0, 0.0, 1.0)]
+    if pyvista.OFF_SCREEN:
+        plotter.screenshot("demo_spider_hinge.png")
+    else:
+        plotter.show()
+# -
+
+# ### The swing
+#
+# The motion $u$ about the hanging state, with the pins free, follows from the expansion of
+# the potential energy about its minimum $u_0$, to second order in $u$:
+#
+# $$
+# \Pi(u_0 + u) = \Pi(u_0) + D\Pi(u_0)[u] + \frac12 D^2\Pi(u_0)[u, u] + \mathcal{O}(|u|^3).
+# $$
+#
+# - **Zeroth order:** $\Pi(u_0)$ is a constant, and does not enter the equation of motion.
+# - **First order:** $D\Pi(u_0)[v] = 0$ for all $v$, as $u_0$ is the minimum: with
+#   $\mathcal{E} \approx \varepsilon$, this is exactly the system of the hanging state solved
+#   above. (It was solved with the pins locked, but the pins carry no moment there, so the
+#   locked and the free springs agree at $u_0$.) The work of gravity, $F$, is linear in the
+#   displacement, so it lies entirely in this term, balanced by the internal forces of the
+#   hanging state: gravity does not appear in the swing.
+# - **Second order:** the second variation of $\Pi$ at $u_0$. The strain energy contributes
+#   through the variation of the strain, $\varepsilon(u)$ to leading order in $u_0$, and
+#   through the second variation of the strain itself, $\operatorname{sym}(\nabla u^T \nabla v)$
+#   from its term $\frac12 \nabla u^T \nabla u$, paired with the stress of the hanging
+#   state, the prestress $\sigma_0$. With the free springs,
+#
+# $$
+# \begin{aligned}
+# D^2\Pi(u_0)[u, v] &= \hat K(u, v) = a(u, v) + a_{\sigma_0}(u, v) + s_\text{free}(w, z),\\
+# a_{\sigma_0}(u, v) &= \sum_b \int_{\Omega_b} \nabla u_b \, \sigma_{0,b} : \nabla v_b~\mathrm{d}x.
+# \end{aligned}
+# $$
+#
+# So the hanging state enters the swing only through $\sigma_0$, in $a_{\sigma_0}$.
+#
+# ````{admonition} The second variation of $\Pi$
+# :class: dropdown
+#
+# Write the strain energy density with the elasticity tensor $C_b$, and define the stress
+# $S_b$ as its derivative with respect to the strain (the second Piola–Kirchhoff stress):
+#
+# $$
+# \begin{aligned}
+# W_b(\mathcal{E}) &= \frac12 \mathcal{E} : C_b \mathcal{E},\\
+# C_b \mathcal{E} &= 2 \mu_b \mathcal{E} + \lambda_b \operatorname{tr}(\mathcal{E}) I,\\
+# S_b(\mathcal{E}) &= \frac{\partial W_b}{\partial \mathcal{E}}(\mathcal{E})
+#   = C_b \mathcal{E},\\
+# \mathcal{E}(u) &= \operatorname{sym} \nabla u + \frac12 \nabla u^T \nabla u.
+# \end{aligned}
+# $$
+#
+# Let $\delta u$ and $\delta v$ be variations of the displacement, with spider components
+# $\delta w$ and $\delta z$. The first and second variations of the strain at a
+# displacement $\hat u$ are
+#
+# $$
+# \begin{aligned}
+# D\mathcal{E}(\hat u)[\delta v] &=
+#   \operatorname{sym}\left((I + \nabla \hat u)^T \nabla \delta v\right),\\
+# D^2\mathcal{E}[\delta u, \delta v] &=
+#   \operatorname{sym}\left(\nabla \delta u^T \nabla \delta v\right),
+# \end{aligned}
+# $$
+#
+# the latter the same at any $\hat u$. The chain rule then gives, for each beam,
+#
+# $$
+# \begin{aligned}
+# D\Pi(\hat u)[\delta v] &= \sum_b \int_{\Omega_b}
+#   S_b\left(\mathcal{E}(\hat u_b)\right) : D\mathcal{E}(\hat u_b)[\delta v_b]~\mathrm{d}x
+#   - F(\delta v) + s(\hat w, \delta z),\\
+# D^2\Pi(\hat u)[\delta u, \delta v] &= \sum_b \int_{\Omega_b}
+#   C_b\, D\mathcal{E}(\hat u_b)[\delta u_b] : D\mathcal{E}(\hat u_b)[\delta v_b]~\mathrm{d}x\\
+# &\quad + \sum_b \int_{\Omega_b}
+#   S_b\left(\mathcal{E}(\hat u_b)\right) :
+#   \operatorname{sym}\left(\nabla \delta u_b^T \nabla \delta v_b\right)~\mathrm{d}x
+#   + s(\delta w, \delta z).
+# \end{aligned}
+# $$
+#
+# At $\hat u = u_0$, to leading order in $u_0$,
+# $D\mathcal{E}(u_0)[\delta u] \approx \varepsilon(\delta u)$ and
+# $S_b(\mathcal{E}(u_{0,b})) \approx C_b \varepsilon(u_{0,b}) = \sigma_b(u_{0,b})
+# = \sigma_{0,b}$, the prestress of the hanging state. As $\sigma_{0,b}$ is symmetric,
+# $\sigma_{0,b} : \operatorname{sym}(\nabla \delta u_b^T \nabla \delta v_b)
+# = \nabla \delta u_b\, \sigma_{0,b} : \nabla \delta v_b$. In the directions of the swing,
+# $\delta u = u$, and of the test function, $\delta v = v$, with the free springs,
+#
+# $$
+# D^2\Pi(u_0)[u, v] = a(u, v) + a_{\sigma_0}(u, v) + s_\text{free}(w, z) = \hat K(u, v).
+# $$
+#
+# The terms dropped are of two kinds. The cross terms, such as
+# $C_b\, \varepsilon(\delta u) : \operatorname{sym}(\nabla u_0^T \nabla \delta v)$, are of
+# first order in $u_0$, as $\sigma_0$ is, but each contains $\varepsilon(\delta u)$ or
+# $\varepsilon(\delta v)$. The term
+# $C_b \operatorname{sym}(\nabla u_0^T \nabla \delta u) :
+# \operatorname{sym}(\nabla u_0^T \nabla \delta v)$ is of second order in $u_0$.
+#
+# The swing $u$ is not assumed rigid, but its pendulum motion is close to a rigid motion of
+# the reference configuration, the meshes, for which $\varepsilon(u) = 0$. For that motion,
+# $a_{\sigma_0}$ is the only stiffness kept, while for the elastic deformation of the beams,
+# $a$ dominates. The exact rigid motions about the hanging state rotate the deformed
+# geometry, $u = (R - I)(x + u_0 - c)$. For these, $D\mathcal{E}(u_0)[u]$ vanishes, rather
+# than $\varepsilon(u)$; the difference is the dropped term
+# $\operatorname{sym}(\nabla u_0^T \nabla u)$, of first order in $u_0$.
+#
+# This is the usual linearization with initial stress, or geometric stiffness.
+# ````
+#
+# The geometric stiffness $a_{\sigma_0}$ is the term $\frac12 \nabla u^T \nabla u$ of the
+# strain, paired with the prestress: it is what linear elasticity, with
+# $\mathcal{E} \approx \varepsilon$ throughout, leaves out. A rigid rotation has no
+# linear strain, so linear elasticity alone has no restoring torque; but as a pendulum
+# swings, its mass rises along an arc against the tension of the hanging beam, and that
+# work is $\frac12 a_{\sigma_0}(u, u)$, as checked in
+# {ref}`demo-spider-hinge-prestress`, below.
+#
+# The equation of the swing follows from Hamilton's principle, now with the displacement
+# $u_0 + u$. As $u_0$ does not depend on time, $\dot u$ is the velocity of the whole
+# motion, and the action
+#
+# $$
+# \mathcal{S}(u) = \int_{t_0}^{t_1} \left(\frac12 M(\dot u, \dot u) - \Pi(u_0 + u)\right)
+#   ~\mathrm{d}t
+# $$
+#
+# is stationary: its variation vanishes in every direction $v$ that vanishes at $t_0$ and
+# $t_1$. Integrating the kinetic term by parts in time,
+#
+# $$
+# D\mathcal{S}(u)[v] = \int_{t_0}^{t_1} \left(M(\dot u, \dot v) - D\Pi(u_0 + u)[v]\right)
+#   ~\mathrm{d}t
+#   = -\int_{t_0}^{t_1} \left(M(\ddot u, v) + D\Pi(u_0 + u)[v]\right)~\mathrm{d}t = 0,
+# $$
+#
+# and as $v$ is arbitrary in time, $M(\ddot u, v) + D\Pi(u_0 + u)[v] = 0$ for all $v$, at
+# all times. This is the full, nonlinear, equation of motion. Its force $D\Pi$ expands about
+# the hanging state as
+#
+# $$
+# D\Pi(u_0 + u)[v] = D\Pi(u_0)[v] + D^2\Pi(u_0)[u, v] + \mathcal{O}(|u|^2),
+# $$
+#
+# where the first term vanishes, as $u_0$ is the minimum, and the second is $\hat K(u, v)$.
+# To first order in $u$, the equation of the swing is therefore
+#
+# $$
+# M(\ddot u, v) + \hat K(u, v) = 0 \quad \text{for all } v.
+# $$
+#
+# Hamilton's principle itself takes only first variations, of the action: the second
+# variation of $\Pi$ enters as the linearization of the force $D\Pi$ about $u_0$, that is,
+# as the stiffness of the swing. Equivalently, the expansion of $\Pi$ to second order,
+# above, turns the action into that of the Lagrangian
+# $\frac12 M(\dot u, \dot u) - \frac12 \hat K(u, u)$, with the same equation. As a second
+# derivative, $\hat K$ is symmetric, and the Lagrangian does not depend on time, so the
+# energy $\frac12 M(\dot u, \dot u) + \frac12 \hat K(u, u)$ of the swing is conserved, as
+# checked in {ref}`the energy conservation <demo-spider-hinge-energy>`, below.
+
+# The forms of the swing: the mass, the free springs, and the prestress of the static
+# deflection `u_0`.
+
+# +
+M = materials["rho"][0] * ufl.inner(u_1, v_1) * dx_1 + materials["rho"][1] * ufl.inner(u_2, v_2) * dx_2
+K_free = (fem.Constant(spiders_A, spring_stiffness(0.0)), fem.Constant(spiders_P, torsion(0.0)))
+s_free = springs(K_free, trials[2:], tests[2:])
 sigma_0 = (sigma(u_0[0], 0), sigma(u_0[1], 1))
 a_sigma_0 = ufl.inner(ufl.grad(u_1) * sigma_0[0], ufl.grad(v_1)) * dx_1
 a_sigma_0 += ufl.inner(ufl.grad(u_2) * sigma_0[1], ufl.grad(v_2)) * dx_2
 K_hat = a + a_sigma_0 + s_free
 # -
 
-# ### In time
+# ## Time stepping
 #
 # The whole coupled system, beams and spiders alike, is stepped with one time step
 # $\Delta t$. To step it, the second order equation $M \ddot u + \hat K u = 0$, with $M$
@@ -483,8 +841,10 @@ K_hat = a + a_sigma_0 + s_free
 # written as a first order system, with the velocity $\dot u$ as an unknown of its own:
 #
 # $$
-# \frac{\mathrm{d} u}{\mathrm{d} t} = \dot u, \qquad
-# M \frac{\mathrm{d} \dot u}{\mathrm{d} t} = -\hat K u.
+# \begin{aligned}
+# \frac{\mathrm{d} u}{\mathrm{d} t} &= \dot u,\\
+# M \frac{\mathrm{d} \dot u}{\mathrm{d} t} &= -\hat K u.
+# \end{aligned}
 # $$
 #
 # The implicit midpoint rule replaces each time derivative by the difference of the values
@@ -493,9 +853,10 @@ K_hat = a + a_sigma_0 + s_free
 # of the step, as the average of its values at the two ends:
 #
 # $$
-# \text{(i)} \quad \frac{u^{n+1} - u^n}{\Delta t} = \frac{\dot u^{n+1} + \dot u^n}{2},
-# \qquad
-# \text{(ii)} \quad M \frac{\dot u^{n+1} - \dot u^n}{\Delta t} = -\hat K \frac{u^{n+1} + u^n}{2}.
+# \begin{aligned}
+# \text{(i)} \quad \frac{u^{n+1} - u^n}{\Delta t} &= \frac{\dot u^{n+1} + \dot u^n}{2},\\
+# \text{(ii)} \quad M \frac{\dot u^{n+1} - \dot u^n}{\Delta t} &= -\hat K \frac{u^{n+1} + u^n}{2}.
+# \end{aligned}
 # $$
 #
 # Equation (i) gives the new velocity from the new displacement,
@@ -547,93 +908,6 @@ step_lhs = 4 / dt**2 * M + K_hat
 step_rhs = acting(4 / dt**2 * M, u_n) + acting(4 / dt * M, u_dot_n) - acting(K_hat, u_n)
 # -
 
-# ## The hanging pendulum
-#
-# The static deflection, with the pins locked, into the functions of the prestress.
-
-# +
-static = dolfinx_mpc.LinearProblem(
-    ufl.extract_blocks(a + s_locked),
-    F,
-    mpcs,
-    bcs=pinned,
-    u=u_0,
-    kind="mpi",
-    entity_maps=[pair],
-    petsc_options_prefix="demo_spider_hinge_static_",
-    petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
-)
-u_1_0, u_2_0, w_P_0, w_A_0, w_B_0 = static.solve()
-# -
-
-# The spring holds beam 2 up, $K \delta$ balancing its weight, and carries no moment
-# about the pin. The mass, centre of mass and moment of inertia about its pin of each
-# beam, with its bores, are integrated over its mesh, for the checks here and below.
-
-# +
-
-
-def integrate(form) -> float:
-    return comm.allreduce(fem.assemble_scalar(fem.form(form, dtype=default_scalar_type)), op=MPI.SUM).real
-
-
-mass, centre, inertia = [], [], []
-for b, (m, x_pivot) in enumerate(((beam_1, x_P), (beam_2, x_B))):
-    x = ufl.SpatialCoordinate(m)
-    rho = materials["rho"][b]
-    mass.append(integrate(rho * ufl.dx(m)))
-    centre.append(np.array([integrate(rho * x[i] * ufl.dx(m)) for i in range(3)]) / mass[-1])
-    arm = ufl.as_vector([x[0] - x_pivot[0], x[2] - x_pivot[2]])
-    inertia.append(integrate(rho * ufl.inner(arm, arm) * ufl.dx(m)))
-
-values_A, values_B = dolfinx_mpc.spider_values(w_A_0, 0).real, dolfinx_mpc.spider_values(w_B_0, 0).real
-delta = np.concatenate([values_B[:3] - values_A[:3] - np.cross(values_A[3:], x_B - x_A), values_B[3:] - values_A[3:]])
-spring_force = (spring_stiffness(k).real @ delta)[:3]
-spring_moment = np.dot((spring_stiffness(k).real @ delta)[3:], axis)
-weight_2 = mass[1] * g * down
-lever_2 = mass[1] * g * (x_B[2] - centre[1][2])
-tol = max(1e-3, 2e5 * np.finfo(default_real_type).eps)
-if comm.rank == 0:
-    print(f"Masses {mass[0]:.4f}, {mass[1]:.4f}; centres {centre[0].round(4)}, {centre[1].round(4)}")
-    print(f"Spring force {spring_force.round(5)} next to the weight of beam 2 {weight_2.round(5)}")
-    print(f"Spring moment about the pin {spring_moment:.2e} next to m_2 g c_2 = {lever_2:.2e}")
-assert np.allclose(spring_force, weight_2, atol=tol * np.abs(weight_2).max())
-assert abs(spring_moment) < tol * lever_2
-# -
-
-# ## The pendulum at rest, seen
-#
-# The deflection under gravity, magnified, with the pins in translucent red, so that the
-# bores around them show.
-
-# +
-grids = []
-for V, u in ((V_1, u_1_0), (V_2, u_2_0)):
-    grid = pyvista_ugrid(V)
-    grid["u"] = u.x.array.reshape(-1, 3)[: grid.n_points].real
-    grids.append(grid)
-gathered = comm.gather(grids, root=0)
-if comm.rank == 0:
-    plotter = pyvista.Plotter(window_size=(700, 900))
-    # One grid per beam, from the pieces of all processes, so that no partition boundary is drawn
-    merged = [
-        pyvista.merge([piece[b] for piece in gathered if piece[b].n_points > 0]).clean(tolerance=1e-6) for b in range(2)
-    ]
-    factor = 0.1 / max(np.abs(grid["u"]).max() for grid in merged)
-    for grid in merged:
-        grid["|u|"] = np.linalg.norm(grid["u"], axis=1)
-        add_cells(plotter, grid.warp_by_vector("u", factor=factor), scalars="|u|")
-    for x_c, y0, y1 in pins:
-        pin = pyvista.Cylinder(center=(x_c[0], 0.5 * (y0 + y1), x_c[2]), direction=axis, radius=radius, height=y1 - y0)
-        # Translucent, so that the bore around the pin shows
-        plotter.add_mesh(pin, color="red", opacity=0.5)
-    plotter.camera_position = [(4.5, -6.0, -0.4), (0.0, 0.45, -1.45), (0.0, 0.0, 1.0)]
-    if pyvista.OFF_SCREEN:
-        plotter.screenshot("demo_spider_hinge.png")
-    else:
-        plotter.show()
-# -
-
 # ## Assembling the step
 #
 # The matrix of a step does not change, so it is assembled and factorized once.
@@ -649,18 +923,25 @@ solver.setType("preonly")
 solver.getPC().setType("lu")
 solver.getPC().setFactorSolverType("mumps")
 b = dolfinx_mpc.create_vector(L_step, mpcs, kind="mpi")
-x = dolfinx_mpc.create_vector(L_step, mpcs, kind="mpi")
+xh = dolfinx_mpc.create_vector(L_step, mpcs, kind="mpi")
 # The pinned dofs, by block, which are zero in every step
 pinned_by_block = fem.bcs_by_block([mpc.input_space for mpc in mpcs], pinned)
 # -
 
-# ## Energy conservation
+# (demo-spider-hinge-energy)=
+# ````{admonition} Energy conservation
+# :class: dropdown
+#
 # The total energy of the system at time step $n$ can be written as the sum of the
 # kinetic and stored energy:
 #
 # $$
 # E^n = \frac12 \dot u^n \cdot M \dot u^n + \frac12 u^n \cdot \hat K u^n
 # $$
+#
+# where the stored energy $\frac12 u^n \cdot \hat K u^n$ holds the elastic energy of the
+# beams, the pendulum's potential through $a_{\sigma_0}$, and the springs' energy, as
+# checked in {ref}`demo-spider-hinge-prestress`, at the end.
 #
 # We can derive that the energy is conserved with our discrete time stepping scheme by
 # multiply (ii) by $\Delta t$ and take its dot product with the average velocity over the step,
@@ -706,8 +987,9 @@ pinned_by_block = fem.bcs_by_block([mpc.input_space for mpc in mpcs], pinned)
 #
 # The energy, as one form per domain: the two beams, and the springs on spider meshes A and P.
 # Spring A reaches spider B through the pair.
+# ````
 
-# +
+# + tags=["hide-cell"]
 
 
 def energy_forms(u, u_dot):
@@ -763,50 +1045,6 @@ def rigid_turns(phi_1: float, phi_2: float, u):
 theta_1, theta_2 = np.deg2rad(10.0), np.deg2rad(-10.0)
 rigid_turns(theta_1, theta_2, u_n)
 
-# -
-
-# ## The pins, for viewing
-#
-# Both pins are meshed, as two cylinders of the bores' radius in one mesh, with the cells of
-# each tagged by its pin, only for viewing. Each moves as one rigid body with its spider,
-# $t + \theta \times (x - x_c)$: the fixed pin with spider P, the lower pin with spider A.
-
-
-# +
-def pin_mesh(size: float):
-    """The pins as cylinders along y, `(centre, y0, y1)` each, of second order, the cells of pin k
-    tagged k + 1."""
-    gmsh.model.add("pins")
-    if comm.rank == 0:
-        for tag, (x_c, y0, y1) in enumerate(pins, start=1):
-            cylinder = gmsh.model.occ.addCylinder(x_c[0], y0, x_c[2], 0, y1 - y0, 0, radius)
-            gmsh.model.occ.synchronize()
-            gmsh.model.addPhysicalGroup(3, [cylinder], tag=tag)
-        gmsh.option.setNumber("Mesh.CharacteristicLengthMax", size)
-        gmsh.model.mesh.generate(3)
-        gmsh.model.mesh.setOrder(2)
-    data = gmshio.model_to_mesh(gmsh.model, comm, 0, gdim=3, dtype=default_real_type)
-    gmsh.model.remove()
-    return data.mesh, data.cell_tags
-
-
-pin_domain, pin_tags = pin_mesh(0.05)
-V_pins = fem.functionspace(pin_domain, ("Lagrange", 2, (3,)))
-u_pins = fem.Function(V_pins, dtype=default_scalar_type, name="u")
-
-
-def move_pins(u):
-    """Move each pin rigidly with its spider in `u`. Collective."""
-    for tag, (k, (x_c, _, _)) in enumerate(zip((2, 3), pins), start=1):
-        values = dolfinx_mpc.spider_values(u[k], 0)
-        t, theta = values[:3], values[3:]
-        u_pins.interpolate(
-            lambda x: (t[:, None] + np.cross(theta, (x - x_c[:, None]).T).T).astype(default_scalar_type),
-            cells0=pin_tags.find(tag),
-        )
-    u_pins.x.scatter_forward()
-
-
 for k in range(2):
     u_n[k].name = "u"
 writers = [VTXWriter(comm, f"demo_spider_hinge_{k + 1}.bp", [u_n[k]], engine="BP4") for k in range(2)]
@@ -820,16 +1058,19 @@ def spider_turns(u) -> tuple[float, ...]:
 
 # -
 
-# ## The animation
+# ## Visualization
 #
 # As in {doc}`demo_linear_wave_problem`, each process builds grids of the cells it owns,
 # gathered once onto one process, as the meshes do not move; per frame only the nodal
-# values are gathered. The beams and the pins are drawn displaced by the true
-# displacement, the pins in translucent red.
+# values and the stresses of the cells are gathered. The beams and the pins are drawn
+# displaced by the swing $u$ at true scale, the pins in translucent red, and the beams are
+# coloured by the von Mises stress of the total stress, $\sigma(u_0 + u)$: the prestress and
+# the swing's.
 
-# +
+# + tags=["hide-input"]
 pyvista.OFF_SCREEN = True
 shown = (u_n[0], u_n[1], u_pins)
+stress, stress_expressions = von_mises_functions([u_0[b] + u_n[b] for b in range(2)])
 local_grids = [pyvista_ugrid(u.function_space) for u in shown]
 gathered_grids = comm.gather(local_grids, root=0)
 if comm.rank == 0:
@@ -841,32 +1082,49 @@ if comm.rank == 0:
     clim: list[float] = []
 
 
-def write_frame():
-    """Draw the beams and the pins, displaced. Collective."""
-    values = comm.gather([u.x.array.reshape(-1, 3)[: grid.n_points].real.copy() for u, grid in zip(shown, local_grids)])
+def write_frame(t: float):
+    """Draw the beams at time `t`, coloured by their von Mises stress, and the pins, displaced.
+    Collective."""
+    for f, expression in zip(stress, stress_expressions):
+        f.interpolate(expression)
+    values = comm.gather(
+        (
+            [u.x.array.reshape(-1, 3)[: grid.n_points].real.copy() for u, grid in zip(shown, local_grids)],
+            [owned_cell_values(f) for f in stress],
+        )
+    )
     if comm.rank != 0:
         return
     plotter.clear()
     for k, grid in enumerate(grids):
-        grid["u"] = np.vstack([piece[k] for piece in values])
-        grid["|u|"] = np.linalg.norm(grid["u"], axis=1)
+        grid["u"] = np.vstack([piece[0][k] for piece in values])
+    for k, grid in enumerate(grids[:2]):
+        grid.cell_data["von Mises"] = np.concatenate([piece[1][k] for piece in values])
     if not clim:
-        clim.extend([0.0, 1.2 * max(grid["|u|"].max() for grid in grids[:2])])
+        clim.extend([0.0, 1.5 * max(grid.cell_data["von Mises"].max() for grid in grids[:2])])
     for k, grid in enumerate(grids):
         if k < 2:
             add_cells(
-                plotter, grid.warp_by_vector("u"), scalars="|u|", clim=clim, cmap="viridis", show_scalar_bar=False
+                plotter, grid.warp_by_vector("u"), scalars="von Mises", clim=clim, cmap="viridis", show_scalar_bar=False
             )
         else:
             plotter.add_mesh(grid.warp_by_vector("u"), color="red", opacity=0.5)
+    plotter.add_text(f"t = {t:.2f}", position="upper_left", font_size=12, color="black")
     plotter.camera_position = [(2.5, -7.0, -1.0), (0.0, 0.45, -1.4), (0.0, 0.0, 1.0)]
     plotter.write_frame()
 
 
+# -
+
+# We can now perform the time stepping, writing a frame every two steps, and checking every
+# 25 steps that the energy is conserved, as shown in
+# {ref}`the energy conservation <demo-spider-hinge-energy>`.
+
+# +
 history = [(0.0, *spider_turns(u_n))]
 E_0 = energy(energies)
 move_pins(u_n)
-write_frame()
+write_frame(0.0)
 drift = 0.0
 for writer in writers:
     writer.write(0.0)
@@ -876,9 +1134,9 @@ for step in range(1, num_steps + 1):
     dolfinx_mpc.assemble_vector(L_step, mpcs, b)
     b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
     dolfinx.fem.petsc.set_bc(b, pinned_by_block)
-    solver.solve(b, x)
-    x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    dolfinx.fem.petsc.assign(x, u_new)
+    solver.solve(b, xh)
+    xh.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    dolfinx.fem.petsc.assign(xh, u_new)
     # Every block is homogenized before any is back-substituted, as spider masters are read across blocks
     for mpc, u in zip(mpcs, u_new):
         mpc.homogenize(u)
@@ -893,7 +1151,7 @@ for step in range(1, num_steps + 1):
     for writer in writers:
         writer.write(step * dt)
     if step % 2 == 0:
-        write_frame()
+        write_frame(step * dt)
     if step % 25 == 0:
         drift = max(drift, abs(energy(energies) / E_0 - 1))
         if comm.rank == 0:
@@ -906,14 +1164,28 @@ for writer in writers:
     writer.close()
 if comm.rank == 0:
     plotter.close()
+
+# The PETSc objects of the step are destroyed explicitly, and those that Python's garbage
+# collector has freed are cleaned up on every process together, so that no process is left
+# waiting for another when PETSc finalizes
+solver.destroy()
+A.destroy()
+b.destroy()
+xh.destroy()
+PETSc.garbage_cleanup(comm)
 # -
+
+# The swing, released from rest:
+#
+# <img src="./demo_spider_hinge.gif" alt="gif" class="bg-primary mb-1" width="600px">
 
 # The energy is conserved up to the rounding of the solves, which the stiff springs next to
 # the mass make large.
 
 assert drift < min(1e-2, 1e8 * np.finfo(default_real_type).eps)
 
-# ## Against rigid double pendulums
+# (demo-spider-hinge-rigid-pendulums)=
+# ## Verification against rigid double pendulums
 #
 # Rigid beams turning by $\varphi_1$ about the fixed pin and $\varphi_2$ about the lower
 # pin, for small angles, satisfy $M_\varphi \ddot\varphi + K_\varphi \varphi = 0$. Two
@@ -927,21 +1199,95 @@ assert drift < min(1e-2, 1e8 * np.finfo(default_real_type).eps)
 # The second is the textbook compound double pendulum,
 #
 # $$
-# M_\varphi = \begin{pmatrix} I_1 + m_2 \ell^2 & m_2 \ell h_2 \\ m_2 \ell h_2 & I_2 \end{pmatrix},
-# \qquad
-# K_\varphi = g \begin{pmatrix} m_1 h_1 + m_2 \ell & 0 \\ 0 & m_2 h_2 \end{pmatrix},
+# \begin{aligned}
+# M_\varphi &= \begin{pmatrix} I_1 + m_2 \ell^2 & m_2 \ell h_2 \\ m_2 \ell h_2 & I_2 \end{pmatrix},\\
+# K_\varphi &= g \begin{pmatrix} m_1 h_1 + m_2 \ell & 0 \\ 0 & m_2 h_2 \end{pmatrix},
+# \end{aligned}
 # $$
 #
-# with $m_b$ the masses, $I_b$ the moments of inertia about each beam's own pin, $h_b$ the
-# depths of the centres of mass below them, and $\ell = 0.8 L$ the distance between the
-# pins, integrated over the meshes. Its masses are those of the first model, but not its
-# stiffness: in the textbook model a pin pushes on its bore through its axis, while the
-# feet of an RBE2 spider are rigidly attached to it, a bore radius $r$ away. Turning a bore
-# that carries the weight hanging from it then changes the stiffness by a fraction of the
-# order $r / h$, which the prestress $\sigma_0$ around the bore picks up. Over a few
-# swings the textbook pendulum drifts out of phase with the beams.
+# with $\ell = 0.8 L$ the distance between the pins, and for each beam its mass, its centre
+# of mass, the depth of that below the beam's pin $x_b$ ($x_P$ for beam 1, $x_B$ for
+# beam 2), and its moment of inertia about the pin, integrated over its mesh, with its
+# bores,
+#
+# $$
+# \begin{aligned}
+# m_b &= \int_{\Omega_b} \rho_b~\mathrm{d}x,\\
+# c_b &= \frac{1}{m_b} \int_{\Omega_b} \rho_b\, x~\mathrm{d}x,\\
+# h_b &= (x_b - c_b) \cdot e_z,\\
+# I_b &= \int_{\Omega_b} \rho_b \left|(I - a a^T)(x - x_b)\right|^2~\mathrm{d}x.
+# \end{aligned}
+# $$
+#
+# Its masses are those of the first model, but not quite its stiffness, as the energy of a
+# rigid swing shows.
+#
+# (demo-spider-hinge-prestress)=
+# ### Check: the energy of a rigid swing
+#
+# To see that the geometric stiffness is the pendulum's potential, turn one
+# beam rigidly by an angle $\theta$ about its pin, through $x_c$ along $a = (0, 1, 0)$:
+# $u = \theta\, a \times \xi$ with $\xi = x - x_c$. The two parts of the stored energy are then
+#
+# - **elastic:** $\varepsilon(u) = \operatorname{sym} \nabla u = 0$, as $\nabla u$ is the
+#   skew-symmetric matrix of $\theta a \times$, so $\frac12 a(u, u) = 0$;
+# - **geometric:** $\nabla u^T \nabla u = \theta^2 (I - a a^T)$, the projection onto the
+#   plane of the swing, so
+#
+#   $$
+#   \frac12 a_{\sigma_0}(u, u) = \frac{\theta^2}{2} \int_{\Omega_b} \sigma_0 : (I - a a^T)~\mathrm{d}x
+#   = \frac{\theta^2}{2} \int_{\Omega_b} \left(\sigma_{0,xx} + \sigma_{0,zz}\right)~\mathrm{d}x.
+#   $$
+#
+# The integral of the prestress follows from the equilibrium of the hanging beam,
+# $-\nabla \cdot \sigma_0 = \rho g$ in $\Omega_b$, with the traction $\sigma_0 n = \tau$ that
+# the spiders exert on the bores and no traction elsewhere. Multiplying by $\xi$ and
+# integrating by parts gives
+#
+# $$
+# \int_{\Omega_b} \sigma_0~\mathrm{d}x
+# = \int_{\partial \Omega_b} \tau \otimes \xi~\mathrm{d}s + \int_{\Omega_b} \rho g \otimes \xi~\mathrm{d}x,
+# $$
+#
+# and taking the trace in the plane of the swing,
+#
+# $$
+# \int_{\Omega_b} \left(\sigma_{0,xx} + \sigma_{0,zz}\right)~\mathrm{d}x
+# = \underbrace{\int_{\Omega_b} \rho g \cdot \xi~\mathrm{d}x}_{m_b g h_b}
+# + \int_{\text{bores}} \tau \cdot (I - a a^T)\, \xi~\mathrm{d}s,
+# $$
+#
+# with $m_b$ the mass of the beam and $h_b$ the depth of its centre of mass below the pin,
+# as $g = (0, 0, -g)$ is perpendicular to $a$. The first term gives
+# $\frac12 m_b g h_b \theta^2$, the exact potential of a rigid pendulum,
+# $m_b g h_b (1 - \cos\theta)$, to second order in $\theta$. The bore terms add the work of
+# the loads the beam carries:
+#
+# - for beam 1, the weight of beam 2 hangs from its lower bore, a distance $\ell = 0.8 L$
+#   below the pin, and adds $\frac12 m_2 g \ell\, \theta^2$, as in $K_\varphi$ of the
+#   textbook double pendulum above;
+# - at the bore a beam hangs from, the pin's force acts a bore radius $r$ off the axis and
+#   adds a term of relative size $r / h_b$. The textbook pendulum leaves this term out, so
+#   over a few swings it drifts out of phase with the beams.
+#
+# So, for a swing, the stored energy $\frac12 u \cdot \hat K u$ is the elastic energy of the
+# beams' deformation, $\frac12 a(u, u)$, plus the pendulum's potential,
+# $\frac12 a_{\sigma_0}(u, u)$, plus the energy of the springs, $\frac12 s_\text{free}(w, w)$,
+# which stays small as long as the pins hold the spiders together.
 
 # +
+mass, centre, inertia = [], [], []
+for b, (m, x_pivot) in enumerate(((beam_1, x_P), (beam_2, x_B))):
+    x = ufl.SpatialCoordinate(m)
+    rho = materials["rho"][b]
+    mass.append(integrate(rho * ufl.dx(m)))
+    centre.append(np.array([integrate(rho * x[i] * ufl.dx(m)) for i in range(3)]) / mass[-1])
+    # The distance from the pin's axis, along y: its x and z components
+    arm = ufl.as_vector([x[0] - x_pivot[0], x[2] - x_pivot[2]])
+    inertia.append(integrate(rho * ufl.inner(arm, arm) * ufl.dx(m)))
+if comm.rank == 0:
+    print(f"Masses {mass[0]:.4f}, {mass[1]:.4f}; centres {centre[0].round(4)}, {centre[1].round(4)}")
+
 ell = x_P[2] - x_B[2]
 h = (x_P[2] - centre[0][2], x_B[2] - centre[1][2])
 textbook = (
@@ -1006,4 +1352,7 @@ assert mass_difference < 1e4 * np.finfo(default_real_type).eps
 assert np.all(np.abs(stiffness_difference) < radius / min(h))
 assert mismatch["ritz"] < 0.1
 
-# <img src="./demo_spider_hinge.gif" alt="gif" class="bg-primary mb-1" width="600px">
+# Finally, the static problem's PETSc objects are released and cleaned up in the same way.
+
+del static
+PETSc.garbage_cleanup(comm)
