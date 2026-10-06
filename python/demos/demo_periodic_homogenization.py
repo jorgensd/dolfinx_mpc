@@ -690,10 +690,11 @@ corner_tags = mesh.meshtags(
     np.hstack([np.full(len(vertices[0]), TAG_B), np.full(len(vertices[1]), TAG_D)]).astype(np.int32)[order],
 )
 dP = ufl.Measure("dP", domain=domain, subdomain_data=corner_tags)
-force_B = fem.Constant(domain, np.asarray(area * S_B, dtype=default_scalar_type))
-force_D = fem.Constant(domain, np.asarray(area * S_D, dtype=default_scalar_type))
+# Column j of S is the stress on the face X_j = L, the force per area on the corner of direction j
+S = fem.Constant(domain, np.column_stack([S_B, S_D]).astype(default_scalar_type))
+A_side = fem.Constant(domain, default_scalar_type(area))
 w = ufl.TestFunction(V)
-point_forces = ufl.inner(force_B, w) * dP(TAG_B) + ufl.inner(force_D, w) * dP(TAG_D)
+point_forces = A_side * (ufl.inner(S[:, 0], w) * dP(TAG_B) + ufl.inner(S[:, 1], w) * dP(TAG_D))
 
 
 def solve_stress_control(a_ufl, L_ufl) -> fem.Function:

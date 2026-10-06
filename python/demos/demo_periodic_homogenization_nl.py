@@ -269,16 +269,19 @@ petsc_options = {
 }
 
 
-def nonlinear_problem(constraint: MultiPointConstraint, bcs_: list[fem.DirichletBC], prefix: str):
+def nonlinear_problem(constraint: MultiPointConstraint, bcs_: list[fem.DirichletBC], prefix: str, external_work=None):
+    """The problem of the cell, with the work `external_work(v)` of external forces, if any,
+    subtracted from the residual. It does not depend on the solution, so not the Jacobian."""
     uh = fem.Function(constraint.function_space)
     v, du = ufl.TestFunction(V), ufl.TrialFunction(V)
-    residual = ufl.inner(piola(ufl.Identity(gdim) + ufl.grad(uh)), ufl.grad(v)) * ufl.dx
+    internal_work = ufl.inner(piola(ufl.Identity(gdim) + ufl.grad(uh)), ufl.grad(v)) * ufl.dx
+    residual = internal_work if external_work is None else internal_work - external_work(v)
     problem = dolfinx_mpc.NonlinearProblem(
         residual,
         uh,
         constraint,
         bcs=bcs_,
-        J=ufl.derivative(residual, uh, du),
+        J=ufl.derivative(internal_work, uh, du),
         petsc_options=petsc_options,
         petsc_options_prefix=prefix,
     )
@@ -602,36 +605,45 @@ for c in range(gdim):
 mpc_sc.finalize()  # collective: every rank must reach this
 # -
 
-# ### Residual with the nodal forces
+# ### The nodal forces as vertex integrals
 #
-# The nodal forces are subtracted from the residual assembled by DOLFINx-MPC, at the dofs of $B$
-# and $D$. These are masters of the constraint, so they belong to the reduced system, and they
-# are neither Dirichlet dofs nor slaves.
+# The nodal forces enter the residual as vertex integrals over the corners $B$ and $D$, scaled by
+# the load factor $t$ of the load steps:
+#
+# $$
+# \int_\Omega \mathbf{P}(\mathbf{F}):\nabla\mathbf{v}\,\mathrm{d}\Omega
+# - t\left(\int_{\{B\}} A\bar S_{i1}\,v_i~\mathrm{d}P + \int_{\{D\}} A\bar S_{i2}\,v_i~\mathrm{d}P\right).
+# $$
+#
+# Their degrees of freedom are masters of the constraint, so the forces stay in the reduced
+# system. The force on $u^B_2$ is zero, and its Dirichlet condition would remove it anyway.
 
 # +
-problem_sc, uh_sc = nonlinear_problem(mpc_sc, bcs_sc, "stress_")
-dofs_B = [fem.locate_dofs_geometrical((V.sub(c), V.sub(c).collapse()[0]), corner(L, 0))[0] for c in range(gdim)]
-dofs_D = [fem.locate_dofs_geometrical((V.sub(c), V.sub(c).collapse()[0]), corner(0, L))[0] for c in range(gdim)]
-n_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
-load_factor = [0.0]
+TAG_B, TAG_D = 1, 2
+vertices = [mesh.locate_entities_boundary(domain, 0, corner(px, py)) for px, py in ((L, 0), (0, L))]
+order = np.argsort(np.hstack(vertices))
+corner_tags = mesh.meshtags(
+    domain,
+    0,
+    np.hstack(vertices)[order],
+    np.hstack([np.full(len(vertices[0]), TAG_B), np.full(len(vertices[1]), TAG_D)]).astype(np.int32)[order],
+)
+dP = ufl.Measure("dP", domain=domain, subdomain_data=corner_tags)
+# Column j of S is the stress on the face X_j = L, the force per area on the corner of direction j
+S = fem.Constant(domain, np.column_stack([S_B, S_D]).astype(default_scalar_type))
+A_side = fem.Constant(domain, default_scalar_type(area))
+load_factor = fem.Constant(domain, default_scalar_type(0.0))
 
 
-_, (assemble_residual, residual_args, residual_kwargs) = problem_sc.solver.getFunction()
+def point_forces(v):
+    return load_factor * A_side * (ufl.inner(S[:, 0], v) * dP(TAG_B) + ufl.inner(S[:, 1], v) * dP(TAG_D))
 
 
-def residual_with_forces(snes, x_vec, F_vec):
-    assemble_residual(snes, x_vec, F_vec, *residual_args, **residual_kwargs)  # residual of DOLFINx-MPC
-    t = load_factor[0]  # internal minus external forces, on the processes that own B and D
-    F_vec.array[dofs_B[0][dofs_B[0] < n_owned]] -= t * area * S_B[0]
-    for c in range(gdim):
-        F_vec.array[dofs_D[c][dofs_D[c] < n_owned]] -= t * area * S_D[c]
-
-
-problem_sc.solver.setFunction(residual_with_forces, problem_sc.b)
+problem_sc, uh_sc = nonlinear_problem(mpc_sc, bcs_sc, "stress_", point_forces)
 
 
 def set_stress(t: float):
-    load_factor[0] = t
+    load_factor.value = t
 
 
 # -
