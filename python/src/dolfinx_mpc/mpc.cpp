@@ -16,6 +16,7 @@
 #include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/PeriodicConstraint.h>
+#include <dolfinx_mpc/RBE.h>
 #include <dolfinx_mpc/SlipConstraint.h>
 #include <dolfinx_mpc/assemble_matrix.h>
 #include <dolfinx_mpc/assemble_vector.h>
@@ -121,6 +122,9 @@ void declare_mpc(nb::module_& m, std::string type)
       .def("all_masters",
            [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
            { return dolfinx_wrappers::as_nbarray(self.all_masters()); })
+      .def("all_master_blocks",
+           [](dolfinx_mpc::MultiPointConstraint<T, U>& self)
+           { return dolfinx_wrappers::as_nbarray(self.all_master_blocks()); })
       .def(
           "update_coefficients",
           [](dolfinx_mpc::MultiPointConstraint<T, U>& self,
@@ -227,6 +231,29 @@ template <typename T, std::floating_point U>
 void declare_functions(nb::module_& m)
 {
   m.def("compute_shared_indices", &dolfinx_mpc::compute_shared_indices<U>);
+  m.def(
+      "locate_spiders",
+      [](const dolfinx::fem::FunctionSpace<U>& W,
+         nb::ndarray<const std::int64_t, nb::ndim<1>, nb::c_contig> spiders)
+      {
+        auto [blocks, owners, x] = dolfinx_mpc::locate_spiders<U>(
+            W, std::span(spiders.data(), spiders.size()));
+        const std::size_t n = blocks.size();
+        return nb::make_tuple(
+            dolfinx_wrappers::as_nbarray(std::move(blocks)),
+            dolfinx_wrappers::as_nbarray(std::move(owners)),
+            dolfinx_wrappers::as_nbarray(std::move(x), {n, 3}));
+      },
+      nb::arg("W"), nb::arg("spiders"),
+      "Global block, owner and coordinate of spiders, by input index");
+  m.def(
+      "update_rbe2",
+      [](dolfinx_mpc::MultiPointConstraint<T, U>& mpc,
+         const dolfinx::fem::FunctionSpace<U>& V,
+         const dolfinx::fem::FunctionSpace<U>& W, int block)
+      { dolfinx_mpc::update_rbe2<T, U>(mpc, V, W, block); },
+      nb::arg("mpc"), nb::arg("V"), nb::arg("W"), nb::arg("block"),
+      "Recompute the RBE2 coefficients from the current dof coordinates");
   m.def(
       "create_multipointconstraints",
       [](const std::vector<
@@ -362,9 +389,43 @@ void declare_functions(nb::module_& m)
 template <typename T, std::floating_point U>
 void declare_mpc_data(nb::module_& m, std::string type)
 {
+  // The scalar type cannot be deduced from the arguments, so it is in the name
+  m.def(
+      ("create_rbe2_" + type).c_str(),
+      [](const dolfinx::fem::FunctionSpace<U>& V,
+         nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig> dofs,
+         nb::ndarray<const std::int64_t, nb::ndim<1>, nb::c_contig> spiders,
+         const dolfinx::fem::FunctionSpace<U>& W,
+         std::optional<nb::ndarray<const U, nb::ndim<2>, nb::c_contig>> x)
+      {
+        std::span<const std::int32_t> _dofs(dofs.data(), dofs.size());
+        std::span<const std::int64_t> _spiders(spiders.data(), spiders.size());
+        if (x)
+        {
+          return dolfinx_mpc::create_rbe2<T, U>(
+              V, _dofs, _spiders, W, std::span<const U>(x->data(), x->size()));
+        }
+        return dolfinx_mpc::create_rbe2<T, U>(V, _dofs, _spiders, W);
+      },
+      nb::arg("V"), nb::arg("dofs"), nb::arg("spiders"), nb::arg("W"),
+      nb::arg("x").none(),
+      "Tie blocked dofs to the rigid-body motion of spiders (RBE2)");
   std::string nbclass_name = "mpc_data_" + type;
   nb::class_<dolfinx_mpc::mpc_data<T>>(m, nbclass_name.c_str(),
                                        "Object with data arrays for mpc")
+      .def(
+          "__init__",
+          [](dolfinx_mpc::mpc_data<T>* self, std::vector<std::int32_t> slaves,
+             std::vector<std::int64_t> masters, std::vector<T> coeffs,
+             std::vector<std::int32_t> owners,
+             std::vector<std::int32_t> offsets)
+          {
+            new (self) dolfinx_mpc::mpc_data<T>{
+                std::move(slaves), std::move(masters), std::move(coeffs),
+                std::move(offsets), std::move(owners)};
+          },
+          nb::arg("slaves"), nb::arg("masters"), nb::arg("coeffs"),
+          nb::arg("owners"), nb::arg("offsets"))
       .def_prop_ro(
           "slaves",
           [](dolfinx_mpc::mpc_data<T>& self)

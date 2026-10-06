@@ -1,4 +1,4 @@
-## # Changing the coefficients of a multi-point constraint
+# # Changing the coefficients of a multi-point constraint
 # **Author** Jørgen S. Dokken
 #
 # A multi-point constraint relates each slave degree of freedom $u_s$ to a set

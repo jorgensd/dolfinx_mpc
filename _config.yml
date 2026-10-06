@@ -7,6 +7,8 @@ copyright: "2022"
 
 execute:
   execute_notebooks: cache
+  # Seconds each cell of a demo may run for
+  timeout: 60
 
 only_build_toc_files: true
 
@@ -37,6 +39,9 @@ parse:
     - html_image
 
 sphinx:
+  # Copies the demos' animations for the gallery on the front page
+  local_extensions:
+    demo_gallery: docs/_ext
   extra_extensions:
   - 'sphinx.ext.autodoc'
   - 'sphinx.ext.napoleon'
