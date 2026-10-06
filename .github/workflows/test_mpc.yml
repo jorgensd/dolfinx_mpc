@@ -98,6 +98,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install OSMesa for off-screen rendering
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libosmesa6
+
       - name: upgrade pip
         run: python3 -m pip install  --upgrade setuptools pip
 
