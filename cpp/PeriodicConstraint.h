@@ -102,12 +102,19 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
                                                  parent_space, num_threads);
 
   // Component b of a slave is tied to component b of the masters
-  std::vector<std::int32_t> slaves;
-  std::vector<std::int64_t> masters;
-  std::vector<T> coeffs;
-  std::vector<std::int32_t> owners;
-  std::vector<std::int32_t> num_masters;
+  // A slave component has at most one master per dof of its master cell
   const int width = basis.num_dofs * bs;
+  const std::size_t max_masters = local_blocks.size() * width;
+  std::vector<std::int32_t> slaves;
+  slaves.reserve(local_blocks.size() * bs);
+  std::vector<std::int64_t> masters;
+  masters.reserve(max_masters);
+  std::vector<T> coeffs;
+  coeffs.reserve(max_masters);
+  std::vector<std::int32_t> owners;
+  owners.reserve(max_masters);
+  std::vector<std::int32_t> num_masters;
+  num_masters.reserve(local_blocks.size() * bs);
   std::int32_t num_missing = 0;
   for (std::size_t i = 0; i < local_blocks.size(); ++i)
   {
