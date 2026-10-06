@@ -89,7 +89,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
         = dolfinx_mpc::create_block_to_cell_map(*mesh.topology(), *V.dofmap(),
                                                 local_blocks);
     auto [x, x_shape] = dolfinx_mpc::tabulate_dof_coordinates(
-        V, local_blocks, slave_cells, true);
+        V, local_blocks, slave_cells, true, num_threads);
     const std::vector<U> mapped_x = relation(x);
     for (std::size_t i = 0; i < local_blocks.size(); ++i)
       for (std::size_t j = 0; j < 3; ++j)

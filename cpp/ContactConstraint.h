@@ -102,7 +102,9 @@ mpc_data<T> create_contact_slip_condition(
   const std::vector<std::int32_t> slave_cells = create_block_to_cell_map(
       *mesh->topology(), *V.dofmap(), local_slave_blocks);
   const std::vector<U> points
-      = tabulate_dof_coordinates<U>(V, local_slave_blocks, slave_cells).first;
+      = tabulate_dof_coordinates<U>(V, local_slave_blocks, slave_cells, false,
+                                    num_threads)
+            .first;
   assert(mesh->topology() == meshtags.topology());
   const std::vector<std::int32_t> master_cells
       = dolfinx::mesh::compute_incident_entities(
