@@ -12,7 +12,6 @@ import numpy as np
 import numpy.typing as npt
 
 from .container import _cpp_function, _mpc_data_classes, _scalar_type
-from .cpp import mpc as _cpp_mpc
 
 __all__ = ["create_rbe2", "create_rbe3"]
 

@@ -29,6 +29,7 @@
 from pathlib import Path
 
 from mpi4py import MPI
+from petsc4py import PETSc
 
 import basix.ufl
 import numpy as np

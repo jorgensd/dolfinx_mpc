@@ -339,7 +339,6 @@ def test_contact_missing_masters():
     assert comm.allreduce(len(owned), op=MPI.SUM) == 2 * bs
 
     # The coordinates of the dofs are rounded in the precision of the mesh
-    tol = 100 * np.finfo(default_real_type).eps
     assert np.allclose(x[:, 1], 0, atol=eps2)
     assert np.all(np.isclose(x[:, 0], 0, atol=eps2) | np.isclose(x[:, 0], 0.25, atol=eps2))
 

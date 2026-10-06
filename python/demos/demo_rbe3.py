@@ -33,6 +33,8 @@
 # its far end. The spider's feet are the nodes on the facing sides of both cubes.
 
 # +
+from pathlib import Path
+
 from mpi4py import MPI
 from petsc4py import PETSc
 
