@@ -81,11 +81,28 @@
   inelastic one raised on one process and hung the others. Removed from the C++ API: `recv_data`,
   `send_master_data_to_owner`, `append_master_data`, `create_neighborhood_comms` and the vector overload of
   `create_owner_to_ghost_comm`.
-- **Change**: `create_contact_slip_condition` and `create_contact_inelastic_condition` default `eps2`, the largest
-  squared distance from a slave point to a master cell, to 500 times the resolution of the mesh's coordinate type
-  instead of `1e-20`, which a distance computed in single precision cannot reach, so that no slave found a cell. The
-  pull-back of a slave point into a non-affine cell no longer takes `eps2` as its Newton tolerance, which rounding
-  could keep it from reaching: it stops at `max(eps2, 500 eps)`.
+- **Change**: one pair of tolerances for every constraint. `distance_tol` is the largest distance from a point to the
+  cell or point it is matched to, and the padding of the bounding boxes; `coefficient_tol` drops a master whose
+  coefficient is below `coefficient_tol` times the largest of its slave, and `0` keeps every master. Both are
+  keyword arguments of `create_periodic_constraint_geometrical`/`_topological`, `create_contact_slip_condition` and
+  `create_contact_inelastic_condition`; `create_general_constraint`, `create_dictionary_constraint` and `close_to` take
+  `distance_tol`, and `add_integral_constraint`/`create_integral_constraint` and `create_submesh_constraint`, which
+  looks its cells up rather than searching for them, take `coefficient_tol`. Both default to 500 machine epsilon, of the mesh's coordinate type for distances and of the constraint's real type for coefficients
+  (C++: `dolfinx_mpc::default_tolerance<U>()`), rather than of `dolfinx.default_real_type`: a single precision mesh in a
+  double precision build had a tolerance below its rounding, and slaves whose image was found in no cell were silently
+  left unconstrained. What changes in the results:
+  - the contact constraints dropped coefficients below the absolute value `1e-6`, which no argument could change;
+  - the periodic `tol` was at once the padding, a squared distance and an absolute cut;
+  - the contact default `eps2` was `1e-20`, which a distance computed in single precision cannot reach;
+  - the dictionary constraint matched coordinates to within `1000` times the resolution of the mesh's type, and
+    `close_to` to that of `dolfinx.default_real_type`.
+
+  The pull-back of a slave point into a non-affine cell stops at `max(distance_tol², 500 eps)` rather than at the squared
+  distance, which rounding could keep it from reaching. In C++, the eight `create_periodic_condition_*` overloads are
+  two templates taking `distance_tol` and `coefficient_tol`.
+- **Deprecated**: the periodic `tol` (a value sets both new tolerances, `None` sets `coefficient_tol=0`), the contact
+  `eps2` (`distance_tol = sqrt(eps2)`), the integral `rtol` (`coefficient_tol`), the submesh `tol` (`coefficient_tol`,
+  `None` sets it to `0`) and the `atol` of `close_to` (`distance_tol`). They warn and map to the new arguments.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to
   `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are
