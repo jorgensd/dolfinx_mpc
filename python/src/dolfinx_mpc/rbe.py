@@ -1,3 +1,5 @@
+# Copyright (C) 2026 Jørgen S. Dokken
+#
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT

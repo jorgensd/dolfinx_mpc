@@ -63,6 +63,14 @@
   the constraint of a spider mesh, tie each spider to the weighted least-squares rigid fit of its feet, which may be on
   several meshes; `update_rbe3` recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe3` and
   `update_rbe3`. New demo: `python/demos/demo_rbe3.py`.
+- **New feature**: constraints between a submesh and its parent. `MultiPointConstraint.create_submesh_constraint(V,
+  master_space, entity_map)` ties every dof of `V` in a cell related through the entity map of
+  `dolfinx.mesh.create_submesh` to `master_space` evaluated there, for submeshes of codimension 0 or 1, either way
+  round, and subspaces on either side. The related cell is a table lookup, so no geometric search is done.
+  `finalize_multipointconstraints` now also accepts a subspace of a block as master space. C++:
+  `dolfinx_mpc::create_submesh_constraint`. New demo: `python/demos/demo_bulk_surface.py`, a bulk problem with a
+  surface diffusion equation on part of its boundary, checked against a Lagrange multiplier. The demos in the
+  documentation are now grouped by theme.
 - **Periodic and contact constraints share one implementation.** `dolfinx_mpc::evaluate_basis_at_points`
   ([cpp/point_basis.h](cpp/point_basis.h)) finds a cell containing each slave point, on this process or another
   located through a global bounding-box tree, and evaluates the basis there; each constraint keeps only how it
@@ -78,8 +86,8 @@
   coefficient is below `coefficient_tol` times the largest of its slave, and `0` keeps every master. Both are
   keyword arguments of `create_periodic_constraint_geometrical`/`_topological`, `create_contact_slip_condition` and
   `create_contact_inelastic_condition`; `create_general_constraint`, `create_dictionary_constraint` and `close_to` take
-  `distance_tol`, and `add_integral_constraint`/`create_integral_constraint` take `coefficient_tol`. Both default to
-  500 machine epsilon, of the mesh's coordinate type for distances and of the constraint's real type for coefficients
+  `distance_tol`, and `add_integral_constraint`/`create_integral_constraint` and `create_submesh_constraint`, which
+  looks its cells up rather than searching for them, take `coefficient_tol`. Both default to 500 machine epsilon, of the mesh's coordinate type for distances and of the constraint's real type for coefficients
   (C++: `dolfinx_mpc::default_tolerance<U>()`), rather than of `dolfinx.default_real_type`: a single precision mesh in a
   double precision build had a tolerance below its rounding, and slaves whose image was found in no cell were silently
   left unconstrained. What changes in the results:
@@ -93,8 +101,8 @@
   distance, which rounding could keep it from reaching. In C++, the eight `create_periodic_condition_*` overloads are
   two templates taking `distance_tol` and `coefficient_tol`.
 - **Deprecated**: the periodic `tol` (a value sets both new tolerances, `None` sets `coefficient_tol=0`), the contact
-  `eps2` (`distance_tol = sqrt(eps2)`), the integral `rtol` (`coefficient_tol`) and the `atol` of `close_to`
-  (`distance_tol`). They warn and map to the new arguments.
+  `eps2` (`distance_tol = sqrt(eps2)`), the integral `rtol` (`coefficient_tol`), the submesh `tol` (`coefficient_tol`,
+  `None` sets it to `0`) and the `atol` of `close_to` (`distance_tol`). They warn and map to the new arguments.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to
   `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are

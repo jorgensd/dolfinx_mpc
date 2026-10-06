@@ -145,7 +145,8 @@ class MultiPointConstraint:
 
             master_space: The function space all masters belong to, if not `V`. It must be the
                 space of another constraint finalized together with this one by
-                :func:`finalize_multipointconstraints`, and `masters` is in its global numbering.
+                :func:`finalize_multipointconstraints`, or a subspace of it, and `masters` is in
+                the global numbering of that constraint's space.
                 The masters of a slave may then be in another block of a blocked problem.
             master_blocks: The block of each master, for masters from several spaces: its position
                 in the list of constraints given to :func:`finalize_multipointconstraints`. Each
@@ -451,6 +452,78 @@ class MultiPointConstraint:
             num_threads,
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
+
+    def create_submesh_constraint(
+        self,
+        V: _fem.FunctionSpace,
+        master_space: _fem.FunctionSpace,
+        entity_map: _mesh.EntityMap,
+        bcs: Optional[List[_fem.DirichletBC]] = None,
+        scale: Union[_float_classes, float, complex] = 1.0,
+        tol: Union[_float_classes, float, None, _Unset] = _UNSET,
+        num_threads: int = 1,
+        *,
+        coefficient_tol: Optional[float] = None,
+    ):
+        r"""
+        Tie the degrees of freedom of `V` to `master_space` on a related mesh: a submesh and its
+        parent, related by `entity_map` as returned by :func:`dolfinx.mesh.create_submesh`.
+
+        Every degree of freedom of `V` in the closure of a cell related to a cell of
+        `master_space` becomes a slave, :math:`u(x_i) = \mathrm{scale}\, u_m(x_i)`, with
+        :math:`u_m` evaluated in the related cell and component `b` tied to component `b`. With `V`
+        on the submesh this is every degree of freedom of `V`, for instance the trace
+        :math:`\bar u = u|_\Gamma` on a submesh of facets; with `V` on the parent it is the
+        degrees of freedom on the submesh. No search is involved: the related cell is a table
+        lookup. For a submesh of facets the parent cell is one attached to the facet, so for a
+        discontinuous `master_space` the side is arbitrary.
+
+        Args:
+            V: The space of the constraint, or a subspace of it
+            master_space: The space of another constraint finalized together with this one by
+                :func:`finalize_multipointconstraints`, or a subspace of it. Its mesh and the mesh
+                of `V` are the two meshes of `entity_map`, either way round.
+            entity_map: Relates the cells of the submesh to entities of the parent, of
+                codimension 0 or 1
+            bcs: Dirichlet conditions on the space of the constraint. Their degrees of freedom
+                are not made slaves.
+            scale: Factor of the masters, of the scalar type of the constraint
+            tol: Deprecated, use `coefficient_tol`: a value sets it, `None` sets `coefficient_tol=0`.
+            num_threads: The number of threads to use
+            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                its slave is dropped. `0` keeps every basis function of the related cell, so that the
+                coefficients can later be changed with :func:`scale_coefficients` or
+                :func:`update_coefficients`. Defaults to `500` machine epsilon of the real type of the
+                constraint. No distance tolerance is needed, as the related cell is not searched for.
+
+        Raises:
+            ValueError: If `entity_map` does not relate the two meshes, relates entities other
+                than the cells of the submesh, is of codimension above 1, or the spaces have
+                different numbers of components. Raised on every process.
+
+        Note:
+            Collective.
+        """
+        self._raise_if_finalized()
+        if not (V is self.V or self.V.contains(V)):
+            raise ValueError("V must be the space of the constraint or a subspace of it")
+        if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
+            scale = scale.item()  # type: ignore
+        if not isinstance(tol, _Unset):
+            _deprecated("tol", "`coefficient_tol`")
+            if coefficient_tol is None:
+                coefficient_tol = 0.0 if tol is None else tol
+        bcs_ = [] if bcs is None else [bc._cpp_object for bc in bcs]
+        mpc_data = _cpp_function("create_submesh_constraint", self._dtype)(
+            V._cpp_object,
+            master_space._cpp_object,
+            entity_map._cpp_object,
+            bcs_,
+            scale,
+            _tolerance(coefficient_tol, self._dtype),
+            num_threads,
+        )
+        self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data, master_space=master_space)
 
     def _add_rbe2(self, dofs: list[npt.NDArray[numpy.int32]], W: _fem.FunctionSpace, x=None):
         """Tie `dofs[k]` to spider `k` of `W`, and record `W` for :meth:`update_rbe2`."""
@@ -877,24 +950,30 @@ class MultiPointConstraint:
         coefficient_tol: Optional[float] = None,
     ):
         """
-        Create a slip condition between two sets of facets marker with individual markers.
-        The interfaces should be within machine precision of eachother, but the vertices does not need to align.
-        The condition created is :math:`u_s \\cdot normal_s = u_m \\cdot normal_m` where `s` is the
-        restriction to the slave facets, `m` to the master facets.
+                Create a slip condition between two sets of facets marker with individual markers.
+                The interfaces should be within machine precision of eachother, but the vertices does not need to align.
+                The condition created is :math:`u_s \\cdot normal_s = u_m \\cdot normal_m` where `s` is the
+                restriction to the slave facets, `m` to the master facets.
 
-        Args:
-            meshtags: The meshtags of the set of facets to tie together
-            slave_marker: The marker of the slave facets
-            master_marker: The marker of the master facets
-            normal: The function used in the dot-product of the constraint
-            eps2: Deprecated, use `distance_tol`, which is `sqrt(eps2)`.
-            num_threads: The number of threads to use for certain operations
-            distance_tol: The largest distance from a slave point to a master cell for the point to
-                be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
-                machine epsilon of the coordinate type of the mesh.
-            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
-                its slave is dropped. `0` keeps every master. Defaults to `500`
-                machine epsilon of the real type of the constraint.
+                Args:
+                    meshtags: The meshtags of the set of facets to tie together
+                    slave_marker: The marker of the slave facets
+                    master_marker: The marker of the master facets
+                    normal: The function used in the dot-product of the constraint
+        <<<<<<< HEAD
+                    eps2: The largest squared distance from a slave point to a master cell for the point to
+                        be in the cell. Defaults to 500 times the resolution of the coordinate type of the mesh,
+                        as the distance is computed in that precision.
+        =======
+                    eps2: Deprecated, use `distance_tol`, which is `sqrt(eps2)`.
+        >>>>>>> main
+                    num_threads: The number of threads to use for certain operations
+                    distance_tol: The largest distance from a slave point to a master cell for the point to
+                        be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
+                        machine epsilon of the coordinate type of the mesh.
+                    coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                        its slave is dropped. `0` keeps every master. Defaults to `500`
+                        machine epsilon of the real type of the constraint.
         """
         mpc_data = _cpp_function("create_contact_slip_condition", self._dtype)(
             self.V._cpp_object,
@@ -1256,10 +1335,12 @@ def finalize_multipointconstraints(
             blocks[blocks == -2] = k
             if space is not None:
                 matches = [j for j, other in enumerate(mpcs) if other.V is space]
+                if len(matches) == 0:
+                    matches = [j for j, other in enumerate(mpcs) if other.V.contains(space)]
                 if len(matches) != 1:
                     raise ValueError(
-                        "The master space of a constraint must be the function space of exactly one of the "
-                        "constraints finalized together with it"
+                        "The master space of a constraint must be the function space, or a subspace of "
+                        "the function space, of exactly one of the constraints finalized together with it"
                     )
                 blocks[blocks == -1] = matches[0]
             resolved.append(blocks)

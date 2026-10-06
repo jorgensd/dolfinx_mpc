@@ -48,12 +48,15 @@
 # + tags=["hide-input"]
 from __future__ import annotations
 
+from pathlib import Path
+
 from mpi4py import MPI
 from petsc4py import PETSc
 
 import numpy as np
+import pyvista
 import ufl
-from dolfinx import default_scalar_type, fem, mesh
+from dolfinx import default_scalar_type, fem, mesh, plot
 
 import dolfinx_mpc
 
@@ -247,6 +250,61 @@ if msh.comm.rank == 0:
         f"  |u-u_ex|_L2 = {error_u:.3e}   |lambda-lambda_ex|_L2 = {error_l:.3e}"
     )
 assert error_u < 1e-3
+# -
+
+# The solutions on the two subdomains, drawn apart to show that each has its own mesh, and
+# the multiplier $\lambda$ on the interface between them. The two solutions meet without a
+# jump. Each process draws the cells it owns, which are gathered on the first process.
+
+# +
+pyvista.global_theme.allow_empty_mesh = True
+
+
+def gathered_grid(u, V, name):
+    """The cells this process owns as a PyVista grid with the values of `u`, gathered on the first process.
+
+    `u` may live in the extended space of a constraint, whose leading entries are those of `V`.
+    """
+    tdim = V.mesh.topology.dim
+    owned = np.arange(V.mesh.topology.index_map(tdim).size_local, dtype=np.int32)
+    grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(V, entities=owned))
+    grid.point_data[name] = u.x.array.real[: grid.n_points]
+    pieces = V.mesh.comm.gather(grid, root=0)
+    # A process may own no cells, as of an interface, and its grid then holds no values
+    return None if pieces is None else [piece for piece in pieces if piece.n_points > 0]
+
+
+def value_range(pieces, name):
+    return [min(p[name].min(initial=np.inf) for p in pieces), max(p[name].max(initial=-np.inf) for p in pieces)]
+
+
+pieces_1 = gathered_grid(uh_1, V_1, "u")
+pieces_2 = gathered_grid(uh_2, V_2, "u")
+lambda_pieces = gathered_grid(lh, Q, "lambda")
+if pieces_1 is not None:  # only the first process received the grids
+    u_range = value_range(pieces_1 + pieces_2, "u")
+    plotter = pyvista.Plotter(window_size=[800, 600])
+    for piece, shift in [(p, -0.04) for p in pieces_1] + [(p, 0.04) for p in pieces_2]:
+        plotter.add_mesh(piece.translate((shift, 0.0, 0.0)), scalars="u", cmap="viridis", clim=u_range)
+    for piece in lambda_pieces:
+        plotter.add_mesh(
+            piece,
+            scalars="lambda",
+            cmap="coolwarm",
+            clim=value_range(lambda_pieces, "lambda"),
+            line_width=10,
+            render_lines_as_tubes=True,
+            scalar_bar_args={"position_y": 0.88},
+        )
+    plotter.view_xy()
+    # The figure is named after the demo, as the gallery of the documentation expects
+    figure = Path("demo_mortar_subdomains.py")
+    if pyvista.OFF_SCREEN:
+        plotter.screenshot(figure.with_suffix(".png"))
+    else:
+        # The interactive scene, for the gallery
+        plotter.export_html(figure.with_suffix(".html"))
+        plotter.show(screenshot=figure.with_suffix(".png"))
 # -
 
 # ## Convergence
