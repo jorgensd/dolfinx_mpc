@@ -49,8 +49,12 @@ V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
 # $$
 #
 # where $\bar{\mathbf{H}}$ is the average displacement gradient. Only its symmetric part, the
-# macroscopic strain $\bar{\mathbf{E}}=\operatorname{sym}\bar{\mathbf{H}}$, produces stress; the
-# skew part is a rigid rotation. We remove it by taking $\bar{\mathbf{H}}$ upper triangular,
+# macroscopic strain $\bar{\mathbf{E}}=\operatorname{sym}\bar{\mathbf{H}}$ of components
+# $\bar E_{ij}$, produces stress; the skew part
+# $\bar{\boldsymbol{\omega}}=\tfrac12(\bar{\mathbf{H}}-\bar{\mathbf{H}}^T)$ is a rigid rotation, which
+# does no work. Any skew part gives the same stress, and we choose
+# $\bar\omega_{ij}=\bar E_{ij}$ above the diagonal, $\bar\omega_{ij}=-\bar E_{ij}$ below it. Then
+# $\bar{\mathbf{H}}=\bar{\mathbf{E}}+\bar{\boldsymbol{\omega}}$ is upper triangular,
 #
 # $$
 # \bar{\mathbf{H}}=\begin{pmatrix}\bar E_{11}&2\bar E_{12}&2\bar E_{13}\\
@@ -343,16 +347,37 @@ if comm.rank == 0:
 
 # ## Stress control
 #
-# We now prescribe the average stress $\bar{\boldsymbol\sigma}=\bar{\mathbf{S}}$. The displacements
+# So far the strain was prescribed and the average stress computed from the solution,
+#
+# $$
+# \bar{\boldsymbol{\sigma}} = \frac{1}{|\Omega|}\int_\Omega \boldsymbol{\sigma}(\mathbf{u})\,\mathrm{d}\Omega .
+# $$
+#
+# We now prescribe its value instead, $\bar{\boldsymbol\sigma}=\bar{\mathbf{S}}$. The displacements
 # of $B$, $D$, $E$ become unknowns, except the three components that vanish in
 # {eq}`eq:3d-corners`: $u^B_2=u^B_3=u^D_3=0$. These remove the three rigid rotations, which the
 # periodicity no longer excludes once $\bar{\mathbf{H}}$ is unknown.
 #
+# This changes how the corners enter the problem. Under strain control $\mathbf{u}^B$, $\mathbf{u}^D$, $\mathbf{u}^E$
+# are known: they are Dirichlet values on the corners, and enter the periodic constraints as
+# their constant.
+# Under stress control they are unknowns: the corners become masters of the periodic constraints,
+# and the prescribed stress enters the right-hand side of the equations as point forces on their
+# degrees of freedom, derived below. Each corner degree of freedom gets either a prescribed
+# displacement or a prescribed force, never both.
+#
+# | | strain control | stress control |
+# |---|---|---|
+# | corner displacements | prescribed, Dirichlet conditions | unknowns, masters of the constraints |
+# | periodic constraints | constant from the corner displacements | no constant |
+# | right-hand side | no load | point forces $A\bar S_{ij}$ on the corners |
+#
 # ### The prescribed stress as nodal forces
 #
-# The tractions $\mathbf{T}=\boldsymbol{\sigma}\mathbf{n}$ are anti-periodic on opposite faces. For a
+# The stress is periodic, while the outward normals of opposite faces are opposite, so the
+# tractions $\mathbf{T}=\boldsymbol{\sigma}\mathbf{n}$ are anti-periodic on opposite faces. For a
 # field $\mathbf{v}$ satisfying {eq}`eq:3d-periodic`, the contributions of $\mathbf{v}(\mathbf{X}^-)$
-# cancel and the work of the tractions reduces to
+# on opposite faces cancel and the work of the tractions reduces to
 #
 # $$
 # \int_{\partial\Omega}\mathbf{T}\cdot\mathbf{v}\,\mathrm{d}s
@@ -360,9 +385,12 @@ if comm.rank == 0:
 # + v^E_i\int_{X_3=L}T_i\,\mathrm{d}s .
 # $$
 #
-# With $\operatorname{div}\boldsymbol{\sigma}=\mathbf{0}$, $\int_{\partial\Omega}T_iX_j\,\mathrm{d}s
-# =|\Omega|\,\bar\sigma_{ij}$, so the integral over the face $X_j=L$ is $A\bar\sigma_{ij}$, with
-# $A=L^2$ the area of a face. The principle of virtual work becomes
+# With $\operatorname{div}\boldsymbol{\sigma}=\mathbf{0}$, the divergence theorem gives
+# $\int_{\partial\Omega}T_iX_j\,\mathrm{d}s=\int_\Omega\sigma_{ij}\,\mathrm{d}\Omega=|\Omega|\,\bar\sigma_{ij}$.
+# $X_j=L$ on the face $X_j=L$ and $X_j=0$ on its opposite face, while on the other four faces the
+# anti-periodic tractions cancel at each $X_j$. So the integral over the face $X_j=L$ is
+# $A\bar\sigma_{ij}$, with $A=|\Omega|/L=L^2$ the area of a face. The principle of virtual work,
+# with $\bar\sigma_{ij}=\bar S_{ij}$, becomes
 #
 # $$
 # \int_\Omega \boldsymbol{\sigma}(\mathbf{u}):\boldsymbol{\epsilon}(\mathbf{v})\,\mathrm{d}\Omega
@@ -370,8 +398,9 @@ if comm.rank == 0:
 # $$
 #
 # for all $\mathbf{v}$ satisfying the constraints and $v^B_2=v^B_3=v^D_3=0$. The prescribed stress
-# is a set of nodal forces; $\bar S_{21}$, $\bar S_{31}$, $\bar S_{32}$ are the reactions of the
-# three rotation constraints.
+# is a set of nodal forces. The reactions of the three rotation constraints are $A\bar S_{21}$,
+# $A\bar S_{31}$ and $A\bar S_{32}$, which equal $A\bar S_{12}$, $A\bar S_{13}$ and $A\bar S_{23}$ as
+# the stress is symmetric.
 #
 # | component | control |
 # |---|---|

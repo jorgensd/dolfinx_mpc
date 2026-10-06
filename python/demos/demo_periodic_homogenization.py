@@ -531,14 +531,52 @@ if comm.rank == 0:
 
 # ## Stress control
 #
-# We now prescribe the average stress $\bar{\mathbf{S}}$ instead of the strain. The
-# displacements $\mathbf{u}^B$ and $\mathbf{u}^D$ become unknowns.
+# So far the strain was prescribed and the average stress computed from the solution:
+#
+# $$
+# \bar{\boldsymbol{\sigma}} = \frac{1}{|\Omega|}\int_\Omega \boldsymbol{\sigma}(\mathbf{u})\,\mathrm{d}\Omega,
+# $$
+#
+# the quantity `homogenized_stress` returns. We now prescribe its value instead,
+# $\bar{\boldsymbol{\sigma}}=\bar{\mathbf{S}}$, and the displacements $\mathbf{u}^B$ and
+# $\mathbf{u}^D$ become unknowns.
+#
+# This changes how the corners enter the problem. Under strain control $\mathbf{u}^B$, $\mathbf{u}^D$ are known:
+# they are Dirichlet values on the corners, and enter the periodic constraints as their constant.
+# Under stress control they are unknowns: the corners become masters of the periodic constraints,
+# and the prescribed stress enters the right-hand side of the equations as point forces on their
+# degrees of freedom, derived below. Each corner degree of freedom gets either a prescribed
+# displacement or a prescribed force, never both.
+#
+# | | strain control | stress control |
+# |---|---|---|
+# | $\mathbf{u}^B$, $\mathbf{u}^D$ | prescribed, Dirichlet conditions | unknowns, masters of the constraints |
+# | periodic constraints | constant from $\mathbf{u}^B$, $\mathbf{u}^D$ | no constant |
+# | right-hand side | no load | point forces $A\bar S_{ij}$ on the corners |
 
 # ### Corner displacements
 #
 # In {eq}`eq:homog-uB` and {eq}`eq:homog-uD`, $\bar{\mathbf{F}}-\boldsymbol{\delta}=\bar{\mathbf{H}}$.
-# Only its symmetric part, the macroscopic strain $\bar{\mathbf{E}}$, produces stress; the skew
-# part is a rigid rotation, which does no work and is removed with $u^B_2=0$. Then
+# Split it into a symmetric and a skew part,
+#
+# $$
+# \bar{\mathbf{H}} = \bar{\mathbf{E}} + \bar{\boldsymbol{\omega}},\qquad
+# \bar{\mathbf{E}} = \tfrac12\left(\bar{\mathbf{H}}+\bar{\mathbf{H}}^T\right),\qquad
+# \bar{\boldsymbol{\omega}} = \tfrac12\left(\bar{\mathbf{H}}-\bar{\mathbf{H}}^T\right)
+# = \begin{pmatrix}0 & -\omega\\ \omega & 0\end{pmatrix}.
+# $$
+#
+# The symmetric part, the macroscopic strain $\bar{\mathbf{E}}$ of components $\bar E_{ij}$,
+# produces stress. The skew part is a rigid rotation by the angle $\omega$, which does no work,
+# so
+#
+# $$
+# \mathbf{u}^B = L\begin{pmatrix}\bar E_{11}\\ \bar E_{12}+\omega\end{pmatrix},\qquad
+# \mathbf{u}^D = L\begin{pmatrix}\bar E_{12}-\omega\\ \bar E_{22}\end{pmatrix}
+# $$
+#
+# describe the same stress for every $\omega$. We remove the rotation by choosing
+# $\omega=-\bar E_{12}$, that is $u^B_2=0$. Then
 #
 # $$
 # \mathbf{u}^B = L\begin{pmatrix}\bar E_{11}\\ 0\end{pmatrix},\qquad
@@ -547,10 +585,13 @@ if comm.rank == 0:
 
 # ### The prescribed stress as nodal forces
 #
-# Let $\mathbf{T}=\boldsymbol{\sigma}\mathbf{n}$ be the traction on $\partial\Omega$. The
-# tractions are anti-periodic, $\mathbf{T}(\mathbf{X}+L\mathbf{e}_1)=-\mathbf{T}(\mathbf{X})$ on
-# RIGHT and LEFT, and likewise on TOP and BOTTOM. For a field $\mathbf{v}$ that satisfies the
-# constraints {eq}`eq:homog-uA`–{eq}`eq:homog-uC`, the work of the tractions therefore reduces to
+# Let $\mathbf{T}=\boldsymbol{\sigma}\mathbf{n}$ be the traction on $\partial\Omega$. The stress
+# is periodic, while the outward normals of opposite edges are opposite, so the tractions are
+# anti-periodic: $\mathbf{T}(\mathbf{X}+L\mathbf{e}_1)=-\mathbf{T}(\mathbf{X})$ on RIGHT and LEFT,
+# and likewise on TOP and BOTTOM. A field $\mathbf{v}$ that satisfies the constraints
+# {eq}`eq:homog-uA`–{eq}`eq:homog-uC` takes on RIGHT its values on LEFT plus $\mathbf{v}^B$, so
+# the work of the tractions on the two edges cancels but for $\mathbf{v}^B$, and likewise on TOP
+# and BOTTOM with $\mathbf{v}^D$:
 #
 # $$
 # \int_{\partial\Omega}\mathbf{T}\cdot\mathbf{v}\,\mathrm{d}s
@@ -558,10 +599,11 @@ if comm.rank == 0:
 # $$
 #
 # With $\operatorname{div}\boldsymbol{\sigma}=\mathbf{0}$, the divergence theorem gives
-# $\int_{\partial\Omega}T_iX_j\,\mathrm{d}s=|\Omega|\,\bar\sigma_{ij}$, hence
-# $\int_{\text{RIGHT}}T_i\,\mathrm{d}s=A\bar\sigma_{i1}$ and
-# $\int_{\text{TOP}}T_i\,\mathrm{d}s=A\bar\sigma_{i2}$, with $A=|\Omega|/L$. The principle of
-# virtual work, with $\bar\sigma_{ij}=\bar S_{ij}$, becomes
+# $\int_{\partial\Omega}T_iX_j\,\mathrm{d}s=\int_\Omega\sigma_{ij}\,\mathrm{d}\Omega=|\Omega|\,\bar\sigma_{ij}$.
+# For $j=1$, $X_1=L$ on RIGHT and $X_1=0$ on LEFT, while on TOP and BOTTOM the anti-periodic
+# tractions cancel at each $X_1$. Hence $\int_{\text{RIGHT}}T_i\,\mathrm{d}s=A\bar\sigma_{i1}$, and
+# likewise $\int_{\text{TOP}}T_i\,\mathrm{d}s=A\bar\sigma_{i2}$, with $A=|\Omega|/L$ the length of
+# an edge. The principle of virtual work, with $\bar\sigma_{ij}=\bar S_{ij}$, becomes
 #
 # $$
 # \int_\Omega \boldsymbol{\sigma}(\mathbf{u}):\boldsymbol{\epsilon}(\mathbf{v})\,\mathrm{d}\Omega
@@ -570,7 +612,8 @@ if comm.rank == 0:
 #
 # for all $\mathbf{v}$ satisfying the constraints and $v^B_2=0$. The prescribed stress is
 # therefore a set of **nodal forces**: $A\bar S_{11}$ on $u^B_1$, $A\bar S_{12}$ on $u^D_1$ and
-# $A\bar S_{22}$ on $u^D_2$. $\bar S_{21}=\bar S_{12}$ is the reaction at $u^B_2$.
+# $A\bar S_{22}$ on $u^D_2$. The reaction at $u^B_2$ is $A\bar S_{21}$, which equals $A\bar S_{12}$ as
+# the stress is symmetric.
 #
 # | component | control |
 # |---|---|
@@ -592,12 +635,6 @@ if comm.rank == 0:
 # the constraint.
 
 # +
-from petsc4py import PETSc  # noqa: E402
-
-import dolfinx.fem.petsc  # noqa: E402
-
-import dolfinx_mpc  # noqa: E402
-
 S_B = np.array([0.09, 0.0])  # prescribed S_11 (first entry; u^B_2 = 0 is a constraint)
 S_D = np.array([0.05, 0.0])  # prescribed (S_12, S_22)
 area = L  # area of a side of the cell, per unit thickness
@@ -628,46 +665,40 @@ for c in range(gdim):
 mpc_sc.finalize()  # collective: every rank must reach this
 # -
 
-# ### Assembly with the nodal forces
+# ### The nodal forces as vertex integrals
 #
-# The system is assembled as in {py:class}`dolfinx_mpc.LinearProblem`. Once the Dirichlet
-# conditions are applied, the nodal forces are added to the right-hand side at the dofs of $B$
-# and $D$. These are masters of the constraint, so they belong to the reduced system, and they
-# are neither Dirichlet dofs nor slaves.
+# The nodal forces are the work $A\bar S_{i1}v^B_i + A\bar S_{i2}v^D_i$, a vertex integral over
+# the corners $B$ and $D$:
+#
+# $$
+# \int_{\{B\}} A\bar S_{i1}\,v_i~\mathrm{d}P + \int_{\{D\}} A\bar S_{i2}\,v_i~\mathrm{d}P,
+# $$
+#
+# added to the linear form with the measure `ufl.dP` on the two corners. Their degrees of freedom
+# are masters of the constraint, so the forces stay in the reduced system. The force on
+# $u^B_2$ is zero, and its Dirichlet condition would remove it anyway. The problem is then an
+# ordinary {py:class}`dolfinx_mpc.LinearProblem`.
 
 # +
-dofs_B = [fem.locate_dofs_geometrical((V.sub(c), V.sub(c).collapse()[0]), corner(L, 0))[0] for c in range(gdim)]
-dofs_D = [fem.locate_dofs_geometrical((V.sub(c), V.sub(c).collapse()[0]), corner(0, L))[0] for c in range(gdim)]
-n_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+TAG_B, TAG_D = 1, 2
+vertices = [mesh.locate_entities_boundary(domain, 0, corner(px, py)) for px, py in ((L, 0), (0, L))]
+order = np.argsort(np.hstack(vertices))
+corner_tags = mesh.meshtags(
+    domain,
+    0,
+    np.hstack(vertices)[order],
+    np.hstack([np.full(len(vertices[0]), TAG_B), np.full(len(vertices[1]), TAG_D)]).astype(np.int32)[order],
+)
+dP = ufl.Measure("dP", domain=domain, subdomain_data=corner_tags)
+force_B = fem.Constant(domain, np.asarray(area * S_B, dtype=default_scalar_type))
+force_D = fem.Constant(domain, np.asarray(area * S_D, dtype=default_scalar_type))
+w = ufl.TestFunction(V)
+point_forces = ufl.inner(force_B, w) * dP(TAG_B) + ufl.inner(force_D, w) * dP(TAG_D)
 
 
 def solve_stress_control(a_ufl, L_ufl) -> fem.Function:
-    a_c, L_c = fem.form(a_ufl), fem.form(L_ufl)
-    mpc_sc.update_constants()
-    A_mat = dolfinx_mpc.assemble_matrix(a_c, mpc_sc, bcs=bcs_sc)
-    A_mat.assemble()
-    b = dolfinx_mpc.assemble_vector(L_c, mpc_sc)
-    dolfinx_mpc.apply_lifting(b, [a_c], bcs=[bcs_sc], constraint=mpc_sc)
-    dolfinx_mpc.apply_mpc_lifting(b, [a_c], constraint=mpc_sc)
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-    dolfinx.fem.petsc.set_bc(b, bcs_sc)
-    b.array[dofs_B[0][dofs_B[0] < n_owned]] += area * S_B[0]  # A S_11 on u^B_1, on the owning process
-    for c in range(gdim):  # A S_12 on u^D_1 and A S_22 on u^D_2
-        b.array[dofs_D[c][dofs_D[c] < n_owned]] += area * S_D[c]
-    b.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-    ksp = PETSc.KSP().create(comm)
-    ksp.setOperators(A_mat)
-    ksp.setType("preonly")
-    ksp.getPC().setType("lu")
-    ksp.getPC().setFactorSolverType("mumps")
-    ksp.setErrorIfNotConverged(True)
-    uh = fem.Function(mpc_sc.function_space)
-    ksp.solve(b, uh.x.petsc_vec)
-    uh.x.scatter_forward()
-    mpc_sc.homogenize(uh)
-    mpc_sc.backsubstitution(uh)
-    ksp.destroy(), A_mat.destroy(), b.destroy()
-    return uh
+    problem = LinearProblem(a_ufl, L_ufl + point_forces, mpc_sc, bcs=bcs_sc, petsc_options=petsc_options)
+    return problem.solve()
 
 
 def average_stress(uh, mu_, lmbda_) -> np.ndarray:

@@ -187,8 +187,13 @@ mpc.finalize()  # collective: every rank must reach this
 # \qquad \mathbf{F}=\boldsymbol{\delta}+\nabla\mathbf{u},\quad J=\det\mathbf{F}.
 # $$
 #
-# The macroscopic stress is the volume average $\bar{\mathbf{S}}=\langle\mathbf{P}\rangle$, which
-# is not symmetric. The Young modulus is a cellwise constant function, uniform for the first test
+# The macroscopic stress is the volume average
+#
+# $$
+# \bar{\mathbf{S}} = \frac{1}{|\Omega|}\int_\Omega \mathbf{P}(\mathbf{F})\,\mathrm{d}\Omega,
+# $$
+#
+# which is not symmetric. The Young modulus is a cellwise constant function, uniform for the first test
 # and with the stiff inclusion afterwards.
 
 # +
@@ -490,10 +495,27 @@ plot_cell(
 #
 # We now prescribe the average stress $\bar{\mathbf{S}}$ instead of the deformation. The
 # displacements $\mathbf{u}^B$ and $\mathbf{u}^D$ become unknowns.
+#
+# This changes how the corners enter the problem. Under strain control $\mathbf{u}^B$, $\mathbf{u}^D$ are known:
+# they are Dirichlet values on the corners, and enter the periodic constraints as their constant.
+# Under stress control they are unknowns: the corners become masters of the periodic constraints,
+# and the prescribed stress enters the right-hand side of the equations as point forces on their
+# degrees of freedom, derived below. Each corner degree of freedom gets either a prescribed
+# displacement or a prescribed force, never both.
+#
+# | | strain control | stress control |
+# |---|---|---|
+# | $\mathbf{u}^B$, $\mathbf{u}^D$ | prescribed, Dirichlet conditions | unknowns, masters of the constraints |
+# | periodic constraints | constant from $\mathbf{u}^B$, $\mathbf{u}^D$ | no constant |
+# | right-hand side | no load | point forces $A\bar S_{ij}$ on the corners |
 
 # ### Corner displacements
 #
-# The rigid rotation is removed with $u^B_2=0$, i.e. $\bar F_{21}=0$. By {eq}`eq:nl-corners`,
+# The energy of a neo-Hookean material is objective: a rigid rotation $\mathbf{R}$ of the deformed
+# cell turns $\bar{\mathbf{F}}$ into $\mathbf{R}\bar{\mathbf{F}}$, without changing the energy or
+# doing work. With $\bar{\mathbf{F}}$ unknown, nothing fixes this rotation. We remove it by
+# choosing the $\mathbf{R}$ that turns $\bar{\mathbf{F}}\mathbf{e}_1$ onto $\mathbf{e}_1$, which
+# makes $\bar F_{21}=0$, that is $u^B_2=0$. By {eq}`eq:nl-corners`,
 #
 # $$
 # \mathbf{u}^B = L\begin{pmatrix}\bar F_{11}-1\\ 0\end{pmatrix},\qquad
@@ -503,10 +525,13 @@ plot_cell(
 # ### The prescribed stress as nodal forces
 #
 # Let $\mathbf{T}=\mathbf{P}\mathbf{N}$ be the traction on $\partial\Omega$ in the reference
-# configuration. The tractions are anti-periodic,
+# configuration. The stress is periodic, while the outward normals $\mathbf{N}$ of opposite edges
+# are opposite, so the tractions are anti-periodic,
 # $\mathbf{T}(\mathbf{X}+L\mathbf{e}_1)=-\mathbf{T}(\mathbf{X})$ on RIGHT and LEFT, and likewise on
-# TOP and BOTTOM. For a field $\mathbf{v}$ that satisfies the constraints {eq}`eq:nl-periodic`
-# with $\mathbf{v}^A=\mathbf{0}$, the work of the tractions therefore reduces to
+# TOP and BOTTOM. A field $\mathbf{v}$ that satisfies the constraints {eq}`eq:nl-periodic` with
+# $\mathbf{v}^A=\mathbf{0}$ takes on RIGHT its values on LEFT plus $\mathbf{v}^B$, so the work of
+# the tractions on the two edges cancels but for $\mathbf{v}^B$, and likewise on TOP and BOTTOM
+# with $\mathbf{v}^D$:
 #
 # $$
 # \int_{\partial\Omega}\mathbf{T}\cdot\mathbf{v}\,\mathrm{d}S
@@ -514,10 +539,11 @@ plot_cell(
 # $$
 #
 # With $\operatorname{Div}\mathbf{P}=\mathbf{0}$, the divergence theorem gives
-# $\int_{\partial\Omega}T_iX_j\,\mathrm{d}S=|\Omega|\,\bar S_{ij}$, hence
-# $\int_{\text{RIGHT}}T_i\,\mathrm{d}S=A\bar S_{i1}$ and
-# $\int_{\text{TOP}}T_i\,\mathrm{d}S=A\bar S_{i2}$, with $A=|\Omega|/L$. The principle of virtual
-# work, with $\bar{\mathbf{S}}$ prescribed, becomes
+# $\int_{\partial\Omega}T_iX_j\,\mathrm{d}S=\int_\Omega P_{ij}\,\mathrm{d}\Omega=|\Omega|\,\bar S_{ij}$.
+# For $j=1$, $X_1=L$ on RIGHT and $X_1=0$ on LEFT, while on TOP and BOTTOM the anti-periodic
+# tractions cancel at each $X_1$. Hence $\int_{\text{RIGHT}}T_i\,\mathrm{d}S=A\bar S_{i1}$, and
+# likewise $\int_{\text{TOP}}T_i\,\mathrm{d}S=A\bar S_{i2}$, with $A=|\Omega|/L$ the length of an
+# edge. The principle of virtual work, with $\bar{\mathbf{S}}$ prescribed, becomes
 #
 # $$
 # \int_\Omega \mathbf{P}(\mathbf{F}):\nabla\mathbf{v}\,\mathrm{d}\Omega
@@ -535,8 +561,8 @@ plot_cell(
 # | $u^D_2=L(\bar F_{22}-1)$ | force $A\bar S_{22}$ |
 #
 # $\bar{\mathbf{S}}$ is not symmetric, and only three of its components are independent: the
-# balance of moments requires $\bar{\mathbf{S}}\bar{\mathbf{F}}^T$ to be symmetric. $\bar S_{21}$
-# is the reaction at $u^B_2$.
+# balance of moments requires $\bar{\mathbf{S}}\bar{\mathbf{F}}^T$ to be symmetric. The reaction at
+# $u^B_2$ is $A\bar S_{21}$, which that balance determines from the other three.
 
 # ### Constraints with free masters
 #
