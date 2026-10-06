@@ -173,7 +173,7 @@ def create_dictionary_constraint(
             other_procs = other_procs[other_procs != proc]
             # Loop through all owned slaves and ghosts, and update
             # the master entries
-            for pair in [[0, 1], [1, 0]]:
+            for pair in [[0, 1], [1, 0], [1, 1]]:
                 i, j = pair
                 for slave in recv[proc][i].keys():
                     for o_proc in other_procs:
