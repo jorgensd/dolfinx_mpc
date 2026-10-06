@@ -19,6 +19,7 @@
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <iterator>
+#include <limits>
 #include <mpi.h>
 #include <numeric>
 #include <span>
@@ -241,8 +242,8 @@ evaluate_basis_in_cells(const dolfinx::fem::FunctionSpace<U>& V,
 /// @param[in] cells The cells (local to the process) to search
 /// @param[in] points The points, shape `(num_points, 3)`, row major
 /// @param[in] padding Padding of the bounding boxes of the cells
-/// @param[in] eps2 Largest squared distance from a point to its cell. Also
-/// the tolerance of the pull-back on non-affine cells.
+/// @param[in] eps2 Largest squared distance from a point to its cell. The
+/// pull-back on non-affine cells stops at `max(eps2, 500 eps)`.
 /// @param[in] to_parent The dof in `parent` of each (unrolled) local dof of
 /// `V`. Empty if `parent` is `V`.
 /// @param[in] parent The space numbering the dofs
@@ -263,10 +264,16 @@ point_basis<U> evaluate_basis_at_points(
   const dolfinx::geometry::BoundingBoxTree<U> process_tree
       = tree.create_global_tree(comm);
 
+  // The pull-back stops when its Newton step, in reference coordinates, is
+  // below this. Rounding keeps the step above a multiple of the machine
+  // epsilon, which a squared distance such as eps2 = 1e-20 is below.
+  const U pull_back_tol
+      = std::max(eps2, 500 * std::numeric_limits<U>::epsilon());
+
   const std::vector<std::int32_t> local
       = find_local_collisions<U>(mesh, tree, points, eps2);
-  point_basis<U> out = evaluate_basis_in_cells<U>(V, points, local, to_parent,
-                                                  parent, eps2, num_threads);
+  point_basis<U> out = evaluate_basis_in_cells<U>(
+      V, points, local, to_parent, parent, pull_back_tol, num_threads);
 
   // Ask the processes whose cells' bounding box holds a point not found here
   std::vector<std::int32_t> missing;
@@ -304,7 +311,7 @@ point_basis<U> evaluate_basis_at_points(
   const std::vector<std::int32_t> recv_cells
       = find_local_collisions<U>(mesh, tree, recv_x, eps2);
   const point_basis<U> remote = evaluate_basis_in_cells<U>(
-      V, recv_x, recv_cells, to_parent, parent, eps2, num_threads);
+      V, recv_x, recv_cells, to_parent, parent, pull_back_tol, num_threads);
   const int width = out.num_dofs * out.bs;
   std::vector<int> reply_dest;
   std::vector<std::int64_t> reply;
