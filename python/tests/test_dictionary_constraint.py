@@ -1,4 +1,4 @@
-# Copyright (C) 2026 Jørgen S. Dokken
+# Copyright (C) 2026 Jørgen S. Dokken and Maria Bruno
 #
 # This file is part of DOLFINX_MPC
 #
