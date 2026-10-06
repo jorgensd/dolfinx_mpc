@@ -1335,13 +1335,16 @@ ritz = tuple(np.array([[quadratic(i, j, kinetic) for j in range(2)] for i in ran
 def swing(M_phi: np.ndarray, K_phi: np.ndarray) -> np.ndarray:
     """The turns of a rigid double pendulum, stepped as the beams were."""
     step_matrix = np.linalg.inv(4 / dt**2 * M_phi + K_phi)
-    phi, phi_dot = np.array([theta_1, theta_1 + theta_2]), np.zeros(2)
-    turns = [phi]
-    for _ in range(num_steps):
-        phi_new = step_matrix @ (4 / dt**2 * M_phi @ phi + 4 / dt * M_phi @ phi_dot - K_phi @ phi)
-        phi = phi_new
-        turns.append(phi)
-    return np.array(turns)
+    phi, phi_dot, phi_new = np.array([theta_1, theta_1 + theta_2]), np.zeros(2), np.zeros(2)
+    # The initial turns, and those after each step
+    turns = np.zeros((num_steps + 1, 2))
+    turns[0] = phi
+    for step in range(1, num_steps + 1):
+        phi_new[:] = step_matrix @ (4 / dt**2 * M_phi @ phi + 4 / dt * M_phi @ phi_dot - K_phi @ phi)
+        phi_dot[:] = 2 / dt * (phi_new - phi) - phi_dot
+        phi[:] = phi_new
+        turns[step] = phi
+    return turns
 
 
 turns = np.array(history)[:, 1:]
