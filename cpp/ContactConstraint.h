@@ -111,11 +111,18 @@ mpc_data<T> create_contact_slip_condition(
   const point_basis<U> basis = evaluate_basis_at_points<U>(
       V, master_cells, points, std::sqrt(eps2), eps2, {}, V, num_threads);
 
-  std::vector<std::int64_t> masters;
-  std::vector<T> coeffs;
-  std::vector<std::int32_t> owners;
-  std::vector<std::int32_t> num_masters(local_slaves.size(), 0);
+  // A slave has at most the other components of its block, and every
+  // component-matched dof of its master cell, as masters
   const int width = basis.num_dofs * block_size;
+  const std::size_t max_masters
+      = local_slaves.size() * (block_size - 1 + width);
+  std::vector<std::int64_t> masters;
+  masters.reserve(max_masters);
+  std::vector<T> coeffs;
+  coeffs.reserve(max_masters);
+  std::vector<std::int32_t> owners;
+  owners.reserve(max_masters);
+  std::vector<std::int32_t> num_masters(local_slaves.size(), 0);
   std::int32_t num_missing = 0;
   for (std::size_t i = 0; i < local_slaves.size(); ++i)
   {
@@ -201,7 +208,7 @@ mpc_data<T> create_contact_inelastic_condition(
       = dolfinx::mesh::compute_incident_entities(
           *meshtags.topology(), meshtags.find(master_marker), meshtags.dim(),
           meshtags.topology()->dim());
-  return _create_periodic_condition<T, U>(
+  return impl::_create_periodic_condition<T, U>(
       V, locate_tagged_blocks<U>(V, meshtags, slave_marker),
       [](std::span<const U> x) { return std::vector<U>(x.begin(), x.end()); },
       T(1), {}, V, master_cells, std::sqrt(eps2), eps2, U(1e-6),
