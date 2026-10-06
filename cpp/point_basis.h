@@ -276,8 +276,11 @@ point_basis<U> evaluate_basis_at_points(
       V, points, local, to_parent, parent, pull_back_tol, num_threads);
 
   // Ask the processes whose cells' bounding box holds a point not found here
+  const std::size_t num_missing = std::ranges::count(out.found, 0);
   std::vector<std::int32_t> missing;
+  missing.reserve(num_missing);
   std::vector<U> missing_x;
+  missing_x.reserve(3 * num_missing);
   for (std::size_t i = 0; i < out.found.size(); ++i)
   {
     if (!out.found[i])
@@ -289,9 +292,14 @@ point_basis<U> evaluate_basis_at_points(
   }
   const dolfinx::graph::AdjacencyList<std::int32_t> candidates
       = dolfinx::geometry::compute_collisions<U>(process_tree, missing_x);
+  // At most one query per candidate process of each point
+  const std::size_t max_queries = candidates.array().size();
   std::vector<int> dest;
+  dest.reserve(max_queries);
   std::vector<std::int64_t> query;
+  query.reserve(max_queries);
   std::vector<U> query_x;
+  query_x.reserve(3 * max_queries);
   for (std::size_t i = 0; i < missing.size(); ++i)
   {
     for (std::int32_t p : candidates.links(i))
@@ -313,9 +321,13 @@ point_basis<U> evaluate_basis_at_points(
   const point_basis<U> remote = evaluate_basis_in_cells<U>(
       V, recv_x, recv_cells, to_parent, parent, pull_back_tol, num_threads);
   const int width = out.num_dofs * out.bs;
+  // At most one reply per query received
   std::vector<int> reply_dest;
+  reply_dest.reserve(recv_query.size());
   std::vector<std::int64_t> reply;
+  reply.reserve(recv_query.size() * (1 + 2 * width));
   std::vector<U> reply_values;
+  reply_values.reserve(recv_query.size() * out.num_dofs);
   for (std::size_t j = 0; j < recv_query.size(); ++j)
   {
     if (!remote.found[j])
