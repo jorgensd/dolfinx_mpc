@@ -61,7 +61,6 @@ def _edge_periodic(space, atol):
         lambda x: np.isclose(x[1], 1.0, atol=atol),
         lambda x: np.vstack([x[0], 1.0 - x[1], x[2]]),
         [],
-        tol=atol,
     )
     mpc.finalize()
     return mpc
@@ -113,7 +112,6 @@ def test_submesh_coupling_with_slaves(ghost_mode):
         lambda x: np.isclose(x[0], 1.0, atol=atol),
         lambda x: np.vstack([x[0] - 1.0, x[1], x[2]]),
         [],
-        tol=atol,
     )
     mpc_V.finalize()
     mpc_bar = dolfinx_mpc.MultiPointConstraint(Vbar)

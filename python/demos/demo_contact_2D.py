@@ -31,7 +31,7 @@ from dolfinx.log import LogLevel, set_log_level
 from dolfinx.mesh import locate_entities_boundary, meshtags
 from ufl import Identity, Measure, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
-from create_and_export_mesh import gmsh_2D_stacked, mesh_2D_dolfin
+from create_and_export_mesh import CONTACT_GAP, gmsh_2D_stacked, mesh_2D_dolfin
 from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx_mpc.utils import (
     compare_mpc_lhs,
@@ -120,9 +120,12 @@ def demo_stacked_cubes(
 
     # Create multi point constraint
     mpc = MultiPointConstraint(V)
+    # The gmsh boxes are CONTACT_GAP apart, so that gmsh meshes them separately: the largest distance
+    # from a slave to a master cell must exceed the gap as well as the rounding of the coordinates
+    distance_tol = max(100 * CONTACT_GAP, 500 * np.finfo(default_real_type).eps)
 
     with Timer("~Contact: Create contact constraint"):
-        mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=tol, allow_missing_masters=True)
+        mpc.create_contact_inelastic_condition(mt, 4, 9, allow_missing_masters=True, distance_tol=distance_tol)
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
         mpc.create_slip_constraint(V, (mt, 5), bottom_normal, bcs=bcs)

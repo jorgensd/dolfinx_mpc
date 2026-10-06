@@ -70,13 +70,14 @@ bc = fem.dirichletbc(g, fem.locate_dofs_geometrical(V, left))
 # -
 
 # The masters of a constraint are fixed when it is created. By default, a master
-# whose coefficient is below `tol` is dropped, and could then never be given a
-# coefficient later. Passing `tol=None` keeps every master. It comes at a cost,
+# whose coefficient is below `coefficient_tol` times the largest of its slave is
+# dropped, and could then never be given a coefficient later. Passing
+# `coefficient_tol=0` keeps every master. It comes at a cost,
 # as each master is a ghost and an entry of the sparsity pattern:
 
 # +
 mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype, bcs=[bc])
-mpc.create_periodic_constraint_geometrical(V, right, periodic_relation, [bc], scale=dtype(1), tol=None)
+mpc.create_periodic_constraint_geometrical(V, right, periodic_relation, [bc], scale=dtype(1), coefficient_tol=0)
 mpc.finalize()
 
 mpc_cut = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype, bcs=[bc])
@@ -86,7 +87,7 @@ mpc_cut.finalize()
 num_masters = mesh.comm.allreduce(len(mpc.all_masters()), op=MPI.SUM)
 num_masters_cut = mesh.comm.allreduce(len(mpc_cut.all_masters()), op=MPI.SUM)
 if mesh.comm.rank == 0:
-    print(f"Masters with tol=None: {num_masters}, with the default tol: {num_masters_cut}")
+    print(f"Masters with coefficient_tol=0: {num_masters}, with the default: {num_masters_cut}")
 # -
 
 # For a P1 space every slave gets the three vertices of the cell its periodic

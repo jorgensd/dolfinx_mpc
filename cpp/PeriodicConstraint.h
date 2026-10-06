@@ -15,11 +15,11 @@
 #include <dolfinx/fem/utils.h>
 #include <dolfinx/mesh/Mesh.h>
 #include <dolfinx/mesh/MeshTags.h>
+#include <format>
 #include <functional>
 #include <iterator>
-#include <limits>
+#include <mpi.h>
 #include <numeric>
-#include <optional>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -47,9 +47,12 @@ namespace impl
 /// collapsed)
 /// @param[in] master_cells The cells (local to the process) to search for the
 /// masters
-/// @param[in] padding Padding of the bounding boxes of the master cells
-/// @param[in] eps2 Largest squared distance from a point to its cell
-/// @param[in] cut If set, a coefficient of magnitude at most `cut` is dropped
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
 /// @param[in] allow_missing If true, a slave whose point is in no master cell
 /// is not constrained. Otherwise it raises on every process.
 /// @param[in] num_threads The number of threads to use for certain operations.
@@ -62,8 +65,8 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     const std::function<std::vector<U>(std::span<const U>)>& relation, T scale,
     std::span<const std::int32_t> to_parent,
     const dolfinx::fem::FunctionSpace<U>& parent_space,
-    std::span<const std::int32_t> master_cells, U padding, U eps2,
-    std::optional<U> cut, bool allow_missing, std::size_t num_threads)
+    std::span<const std::int32_t> master_cells, U distance_tol,
+    U coefficient_tol, bool allow_missing, std::size_t num_threads)
 {
   const dolfinx::mesh::Mesh<U>& mesh = *V.mesh();
   const int bs = V.dofmap()->index_map_bs();
@@ -93,9 +96,9 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   }
 
   const dolfinx_mpc::point_basis<U> basis
-      = dolfinx_mpc::evaluate_basis_at_points<U>(V, master_cells, points,
-                                                 padding, eps2, to_parent,
-                                                 parent_space, num_threads);
+      = dolfinx_mpc::evaluate_basis_at_points<U>(
+          V, master_cells, points, distance_tol, distance_tol * distance_tol,
+          to_parent, parent_space, num_threads);
 
   // Component b of a slave is tied to component b of the masters
   // A slave component has at most one master per dof of its master cell
@@ -111,6 +114,9 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
   owners.reserve(max_masters);
   std::vector<std::int32_t> num_masters;
   num_masters.reserve(local_blocks.size() * bs);
+  std::vector<std::int64_t> row_masters(basis.num_dofs);
+  std::vector<T> row_coeffs(basis.num_dofs);
+  std::vector<std::int32_t> row_owners(basis.num_dofs);
   std::int32_t num_missing = 0;
   for (std::size_t i = 0; i < local_blocks.size(); ++i)
   {
@@ -122,19 +128,15 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     for (int b = 0; b < bs; ++b)
     {
       slaves.push_back(parent(local_blocks[i] * bs + b));
-      std::int32_t num = 0;
       for (int j = 0; j < basis.num_dofs; ++j)
       {
-        if (const T val = scale * basis.values[i * basis.num_dofs + j];
-            !cut or std::abs(val) > *cut)
-        {
-          masters.push_back(basis.dofs[i * width + j * bs + b]);
-          owners.push_back(basis.owners[i * width + j * bs + b]);
-          coeffs.push_back(val);
-          ++num;
-        }
+        row_masters[j] = basis.dofs[i * width + j * bs + b];
+        row_coeffs[j] = scale * basis.values[i * basis.num_dofs + j];
+        row_owners[j] = basis.owners[i * width + j * bs + b];
       }
-      num_masters.push_back(num);
+      num_masters.push_back(dolfinx_mpc::append_significant_masters<T, U>(
+          row_masters, row_coeffs, row_owners, coefficient_tol, masters, coeffs,
+          owners));
     }
   }
   if (!allow_missing)
@@ -146,7 +148,7 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
       throw std::runtime_error(std::format(
           "No masters found for {} slave block(s): their points are in none "
           "of the master cells. Make sure that the surfaces are in contact, or "
-          "increase eps2.",
+          "increase distance_tol.",
           num_missing));
     }
   }
@@ -169,12 +171,12 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 /// `V`. Empty if `V` is not collapsed.
 /// @param[in] parent_space The parent space (The same space as V if not
 /// collapsed)
-/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
-/// contribution that is less than this value is ignored. The tolerance is also
-/// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom. If unset, every basis
-/// value is kept (so the coefficients can later be rescaled without losing
-/// masters) and the padding defaults to 500 machine epsilon.
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
 /// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
@@ -183,18 +185,16 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     std::span<const std::int32_t> slave_blocks,
     const std::function<std::vector<U>(std::span<const U>)>& relation, T scale,
     std::span<const std::int32_t> to_parent,
-    const dolfinx::fem::FunctionSpace<U>& parent_space, std::optional<U> tol,
-    std::size_t num_threads)
+    const dolfinx::fem::FunctionSpace<U>& parent_space, U distance_tol,
+    U coefficient_tol, std::size_t num_threads)
 {
-  // Bounding box padding is needed even when no coefficient is cut
-  const U padding = tol.value_or(500 * std::numeric_limits<U>::epsilon());
   const int tdim = V.mesh()->topology()->dim();
   std::vector<std::int32_t> cells(
       V.mesh()->topology()->index_map(tdim)->size_local());
   std::iota(cells.begin(), cells.end(), 0);
   return _create_periodic_condition<T, U>(
-      V, slave_blocks, relation, scale, to_parent, parent_space, cells, padding,
-      padding, tol, true, num_threads);
+      V, slave_blocks, relation, scale, to_parent, parent_space, cells,
+      distance_tol, coefficient_tol, true, num_threads);
 }
 
 /// Create a periodic MPC condition given a geometrical relation between the
@@ -207,12 +207,12 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 /// @param[in] scale Scaling of the periodic condition
 /// @param[in] collapse If true, the list of marked dofs is in the collapsed
 /// input space
-/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
-/// contribution that is less than this value is ignored. The tolerance is also
-/// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom. If unset, every basis
-/// value is kept (so the coefficients can later be rescaled without losing
-/// masters) and the padding defaults to 500 machine epsilon.
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
 /// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
@@ -226,7 +226,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
         indicator,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+    T scale, bool collapse, U distance_tol, U coefficient_tol,
+    std::size_t num_threads)
 {
   std::vector<std::int32_t> reduced_blocks;
   if (collapse)
@@ -258,8 +259,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
     reduced_blocks.shrink_to_fit();
 
     return _create_periodic_condition<T>(V_sub, reduced_blocks, relation, scale,
-                                         parent_map.front(), *V, tol,
-                                         num_threads);
+                                         parent_map.front(), *V, distance_tol,
+                                         coefficient_tol, num_threads);
   }
   else
   {
@@ -274,7 +275,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
       if (!bc_marker[i])
         reduced_blocks.push_back(slave_blocks[i]);
     return _create_periodic_condition<T>(*V, reduced_blocks, relation, scale,
-                                         {}, *V, tol, num_threads);
+                                         {}, *V, distance_tol, coefficient_tol,
+                                         num_threads);
   }
 }
 
@@ -290,12 +292,13 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
 /// @param[in] scale Scaling of the periodic condition
 /// @param[in] collapse If true, the list of marked dofs is in the collapsed
 /// input space
-/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
-/// contribution that is less than this value is ignored. The tolerance is also
-/// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom. If unset, every basis
-/// value is kept (so the coefficients can later be rescaled without losing
-/// masters) and the padding defaults to 500 machine epsilon.
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
+/// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> topological_condition(
@@ -304,7 +307,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const std::int32_t tag,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+    T scale, bool collapse, U distance_tol, U coefficient_tol,
+    std::size_t num_threads)
 {
   std::vector<std::int32_t> entities = meshtag->find(tag);
   V->mesh()->topology_mutable()->create_connectivity(
@@ -339,8 +343,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     reduced_blocks.shrink_to_fit();
 
     return _create_periodic_condition<T>(V_sub, reduced_blocks, relation, scale,
-                                         parent_map.front(), *V, tol,
-                                         num_threads);
+                                         parent_map.front(), *V, distance_tol,
+                                         coefficient_tol, num_threads);
   }
   else
   {
@@ -355,153 +359,85 @@ dolfinx_mpc::mpc_data<T> topological_condition(
       if (!bc_marker[i])
         reduced_blocks.push_back(slave_blocks[i]);
     return _create_periodic_condition<T, U>(*V, reduced_blocks, relation, scale,
-                                            {}, *V, tol, num_threads);
+                                            {}, *V, distance_tol,
+                                            coefficient_tol, num_threads);
   }
 };
 
 } // namespace impl
 
 namespace dolfinx_mpc
-
 {
-inline mpc_data<double> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
+/// Create a periodic condition on the dofs whose coordinates are marked by
+/// `indicator`, mapped to the points of their masters by `relation`.
+/// @param[in] V The input function space (possibly a sub space)
+/// @param[in] indicator Function marking tabulated degrees of freedom
+/// @param[in] relation Function relating coordinates of the slave surface to
+/// the master surface
+/// @param[in] bcs List of Dirichlet BCs on the input space
+/// @param[in] scale Scaling of the periodic condition
+/// @param[in] collapse If true, the list of marked dofs is in the collapsed
+/// input space
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
+/// @param[in] num_threads The number of threads to use for certain operations.
+/// @returns The multi point constraint
+/// @note Collective.
+template <typename T, std::floating_point U>
+mpc_data<T> create_periodic_condition_geometrical(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
     const std::function<std::vector<std::int8_t>(
         MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const double,
-            MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                std::size_t, 3,
-                MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>& indicator,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
-        bcs,
-    double scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::geometrical_condition<double, double>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-inline mpc_data<std::complex<double>> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::function<std::vector<std::int8_t>(
-        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const double,
-            MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                std::size_t, 3,
-                MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>& indicator,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
-        bcs,
-    std::complex<double> scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::geometrical_condition<std::complex<double>, double>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-inline mpc_data<double> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
-    const std::int32_t tag,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
-        bcs,
-    double scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::topological_condition<double, double>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-inline mpc_data<std::complex<double>> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
-    const std::int32_t tag,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
-        bcs,
-    std::complex<double> scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::topological_condition<std::complex<double>, double>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-inline mpc_data<float> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
-    const std::function<std::vector<std::int8_t>(
-        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const float, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                             std::size_t, 3,
-                             MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
+            const U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+                         std::size_t, 3,
+                         MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
         indicator,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
-        bcs,
-    float scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
+    const std::function<std::vector<U>(std::span<const U>)>& relation,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
+    T scale, bool collapse, U distance_tol = default_tolerance<U>(),
+    U coefficient_tol = default_tolerance<U>(), std::size_t num_threads = 1)
 {
-  return impl::geometrical_condition<float, float>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
+  return impl::geometrical_condition<T, U>(V, indicator, relation, bcs, scale,
+                                           collapse, distance_tol,
+                                           coefficient_tol, num_threads);
 }
 
-inline mpc_data<std::complex<float>> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
-    const std::function<std::vector<std::int8_t>(
-        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const float, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                             std::size_t, 3,
-                             MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
-        indicator,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
-        bcs,
-    std::complex<float> scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::geometrical_condition<std::complex<float>, float>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-inline mpc_data<float> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
+/// Create a periodic condition on the dofs of the entities tagged with `tag`,
+/// mapped to the points of their masters by `relation`.
+/// @param[in] V The input function space (possibly a sub space)
+/// @param[in] meshtag Meshtag with set of entities
+/// @param[in] tag The value of the tagged entities of the slaves
+/// @param[in] relation Function relating coordinates of the slave surface to
+/// the master surface
+/// @param[in] bcs List of Dirichlet BCs on the input space
+/// @param[in] scale Scaling of the periodic condition
+/// @param[in] collapse If true, the list of marked dofs is in the collapsed
+/// input space
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
+/// @param[in] num_threads The number of threads to use for certain operations.
+/// @returns The multi point constraint
+/// @note Collective.
+template <typename T, std::floating_point U>
+mpc_data<T> create_periodic_condition_topological(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
-        bcs,
-    float scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
+    const std::function<std::vector<U>(std::span<const U>)>& relation,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
+    T scale, bool collapse, U distance_tol = default_tolerance<U>(),
+    U coefficient_tol = default_tolerance<U>(), std::size_t num_threads = 1)
 {
-  return impl::topological_condition<float, float>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
+  return impl::topological_condition<T, U>(V, meshtag, tag, relation, bcs,
+                                           scale, collapse, distance_tol,
+                                           coefficient_tol, num_threads);
 }
-
-inline mpc_data<std::complex<float>> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
-    const std::int32_t tag,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
-        bcs,
-    std::complex<float> scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::topological_condition<std::complex<float>, float>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
-}
-
 } // namespace dolfinx_mpc

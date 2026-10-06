@@ -41,11 +41,15 @@ def test_multiple_mpc_spaces_sparsity(cell_type, deg, N):
         return out
 
     mpc_u = dolfinx_mpc.MultiPointConstraint(V)
-    mpc_u.create_periodic_constraint_geometrical(V, periodic_boundary, periodic_map, [], tol=atol)
+    mpc_u.create_periodic_constraint_geometrical(
+        V, periodic_boundary, periodic_map, [], distance_tol=atol, coefficient_tol=atol
+    )
     mpc_u.finalize()
 
     mpc_p = dolfinx_mpc.MultiPointConstraint(Q)
-    mpc_p.create_periodic_constraint_geometrical(Q, periodic_boundary, periodic_map, [], tol=atol)
+    mpc_p.create_periodic_constraint_geometrical(
+        Q, periodic_boundary, periodic_map, [], distance_tol=atol, coefficient_tol=atol
+    )
     mpc_p.finalize()
 
     # Stokes weak form

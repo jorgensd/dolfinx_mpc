@@ -364,7 +364,8 @@ void declare_mpc_data(nb::module_& m, std::string type)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+         T scale, bool collapse, U distance_tol, U coefficient_tol,
+         std::size_t num_threads)
       {
         auto _indicator
             = [&indicator](MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -391,11 +392,12 @@ void declare_mpc_data(nb::module_& m, std::string type)
           std::vector<U> output(v.data(), v.data() + v.size());
           return output;
         };
-        return dolfinx_mpc::create_periodic_condition_geometrical(
-            V, _indicator, _relation, bcs, scale, collapse, tol, num_threads);
+        return dolfinx_mpc::create_periodic_condition_geometrical<T, U>(
+            V, _indicator, _relation, bcs, scale, collapse, distance_tol,
+            coefficient_tol, num_threads);
       },
       "V"_a, "indicator"_a, "relation"_a, "bcs"_a, "scale"_a, "collapse"_a,
-      "tol"_a, "num_threads"_a);
+      "distance_tol"_a, "coefficient_tol"_a, "num_threads"_a);
   m.def(
       ("create_periodic_constraint_topological_" + type).c_str(),
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
@@ -405,7 +407,8 @@ void declare_mpc_data(nb::module_& m, std::string type)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+         T scale, bool collapse, U distance_tol, U coefficient_tol,
+         std::size_t num_threads)
       {
         auto _relation = [&relation](std::span<const U> x) -> std::vector<U>
         {
@@ -415,12 +418,12 @@ void declare_mpc_data(nb::module_& m, std::string type)
           std::vector<U> output(v.data(), v.data() + v.size());
           return output;
         };
-        return dolfinx_mpc::create_periodic_condition_topological(
-            V, meshtags, dim, _relation, bcs, scale, collapse, tol,
-            num_threads);
+        return dolfinx_mpc::create_periodic_condition_topological<T, U>(
+            V, meshtags, dim, _relation, bcs, scale, collapse, distance_tol,
+            coefficient_tol, num_threads);
       },
       "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a, "scale"_a,
-      "collapse"_a, "tol"_a, "num_threads"_a);
+      "collapse"_a, "distance_tol"_a, "coefficient_tol"_a, "num_threads"_a);
 
   // The scalar type cannot be deduced from the arguments, so it is in the name
   m.def(

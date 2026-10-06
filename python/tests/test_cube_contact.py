@@ -28,6 +28,8 @@ import dolfinx_mpc.utils
 from dolfinx_mpc.container import _cpp_function
 
 theta = np.pi / 5
+# The gap between the boxes, so that gmsh meshes them separately rather than fusing them
+_gap = 1e-12
 
 
 @pytest.fixture
@@ -58,7 +60,7 @@ def generate_hex_boxes():
 
         # Set mesh size at point
         gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0, numElements=[int(1 / (2 * res))], recombine=True)
-        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12, numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - _gap, numElements=[int(1 / (2 * res))], recombine=True)
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
@@ -237,13 +239,15 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
 
     # Create MPC contact condition and assemble matrices
     mpc = dolfinx_mpc.MultiPointConstraint(V)
+    # The slaves are at most the gap from the master cells, up to rounding
+    distance_tol = max(100 * _gap, 500 * np.finfo(mesh.geometry.x.dtype).eps)
     if nonslip:
         with Timer("~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=500 * np.finfo(default_scalar_type).resolution)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, distance_tol=distance_tol)
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=500 * np.finfo(default_scalar_type).resolution)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, distance_tol=distance_tol)
 
     mpc.finalize()
 
@@ -321,35 +325,33 @@ def test_contact_missing_masters():
     order = np.argsort(facets)
     mt = dolfinx.mesh.meshtags(mesh, fdim, facets[order], values[order])
 
-    # The squared-distance tolerance is also the pull-back tolerance on the quadrilaterals, so it
-    # must be reachable in the working precision
-    eps2 = float(100 * np.finfo(default_real_type).eps)
-    nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1, eps2=eps2)
+    # The default distance tolerance follows the precision of the mesh
+    nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
     with pytest.raises(RuntimeError, match="No masters found"):
-        dolfinx_mpc.MultiPointConstraint(V).create_contact_slip_condition(mt, 1, 2, nh, eps2=eps2)
+        dolfinx_mpc.MultiPointConstraint(V).create_contact_slip_condition(mt, 1, 2, nh)
     with pytest.raises(RuntimeError, match="No masters found"):
         dolfinx_mpc.MultiPointConstraint(V).create_contact_inelastic_condition(mt, 1, 2)
 
-    eps2 = float(500 * np.finfo(default_real_type).resolution)
+    tol = float(500 * np.finfo(default_real_type).eps)
     create_inelastic = _cpp_function("create_contact_inelastic_condition", default_real_type)
-    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, eps2, True, 1)
+    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, tol, tol, True, 1)
     slaves = np.asarray(data.slaves)
     owned = slaves[slaves < V.dofmap.index_map.size_local * bs]
     x = V.tabulate_dof_coordinates()[owned // bs]
     assert comm.allreduce(len(owned), op=MPI.SUM) == 2 * bs
-
     # The coordinates of the dofs are rounded in the precision of the mesh
-    assert np.allclose(x[:, 1], 0, atol=eps2)
-    assert np.all(np.isclose(x[:, 0], 0, atol=eps2) | np.isclose(x[:, 0], 0.25, atol=eps2))
+    tol = 100 * np.finfo(default_real_type).eps
+    assert np.allclose(x[:, 1], 0, atol=tol)
+    assert np.all(np.isclose(x[:, 0], 0, atol=tol) | np.isclose(x[:, 0], 0.25, atol=tol))
 
 
 def test_contact_pull_back_on_quadrilaterals():
-    """The pull-back of a slave point into a non-affine master cell converges for any eps2.
+    """The pull-back of a slave point into a non-affine master cell converges for any distance_tol.
 
-    eps2 is a squared distance, and used to be the tolerance of the pull-back's Newton steps as
-    well, which rounding can keep them from reaching: eps2 = 1e-20 then failed to converge. It did
-    for the P2 dof at the middle of a cell's edge. The mesh is in double precision, where a squared
-    distance of 1e-20 still finds the cells.
+    The squared distance tolerance used to be the tolerance of the pull-back's Newton steps as
+    well, which rounding can keep them from reaching: distance_tol = 1e-10, a squared distance of
+    1e-20, then failed to converge. It did for the P2 dof at the middle of a cell's edge. The mesh
+    is in double precision, where a distance of 1e-10 still finds the cells.
     """
     comm = MPI.COMM_WORLD
     mesh = dolfinx.mesh.create_unit_square(comm, 4, 4, dolfinx.mesh.CellType.quadrilateral, dtype=np.float64)
@@ -364,10 +366,11 @@ def test_contact_pull_back_on_quadrilaterals():
 
     # The slaves at x = 0, 0.125 and 0.25 are in cells along the left edge, the others in none. The
     # slave at the corner is also a master, so the constraint is not finalized.
-    eps2 = 1e-20
+    distance_tol = 1e-10
+    coefficient_tol = float(500 * np.finfo(np.float64).eps)
     bs = V.dofmap.index_map_bs
     create_inelastic = _cpp_function("create_contact_inelastic_condition", np.float64)
-    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, eps2, True, 1)
+    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, distance_tol, coefficient_tol, True, 1)
     slaves = np.asarray(data.slaves)
     assert comm.allreduce(np.sum(slaves < V.dofmap.index_map.size_local * bs), op=MPI.SUM) == 3 * bs
 
@@ -376,4 +379,6 @@ def test_contact_pull_back_on_quadrilaterals():
     nh = fem.Function(V, dtype=np.float64)
     nh.x.array.reshape(-1, 2)[:, 1] = -1.0
     with pytest.raises(RuntimeError, match="No masters found"):
-        dolfinx_mpc.MultiPointConstraint(V, dtype=np.float64).create_contact_slip_condition(mt, 1, 2, nh, eps2=eps2)
+        dolfinx_mpc.MultiPointConstraint(V, dtype=np.float64).create_contact_slip_condition(
+            mt, 1, 2, nh, distance_tol=distance_tol
+        )
