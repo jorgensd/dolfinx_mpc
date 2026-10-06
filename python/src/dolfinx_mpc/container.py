@@ -1,4 +1,5 @@
-from typing import Union
+import warnings
+from typing import Callable, Optional, Union
 
 import dolfinx
 import numpy
@@ -26,6 +27,47 @@ _mpc_classes = Union[
     dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float,
 ]
 _float_classes = Union[numpy.float32, numpy.float64, numpy.complex128, numpy.complex64]
+
+_type_names = {
+    numpy.float32: "float",
+    numpy.float64: "double",
+    numpy.complex64: "complex_float",
+    numpy.complex128: "complex_double",
+}
+
+
+class _Unset:
+    """The default of a deprecated argument, to tell whether it was passed."""
+
+    def __repr__(self) -> str:
+        return "<unset>"
+
+
+_UNSET = _Unset()
+
+
+def _deprecated(old: str, new: str, stacklevel: int = 3):
+    """Warn that the argument `old` is deprecated in favour of `new`, at the caller of the public
+    function `stacklevel - 2` frames up."""
+    warnings.warn(f"`{old}` is deprecated, use {new} instead.", DeprecationWarning, stacklevel=stacklevel)
+
+
+def _default_tolerance(dtype: npt.DTypeLike) -> float:
+    """The default distance and coefficient tolerance: 500 machine epsilon of the real type of `dtype`.
+
+    Mirrors `dolfinx_mpc::default_tolerance` in C++.
+    """
+    return float(500 * numpy.finfo(dtype).eps)
+
+
+def _tolerance(value: Optional[float], dtype: npt.DTypeLike) -> float:
+    """`value` as a Python float, by default :func:`_default_tolerance` of `dtype`."""
+    return _default_tolerance(dtype) if value is None else float(value)
+
+
+def _cpp_function(name: str, dtype: npt.DTypeLike) -> Callable:
+    """The C++ function `name` for constraints of scalar type `dtype`, bound as `name_<type>`."""
+    return getattr(dolfinx_mpc.cpp.mpc, f"{name}_{_type_names[numpy.dtype(dtype).type]}")
 
 
 def _scalar_type(real_type: npt.DTypeLike, dtype: npt.DTypeLike | None = None) -> type:

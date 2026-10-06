@@ -16,12 +16,10 @@ from mpi4py import MPI
 
 import numpy as np
 import pytest
-from dolfinx import default_real_type, default_scalar_type, fem
+from dolfinx import default_scalar_type, fem
 from dolfinx.mesh import CellType, create_unit_square, locate_entities_boundary
 
 import dolfinx_mpc
-
-_tol = 500 * np.finfo(default_real_type).eps
 
 
 def _space(n_x, n_y, cell_type, comm=MPI.COMM_WORLD):
@@ -37,7 +35,6 @@ def _periodic(V):
         lambda x: np.isclose(x[0], 1.0),
         lambda x: np.vstack((x[0] - 1.0, x[1], x[2])),
         [],
-        tol=_tol,
     )
     return mpc
 
@@ -203,9 +200,7 @@ def test_doubly_periodic_from_two_conditions():
             y[axis] -= 1.0
             return y
 
-        mpc.create_periodic_constraint_geometrical(
-            V, lambda x, axis=axis: np.isclose(x[axis], 1.0), relation, [], tol=_tol
-        )
+        mpc.create_periodic_constraint_geometrical(V, lambda x, axis=axis: np.isclose(x[axis], 1.0), relation, [])
     _raised_everywhere(MPI.COMM_WORLD, mpc.finalize, match="more than one constraint")
 
 

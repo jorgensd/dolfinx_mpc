@@ -11,6 +11,7 @@ dolfinx_mpc.egg-info
 debug
 *.png
 *.gif
+
 *results*
 *.msh
 CMakeFiles

@@ -4,496 +4,197 @@
 //
 // SPDX-License-Identifier:    MIT
 
-#include "ContactConstraint.h"
+#pragma once
+
+#include "point_basis.h"
+#include "utils.h"
+#include <algorithm>
+#include <cstdint>
 #include <dolfinx/fem/DirichletBC.h>
-#include <limits>
-#include <optional>
+#include <dolfinx/fem/FunctionSpace.h>
+#include <dolfinx/fem/utils.h>
+#include <dolfinx/mesh/Mesh.h>
+#include <dolfinx/mesh/MeshTags.h>
+#include <format>
+#include <functional>
+#include <iterator>
+#include <mpi.h>
+#include <numeric>
+#include <span>
+#include <stdexcept>
+#include <vector>
 
 namespace impl
 {
 
-/// Create a periodic MPC condition given a set of slave degrees of freedom
-/// (blocked wrt. the input function space)
+/// @brief Tie each slave block to the dofs at its mapped point, found in a
+/// cell among `master_cells`.
+///
+/// Component `b` of a slave is tied to component `b` of the masters, with the
+/// basis values at the point, scaled by `scale`, as coefficients. Periodic
+/// conditions map the slave coordinates by their relation; an inelastic
+/// contact condition is the identity relation, restricted to the cells at the
+/// master facets.
+///
 /// @param[in] V The input function space (possibly a collapsed sub space)
+/// @param[in] slave_blocks The slave blocks of `V`
+/// @param[in] relation Function mapping the coordinates of the slaves to the
+/// points of their masters
+/// @param[in] scale Scaling of the condition
+/// @param[in] to_parent The dof in `parent_space` of each (unrolled) dof of
+/// `V`. Empty if `V` is not collapsed.
+/// @param[in] parent_space The parent space (The same space as V if not
+/// collapsed)
+/// @param[in] master_cells The cells (local to the process) to search for the
+/// masters
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
+/// @param[in] allow_missing If true, a slave whose point is in no master cell
+/// is not constrained. Otherwise it raises on every process.
+/// @param[in] num_threads The number of threads to use for certain operations.
+/// @returns The multi point constraint
+/// @note Collective.
+template <typename T, std::floating_point U>
+dolfinx_mpc::mpc_data<T> _create_periodic_condition(
+    const dolfinx::fem::FunctionSpace<U>& V,
+    std::span<const std::int32_t> slave_blocks,
+    const std::function<std::vector<U>(std::span<const U>)>& relation, T scale,
+    std::span<const std::int32_t> to_parent,
+    const dolfinx::fem::FunctionSpace<U>& parent_space,
+    std::span<const std::int32_t> master_cells, U distance_tol,
+    U coefficient_tol, bool allow_missing, std::size_t num_threads)
+{
+  const dolfinx::mesh::Mesh<U>& mesh = *V.mesh();
+  const int bs = V.dofmap()->index_map_bs();
+  const std::int32_t size_local = V.dofmap()->index_map->size_local();
+  auto parent = [&to_parent](std::int32_t dof)
+  { return to_parent.empty() ? dof : to_parent[dof]; };
+
+  // Only work with local blocks
+  std::vector<std::int32_t> local_blocks;
+  local_blocks.reserve(slave_blocks.size());
+  std::ranges::copy_if(slave_blocks, std::back_inserter(local_blocks),
+                       [size_local](std::int32_t block)
+                       { return block < size_local; });
+
+  // Map the slave coordinates with the relation, to points of shape (n, 3)
+  std::vector<U> points(local_blocks.size() * 3);
+  {
+    std::vector<std::int32_t> slave_cells
+        = dolfinx_mpc::create_block_to_cell_map(*mesh.topology(), *V.dofmap(),
+                                                local_blocks);
+    auto [x, x_shape] = dolfinx_mpc::tabulate_dof_coordinates(
+        V, local_blocks, slave_cells, true, num_threads);
+    const std::vector<U> mapped_x = relation(x);
+    for (std::size_t i = 0; i < local_blocks.size(); ++i)
+      for (std::size_t j = 0; j < 3; ++j)
+        points[3 * i + j] = mapped_x[j * x_shape[1] + i];
+  }
+
+  const dolfinx_mpc::point_basis<U> basis
+      = dolfinx_mpc::evaluate_basis_at_points<U>(
+          V, master_cells, points, distance_tol, distance_tol * distance_tol,
+          to_parent, parent_space, num_threads);
+
+  // Component b of a slave is tied to component b of the masters
+  // A slave component has at most one master per dof of its master cell
+  const int width = basis.num_dofs * bs;
+  const std::size_t max_masters = local_blocks.size() * width;
+  std::vector<std::int32_t> slaves;
+  slaves.reserve(local_blocks.size() * bs);
+  std::vector<std::int64_t> masters;
+  masters.reserve(max_masters);
+  std::vector<T> coeffs;
+  coeffs.reserve(max_masters);
+  std::vector<std::int32_t> owners;
+  owners.reserve(max_masters);
+  std::vector<std::int32_t> num_masters;
+  num_masters.reserve(local_blocks.size() * bs);
+  std::vector<std::int64_t> row_masters(basis.num_dofs);
+  std::vector<T> row_coeffs(basis.num_dofs);
+  std::vector<std::int32_t> row_owners(basis.num_dofs);
+  std::int32_t num_missing = 0;
+  for (std::size_t i = 0; i < local_blocks.size(); ++i)
+  {
+    if (!basis.found[i])
+    {
+      ++num_missing;
+      continue;
+    }
+    for (int b = 0; b < bs; ++b)
+    {
+      slaves.push_back(parent(local_blocks[i] * bs + b));
+      for (int j = 0; j < basis.num_dofs; ++j)
+      {
+        row_masters[j] = basis.dofs[i * width + j * bs + b];
+        row_coeffs[j] = scale * basis.values[i * basis.num_dofs + j];
+        row_owners[j] = basis.owners[i * width + j * bs + b];
+      }
+      num_masters.push_back(dolfinx_mpc::append_significant_masters<T, U>(
+          row_masters, row_coeffs, row_owners, coefficient_tol, masters, coeffs,
+          owners));
+    }
+  }
+  if (!allow_missing)
+  {
+    MPI_Allreduce(MPI_IN_PLACE, &num_missing, 1, MPI_INT32_T, MPI_SUM,
+                  mesh.comm());
+    if (num_missing > 0)
+    {
+      throw std::runtime_error(std::format(
+          "No masters found for {} slave block(s): their points are in none "
+          "of the master cells. Make sure that the surfaces are in contact, or "
+          "increase distance_tol.",
+          num_missing));
+    }
+  }
+  return dolfinx_mpc::add_ghost_rows<T>(
+      std::move(slaves), std::move(masters), std::move(coeffs),
+      std::move(owners), std::move(num_masters),
+      parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
+}
+
+/// Create a periodic MPC condition given a set of slave degrees of freedom
+/// (blocked wrt. the input function space). The masters are searched among
+/// all owned cells, and a slave whose mapped point is in no cell is not
+/// constrained.
+/// @param[in] V The input function space (possibly a collapsed sub space)
+/// @param[in] slave_blocks The slave blocks of `V`
 /// @param[in] relation Function relating coordinates of the slave surface to
 /// the master surface
 /// @param[in] scale Scaling of the periodic condition
-/// @param[in] parent_map Map from collapsed space to parent space (Identity if
-/// not collapsed)
+/// @param[in] to_parent The dof in `parent_space` of each (unrolled) dof of
+/// `V`. Empty if `V` is not collapsed.
 /// @param[in] parent_space The parent space (The same space as V if not
 /// collapsed)
-/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
-/// contribution that is less than this value is ignored. The tolerance is also
-/// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom. If unset, every basis
-/// value is kept (so the coefficients can later be rescaled without losing
-/// masters) and the padding defaults to 500 machine epsilon.
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
 /// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> _create_periodic_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
-    std::span<std::int32_t> slave_blocks,
+    std::span<const std::int32_t> slave_blocks,
     const std::function<std::vector<U>(std::span<const U>)>& relation, T scale,
-    const std::function<const std::int32_t(const std::int32_t&)>& parent_map,
-    const dolfinx::fem::FunctionSpace<U>& parent_space, std::optional<U> tol,
-    std::size_t num_threads)
+    std::span<const std::int32_t> to_parent,
+    const dolfinx::fem::FunctionSpace<U>& parent_space, U distance_tol,
+    U coefficient_tol, std::size_t num_threads)
 {
-  // Bounding box padding is needed even when no coefficient is cut
-  const U padding = tol.value_or(500 * std::numeric_limits<U>::epsilon());
-
-  // Map a list of indices in collapsed space back to the parent space
-  auto sub_to_parent = [&parent_map](const std::vector<std::int32_t>& sub_dofs)
-  {
-    std::vector<std::int32_t> parent_dofs(sub_dofs.size());
-    std::ranges::transform(sub_dofs, parent_dofs.begin(),
-                           [&parent_map](auto& dof)
-                           { return parent_map(dof); });
-    return parent_dofs;
-  };
-
-  // Map a list of parent dofs (local to process) to its global dof
-  auto parent_dofmap = parent_space.dofmap();
-  auto parent_to_global
-      = [&parent_dofmap](const std::vector<std::int32_t>& dofs)
-  {
-    std::vector<std::int32_t> parent_blocks;
-    std::vector<std::int32_t> parent_rems;
-    parent_blocks.reserve(dofs.size());
-    parent_rems.reserve(dofs.size());
-    const auto parent_bs = parent_dofmap->index_map_bs();
-    // Split parent dofs into blocks and rems
-    std::ranges::for_each(dofs,
-                          [&parent_blocks, &parent_rems, &parent_bs](auto dof)
-                          {
-                            std::div_t div = std::div(dof, parent_bs);
-                            parent_blocks.push_back(div.quot);
-                            parent_rems.push_back(div.rem);
-                          });
-    // Map blocks to global index
-    std::vector<std::int64_t> parents_glob(dofs.size());
-    parent_dofmap->index_map->local_to_global(parent_blocks, parents_glob);
-    // Unroll block size
-    for (std::size_t i = 0; i < dofs.size(); i++)
-      parents_glob[i] = parents_glob[i] * parent_bs + parent_rems[i];
-    return parents_glob;
-  };
-  if (const std::size_t value_size = V.element()->reference_value_size();
-      value_size > 1)
-    throw std::runtime_error(
-        "Periodic conditions for vector valued spaces are not "
-        "implemented");
-
-  auto mesh = V.mesh();
-  auto dofmap = V.dofmap();
-  auto imap = dofmap->index_map;
-  const int bs = dofmap->index_map_bs();
-  const int size_local = imap->size_local();
-
-  /// Compute which rank (relative to neighbourhood) to send each ghost to
-  std::span<const int> ghost_owners = imap->owners();
-
-  // Only work with local blocks
-  std::vector<std::int32_t> local_blocks;
-  local_blocks.reserve(slave_blocks.size());
-  std::ranges::for_each(slave_blocks,
-                        [&local_blocks, size_local](auto block)
-                        {
-                          if (block < size_local)
-                            local_blocks.push_back(block);
-                        });
-
-  // Create map from slave dof blocks to a cell containing them
-  std::vector<std::int32_t> slave_cells = dolfinx_mpc::create_block_to_cell_map(
-      *V.mesh()->topology(), *V.dofmap(), local_blocks);
-
-  // Compute relation(slave_blocks)
-  std::vector<U> mapped_T_b(local_blocks.size() * 3);
-  const std::array<std::size_t, 2> T_shape = {local_blocks.size(), 3};
-
-  {
-    MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-        U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-               std::size_t, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent, 3>>
-        mapped_T(mapped_T_b.data(), T_shape);
-
-    // Tabulate dof coordinates for each dof
-    auto [x, x_shape] = dolfinx_mpc::tabulate_dof_coordinates(
-        V, local_blocks, slave_cells, true);
-    // Map all slave coordinates using the relation
-    std::vector<U> mapped_x = relation(x);
-    MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-        U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-               std::size_t, 3, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>
-        x_(mapped_x.data(), x_shape);
-    for (std::size_t i = 0; i < mapped_T.extent(0); ++i)
-      for (std::size_t j = 0; j < mapped_T.extent(1); ++j)
-        mapped_T(i, j) = x_(j, i);
-  }
-  // Get mesh info
-  const int tdim = mesh->topology()->dim();
-  auto cell_imap = mesh->topology()->index_map(tdim);
-  const int num_cells_local = cell_imap->size_local();
-
-  // Create bounding-box tree over owned cells
-  std::vector<std::int32_t> r(num_cells_local);
-  std::iota(r.begin(), r.end(), 0);
-  dolfinx::geometry::BoundingBoxTree<U> tree(*mesh.get(), tdim, padding, r);
-  auto process_tree = tree.create_global_tree(mesh->comm());
-  auto colliding_bbox_processes
-      = dolfinx::geometry::compute_collisions<U>(process_tree, mapped_T_b);
-
-  std::vector<std::int32_t> local_cell_collisions
-      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, mapped_T_b, padding);
-  dolfinx::common::Timer t0("~~Periodic: Local cell and eval basis");
-  auto [basis_values, basis_shape] = dolfinx_mpc::evaluate_basis_functions<U>(
-      V, mapped_T_b, local_cell_collisions, padding, num_threads);
-  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-      const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
-      tabulated_basis_values(basis_values.data(), basis_shape);
-  t0.stop();
-  // Create output arrays
-  std::vector<std::int32_t> slaves;
-  slaves.reserve(slave_blocks.size() * bs);
-  std::vector<std::int64_t> masters;
-  masters.reserve(slave_blocks.size() * bs);
-  std::vector<std::int32_t> owners;
-  owners.reserve(slave_blocks.size() * bs);
-  // FIXME: This should really be templated
-  // Requires changes all over the place for mpc_data
-  std::vector<T> coeffs;
-  coeffs.reserve(slave_blocks.size() * bs);
-  std::vector<std::int32_t> num_masters_per_slave;
-  num_masters_per_slave.reserve(slave_blocks.size() * bs);
-
-  // Temporary array holding global indices
-  std::vector<std::int32_t> sub_dofs;
-
-  const int rank = dolfinx::MPI::rank(mesh->comm());
-  // Create counter for blocks that will be sent to other processes
-  const int num_procs = dolfinx::MPI::size(mesh->comm());
-  std::vector<std::int32_t> off_process_counter(num_procs, 0);
-  for (std::size_t i = 0; i < local_cell_collisions.size(); i++)
-  {
-    if (const std::int32_t cell = local_cell_collisions[i]; cell != -1)
-    {
-
-      // Map local dofs on master cell to global indices
-      auto cell_blocks = dofmap->cell_dofs(cell);
-      // Unroll local master dofs
-      sub_dofs.resize(cell_blocks.size() * bs);
-      for (std::size_t j = 0; j < cell_blocks.size(); j++)
-        for (int b = 0; b < bs; b++)
-          sub_dofs[j * bs + b] = cell_blocks[j] * bs + b;
-      auto parent_dofs = sub_to_parent(sub_dofs);
-      auto global_parent_dofs = parent_to_global(parent_dofs);
-
-      // Check if basis values are not zero, and add master, coeff and
-      // owner info for each dof in the block
-      for (int b = 0; b < bs; b++)
-      {
-        slaves.push_back(parent_map(local_blocks[i] * bs + b));
-        int num_masters = 0;
-        for (std::size_t j = 0; j < cell_blocks.size(); j++)
-        {
-          const std::int32_t cell_block = cell_blocks[j];
-          // NOTE: Assuming 0 value size
-          if (const T val = scale * tabulated_basis_values(i, j, 0);
-              !tol or std::abs(val) > *tol)
-          {
-            num_masters++;
-            masters.push_back(global_parent_dofs[j * bs + b]);
-            coeffs.push_back(val);
-            // NOTE: Assuming same ownership of dofs in collapsed sub space
-            if (cell_block < size_local)
-              owners.push_back(rank);
-            else
-              owners.push_back(ghost_owners[cell_block - size_local]);
-          }
-        }
-        num_masters_per_slave.push_back(num_masters);
-      }
-    }
-    else
-    {
-      // Count number of incoming blocks from other processes
-      auto procs = colliding_bbox_processes.links((int)i);
-      for (auto proc : procs)
-      {
-        if (rank == proc)
-          continue;
-        off_process_counter[proc]++;
-      }
-    }
-  }
-  // Communicate s_to_m
-  std::vector<std::int32_t> s_to_m_ranks;
-  std::vector<std::int8_t> s_to_m_indicator(num_procs, 0);
-  std::vector<std::int32_t> num_out_slaves;
-  for (int i = 0; i < num_procs; i++)
-  {
-    if (off_process_counter[i] > 0 && i != rank)
-    {
-      s_to_m_indicator[i] = 1;
-      s_to_m_ranks.push_back(i);
-      num_out_slaves.push_back(off_process_counter[i]);
-    }
-  }
-  // Push back to avoid null_ptr
-  num_out_slaves.push_back(0);
-
-  std::vector<std::int8_t> indicator(num_procs);
-  MPI_Alltoall(s_to_m_indicator.data(), 1, MPI_INT8_T, indicator.data(), 1,
-               MPI_INT8_T, mesh->comm());
-
-  std::vector<std::int32_t> m_to_s_ranks;
-  for (int i = 0; i < num_procs; i++)
-    if (indicator[i])
-      m_to_s_ranks.push_back(i);
-
-  // Create neighborhood communicator
-  // Slave block owners -> Process with possible masters
-  std::vector<int> s_to_m_weights(s_to_m_ranks.size(), 1);
-  std::vector<int> m_to_s_weights(m_to_s_ranks.size(), 1);
-  MPI_Comm slave_to_master = MPI_COMM_NULL;
-  MPI_Dist_graph_create_adjacent(
-      mesh->comm(), (int)m_to_s_ranks.size(), m_to_s_ranks.data(),
-      m_to_s_weights.data(), (int)s_to_m_ranks.size(), s_to_m_ranks.data(),
-      s_to_m_weights.data(), MPI_INFO_NULL, false, &slave_to_master);
-
-  int indegree(-1);
-  int outdegree(-2);
-  int weighted(-1);
-  MPI_Dist_graph_neighbors_count(slave_to_master, &indegree, &outdegree,
-                                 &weighted);
-  assert(indegree == (int)m_to_s_ranks.size());
-  assert(outdegree == (int)s_to_m_ranks.size());
-
-  // Compute number of receiving slaves
-  std::vector<std::int32_t> num_recv_slaves(indegree + 1);
-  MPI_Neighbor_alltoall(num_out_slaves.data(), 1,
-                        dolfinx::MPI::mpi_t<std::int32_t>,
-                        num_recv_slaves.data(), 1,
-                        dolfinx::MPI::mpi_t<std::int32_t>, slave_to_master);
-  num_out_slaves.pop_back();
-  num_recv_slaves.pop_back();
-  // Prepare data structures for sending information
-  std::vector<int> disp_out(outdegree + 1, 0);
-  std::partial_sum(num_out_slaves.begin(), num_out_slaves.end(),
-                   disp_out.begin() + 1);
-
-  // Prepare data structures for receiving information
-  std::vector<int> disp_in(indegree + 1, 0);
-  std::partial_sum(num_recv_slaves.begin(), num_recv_slaves.end(),
-                   disp_in.begin() + 1);
-
-  // Array holding all dofs (index local to process) for coordinates sent
-  // out
-  std::vector<std::int32_t> searching_dofs(bs * disp_out.back());
-
-  // Communicate coordinates of slave blocks
-  std::vector<std::int32_t> out_placement(outdegree, 0);
-  std::vector<U> coords_out(disp_out.back() * 3);
-
-  for (std::size_t i = 0; i < local_cell_collisions.size(); i++)
-  {
-    if (local_cell_collisions[i] == -1)
-    {
-      auto procs = colliding_bbox_processes.links((int)i);
-      for (auto proc : procs)
-      {
-        if (rank == proc)
-          continue;
-        // Find position in neighborhood communicator
-        auto it = std::ranges::find(s_to_m_ranks, proc);
-        assert(it != s_to_m_ranks.end());
-        auto dist = std::ranges::distance(s_to_m_ranks.begin(), it);
-        const std::int32_t insert_location
-            = disp_out[dist] + out_placement[dist]++;
-        // Copy coordinates and dofs to output arrays
-        std::ranges::copy_n(std::next(mapped_T_b.begin(), 3 * i), 3,
-                            std::next(coords_out.begin(), 3 * insert_location));
-        for (int b = 0; b < bs; b++)
-        {
-          searching_dofs[insert_location * bs + b]
-              = parent_map(local_blocks[i] * bs + b);
-        }
-      }
-    }
-  }
-
-  // Communciate coordinates with other process
-  const std::array<std::size_t, 2> cr_shape = {(std::size_t)disp_in.back(), 3};
-  std::vector<U> coords_recvb(cr_shape.front() * cr_shape.back());
-  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-      const U,
-      MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-          std::size_t, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent, 3>>
-      coords_recv(coords_recvb.data(), cr_shape);
-
-  // Take into account that we send three values per slave
-  auto m_3 = [](auto& num) { num *= 3; };
-  std::ranges::for_each(disp_out, m_3);
-  std::ranges::for_each(num_out_slaves, m_3);
-  std::ranges::for_each(disp_in, m_3);
-  std::ranges::for_each(num_recv_slaves, m_3);
-
-  // Communicate coordinates
-  MPI_Neighbor_alltoallv(
-      coords_out.data(), num_out_slaves.data(), disp_out.data(),
-      dolfinx::MPI::mpi_t<U>, coords_recvb.data(), num_recv_slaves.data(),
-      disp_in.data(), dolfinx::MPI::mpi_t<U>, slave_to_master);
-
-  int err = MPI_Comm_free(&slave_to_master);
-  dolfinx::MPI::check_error(mesh->comm(), err);
-
-  // Reset in_displacements to be per block for later usage
-  auto d_3 = [](auto& num) { num /= 3; };
-  std::ranges::for_each(disp_in, d_3);
-
-  // Reset out_displacments to be for every slave
-  auto m_bs_d_3 = [bs](auto& num) { num = num * bs / 3; };
-  std::ranges::for_each(disp_out, m_bs_d_3);
-  std::ranges::for_each(num_out_slaves, m_bs_d_3);
-
-  // Create remote arrays
-  std::vector<std::int64_t> masters_remote;
-  masters_remote.reserve(coords_recvb.size());
-  std::vector<std::int32_t> owners_remote;
-  owners_remote.reserve(coords_recvb.size());
-  std::vector<T> coeffs_remote;
-  coeffs_remote.reserve(coords_recvb.size());
-  std::vector<std::int32_t> num_masters_per_slave_remote;
-  num_masters_per_slave_remote.reserve(bs * coords_recvb.size() / 3);
-
-  std::vector<std::int32_t> remote_cell_collisions
-      = dolfinx_mpc::find_local_collisions<U>(*mesh, tree, coords_recvb,
-                                              padding);
-  auto [remote_basis_valuesb, r_basis_shape]
-      = dolfinx_mpc::evaluate_basis_functions<U>(
-          V, coords_recvb, remote_cell_collisions, padding, num_threads);
-  MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-      const U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>
-      remote_basis_values(remote_basis_valuesb.data(), r_basis_shape);
-
-  // Find remote masters and count how many to send to each process
-  std::vector<std::int32_t> num_remote_masters(indegree, 0);
-  std::vector<std::int32_t> num_remote_slaves(indegree);
-  for (int i = 0; i < indegree; i++)
-  {
-    // Count number of masters added and number of slaves for output
-    std::int32_t r_masters = 0;
-    num_remote_slaves[i] = bs * (disp_in[i + 1] - disp_in[i]);
-
-    for (std::int32_t j = disp_in[i]; j < disp_in[i + 1]; j++)
-    {
-      if (const std::int32_t cell = remote_cell_collisions[j]; cell == -1)
-      {
-        for (int b = 0; b < bs; b++)
-          num_masters_per_slave_remote.push_back(0);
-      }
-      else
-      {
-        // Compute basis functions at mapped point
-        // Check if basis values are not zero, and add master, coeff and
-        // owner info for each dof in the block
-        auto cell_blocks = dofmap->cell_dofs(cell);
-
-        // Unroll local master dofs
-        sub_dofs.resize(cell_blocks.size() * bs);
-        for (std::size_t k = 0; k < cell_blocks.size(); k++)
-          for (int b = 0; b < bs; b++)
-            sub_dofs[k * bs + b] = cell_blocks[k] * bs + b;
-        auto parent_dofs = sub_to_parent(sub_dofs);
-        auto global_parent_dofs = parent_to_global(parent_dofs);
-
-        for (int b = 0; b < bs; b++)
-        {
-          int num_masters = 0;
-          for (std::size_t k = 0; k < cell_blocks.size(); k++)
-          {
-            // NOTE: Assuming value_size 0
-            if (const T val = scale * remote_basis_values(j, k, 0);
-                !tol or std::abs(val) > *tol)
-            {
-              num_masters++;
-              masters_remote.push_back(global_parent_dofs[k * bs + b]);
-              coeffs_remote.push_back(val);
-              // NOTE assuming same ownership in collapsed sub as parent space
-              if (cell_blocks[k] < size_local)
-                owners_remote.push_back(rank);
-              else
-              {
-                owners_remote.push_back(
-                    ghost_owners[cell_blocks[k] - size_local]);
-              }
-            }
-          }
-          r_masters += num_masters;
-          num_masters_per_slave_remote.push_back(num_masters);
-        }
-      }
-    }
-    num_remote_masters[i] += r_masters;
-  }
-
-  // Create inverse communicator
-  // Procs with possible masters -> slave block owners
-  MPI_Comm master_to_slave = MPI_COMM_NULL;
-  MPI_Dist_graph_create_adjacent(
-      mesh->comm(), (int)s_to_m_ranks.size(), s_to_m_ranks.data(),
-      s_to_m_weights.data(), (int)m_to_s_ranks.size(), m_to_s_ranks.data(),
-      m_to_s_weights.data(), MPI_INFO_NULL, false, &master_to_slave);
-
-  // Send data back to owning process
-  dolfinx_mpc::recv_data recv_data = dolfinx_mpc::send_master_data_to_owner<T>(
-      master_to_slave, num_remote_masters, num_remote_slaves, num_out_slaves,
-      num_masters_per_slave_remote, masters_remote, coeffs_remote,
-      owners_remote);
-
-  err = MPI_Comm_free(&master_to_slave);
-  dolfinx::MPI::check_error(mesh->comm(), err);
-
-  // Append found slaves/master pairs
-  dolfinx_mpc::append_master_data<T>(
-      recv_data, searching_dofs, slaves, masters, coeffs, owners,
-      num_masters_per_slave, parent_space.dofmap()->index_map->size_local(),
-      parent_space.dofmap()->index_map_bs());
-
-  // Distribute ghost data
-  dolfinx_mpc::mpc_data ghost_data = dolfinx_mpc::distribute_ghost_data<T>(
-      slaves, masters, coeffs, owners, num_masters_per_slave,
-      parent_space.dofmap()->index_map, parent_space.dofmap()->index_map_bs());
-
-  // Add ghost data to existing arrays
-  std::vector<std::int32_t>& ghost_slaves = ghost_data.slaves;
-  slaves.insert(std::end(slaves), std::begin(ghost_slaves),
-                std::end(ghost_slaves));
-  std::vector<std::int64_t>& ghost_masters = ghost_data.masters;
-  masters.insert(std::end(masters), std::begin(ghost_masters),
-                 std::end(ghost_masters));
-  std::vector<std::int32_t>& ghost_num = ghost_data.offsets;
-  num_masters_per_slave.insert(std::end(num_masters_per_slave),
-                               std::begin(ghost_num), std::end(ghost_num));
-  std::vector<T>& ghost_coeffs = ghost_data.coeffs;
-  coeffs.insert(std::end(coeffs), std::begin(ghost_coeffs),
-                std::end(ghost_coeffs));
-  std::vector<std::int32_t>& ghost_owner_ranks = ghost_data.owners;
-  owners.insert(std::end(owners), std::begin(ghost_owner_ranks),
-                std::end(ghost_owner_ranks));
-
-  // Compute offsets
-  std::vector<std::int32_t> offsets(num_masters_per_slave.size() + 1, 0);
-  std::partial_sum(num_masters_per_slave.begin(), num_masters_per_slave.end(),
-                   offsets.begin() + 1);
-
-  dolfinx_mpc::mpc_data<T> output;
-  output.offsets = offsets;
-  output.masters = masters;
-  output.coeffs = coeffs;
-  output.owners = owners;
-  output.slaves = slaves;
-  return output;
+  const int tdim = V.mesh()->topology()->dim();
+  std::vector<std::int32_t> cells(
+      V.mesh()->topology()->index_map(tdim)->size_local());
+  std::iota(cells.begin(), cells.end(), 0);
+  return _create_periodic_condition<T, U>(
+      V, slave_blocks, relation, scale, to_parent, parent_space, cells,
+      distance_tol, coefficient_tol, true, num_threads);
 }
 
 /// Create a periodic MPC condition given a geometrical relation between the
@@ -506,12 +207,12 @@ dolfinx_mpc::mpc_data<T> _create_periodic_condition(
 /// @param[in] scale Scaling of the periodic condition
 /// @param[in] collapse If true, the list of marked dofs is in the collapsed
 /// input space
-/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
-/// contribution that is less than this value is ignored. The tolerance is also
-/// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom. If unset, every basis
-/// value is kept (so the coefficients can later be rescaled without losing
-/// masters) and the padding defaults to 500 machine epsilon.
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
 /// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
@@ -525,7 +226,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
         indicator,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+    T scale, bool collapse, U distance_tol, U coefficient_tol,
+    std::size_t num_threads)
 {
   std::vector<std::int32_t> reduced_blocks;
   if (collapse)
@@ -556,12 +258,9 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
     reduced_blocks.erase(unique_end, range_end);
     reduced_blocks.shrink_to_fit();
 
-    // Create sub space to parent map
-    auto sub_map = [&parent_map](const std::int32_t& i)
-    { return parent_map.front()[i]; };
-    return _create_periodic_condition<T>(V_sub, std::span(reduced_blocks),
-                                         relation, scale, sub_map, *V, tol,
-                                         num_threads);
+    return _create_periodic_condition<T>(V_sub, reduced_blocks, relation, scale,
+                                         parent_map.front(), *V, distance_tol,
+                                         coefficient_tol, num_threads);
   }
   else
   {
@@ -575,9 +274,8 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
     for (std::size_t i = 0; i < bc_marker.size(); i++)
       if (!bc_marker[i])
         reduced_blocks.push_back(slave_blocks[i]);
-    auto sub_map = [](const std::int32_t& dof) { return dof; };
-    return _create_periodic_condition<T>(*V, std::span(reduced_blocks),
-                                         relation, scale, sub_map, *V, tol,
+    return _create_periodic_condition<T>(*V, reduced_blocks, relation, scale,
+                                         {}, *V, distance_tol, coefficient_tol,
                                          num_threads);
   }
 }
@@ -594,12 +292,13 @@ dolfinx_mpc::mpc_data<T> geometrical_condition(
 /// @param[in] scale Scaling of the periodic condition
 /// @param[in] collapse If true, the list of marked dofs is in the collapsed
 /// input space
-/// @param[in] tol Tolerance for adding scaled basis values to MPC. Any
-/// contribution that is less than this value is ignored. The tolerance is also
-/// added as padding for the bounding box trees and corresponding collision
-/// searches to determine periodic degrees of freedom. If unset, every basis
-/// value is kept (so the coefficients can later be rescaled without losing
-/// masters) and the padding defaults to 500 machine epsilon.
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
+/// @param[in] num_threads The number of threads to use for certain operations.
 /// @returns The multi point constraint
 template <typename T, std::floating_point U>
 dolfinx_mpc::mpc_data<T> topological_condition(
@@ -608,7 +307,8 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     const std::int32_t tag,
     const std::function<std::vector<U>(std::span<const U>)>& relation,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+    T scale, bool collapse, U distance_tol, U coefficient_tol,
+    std::size_t num_threads)
 {
   std::vector<std::int32_t> entities = meshtag->find(tag);
   V->mesh()->topology_mutable()->create_connectivity(
@@ -642,14 +342,9 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     reduced_blocks.erase(unique_end, range_end);
     reduced_blocks.shrink_to_fit();
 
-    // Create sub space to parent map
-    const auto sub_map = [&parent_map](const std::int32_t& i)
-    { return parent_map.front()[i]; };
-    // Create mpc on sub space
-    dolfinx_mpc::mpc_data<T> sub_data = _create_periodic_condition<T>(
-        V_sub, std::span(reduced_blocks), relation, scale, sub_map, *V, tol,
-        num_threads);
-    return sub_data;
+    return _create_periodic_condition<T>(V_sub, reduced_blocks, relation, scale,
+                                         parent_map.front(), *V, distance_tol,
+                                         coefficient_tol, num_threads);
   }
   else
   {
@@ -663,158 +358,86 @@ dolfinx_mpc::mpc_data<T> topological_condition(
     for (std::size_t i = 0; i < bc_marker.size(); i++)
       if (!bc_marker[i])
         reduced_blocks.push_back(slave_blocks[i]);
-    // Identity map
-    const auto sub_map = [](const std::int32_t& dof) { return dof; };
-
-    return _create_periodic_condition<T, U>(*V, std::span(reduced_blocks),
-                                            relation, scale, sub_map, *V, tol,
-                                            num_threads);
+    return _create_periodic_condition<T, U>(*V, reduced_blocks, relation, scale,
+                                            {}, *V, distance_tol,
+                                            coefficient_tol, num_threads);
   }
 };
 
 } // namespace impl
 
 namespace dolfinx_mpc
-
 {
-mpc_data<double> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
+/// Create a periodic condition on the dofs whose coordinates are marked by
+/// `indicator`, mapped to the points of their masters by `relation`.
+/// @param[in] V The input function space (possibly a sub space)
+/// @param[in] indicator Function marking tabulated degrees of freedom
+/// @param[in] relation Function relating coordinates of the slave surface to
+/// the master surface
+/// @param[in] bcs List of Dirichlet BCs on the input space
+/// @param[in] scale Scaling of the periodic condition
+/// @param[in] collapse If true, the list of marked dofs is in the collapsed
+/// input space
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
+/// @param[in] num_threads The number of threads to use for certain operations.
+/// @returns The multi point constraint
+/// @note Collective.
+template <typename T, std::floating_point U>
+mpc_data<T> create_periodic_condition_geometrical(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
     const std::function<std::vector<std::int8_t>(
         MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const double,
-            MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                std::size_t, 3,
-                MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>& indicator,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
-        bcs,
-    double scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::geometrical_condition<double, double>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-mpc_data<std::complex<double>> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::function<std::vector<std::int8_t>(
-        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const double,
-            MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                std::size_t, 3,
-                MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>& indicator,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
-        bcs,
-    std::complex<double> scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::geometrical_condition<std::complex<double>, double>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-mpc_data<double> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
-    const std::int32_t tag,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<double>>>&
-        bcs,
-    double scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::topological_condition<double, double>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-mpc_data<std::complex<double>> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<double>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
-    const std::int32_t tag,
-    const std::function<std::vector<double>(std::span<const double>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<double>>>>&
-        bcs,
-    std::complex<double> scale, bool collapse,
-    std::optional<double> tol = 500 * std::numeric_limits<double>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::topological_condition<std::complex<double>, double>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-mpc_data<float> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
-    const std::function<std::vector<std::int8_t>(
-        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const float, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                             std::size_t, 3,
-                             MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
+            const U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+                         std::size_t, 3,
+                         MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
         indicator,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
-        bcs,
-    float scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
+    const std::function<std::vector<U>(std::span<const U>)>& relation,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
+    T scale, bool collapse, U distance_tol = default_tolerance<U>(),
+    U coefficient_tol = default_tolerance<U>(), std::size_t num_threads = 1)
 {
-  return impl::geometrical_condition<float, float>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
+  return impl::geometrical_condition<T, U>(V, indicator, relation, bcs, scale,
+                                           collapse, distance_tol,
+                                           coefficient_tol, num_threads);
 }
 
-mpc_data<std::complex<float>> create_periodic_condition_geometrical(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
-    const std::function<std::vector<std::int8_t>(
-        MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-            const float, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-                             std::size_t, 3,
-                             MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>)>&
-        indicator,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
-        bcs,
-    std::complex<float> scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::geometrical_condition<std::complex<float>, float>(
-      V, indicator, relation, bcs, scale, collapse, tol, num_threads);
-}
-
-mpc_data<float> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
+/// Create a periodic condition on the dofs of the entities tagged with `tag`,
+/// mapped to the points of their masters by `relation`.
+/// @param[in] V The input function space (possibly a sub space)
+/// @param[in] meshtag Meshtag with set of entities
+/// @param[in] tag The value of the tagged entities of the slaves
+/// @param[in] relation Function relating coordinates of the slave surface to
+/// the master surface
+/// @param[in] bcs List of Dirichlet BCs on the input space
+/// @param[in] scale Scaling of the periodic condition
+/// @param[in] collapse If true, the list of marked dofs is in the collapsed
+/// input space
+/// @param[in] distance_tol The largest distance from a mapped slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master, so that the coefficients can later be rescaled.
+/// @param[in] num_threads The number of threads to use for certain operations.
+/// @returns The multi point constraint
+/// @note Collective.
+template <typename T, std::floating_point U>
+mpc_data<T> create_periodic_condition_topological(
+    const std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
     const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
     const std::int32_t tag,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<float>>>&
-        bcs,
-    float scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
+    const std::function<std::vector<U>(std::span<const U>)>& relation,
+    const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
+    T scale, bool collapse, U distance_tol = default_tolerance<U>(),
+    U coefficient_tol = default_tolerance<U>(), std::size_t num_threads = 1)
 {
-  return impl::topological_condition<float, float>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
+  return impl::topological_condition<T, U>(V, meshtag, tag, relation, bcs,
+                                           scale, collapse, distance_tol,
+                                           coefficient_tol, num_threads);
 }
-
-mpc_data<std::complex<float>> create_periodic_condition_topological(
-    const std::shared_ptr<const dolfinx::fem::FunctionSpace<float>> V,
-    const std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>> meshtag,
-    const std::int32_t tag,
-    const std::function<std::vector<float>(std::span<const float>)>& relation,
-    const std::vector<
-        std::shared_ptr<const dolfinx::fem::DirichletBC<std::complex<float>>>>&
-        bcs,
-    std::complex<float> scale, bool collapse,
-    std::optional<float> tol = 500 * std::numeric_limits<float>::epsilon(),
-    std::size_t num_threads = 1)
-{
-  return impl::topological_condition<std::complex<float>, float>(
-      V, meshtag, tag, relation, bcs, scale, collapse, tol, num_threads);
-}
-
 } // namespace dolfinx_mpc

@@ -54,6 +54,7 @@
 
 # +
 import typing
+from pathlib import Path
 
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -139,7 +140,7 @@ class GatheredGrid(typing.NamedTuple):
 
 
 def create_gif(
-    plotfunc: fem.Function, filename: str, fps: float, root: int = 0
+    plotfunc: fem.Function, filename: Path, fps: float, root: int = 0
 ) -> tuple[GatheredGrid, typing.Optional[pyvista.Plotter]]:
     """
     Create a GIF animation from a given plotting function and function space.
@@ -156,7 +157,7 @@ def create_gif(
 
         .. code-block:: python
 
-            grid, plotter = create_gif(plotfunc, "output.gif", 10)
+            grid, plotter = create_gif(plotfunc, Path("output.gif"), 10)
 
             for i in range(N):
                 plotter = update_gif(...)
@@ -302,8 +303,10 @@ h = 1 / Nx  # mesh size
 bconst = 1.0  # magnitude of the advection field
 
 # A single animation is written however many processes are used
-filename_gifV = "testV.gif"
-filename_gifp = "testp.gif"
+# The GIF of the pressure, shown in the gallery of the documentation, is named after the demo
+figure = Path("demo_linear_wave_problem.py")
+filename_gifV = figure.with_name(f"{figure.stem}_velocity.gif")
+filename_gifp = figure.with_suffix(".gif")
 # -
 
 warp_gif = True
@@ -523,6 +526,6 @@ finalize_gif(plotterp)
 PETSc.Sys.Print(f"gifs saved as {filename_gifV}, {filename_gifp}")  # type: ignore
 
 
-# <img src="./testV.gif" alt="gifV" width="800px">
+# <img src="./demo_linear_wave_problem_velocity.gif" alt="gifV" width="800px">
 #
-# <img src="./testp.gif" alt="gifp" width="800px">
+# <img src="./demo_linear_wave_problem.gif" alt="gifp" width="800px">

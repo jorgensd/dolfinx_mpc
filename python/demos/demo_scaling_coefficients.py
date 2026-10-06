@@ -17,11 +17,14 @@
 # coefficients after each step. Nothing is solved.
 
 # + tags=["hide-input"]
+from pathlib import Path
+
 from mpi4py import MPI
 
 import numpy as np
+import pyvista
 import ufl
-from dolfinx import default_real_type, fem
+from dolfinx import default_real_type, fem, plot
 from dolfinx.mesh import create_unit_square
 
 import dolfinx_mpc
@@ -67,13 +70,14 @@ bc = fem.dirichletbc(g, fem.locate_dofs_geometrical(V, left))
 # -
 
 # The masters of a constraint are fixed when it is created. By default, a master
-# whose coefficient is below `tol` is dropped, and could then never be given a
-# coefficient later. Passing `tol=None` keeps every master. It comes at a cost,
+# whose coefficient is below `coefficient_tol` times the largest of its slave is
+# dropped, and could then never be given a coefficient later. Passing
+# `coefficient_tol=0` keeps every master. It comes at a cost,
 # as each master is a ghost and an entry of the sparsity pattern:
 
 # +
 mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype, bcs=[bc])
-mpc.create_periodic_constraint_geometrical(V, right, periodic_relation, [bc], scale=dtype(1), tol=None)
+mpc.create_periodic_constraint_geometrical(V, right, periodic_relation, [bc], scale=dtype(1), coefficient_tol=0)
 mpc.finalize()
 
 mpc_cut = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype, bcs=[bc])
@@ -83,7 +87,7 @@ mpc_cut.finalize()
 num_masters = mesh.comm.allreduce(len(mpc.all_masters()), op=MPI.SUM)
 num_masters_cut = mesh.comm.allreduce(len(mpc_cut.all_masters()), op=MPI.SUM)
 if mesh.comm.rank == 0:
-    print(f"Masters with tol=None: {num_masters}, with the default tol: {num_masters_cut}")
+    print(f"Masters with coefficient_tol=0: {num_masters}, with the default: {num_masters_cut}")
 # -
 
 # For a P1 space every slave gets the three vertices of the cell its periodic
@@ -128,6 +132,68 @@ print_constraint(mpc, "Created with scale 1")
 # height on the left boundary. As that one is fixed by the Dirichlet condition,
 # the constraint reduces to $u_s = c\, g(0, y) = 1 + y$, which is the offset $g$.
 #
+# The figure joins each slave on the right boundary to its masters: the master at the same
+# height, with coefficient one, by a straight line, and the masters kept by `tol=None`, with
+# coefficient zero, by arcs. Each process draws its own cells and slaves, which are gathered
+# on the first process.
+
+# +
+pyvista.global_theme.allow_empty_mesh = True
+
+
+def link(a, b, bulge, num_points=17):
+    """Points along a quadratic arc from `a` to `b`, bulging sideways by `bulge` times its length."""
+    d = b - a
+    control = 0.5 * (a + b) + bulge * np.array([-d[1], d[0], 0.0])
+    t = np.linspace(0, 1, num_points)[:, None]
+    return (1 - t) ** 2 * a + 2 * t * (1 - t) * control + t**2 * b
+
+
+x_all = mpc.function_space.tabulate_dof_coordinates()
+coeffs, offsets = mpc.all_coefficients()
+masters = mpc.all_masters()
+links: dict[bool, list[np.ndarray]] = {True: [], False: []}
+for s in mpc.slaves[: mpc.num_local_slaves]:
+    for m, c in zip(masters[offsets[s] : offsets[s + 1]], coeffs[offsets[s] : offsets[s + 1]]):
+        nonzero = bool(abs(c) > tol)
+        links[nonzero].append(link(x_all[s], x_all[m], 0.0 if nonzero else 0.15))
+slaves = x_all[mpc.slaves[: mpc.num_local_slaves]]
+owned_cells = np.arange(mesh.topology.index_map(mesh.topology.dim).size_local, dtype=np.int32)
+cells = pyvista.UnstructuredGrid(*plot.vtk_mesh(mesh, entities=owned_cells))
+gathered = mesh.comm.gather((cells, links, slaves), root=0)
+
+
+def polylines(curves):
+    """The curves as one PolyData of polylines."""
+    points = np.vstack(curves)
+    n = len(curves[0])
+    lines = np.hstack([[n, *range(i * n, (i + 1) * n)] for i in range(len(curves))])
+    return pyvista.PolyData(points, lines=lines)
+
+
+if gathered is not None:  # only the first process received the pieces
+    plotter = pyvista.Plotter(window_size=[600, 600])
+    for g in gathered:
+        plotter.add_mesh(g[0], style="wireframe", color="lightgray")
+    for nonzero, colour, width, label in (
+        (False, "steelblue", 2, "coefficient 0"),
+        (True, "orange", 5, "coefficient 1"),
+    ):
+        curves = [curve for g in gathered for curve in g[1][nonzero]]
+        plotter.add_mesh(polylines(curves), color=colour, line_width=width, label=label)
+    plotter.add_points(np.vstack([g[2] for g in gathered]), color="black", point_size=12, render_points_as_spheres=True)
+    plotter.add_legend(bcolor="white", face="line", size=(0.3, 0.1), loc="upper center")
+    plotter.view_xy()
+    # The figure is named after the demo, as the gallery of the documentation expects
+    figure = Path("demo_scaling_coefficients.py")
+    if pyvista.OFF_SCREEN:
+        plotter.screenshot(figure.with_suffix(".png"))
+    else:
+        # The interactive scene, for the gallery
+        plotter.export_html(figure.with_suffix(".html"))
+        plotter.show(screenshot=figure.with_suffix(".png"))
+# -
+
 # ## Scaling by a constant
 #
 # {py:meth}`scale_coefficients<dolfinx_mpc.MultiPointConstraint.scale_coefficients>`

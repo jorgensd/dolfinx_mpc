@@ -13,6 +13,8 @@
 # We start by importing the required dependencies:
 
 # + tags =["hide-input"]
+from pathlib import Path
+
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -1083,7 +1085,7 @@ if comm.rank == 0:
     # The pieces of every process, in rank order, in one grid per mesh
     grids = [pyvista.merge([piece[k] for piece in gathered_grids], merge_points=False) for k in range(3)]
     plotter = pyvista.Plotter(off_screen=True, window_size=(450, 600))
-    plotter.open_gif("demo_spider_hinge.gif", fps=1 / (2 * dt))
+    plotter.open_gif(Path("demo_spider_hinge.py").with_suffix(".gif"), fps=1 / (2 * dt))
 
 
 def write_frame(t: float):

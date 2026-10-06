@@ -12,12 +12,14 @@
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/la/petsc.h>
+#include <dolfinx/mesh/EntityMap.h>
 #include <dolfinx/mesh/MeshTags.h>
 #include <dolfinx_mpc/ContactConstraint.h>
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/PeriodicConstraint.h>
 #include <dolfinx_mpc/RBE.h>
 #include <dolfinx_mpc/SlipConstraint.h>
+#include <dolfinx_mpc/SubmeshConstraint.h>
 #include <dolfinx_mpc/assemble_matrix.h>
 #include <dolfinx_mpc/assemble_vector.h>
 #include <dolfinx_mpc/lifting.h>
@@ -342,14 +344,35 @@ void declare_functions(nb::module_& m)
       "Create the multi point constraints of several function spaces together");
 
   m.def("create_sparsity_pattern", &dolfinx_mpc::create_sparsity_pattern<T, U>);
+}
 
-  m.def("create_contact_slip_condition",
+template <typename T, std::floating_point U>
+void declare_mpc_data(nb::module_& m, std::string type)
+{
+  m.def(
+      ("create_submesh_constraint_" + type).c_str(),
+      [](const dolfinx::fem::FunctionSpace<U>& V,
+         const dolfinx::fem::FunctionSpace<U>& W,
+         const dolfinx::mesh::EntityMap& entity_map,
+         const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
+             bcs,
+         T scale, U coefficient_tol, std::size_t num_threads)
+      {
+        return dolfinx_mpc::create_submesh_constraint<T, U>(
+            V, W, entity_map, bcs, scale, coefficient_tol, num_threads);
+      },
+      "V"_a, "W"_a, "entity_map"_a, "bcs"_a, "scale"_a, "coefficient_tol"_a,
+      "num_threads"_a,
+      "Tie the dofs of V to W on a related mesh, through an entity map");
+
+  m.def(("create_contact_slip_condition_" + type).c_str(),
         &dolfinx_mpc::create_contact_slip_condition<T, U>);
-  m.def("create_slip_condition", &dolfinx_mpc::create_slip_condition<T, U>);
-  m.def("create_contact_inelastic_condition",
+  m.def(("create_slip_condition_" + type).c_str(),
+        &dolfinx_mpc::create_slip_condition<T, U>);
+  m.def(("create_contact_inelastic_condition_" + type).c_str(),
         &dolfinx_mpc::create_contact_inelastic_condition<T, U>);
   m.def(
-      "create_periodic_constraint_geometrical",
+      ("create_periodic_constraint_geometrical_" + type).c_str(),
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
          const std::function<nb::ndarray<bool, nb::ndim<1>, nb::c_contig>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& indicator,
@@ -357,7 +380,8 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+         T scale, bool collapse, U distance_tol, U coefficient_tol,
+         std::size_t num_threads)
       {
         auto _indicator
             = [&indicator](MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
@@ -384,14 +408,14 @@ void declare_functions(nb::module_& m)
           std::vector<U> output(v.data(), v.data() + v.size());
           return output;
         };
-        return dolfinx_mpc::create_periodic_condition_geometrical(
-            V, _indicator, _relation, bcs, scale, collapse, tol, num_threads);
+        return dolfinx_mpc::create_periodic_condition_geometrical<T, U>(
+            V, _indicator, _relation, bcs, scale, collapse, distance_tol,
+            coefficient_tol, num_threads);
       },
-      "V"_a, "indicator"_a, "relation"_a, "bcs"_a, nb::arg("scale").noconvert(),
-      nb::arg("collapse").noconvert(), nb::arg("tol").noconvert(),
-      nb::arg("num_threads").noconvert());
+      "V"_a, "indicator"_a, "relation"_a, "bcs"_a, "scale"_a, "collapse"_a,
+      "distance_tol"_a, "coefficient_tol"_a, "num_threads"_a);
   m.def(
-      "create_periodic_constraint_topological",
+      ("create_periodic_constraint_topological_" + type).c_str(),
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
          std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>>& meshtags,
          const int dim,
@@ -399,7 +423,8 @@ void declare_functions(nb::module_& m)
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& relation,
          const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
              bcs,
-         T scale, bool collapse, std::optional<U> tol, std::size_t num_threads)
+         T scale, bool collapse, U distance_tol, U coefficient_tol,
+         std::size_t num_threads)
       {
         auto _relation = [&relation](std::span<const U> x) -> std::vector<U>
         {
@@ -409,18 +434,13 @@ void declare_functions(nb::module_& m)
           std::vector<U> output(v.data(), v.data() + v.size());
           return output;
         };
-        return dolfinx_mpc::create_periodic_condition_topological(
-            V, meshtags, dim, _relation, bcs, scale, collapse, tol,
-            num_threads);
+        return dolfinx_mpc::create_periodic_condition_topological<T, U>(
+            V, meshtags, dim, _relation, bcs, scale, collapse, distance_tol,
+            coefficient_tol, num_threads);
       },
-      "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a,
-      nb::arg("scale").noconvert(), nb::arg("collapse").noconvert(),
-      nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert());
-}
+      "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a, "scale"_a,
+      "collapse"_a, "distance_tol"_a, "coefficient_tol"_a, "num_threads"_a);
 
-template <typename T, std::floating_point U>
-void declare_mpc_data(nb::module_& m, std::string type)
-{
   // The scalar type cannot be deduced from the arguments, so it is in the name
   m.def(
       ("create_rbe2_" + type).c_str(),

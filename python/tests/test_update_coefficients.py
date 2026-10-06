@@ -48,7 +48,7 @@ def _create_mpc(V, scale, dtype, bcs=None):
     bcs = [] if bcs is None else bcs
     mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype, bcs=bcs)
     mpc.create_periodic_constraint_geometrical(
-        V, _slave_boundary, _periodic_relation, bcs, scale=np.dtype(dtype).type(scale), tol=None
+        V, _slave_boundary, _periodic_relation, bcs, scale=np.dtype(dtype).type(scale), coefficient_tol=0
     )
     mpc.finalize()
     return mpc
@@ -175,14 +175,16 @@ def test_update_coefficients(dtype, with_bc):
         mpc._cpp_object.scale_coefficients(np.ones(1, dtype=dtype))
 
 
-def test_tol_none_keeps_masters():
-    """With tol=None no basis value is cut, so there are at least as many masters."""
+def test_coefficient_tol_zero_keeps_masters():
+    """With coefficient_tol=0 no basis value is cut, so there are at least as many masters."""
     mesh = create_unit_square(MPI.COMM_WORLD, 4, 4)
     V = fem.functionspace(mesh, ("Lagrange", 2))
     mpcs = []
-    for tol in [None, _atol]:
+    for coefficient_tol in [0, None]:
         mpc = dolfinx_mpc.MultiPointConstraint(V)
-        mpc.create_periodic_constraint_geometrical(V, _slave_boundary, _periodic_relation, [], tol=tol)
+        mpc.create_periodic_constraint_geometrical(
+            V, _slave_boundary, _periodic_relation, [], coefficient_tol=coefficient_tol
+        )
         mpc.finalize()
         mpcs.append(mpc)
     n_all, n_cut = (mesh.comm.allreduce(len(m.all_masters()), op=MPI.SUM) for m in mpcs)

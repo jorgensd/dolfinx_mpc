@@ -33,6 +33,8 @@
 # its far end. The spider's feet are the nodes on the facing sides of both cubes.
 
 # +
+from pathlib import Path
+
 from mpi4py import MPI
 from petsc4py import PETSc
 
@@ -323,7 +325,7 @@ assert x_spider[2] < x_c[2] - 0.05
 if comm.rank == 0:
     clim = [0.0, max(max(g["|u|"].max(initial=0.0) for g in grids) for grids, _ in frames[-1])]
     plotter = pyvista.Plotter(off_screen=True, window_size=[800, 500])
-    plotter.open_gif("demo_rbe3.gif", fps=3)
+    plotter.open_gif(Path("demo_rbe3.py").with_suffix(".gif"), fps=3)
     for frame in frames:
         plotter.clear()
         cubes = pyvista.merge([g for grids, _ in frame for g in grids])

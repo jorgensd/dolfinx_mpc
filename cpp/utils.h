@@ -11,8 +11,11 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Scatterer.h>
+#include <dolfinx/common/local_range.h>
 #include <dolfinx/common/sort.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DirichletBC.h>
@@ -25,12 +28,18 @@
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/petsc.h>
 #include <dolfinx/mesh/MeshTags.h>
+#include <exception>
 #include <functional>
+#include <iterator>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
 #include <span>
 #include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 namespace impl
 {
@@ -115,16 +124,6 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
 namespace dolfinx_mpc
 {
 
-/// Structure to hold data after mpi communication
-template <typename T>
-struct recv_data
-{
-  std::vector<std::int32_t> num_masters_per_slave;
-  std::vector<std::int64_t> masters;
-  std::vector<std::int32_t> owners;
-  std::vector<T> coeffs;
-};
-
 template <typename T>
 struct mpc_data
 {
@@ -183,27 +182,6 @@ dolfinx::la::petsc::Matrix create_matrix(
 {
   return dolfinx_mpc::create_matrix(a, mpc, mpc, type);
 }
-
-/// Create neighborhood communicators from every processor with a slave dof on
-/// it, to the processors with a set of master facets.
-/// @param[in] comm The MPI communicator to base communications on
-/// @param[in] meshtags The meshtag
-/// @param[in] has_slaves Boolean saying if the processor owns slave dofs
-/// @param[in] master_marker Tag for the other interface
-std::array<MPI_Comm, 2>
-create_neighborhood_comms(MPI_Comm comm,
-                          const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
-                          const bool has_slave, std::int32_t& master_marker);
-
-/// Create neighbourhood communicators from a set of local indices to process
-/// who has these indices as ghosts.
-/// @param[in] local_dofs Vector of local blocks
-/// @param[in] ghost_dofs Vector of ghost blocks
-/// @param[in] index_map The index map relating procs and ghosts
-MPI_Comm create_owner_to_ghost_comm(
-    std::vector<std::int32_t>& local_blocks,
-    std::vector<std::int32_t>& ghost_blocks,
-    std::shared_ptr<const dolfinx::common::IndexMap> index_map);
 
 /// Creates a normal approximation for the dofs in the closure of the attached
 /// facets, where the normal is an average if a dof belongs to multiple facets
@@ -1025,170 +1003,6 @@ typename U::value_type dot(const U& u, const V& v)
   return u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
 }
 
-/// Send masters, coefficients, owners and offsets to the process owning the
-/// slave degree of freedom.
-/// @param[in] master_to_slave MPI neighborhood communicator from processes with
-/// master dofs to those owning the slave dofs
-/// @param[in] num_remote_masters Number of masters that will be sent to each
-/// destination of the neighboorhod communicator
-/// @param[in] num_remote_slaves Number of slaves that will be sent to each
-/// destination of the neighborhood communicator
-/// @param[in] num_incoming_slaves Number of slaves that wil be received from
-/// each source of the neighboorhod communicator
-/// @param[in] num_masters_per_slave The number of masters for each slave that
-/// will be sent to the owning rank
-/// @param[in] masters The masters to send to the owning process
-/// @param[in] coeffs The corresponding coefficients to send to the owning
-/// process
-/// @param[in] owners The owning rank of each master
-/// @returns Data structure with the number of masters per slave, the master
-/// dofs (global indices), the coefficients and owners
-template <typename T>
-recv_data<T> send_master_data_to_owner(
-    MPI_Comm& master_to_slave, std::vector<std::int32_t>& num_remote_masters,
-    const std::vector<std::int32_t>& num_remote_slaves,
-    const std::vector<std::int32_t>& num_incoming_slaves,
-    const std::vector<std::int32_t>& num_masters_per_slave,
-    const std::vector<std::int64_t>& masters, const std::vector<T>& coeffs,
-    const std::vector<std::int32_t>& owners)
-{
-  int indegree(-1);
-  int outdegree(-2);
-  int weighted(-1);
-  MPI_Dist_graph_neighbors_count(master_to_slave, &indegree, &outdegree,
-                                 &weighted);
-
-  // Communicate how many masters has been found on the other process
-  std::vector<std::int32_t> num_recv_masters(indegree + 1);
-  num_remote_masters.push_back(0);
-  MPI_Request request_m;
-  MPI_Ineighbor_alltoall(
-      num_remote_masters.data(), 1, dolfinx::MPI::mpi_t<std::int32_t>,
-      num_recv_masters.data(), 1, dolfinx::MPI::mpi_t<std::int32_t>,
-      master_to_slave, &request_m);
-  num_recv_masters.pop_back();
-  num_remote_masters.pop_back();
-  std::vector<std::int32_t> remote_slave_disp_out(outdegree + 1, 0);
-  std::partial_sum(num_remote_slaves.begin(), num_remote_slaves.end(),
-                   remote_slave_disp_out.begin() + 1);
-
-  // Send num masters per slave
-  std::vector<int> slave_disp_in(indegree + 1, 0);
-  std::partial_sum(num_incoming_slaves.begin(), num_incoming_slaves.end(),
-                   slave_disp_in.begin() + 1);
-  std::vector<std::int32_t> recv_num_masters_per_slave(slave_disp_in.back());
-  MPI_Neighbor_alltoallv(
-      num_masters_per_slave.data(), num_remote_slaves.data(),
-      remote_slave_disp_out.data(), dolfinx::MPI::mpi_t<std::int32_t>,
-      recv_num_masters_per_slave.data(), num_incoming_slaves.data(),
-      slave_disp_in.data(), dolfinx::MPI::mpi_t<std::int32_t>, master_to_slave);
-
-  // Wait for number of remote masters to be received
-  MPI_Status status_m;
-  MPI_Wait(&request_m, &status_m);
-
-  // Compute in/out displacements for masters/coeffs/owners
-  std::vector<std::int32_t> master_recv_disp(indegree + 1, 0);
-  std::partial_sum(num_recv_masters.begin(), num_recv_masters.end(),
-                   master_recv_disp.begin() + 1);
-  std::vector<std::int32_t> master_send_disp(outdegree + 1, 0);
-  std::partial_sum(num_remote_masters.begin(), num_remote_masters.end(),
-                   master_send_disp.begin() + 1);
-
-  // Send masters/coeffs/owners to slave process
-  std::vector<std::int64_t> recv_masters(master_recv_disp.back());
-  std::vector<std::int32_t> recv_owners(master_recv_disp.back());
-  std::vector<T> recv_coeffs(master_recv_disp.back());
-  std::array<MPI_Status, 3> data_status;
-  std::array<MPI_Request, 3> data_request;
-
-  MPI_Ineighbor_alltoallv(
-      masters.data(), num_remote_masters.data(), master_send_disp.data(),
-      dolfinx::MPI::mpi_t<std::int64_t>, recv_masters.data(),
-      num_recv_masters.data(), master_recv_disp.data(),
-      dolfinx::MPI::mpi_t<std::int64_t>, master_to_slave, &data_request[0]);
-  MPI_Ineighbor_alltoallv(coeffs.data(), num_remote_masters.data(),
-                          master_send_disp.data(), dolfinx::MPI::mpi_t<T>,
-                          recv_coeffs.data(), num_recv_masters.data(),
-                          master_recv_disp.data(), dolfinx::MPI::mpi_t<T>,
-                          master_to_slave, &data_request[1]);
-  MPI_Ineighbor_alltoallv(
-      owners.data(), num_remote_masters.data(), master_send_disp.data(),
-      dolfinx::MPI::mpi_t<std::int32_t>, recv_owners.data(),
-      num_recv_masters.data(), master_recv_disp.data(),
-      dolfinx::MPI::mpi_t<std::int32_t>, master_to_slave, &data_request[2]);
-
-  /// Wait for all communication to finish
-  MPI_Waitall(3, data_request.data(), data_status.data());
-  dolfinx_mpc::recv_data<T> output;
-  output.masters = recv_masters;
-  output.coeffs = recv_coeffs;
-  output.num_masters_per_slave = recv_num_masters_per_slave;
-  output.owners = recv_owners;
-  return output;
-}
-
-/// Append received slaves to arrays holding slave, master, coeffs and
-/// num_masters_per_slave received from other processes
-/// @param[in] in_data Structure holding incoming masters, coeffs, owners and
-/// number of masters per slave
-/// @param[in] local_slaves The slave dofs (local to process), where the ith
-/// entry corresponds to the ith entry of the vectors in in-data.
-/// @note local_slaves can have duplicates
-/// @param[in] masters Array to append the masters to
-/// @param[in] coeffs Array to append owner ranks to
-/// @param[in] owners Array to append owner ranks to
-/// @param[in] num_masters_per_slave Array to append num masters per slave to
-/// @param[in] size_local The local size of the index map
-/// @param[in] bs The block size of the index map
-template <typename T>
-void append_master_data(recv_data<T> in_data,
-                        const std::vector<std::int32_t>& local_slaves,
-                        std::vector<std::int32_t>& slaves,
-                        std::vector<std::int64_t>& masters,
-                        std::vector<T>& coeffs,
-                        std::vector<std::int32_t>& owners,
-                        std::vector<std::int32_t>& num_masters_per_slave,
-                        std::int32_t size_local, std::int32_t bs)
-{
-  std::vector<std::int8_t> slave_found(size_local * bs, false);
-  std::vector<std::int32_t>& m_per_slave = in_data.num_masters_per_slave;
-  std::vector<std::int64_t>& inc_masters = in_data.masters;
-  std::vector<T>& inc_coeffs = in_data.coeffs;
-  std::vector<std::int32_t>& inc_owners = in_data.owners;
-  assert(m_per_slave.size() == local_slaves.size());
-
-  // Compute accumulated position
-  std::vector<std::int32_t> disp_m(m_per_slave.size() + 1, 0);
-  std::partial_sum(m_per_slave.begin(), m_per_slave.end(), disp_m.begin() + 1);
-
-  // NOTE: outdegree is really in degree as we are using the reverse comm
-  for (std::size_t i = 0; i < m_per_slave.size(); i++)
-  {
-    // Only add slave to list if it hasn't been found on another proc and the
-    // number of incoming masters is nonzero
-    if (auto dof = local_slaves[i]; !slave_found[dof] && m_per_slave[i] > 0)
-    {
-      slaves.push_back(dof);
-      for (std::int32_t j = disp_m[i]; j < disp_m[i + 1]; j++)
-      {
-        masters.push_back(inc_masters[j]);
-        owners.push_back(inc_owners[j]);
-        coeffs.push_back(inc_coeffs[j]);
-      }
-      num_masters_per_slave.push_back(m_per_slave[i]);
-      slave_found[dof] = true;
-    }
-  }
-
-  // Check that all local blocks has found its master
-  [[maybe_unused]] const auto num_found
-      = std::accumulate(std::begin(slave_found), std::end(slave_found), 0.0);
-  [[maybe_unused]] const std::size_t num_unique
-      = std::set<std::int32_t>(local_slaves.begin(), local_slaves.end()).size();
-  assert(num_found == num_unique);
-}
-
 /// Distribute local slave->master data from owning process to ghost processes
 /// @param[in] slaves List of local slaves indices (local to process, unrolled)
 /// @param[in] masters The corresponding master dofs (global indices, unrolled)
@@ -1478,6 +1292,88 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   return ghost_data;
 }
 
+/// @brief The default distance and coefficient tolerance of the constraints:
+/// 500 machine epsilon of `U`.
+template <std::floating_point U>
+constexpr U default_tolerance()
+{
+  return 500 * std::numeric_limits<U>::epsilon();
+}
+
+/// @brief Append the masters of one slave, without those whose coefficient is
+/// below `coefficient_tol` times the largest in magnitude.
+/// @param[in] row_masters The candidate masters of the slave (global)
+/// @param[in] row_coeffs The coefficient of each candidate
+/// @param[in] row_owners The process owning each candidate
+/// @param[in] coefficient_tol The relative tolerance. 0 keeps every master.
+/// @param[in,out] masters The masters, appended to
+/// @param[in,out] coeffs The coefficients, appended to
+/// @param[in,out] owners The owners, appended to
+/// @return The number of masters appended
+template <typename T, std::floating_point U>
+std::int32_t append_significant_masters(
+    std::span<const std::int64_t> row_masters, std::span<const T> row_coeffs,
+    std::span<const std::int32_t> row_owners, U coefficient_tol,
+    std::vector<std::int64_t>& masters, std::vector<T>& coeffs,
+    std::vector<std::int32_t>& owners)
+{
+  U largest = 0;
+  for (const T& c : row_coeffs)
+    largest = std::max<U>(largest, std::abs(c));
+  const U cut = coefficient_tol * largest;
+  std::int32_t num = 0;
+  for (std::size_t j = 0; j < row_coeffs.size(); ++j)
+  {
+    if (std::abs(row_coeffs[j]) >= cut)
+    {
+      masters.push_back(row_masters[j]);
+      coeffs.push_back(row_coeffs[j]);
+      owners.push_back(row_owners[j]);
+      ++num;
+    }
+  }
+  return num;
+}
+
+/// @brief Complete the rows of owned slaves with the rows of the slaves that
+/// are ghosts on this process.
+/// @param[in] slaves The owned slaves (local, unrolled)
+/// @param[in] masters The masters of each slave (global, unrolled)
+/// @param[in] coeffs The coefficient of each master
+/// @param[in] owners The process owning each master
+/// @param[in] num_masters The number of masters of each slave
+/// @param[in] imap The index map of the slaves' space
+/// @param[in] bs The block size of `imap`
+/// @return The constraint, owned slaves first
+/// @note Collective.
+template <typename T>
+mpc_data<T>
+add_ghost_rows(std::vector<std::int32_t>&& slaves,
+               std::vector<std::int64_t>&& masters, std::vector<T>&& coeffs,
+               std::vector<std::int32_t>&& owners,
+               std::vector<std::int32_t>&& num_masters,
+               std::shared_ptr<const dolfinx::common::IndexMap> imap, int bs)
+{
+  mpc_data<T> ghosts = distribute_ghost_data<T>(slaves, masters, coeffs, owners,
+                                                num_masters, imap, bs);
+  slaves.insert(slaves.end(), ghosts.slaves.begin(), ghosts.slaves.end());
+  masters.insert(masters.end(), ghosts.masters.begin(), ghosts.masters.end());
+  coeffs.insert(coeffs.end(), ghosts.coeffs.begin(), ghosts.coeffs.end());
+  owners.insert(owners.end(), ghosts.owners.begin(), ghosts.owners.end());
+  num_masters.insert(num_masters.end(), ghosts.offsets.begin(),
+                     ghosts.offsets.end());
+
+  mpc_data<T> out;
+  out.offsets.assign(num_masters.size() + 1, 0);
+  std::partial_sum(num_masters.begin(), num_masters.end(),
+                   std::next(out.offsets.begin()));
+  out.slaves = std::move(slaves);
+  out.masters = std::move(masters);
+  out.coeffs = std::move(coeffs);
+  out.owners = std::move(owners);
+  return out;
+}
+
 //-----------------------------------------------------------------------------
 /// Get basis values (not unrolled for block size) for a set of points and
 /// corresponding cells.
@@ -1577,123 +1473,31 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   using mdspan3_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>;
 
-  // Create buffer for coordinate dofs and point in physical space
-  std::vector<U> coord_dofs_b(num_dofs_g * gdim);
-  mdspan2_t coord_dofs(coord_dofs_b.data(), num_dofs_g, gdim);
-  std::vector<U> xp_b(1 * gdim);
-  mdspan2_t xp(xp_b.data(), 1, gdim);
-
   // Evaluate geometry basis at point (0, 0, 0) on the reference cell.
   // Used in affine case.
-  std::array<std::size_t, 4> phi0_shape = cmap.tabulate_shape(1, 1);
-  std::vector<U> phi0_b(
-      std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
-  cmdspan4_t phi0(phi0_b.data(), phi0_shape);
+  const std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
+  const std::size_t phi_size
+      = std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{});
+  std::vector<U> phi0_b(phi_size);
+  cmdspan4_t phi0(phi0_b.data(), phi_shape);
   cmap.tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
   auto dphi0 = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
       phi0, std::pair(1, tdim + 1), 0,
       MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
-  // Data structure for evaluating geometry basis at specific points.
-  // Used in non-affine case.
-  std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
-  std::vector<U> phi_b(
-      std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{}));
-  cmdspan4_t phi(phi_b.data(), phi_shape);
-  auto dphi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-      phi, std::pair(1, tdim + 1), 0,
-      MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
-
-  // Reference coordinates for each point
-  std::vector<U> pull_back_scratch(
-      cmap.is_affine() ? 0 : cmap.pull_back_working_size(gdim));
+  // Reference coordinates and geometry data at each point
   std::vector<U> Xb(num_points * tdim);
   mdspan2_t X(Xb.data(), num_points, tdim);
-
-  // Geometry data at each point
   std::vector<U> J_b(num_points * gdim * tdim);
   mdspan3_t J(J_b.data(), num_points, gdim, tdim);
   std::vector<U> K_b(num_points * tdim * gdim);
   mdspan3_t K(K_b.data(), num_points, tdim, gdim);
   std::vector<U> detJ(num_points);
-  std::vector<U> det_scratch(2 * gdim * tdim);
 
-  // Prepare geometry data in each cell
-  for (std::size_t p = 0; p < cells.size(); ++p)
-  {
-    const int cell_index = cells[p];
-
-    // Skip negative cell indices
-    if (cell_index < 0)
-      continue;
-
-    // Get cell geometry (coordinate dofs)
-    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        x_dofmap, cell_index, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    for (std::size_t i = 0; i < num_dofs_g; ++i)
-    {
-      const int pos = 3 * x_dofs[i];
-      for (std::size_t j = 0; j < gdim; ++j)
-        coord_dofs(i, j) = x_g[pos + j];
-    }
-
-    for (std::size_t j = 0; j < gdim; ++j)
-      xp(0, j) = x[3 * p + j];
-
-    auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-
-    std::array<U, 3> Xpb = {0, 0, 0};
-    MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-        U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-               std::size_t, 1, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>
-        Xp(Xpb.data(), 1, tdim);
-
-    // Compute reference coordinates X, and J, detJ and K
-    if (cmap.is_affine())
-    {
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi0, coord_dofs,
-                                                           _J);
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
-      std::array<U, 3> x0 = {0, 0, 0};
-      for (std::size_t i = 0; i < coord_dofs.extent(1); ++i)
-        x0[i] += coord_dofs(0, i);
-      dolfinx::fem::CoordinateElement<U>::pull_back_affine(Xp, _K, x0, xp);
-      detJ[p]
-          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
-              _J, det_scratch);
-    }
-    else
-    {
-      // Pull-back physical point xp to reference coordinate Xp
-      cmap.pull_back_nonaffine(Xp, xp, coord_dofs, pull_back_scratch, tol, 15);
-
-      cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
-                                                           _J);
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
-      detJ[p]
-          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
-              _J, det_scratch);
-    }
-
-    for (std::size_t j = 0; j < X.extent(1); ++j)
-      X(p, j) = Xpb[j];
-  }
-
-  // Compute basis on reference element
-  std::vector<U> reference_basisb(std::reduce(
-      basis_shape.begin(), basis_shape.end(), 1, std::multiplies{}));
-  element->tabulate(reference_basisb, Xb, {X.extent(0), X.extent(1)}, 0);
-
-  // Data structure to hold basis for transformation
-  const std::size_t num_basis_values = basis_shape[2] * basis_shape[3];
-  std::vector<U> basis_valuesb(num_basis_values);
-  mdspan2_t basis_values(basis_valuesb.data(), basis_shape[2], basis_shape[3]);
+  // Basis on the reference element at each point
+  const std::size_t num_reference_dofs = basis_shape[2];
+  const std::size_t num_basis_values = num_reference_dofs * basis_shape[3];
+  std::vector<U> reference_basisb(num_points * num_basis_values);
 
   using xu_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>;
@@ -1711,33 +1515,175 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   const bool transform_set
       = dolfinx::fem::is_transform_set(apply_dof_transformation);
   mdspan3_t full_basis(output_basis.data(), reference_shape);
-  for (std::size_t p = 0; p < cells.size(); ++p)
-  {
-    const int cell_index = cells[p];
-    // Skip negative cell indices
-    if (cell_index < 0)
-      continue;
 
-    // Permute the reference values to account for the cell's orientation
-    std::ranges::copy_n(
-        std::next(reference_basisb.begin(), num_basis_values * p),
-        num_basis_values, basis_valuesb.begin());
-    if (transform_set)
+  // Evaluate the basis at the points [p0, p1). Each call has its own scratch
+  // and writes only to the data of its points, so calls can run concurrently.
+  auto evaluate_points
+      = [&cells, &x, &x_dofmap, &x_g, &cmap, &dphi0, &X, &Xb, &J, &K, &detJ,
+         &reference_basisb, &element, &cell_info, &apply_dof_transformation,
+         &push_forward_fn, &full_basis, &phi_shape, num_dofs_g, gdim, tdim,
+         phi_size, num_reference_dofs, num_basis_values, transform_set,
+         reference_value_size, tol](std::size_t p0, std::size_t p1)
+  {
+    std::vector<U> coord_dofs_b(num_dofs_g * gdim);
+    mdspan2_t coord_dofs(coord_dofs_b.data(), num_dofs_g, gdim);
+    std::vector<U> xp_b(gdim);
+    mdspan2_t xp(xp_b.data(), 1, gdim);
+
+    // Geometry basis at a point, used in non-affine case
+    std::vector<U> phi_b(phi_size);
+    cmdspan4_t phi(phi_b.data(), phi_shape);
+    auto dphi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        phi, std::pair(1, tdim + 1), 0,
+        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
+    std::vector<U> pull_back_scratch(
+        cmap.is_affine() ? 0 : cmap.pull_back_working_size(gdim));
+    std::vector<U> det_scratch(2 * gdim * tdim);
+
+    for (std::size_t p = p0; p < p1; ++p)
     {
-      apply_dof_transformation(basis_valuesb, cell_info, cell_index,
-                               (int)reference_value_size);
+      const std::int32_t cell_index = cells[p];
+
+      // Skip negative cell indices
+      if (cell_index < 0)
+        continue;
+
+      // Get cell geometry (coordinate dofs)
+      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          x_dofmap, cell_index, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      for (std::size_t i = 0; i < num_dofs_g; ++i)
+      {
+        const std::int32_t pos = 3 * x_dofs[i];
+        for (std::size_t j = 0; j < gdim; ++j)
+          coord_dofs(i, j) = x_g[pos + j];
+      }
+
+      for (std::size_t j = 0; j < gdim; ++j)
+        xp(0, j) = x[3 * p + j];
+
+      auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+
+      std::array<U, 3> Xpb = {0, 0, 0};
+      MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+          U,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+              std::size_t, 1, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>
+          Xp(Xpb.data(), 1, tdim);
+
+      // Compute reference coordinates X, and J, detJ and K
+      if (cmap.is_affine())
+      {
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi0, coord_dofs,
+                                                             _J);
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
+        std::array<U, 3> x0 = {0, 0, 0};
+        for (std::size_t i = 0; i < coord_dofs.extent(1); ++i)
+          x0[i] += coord_dofs(0, i);
+        dolfinx::fem::CoordinateElement<U>::pull_back_affine(Xp, _K, x0, xp);
+      }
+      else
+      {
+        // Pull-back physical point xp to reference coordinate Xp
+        cmap.pull_back_nonaffine(Xp, xp, coord_dofs, pull_back_scratch, tol,
+                                 15);
+        cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
+                                                             _J);
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
+      }
+      detJ[p]
+          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
+              _J, det_scratch);
+
+      for (std::size_t j = 0; j < X.extent(1); ++j)
+        X(p, j) = Xpb[j];
     }
 
-    auto _U = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        full_basis, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    push_forward_fn(_U, basis_values, _J, detJ[p], _K);
+    // Compute basis on reference element
+    std::span<U> reference_basis
+        = std::span(reference_basisb)
+              .subspan(p0 * num_basis_values, (p1 - p0) * num_basis_values);
+    element->tabulate(
+        reference_basis,
+        std::span<const U>(Xb).subspan(p0 * tdim, (p1 - p0) * tdim),
+        {p1 - p0, tdim}, 0);
+
+    // Data structure to hold basis for transformation
+    std::vector<U> basis_valuesb(num_basis_values);
+    mdspan2_t basis_values(basis_valuesb.data(), num_reference_dofs,
+                           reference_value_size);
+    for (std::size_t p = p0; p < p1; ++p)
+    {
+      const std::int32_t cell_index = cells[p];
+      // Skip negative cell indices
+      if (cell_index < 0)
+        continue;
+
+      // Permute the reference values to account for the cell's orientation
+      std::ranges::copy_n(
+          std::next(reference_basis.begin(), num_basis_values * (p - p0)),
+          num_basis_values, basis_valuesb.begin());
+      if (transform_set)
+      {
+        apply_dof_transformation(basis_valuesb, cell_info, cell_index,
+                                 (int)reference_value_size);
+      }
+
+      auto _U = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          full_basis, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      push_forward_fn(_U, basis_values, _J, detJ[p], _K);
+    }
+  };
+
+  const int num_chunks = std::max<std::size_t>(
+      1, std::min<std::size_t>(num_threads, num_points));
+  if (num_chunks < 2)
+    evaluate_points(0, num_points);
+  else
+  {
+    // An exception must not escape a spawned thread: each stores its own,
+    // which is rethrown once all have joined
+    auto try_evaluate_points
+        = [&evaluate_points](std::size_t p0, std::size_t p1,
+                             std::exception_ptr& error)
+    {
+      try
+      {
+        evaluate_points(p0, p1);
+      }
+      catch (...)
+      {
+        error = std::current_exception();
+      }
+    };
+
+    std::vector<std::exception_ptr> errors(num_chunks - 1);
+    {
+      std::vector<std::jthread> threads;
+      for (int i = 1; i < num_chunks; ++i)
+      {
+        auto [p0, p1] = dolfinx::common::local_range(i, num_points, num_chunks);
+        threads.emplace_back(try_evaluate_points, p0, p1,
+                             std::ref(errors[i - 1]));
+      }
+      auto [p0, p1] = dolfinx::common::local_range(0, num_points, num_chunks);
+      evaluate_points(p0, p1);
+    }
+    for (const std::exception_ptr& error : errors)
+      if (error)
+        std::rethrow_exception(error);
   }
   return {output_basis, reference_shape};
 }
@@ -1822,15 +1768,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>;
 
-  // Loop over cells and tabulate dofs
   assert(space_dimension == X_shape[0]);
-  std::vector<U> xb(space_dimension * gdim);
-  mdspan2_t x(xb.data(), space_dimension, gdim);
-
-  // Create buffer for coordinate dofs and point in physical space
-  std::vector<U> coordinate_dofs_b(num_dofs_g * gdim);
-  mdspan2_t coordinate_dofs(coordinate_dofs_b.data(), num_dofs_g, gdim);
-
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
@@ -1854,49 +1792,64 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
       phi_full, 0, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
       MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
-  // Create insertion function
-  std::function<void(std::size_t, std::size_t, std::ptrdiff_t)> inserter;
-  if (transposed)
+  // Tabulate the coordinates of the dofs [c0, c1). Each call has its own
+  // scratch and writes only the coordinates of its dofs.
+  auto tabulate
+      = [&dofs, &cells, &x_dofmap, &x_g, &phi, &dofmap, &cell_info,
+         &apply_dof_transformation, &coordsb, num_dofs_g, gdim, space_dimension,
+         transform_set, transposed](std::size_t c0, std::size_t c1)
   {
-    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
-                                                  std::ptrdiff_t loc)
-    { coordsb[j * coord_shape[1] + c] = xb[loc * gdim + j]; };
-  }
+    std::vector<U> xb(space_dimension * gdim);
+    mdspan2_t x(xb.data(), space_dimension, gdim);
+    std::vector<U> coordinate_dofs_b(num_dofs_g * gdim);
+    mdspan2_t coordinate_dofs(coordinate_dofs_b.data(), num_dofs_g, gdim);
+    for (std::size_t c = c0; c < c1; ++c)
+    {
+      // Fetch the coordinates of the cell
+      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          x_dofmap, cells[c], MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      for (std::size_t i = 0; i < num_dofs_g; ++i)
+      {
+        const std::int32_t pos = 3 * x_dofs[i];
+        for (std::size_t j = 0; j < gdim; ++j)
+          coordinate_dofs(i, j) = x_g[pos + j];
+      }
+      // Tabulate dof coordinates on cell
+      dolfinx::fem::CoordinateElement<U>::push_forward(x, coordinate_dofs, phi);
+      if (transform_set)
+      {
+        apply_dof_transformation(xb, cell_info, cells[c],
+                                 static_cast<int>(gdim));
+      }
+
+      // Copy the coordinates of the dof
+      std::span<const std::int32_t> cell_dofs = dofmap->cell_dofs(cells[c]);
+      const std::size_t loc = std::ranges::distance(
+          cell_dofs.begin(), std::ranges::find(cell_dofs, dofs[c]));
+      for (std::size_t j = 0; j < gdim; ++j)
+      {
+        if (transposed)
+          coordsb[j * dofs.size() + c] = x(loc, j);
+        else
+          coordsb[c * 3 + j] = x(loc, j);
+      }
+    }
+  };
+
+  const int num_chunks = std::max<std::size_t>(
+      1, std::min<std::size_t>(num_threads, cells.size()));
+  if (num_chunks < 2)
+    tabulate(0, cells.size());
   else
   {
-    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
-                                                  std::ptrdiff_t loc)
-    { coordsb[c * coord_shape[1] + j] = xb[loc * gdim + j]; };
-  }
-
-  for (std::size_t c = 0; c < cells.size(); ++c)
-  {
-    // Fetch the coordinates of the cell
-    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        x_dofmap, cells[c], MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    for (std::size_t i = 0; i < num_dofs_g; ++i)
+    std::vector<std::jthread> threads;
+    for (int i = 1; i < num_chunks; ++i)
     {
-      const int pos = 3 * x_dofs[i];
-      for (std::size_t j = 0; j < gdim; ++j)
-        coordinate_dofs(i, j) = x_g[pos + j];
+      auto [c0, c1] = dolfinx::common::local_range(i, cells.size(), num_chunks);
+      threads.emplace_back(tabulate, c0, c1);
     }
-    // Tabulate dof coordinates on cell
-    dolfinx::fem::CoordinateElement<U>::push_forward(x, coordinate_dofs, phi);
-    if (transform_set)
-    {
-      apply_dof_transformation(std::span(xb.data(), x.size()),
-                               std::span(cell_info.data(), cell_info.size()),
-                               (std::int32_t)c, (int)gdim);
-    }
-
-    // Get cell dofmap
-    auto cell_dofs = dofmap->cell_dofs(cells[c]);
-    auto it = std::ranges::find(cell_dofs, dofs[c]);
-    auto loc = std::ranges::distance(cell_dofs.begin(), it);
-
-    // Copy dof coordinates into vector
-    for (std::size_t j = 0; j < gdim; ++j)
-      inserter(c, j, loc);
+    auto [c0, c1] = dolfinx::common::local_range(0, cells.size(), num_chunks);
+    tabulate(c0, c1);
   }
 
   return {coordsb, coord_shape};
@@ -1994,6 +1947,31 @@ find_local_collisions(const dolfinx::mesh::Mesh<U>& mesh,
       collisions[i] = local_cells[0];
   }
   return collisions;
+}
+
+/// @brief The dof blocks of `V` on the closure of the entities tagged with
+/// `marker`.
+///
+/// A wrapper of `dolfinx::fem::locate_dofs_topological` on the dofmap of `V`.
+/// For a blocked space, such as a vector space, it returns blocks, not
+/// unrolled dofs: block `b` holds the dofs `b * bs + c` of every component
+/// `c`, with `bs` the block size of `V`'s index map.
+///
+/// @param[in] V The function space
+/// @param[in] meshtags Tags on entities, of any dimension, of the mesh of `V`
+/// @param[in] marker The value of the tagged entities
+/// @return The blocks, local to the process, ghosts included
+/// @pre The connectivities between the tagged entities and the cells of the
+/// mesh have been computed.
+template <std::floating_point U>
+std::vector<std::int32_t>
+locate_tagged_blocks(const dolfinx::fem::FunctionSpace<U>& V,
+                     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
+                     std::int32_t marker)
+{
+  assert(V.mesh()->topology() == meshtags.topology());
+  return dolfinx::fem::locate_dofs_topological(
+      *meshtags.topology(), *V.dofmap(), meshtags.dim(), meshtags.find(marker));
 }
 
 /// Given an input array of dofs from a function space, return an array with
