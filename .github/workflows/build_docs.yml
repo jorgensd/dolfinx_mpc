@@ -18,6 +18,7 @@ jobs:
       PETSC_ARCH: "linux-gnu-real64-32"
       PYVISTA_OFF_SCREEN: false
       PYVISTA_JUPYTER_BACKEND: "html"
+      VTK_DEFAULT_OPENGL_WINDOW: vtkOSOpenGLRenderWindow
 
     steps:
       - uses: actions/checkout@v7
@@ -27,7 +28,7 @@ jobs:
       - name: Install OpenGL libraries for pyvista
         run: |
           apt-get update
-          apt-get install -y libgl1-mesa-dev mesa-utils
+          apt-get install -y libgl1-mesa-dev mesa-utils libosmesa6
 
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
