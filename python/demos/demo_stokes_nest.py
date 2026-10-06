@@ -24,9 +24,10 @@ import basix
 import dolfinx.io
 import gmsh
 import numpy as np
+import pyvista
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_real_type, default_scalar_type
+from dolfinx import default_real_type, default_scalar_type, plot
 from dolfinx.io import gmsh as gmshio
 from ufl.core.expr import Expr
 
@@ -318,6 +319,45 @@ with dolfinx.io.XDMFFile(mesh.comm, outdir / "demo_stokes_nest.xdmf", "w") as ou
 
 with dolfinx.io.VTXWriter(mesh.comm, outdir / "stokes_nest_uh.bp", uh, engine="BP4") as vtx:
     vtx.write(0.0)
+# -
+
+# The velocity, drawn as arrows coloured by the speed. Along the tilted walls the flow runs
+# parallel to the boundary, which is the slip condition. Each process draws the cells it owns,
+# which are gathered on the first process. `uh` lives in the extended space of the constraint,
+# whose leading entries are those of `V`.
+
+# +
+pyvista.global_theme.allow_empty_mesh = True
+owned_cells = np.arange(mesh.topology.index_map(mesh.topology.dim).size_local, dtype=np.int32)
+grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(V, entities=owned_cells))
+velocity = np.zeros((grid.n_points, 3))
+velocity[:, : mesh.geometry.dim] = uh.x.array.real[: grid.n_points * mesh.geometry.dim].reshape(grid.n_points, -1)
+grid.point_data["u"] = velocity
+grid.point_data["|u|"] = np.linalg.norm(velocity, axis=1)
+pieces = mesh.comm.gather(grid, root=0)
+if pieces is not None:  # only the first process received the grids
+    pieces = [piece for piece in pieces if piece.n_points > 0]
+    clim = [min(p["|u|"].min(initial=np.inf) for p in pieces), max(p["|u|"].max(initial=0) for p in pieces)]
+    plotter = pyvista.Plotter(window_size=[800, 500])
+    for piece in pieces:
+        plotter.add_mesh(piece, color="lightgray", opacity=0.4)
+        plotter.add_mesh(
+            piece.glyph(orient="u", scale="|u|", factor=0.08),
+            scalars="|u|",
+            cmap="viridis",
+            clim=clim,
+            scalar_bar_args={"title": "speed"},
+        )
+    plotter.view_xy()
+    plotter.camera.tight(padding=0.15, view="xy", adjust_render_window=False)
+    # The figure is named after the demo, as the gallery of the documentation expects
+    figure = Path("demo_stokes_nest.py")
+    if pyvista.OFF_SCREEN:
+        plotter.screenshot(figure.with_suffix(".png"))
+    else:
+        # The interactive scene, for the gallery
+        plotter.export_html(figure.with_suffix(".html"))
+        plotter.show(screenshot=figure.with_suffix(".png"))
 # -
 
 

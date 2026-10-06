@@ -89,12 +89,19 @@ jobs:
       MPC_CMAKE_CXX_FLAGS: "-Wall -Werror -g -pedantic -Ofast -march=native"
       DEB_PYTHON_INSTALL_LAYOUT: deb_system
       MPC_RUN: coverage run --rcfile=.coveragerc -m mpi4py
+      PYVISTA_OFF_SCREEN: true
+      VTK_DEFAULT_OPENGL_WINDOW: vtkOSOpenGLRenderWindow
     defaults:
       run:
         # The container's default is sh; bash gives arrays, [[ ]] and -eo pipefail
         shell: bash
     steps:
       - uses: actions/checkout@v7
+
+      - name: Install OSMesa for off-screen rendering
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libosmesa6
 
       - name: upgrade pip
         run: python3 -m pip install  --upgrade setuptools pip

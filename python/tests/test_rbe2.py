@@ -3,7 +3,11 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
-"""Rigid spiders (RBE2): dofs tied to the rigid-body motion of a point of a spider mesh."""
+"""Rigid spiders (RBE2): dofs tied to the rigid-body motion of a point of a spider mesh.
+
+The tests that only build constraints run for every scalar type; the one that solves uses the
+scalar type of PETSc.
+"""
 
 from __future__ import annotations
 
@@ -11,30 +15,36 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import basix.ufl
+import dolfinx.fem.petsc
 import numpy as np
 import pytest
 import ufl
 from dolfinx import default_real_type, default_scalar_type, fem, mesh
+from dolfinx.common import local_range
 
 import dolfinx_mpc
 
-_atol = 1e4 * np.finfo(default_real_type).eps
+scalar_types = [np.float32, np.float64, np.complex64, np.complex128]
 
 
-def _spiders(points):
-    """A spider mesh of `points`, split in contiguous chunks over the processes.
+def _real_type(dtype):
+    """The coordinate type of a mesh carrying a constraint of `dtype`."""
+    return np.finfo(dtype).dtype.type
 
-    The input index of `points[k]` is then `k`.
-    """
-    comm = MPI.COMM_WORLD
-    points = np.asarray(points, dtype=default_real_type).reshape(-1, 3)
-    return dolfinx_mpc.create_spider_mesh(comm, np.array_split(points, comm.size)[comm.rank])
+
+def _tol(dtype):
+    return 100 * np.finfo(dtype).eps
+
+
+def _spiders(points, real_type=default_real_type):
+    """A spider mesh of `points`, given on every process. The input index of `points[k]` is `k`."""
+    points = np.asarray(points, dtype=real_type).reshape(-1, 3)
+    return dolfinx_mpc.create_spider_mesh(MPI.COMM_WORLD, points)
 
 
 def _body_space(spiders, num_components):
-    return fem.functionspace(
-        spiders, basix.ufl.element("DG", "point", 0, shape=(num_components,), dtype=default_real_type)
-    )
+    element = basix.ufl.element("DG", "point", 0, shape=(num_components,), dtype=spiders.geometry.x.dtype)
+    return fem.functionspace(spiders, element)
 
 
 def _global_blocks(W, points):
@@ -80,6 +90,7 @@ def _check_constraint(mpc, num_body, dofs, centre, rotations):
     cpp = mpc._cpp_object
     bs = cpp.function_space.dofmap.index_map_bs
     masters, (coeffs, _), blocks = cpp.masters, cpp.coefficients(), cpp.master_blocks
+    assert coeffs.dtype == mpc.dtype
     expected = _expected_rows(mpc.function_space, dofs, centre, rotations)
     for i, dof in enumerate(dofs):
         for j in range(bs):
@@ -90,26 +101,28 @@ def _check_constraint(mpc, num_body, dofs, centre, rotations):
             exp = expected[i * bs + j]
             assert set(got) == set(exp)
             for component, value in exp.items():
-                assert np.isclose(got[component], value, atol=_atol)
+                assert np.isclose(got[component], value, atol=_tol(mpc.dtype))
 
 
+@pytest.mark.parametrize("dtype", scalar_types)
 @pytest.mark.parametrize("gdim, rotations", [(3, True), (3, False), (2, True), (2, False)])
-def test_rbe2_coefficients(gdim, rotations):
+def test_rbe2_coefficients(gdim, rotations, dtype):
     """Each foot component is t_j + (theta x r)_j, with r from the spider's point."""
     comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
     if gdim == 3:
-        domain = mesh.create_unit_cube(comm, 3, 3, 3)
-        centre = np.array([1.5, 0.5, 0.5])
+        domain = mesh.create_unit_cube(comm, 3, 3, 3, dtype=real_type)
+        centre = np.array([1.5, 0.5, 0.5], dtype=real_type)
     else:
-        domain = mesh.create_unit_square(comm, 4, 4)
-        centre = np.array([1.5, 0.5, 0.0])
+        domain = mesh.create_unit_square(comm, 4, 4, dtype=real_type)
+        centre = np.array([1.5, 0.5, 0.0], dtype=real_type)
     V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
     num = (6 if gdim == 3 else 3) if rotations else gdim
-    W = _body_space(_spiders([centre]), num)
+    W = _body_space(_spiders([centre], real_type), num)
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype)
     mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W)
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)
     dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_body])
     assert mpc.has_cross_block_masters
 
@@ -117,16 +130,18 @@ def test_rbe2_coefficients(gdim, rotations):
     _check_constraint(mpc, num, dofs, centre, rotations)
 
 
-def test_topological_equals_geometrical():
+@pytest.mark.parametrize("dtype", scalar_types)
+def test_topological_equals_geometrical(dtype):
     comm = MPI.COMM_WORLD
-    domain = mesh.create_unit_cube(comm, 3, 3, 3)
+    real_type = _real_type(dtype)
+    domain = mesh.create_unit_cube(comm, 3, 3, 3, dtype=real_type)
     V = fem.functionspace(domain, ("Lagrange", 1, (3,)))
-    W = _body_space(_spiders([[1.5, 0.5, 0.5]]), 6)
+    W = _body_space(_spiders([[1.5, 0.5, 0.5]], real_type), 6)
 
     def build(add):
-        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype)
         add(mpc)
-        dolfinx_mpc.finalize_multipointconstraints([mpc, dolfinx_mpc.MultiPointConstraint(W)])
+        dolfinx_mpc.finalize_multipointconstraints([mpc, dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)])
         return mpc._cpp_object
 
     facets = mesh.locate_entities_boundary(domain, 2, lambda x: np.isclose(x[0], 1.0))
@@ -150,17 +165,19 @@ def _check_spider_blocks(mpc, mpc_body, num_body, spider_of_dof, blocks):
         assert (global_blocks == blocks[spider_of_dof(dof)]).all()
 
 
-def test_two_spiders_on_one_mesh():
+@pytest.mark.parametrize("dtype", scalar_types)
+def test_two_spiders_on_one_mesh(dtype):
     """Two faces of a cube tied to two spiders, whose points may be owned by different processes."""
     comm = MPI.COMM_WORLD
-    domain = mesh.create_unit_cube(comm, 3, 3, 3)
+    real_type = _real_type(dtype)
+    domain = mesh.create_unit_cube(comm, 3, 3, 3, dtype=real_type)
     V = fem.functionspace(domain, ("Lagrange", 1, (3,)))
-    points = np.array([[-0.5, 0.5, 0.5], [1.5, 0.5, 0.5]])
-    W = _body_space(_spiders(points), 3)
+    points = np.array([[-0.5, 0.5, 0.5], [1.5, 0.5, 0.5]], dtype=real_type)
+    W = _body_space(_spiders(points, real_type), 3)
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype)
     mpc.add_rbe2_geometrical([lambda x: np.isclose(x[0], 0.0), lambda x: np.isclose(x[0], 1.0)], W)
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)
     dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_body])
 
     # Without rotations, each foot component has one master: the same component of its spider
@@ -173,22 +190,24 @@ def test_two_spiders_on_one_mesh():
     _check_spider_blocks(mpc, mpc_body, 3, lambda dof: 0 if x[dof, 0] < 0.5 else 1, _global_blocks(W, points))
 
 
+@pytest.mark.parametrize("dtype", scalar_types)
 @pytest.mark.parametrize("num_spiders", [1, 3, 7, 11])
-def test_many_spiders(num_spiders):
+def test_many_spiders(num_spiders, dtype):
     """Spiders spread over several post offices; with fewer spiders than processes, some hold none."""
     comm = MPI.COMM_WORLD
-    domain = mesh.create_unit_square(comm, 6, 6)
+    real_type = _real_type(dtype)
+    domain = mesh.create_unit_square(comm, 6, 6, dtype=real_type)
     V = fem.functionspace(domain, ("Lagrange", 1, (2,)))
-    points = np.zeros((num_spiders, 3))
+    points = np.zeros((num_spiders, 3), dtype=real_type)
     points[:, 0] = 2.0 + np.arange(num_spiders)
-    W = _body_space(_spiders(points), 3)
+    W = _body_space(_spiders(points, real_type), 3)
 
     def spider_of(x):
         return np.round(6 * x[0] + 7 * 6 * x[1]).astype(np.int64) % num_spiders
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
+    mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype)
     mpc.add_rbe2_geometrical([lambda x, k=k: spider_of(x) == k for k in range(num_spiders)], W)
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)
     dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_body])
 
     x = V.tabulate_dof_coordinates()
@@ -201,40 +220,67 @@ def test_many_spiders(num_spiders):
         start, end = cpp.masters.offsets[slave], cpp.masters.offsets[slave + 1]
         r = x[dof, :2] - points[spider_of(x[dof : dof + 1].T)[0], :2]
         rotation = [c for m, c in zip(cpp.masters.array[start:end], coeffs[start:end]) if m % 3 == 2]
-        assert np.allclose(rotation, [-r[1] if j == 0 else r[0]], atol=_atol)
+        assert np.allclose(rotation, [-r[1] if j == 0 else r[0]], atol=_tol(dtype))
 
 
-def test_spiders_in_input_order():
-    """A spider's index is its position among the points of all processes, process 0 first."""
+@pytest.mark.parametrize("dtype", scalar_types)
+@pytest.mark.parametrize("others", ["same", "empty"])
+def test_spiders_in_input_order(dtype, others):
+    """Spider `k` is row `k` of the first process's points, whichever way the others pass them."""
     comm = MPI.COMM_WORLD
-    # A different number of points per process, in an order unrelated to the coordinates
-    mine = np.array([[10.0 * comm.rank + 3.0 - i, comm.rank, i] for i in range(comm.rank % 3 + 1)])
-    W = _body_space(dolfinx_mpc.create_spider_mesh(comm, mine), 3)
-    x_W = fem.Function(W)
+    real_type = _real_type(dtype)
+    # More points than processes, in an order unrelated to the coordinates
+    points = np.array([[3.0 - i, (5 * i) % 7, i] for i in range(2 * comm.size + 1)], dtype=real_type)
+    given = points if (comm.rank == 0 or others == "same") else np.zeros((0, 3), dtype=real_type)
+    W = _body_space(dolfinx_mpc.create_spider_mesh(comm, given), 3)
+    assert W.mesh.topology.index_map(0).size_global == len(points)
+    x_W = fem.Function(W, dtype=dtype)
     x_W.x.array[:] = W.tabulate_dof_coordinates().reshape(-1)
-    all_points = np.vstack(comm.allgather(mine))
-    for k, point in enumerate(all_points):
-        np.testing.assert_allclose(dolfinx_mpc.spider_values(x_W, k), point)
+    for k, point in enumerate(points):
+        values = dolfinx_mpc.spider_values(x_W, k)
+        assert values.dtype == dtype
+        np.testing.assert_allclose(values, point, rtol=_tol(dtype))
+
+
+def test_spider_mesh_input_must_agree():
+    """Points on another process that differ from the first process's raise on every process."""
+    comm = MPI.COMM_WORLD
+    if comm.size == 1:
+        pytest.skip("Needs a second process")
+    points = np.array([[0.5, 0.5, 0.5], [1.5, 0.5, 0.5]], dtype=default_real_type)
+    given = points if comm.rank == 0 else points + 0.1
+    with pytest.raises(ValueError, match="points of the first process"):
+        dolfinx_mpc.create_spider_mesh(comm, given)
+
+
+def test_spider_mesh_dtype_from_first_process():
+    """The coordinate type is that of the first process's points, on every process."""
+    comm = MPI.COMM_WORLD
+    given = np.array([[0.5, 0.5, 0.5]], dtype=np.float32) if comm.rank == 0 else np.zeros((0, 3))
+    spiders = dolfinx_mpc.create_spider_mesh(comm, given)
+    assert comm.allreduce(spiders.geometry.x.dtype == np.float32, op=MPI.LAND)
+    explicit = dolfinx_mpc.create_spider_mesh(comm, given, dtype=np.float64)
+    assert explicit.geometry.x.dtype == np.float64
 
 
 def test_spider_index_out_of_range():
     """A spider index past the points of the spider mesh raises on every process."""
     comm = MPI.COMM_WORLD
-    domain = mesh.create_unit_square(comm, 2, 2)
+    domain = mesh.create_unit_square(comm, 2, 2, dtype=default_real_type)
     V = fem.functionspace(domain, ("Lagrange", 1, (2,)))
     W = _body_space(_spiders([[1.5, 0.5, 0.0]]), 2)
     mpc = dolfinx_mpc.MultiPointConstraint(V)
     with pytest.raises(IndexError, match="outside the 1 points"):
         mpc.add_rbe2_geometrical([None, lambda x: np.isclose(x[0], 1.0)], W)
     with pytest.raises(IndexError, match="no point with input index 3"):
-        dolfinx_mpc.spider_values(fem.Function(W), 3)
+        dolfinx_mpc.spider_values(fem.Function(W, dtype=default_scalar_type), 3)
     assert comm.allreduce(1, op=MPI.SUM) == comm.size
 
 
 def test_foot_of_two_spiders():
     """A dof tied to two spiders is a slave constrained twice."""
     comm = MPI.COMM_WORLD
-    domain = mesh.create_unit_cube(comm, 2, 2, 2)
+    domain = mesh.create_unit_cube(comm, 2, 2, 2, dtype=default_real_type)
     V = fem.functionspace(domain, ("Lagrange", 1, (3,)))
     W = _body_space(_spiders([[1.5, 0.5, 0.5], [2.5, 0.5, 0.5]]), 3)
     mpc = dolfinx_mpc.MultiPointConstraint(V)
@@ -244,33 +290,156 @@ def test_foot_of_two_spiders():
         dolfinx_mpc.finalize_multipointconstraints([mpc, dolfinx_mpc.MultiPointConstraint(W)])
 
 
-def test_spider_mesh():
-    """Coinciding points are merged."""
-    merged = _spiders([[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.7, 0.5, 0.5]])
-    assert merged.topology.index_map(0).size_global == 2
+def test_scalar_type():
+    """The scalar type defaults to the precision of the mesh, and must match it."""
+    comm = MPI.COMM_WORLD
+    is_complex = np.issubdtype(default_scalar_type, np.complexfloating)
+    for real_type, complex_type in ((np.float32, np.complex64), (np.float64, np.complex128)):
+        domain = mesh.create_unit_square(comm, 2, 2, dtype=real_type)
+        V = fem.functionspace(domain, ("Lagrange", 1, (2,)))
+        assert dolfinx_mpc.MultiPointConstraint(V).dtype == (complex_type if is_complex else real_type)
+        other = np.float64 if real_type == np.float32 else np.complex64
+        with pytest.raises(ValueError, match="needs a mesh of"):
+            dolfinx_mpc.MultiPointConstraint(V, dtype=other)
+    with pytest.raises(ValueError, match="Unsupported scalar type"):
+        dolfinx_mpc.MultiPointConstraint(V, dtype=np.int32)
 
 
+@pytest.mark.parametrize("real_type", [np.float32, np.float64])
+def test_spider_mesh(real_type):
+    """Coinciding points are distinct spiders, and the mesh has the points' precision."""
+    points = [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.7, 0.5, 0.5]]
+    spiders = _spiders(points, real_type)
+    assert spiders.topology.index_map(0).size_global == 3
+    assert spiders.geometry.x.dtype == real_type
+    x = fem.Function(_body_space(spiders, 3), dtype=real_type)
+    x.x.array[:] = x.function_space.tabulate_dof_coordinates().reshape(-1)
+    for k, point in enumerate(points):
+        np.testing.assert_allclose(dolfinx_mpc.spider_values(x, k), point)
+
+
+def _input_indices(spiders):
+    imap = spiders.topology.index_map(0)
+    return np.asarray(spiders.topology.original_cell_index[: imap.size_local + imap.num_ghosts])
+
+
+def test_spider_mesh_partition():
+    """Of M points, a process owns those in its local range, as the post office splits an index range,
+    so spider k of two meshes of M points is on the same process."""
+    comm = MPI.COMM_WORLD
+    for num in (1, comm.size, 3 * comm.size + 1):
+        spiders = _spiders(np.column_stack([np.arange(num), np.zeros(num), np.zeros(num)]))
+        start, end = local_range(comm.rank, num, comm.size)
+        np.testing.assert_array_equal(np.sort(_input_indices(spiders)), np.arange(start, end))
+
+
+def test_spider_pair():
+    """Spider k of one spider mesh is related to spider k of the other."""
+    comm = MPI.COMM_WORLD
+    num = 3 * comm.size + 1
+    points = np.column_stack([np.arange(num), np.zeros(num), np.zeros(num)])
+    spiders_A, spiders_B = _spiders(points), _spiders(points[::-1])
+    emap = dolfinx_mpc.create_spider_pair(spiders_A, spiders_B)
+    local_B = _input_indices(spiders_B)
+    mapped = emap.sub_topology_to_topology(np.arange(len(local_B), dtype=np.int32), False)
+    np.testing.assert_array_equal(_input_indices(spiders_A)[mapped], local_B)
+
+
+def test_spider_pair_errors():
+    """Meshes of different numbers of spiders, or with spider k on different processes, raise on every
+    process."""
+    comm = MPI.COMM_WORLD
+    num = 3 * comm.size
+    points = np.column_stack([np.arange(num), np.zeros(num), np.zeros(num)]).astype(default_real_type)
+    spiders_A = _spiders(points)
+    with pytest.raises(ValueError, match="same number of spiders"):
+        dolfinx_mpc.create_spider_pair(spiders_A, _spiders(points[:-1]))
+    if comm.size > 1:
+        # Every point on the first process
+        on_first = mesh.create_point_mesh(comm, points if comm.rank == 0 else np.zeros((0, 3), dtype=points.dtype))
+        with pytest.raises(ValueError, match="different processes"):
+            dolfinx_mpc.create_spider_pair(spiders_A, on_first)
+
+
+@pytest.mark.parametrize("dtype", scalar_types)
+def test_move_mesh(dtype):
+    """Every geometry node moves by the displacement at the node, given as a function, an
+    expression or a callable."""
+    comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
+
+    def displacement(x):
+        return np.vstack([0.1 * x[0] * x[1], 0.2 * x[0] - 0.05 * x[1] ** 2])
+
+    for kind in ("function", "expression", "callable"):
+        domain = mesh.create_unit_square(comm, 4, 3, mesh.CellType.quadrilateral, dtype=real_type)
+        x0 = domain.geometry.x.copy()
+        if kind == "function":
+            V = fem.functionspace(domain, ("Lagrange", 2, (2,)))
+            u = fem.Function(V, dtype=dtype)
+            u.interpolate(displacement)
+        elif kind == "expression":
+            x = ufl.SpatialCoordinate(domain)
+            u = ufl.as_vector([0.1 * x[0] * x[1], 0.2 * x[0] - 0.05 * x[1] ** 2])
+        else:
+            u = displacement
+        dolfinx_mpc.spider.move(domain, u)
+        expected = x0[:, :2] + displacement(x0.T).T
+        np.testing.assert_allclose(domain.geometry.x[:, :2], expected, atol=_tol(real_type))
+        np.testing.assert_array_equal(domain.geometry.x[:, 2], x0[:, 2])
+
+
+@pytest.mark.parametrize("dtype", scalar_types)
+@pytest.mark.parametrize("num_components", [3, 6])
+def test_move_spiders(dtype, num_components):
+    """Each spider moves by its own translation, the first components of its dofs, whatever the
+    order of the dofs."""
+    comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
+    points = np.array([[0.5 * i, 1.0, -0.5 * i] for i in range(2 * comm.size + 1)], dtype=real_type)
+    spiders = _spiders(points, real_type)
+    W = _body_space(spiders, num_components)
+    w = fem.Function(W, dtype=dtype)
+    # A translation per spider, from its coordinate; the rotations, if any, are not used
+    x_W = W.tabulate_dof_coordinates()
+    values = np.zeros((len(x_W), num_components), dtype=dtype)
+    values[:, :3] = np.column_stack([x_W[:, 0] + 1, 2 * x_W[:, 2], -x_W[:, 0]])
+    if num_components == 6:
+        values[:, 3:] = 7.0
+    w.x.array[:] = values.reshape(-1)
+    expected = [dolfinx_mpc.spider_values(w, k) for k in range(len(points))]
+    dolfinx_mpc.spider.move(spiders, w)
+    x_moved = fem.Function(_body_space(spiders, 3), dtype=real_type)
+    x_moved.x.array[:] = x_moved.function_space.tabulate_dof_coordinates().reshape(-1)
+    for k, point in enumerate(points):
+        np.testing.assert_allclose(
+            dolfinx_mpc.spider_values(x_moved, k), point + expected[k][:3].real, atol=_tol(real_type)
+        )
+
+
+@pytest.mark.parametrize("dtype", scalar_types)
 @pytest.mark.parametrize("gdim", [2, 3])
-def test_update_rbe2(gdim):
+def test_update_rbe2(gdim, dtype):
     """After the meshes move, the updated coefficients are those of a constraint built anew."""
     comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
     if gdim == 3:
-        domain = mesh.create_unit_cube(comm, 3, 3, 3)
+        domain = mesh.create_unit_cube(comm, 3, 3, 3, dtype=real_type)
         points = [[1.5, 0.5, 0.5], [-0.5, 0.5, 0.5]]
     else:
-        domain = mesh.create_unit_square(comm, 4, 4)
+        domain = mesh.create_unit_square(comm, 4, 4, dtype=real_type)
         points = [[1.5, 0.5, 0.0], [-0.5, 0.5, 0.0]]
     V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
-    W = _body_space(_spiders(points), 6 if gdim == 3 else 3)
+    W = _body_space(_spiders(points, real_type), 6 if gdim == 3 else 3)
     # Every foot on one plane through each spider: some rotation coefficients start at zero. The
     # feet are found before the mesh moves, so that both constraints tie the same dofs.
     fdim = gdim - 1
     facets = [mesh.locate_entities_boundary(domain, fdim, lambda x, s=s: np.isclose(x[0], s)) for s in (1.0, 0.0)]
 
     def build():
-        mpc = dolfinx_mpc.MultiPointConstraint(V)
+        mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype)
         mpc.add_rbe2_topological(fdim, facets, W)
-        dolfinx_mpc.finalize_multipointconstraints([mpc, dolfinx_mpc.MultiPointConstraint(W)])
+        dolfinx_mpc.finalize_multipointconstraints([mpc, dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)])
         return mpc
 
     mpc = build()
@@ -280,12 +449,13 @@ def test_update_rbe2(gdim):
     x = domain.geometry.x
     x[:, 0] += 0.2 * x[:, 1] ** 2
     x[:, 1] += 0.1 * x[:, 0]
-    W.mesh.geometry.x[:, :gdim] += np.array([0.05, -0.1, 0.2][:gdim])
+    W.mesh.geometry.x[:, :gdim] += np.array([0.05, -0.1, 0.2][:gdim], dtype=real_type)
     mpc.update_rbe2()
     updated = mpc._cpp_object.all_coefficients()[0]
+    assert updated.dtype == dtype
     reference = build()._cpp_object
     np.testing.assert_array_equal(mpc._cpp_object.all_masters(), reference.all_masters())
-    np.testing.assert_allclose(updated, reference.all_coefficients()[0], atol=_atol)
+    np.testing.assert_allclose(updated, reference.all_coefficients()[0], atol=_tol(dtype))
     moved = comm.allreduce(np.abs(updated - before).max(initial=0.0), op=MPI.MAX)
     assert moved > 0.01
 
@@ -293,20 +463,26 @@ def test_update_rbe2(gdim):
 @pytest.mark.skipif(not PETSc.Sys.hasExternalPackage("mumps"), reason="PETSc was not built with MUMPS")
 @pytest.mark.parametrize("kind", ["nest", "mpi"])
 def test_spider_joins_two_meshes(kind):
-    """Two cubes joined by a spider alone: the feet move rigidly and the load reaches the clamp."""
+    """Two cubes joined by a spider alone: the feet move rigidly and the load reaches the clamp.
+
+    Solved with PETSc, so in its scalar type."""
     comm = MPI.COMM_WORLD
-    cube_a = mesh.create_box(comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [3, 3, 3], mesh.CellType.tetrahedron)
-    cube_b = mesh.create_box(comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [3, 3, 3], mesh.CellType.hexahedron)
+    cube_a = mesh.create_box(
+        comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [3, 3, 3], mesh.CellType.tetrahedron, dtype=default_real_type
+    )
+    cube_b = mesh.create_box(
+        comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [3, 3, 3], mesh.CellType.hexahedron, dtype=default_real_type
+    )
     V_a = fem.functionspace(cube_a, ("Lagrange", 1, (3,)))
     V_b = fem.functionspace(cube_b, ("Lagrange", 1, (3,)))
-    centre = np.array([1.1, 0.5, 0.5])
+    centre = np.array([1.1, 0.5, 0.5], dtype=default_real_type)
     W = _body_space(_spiders([centre]), 6)
 
-    mpc_a = dolfinx_mpc.MultiPointConstraint(V_a)
+    mpc_a = dolfinx_mpc.MultiPointConstraint(V_a, dtype=default_scalar_type)
     mpc_a.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W)
-    mpc_b = dolfinx_mpc.MultiPointConstraint(V_b)
+    mpc_b = dolfinx_mpc.MultiPointConstraint(V_b, dtype=default_scalar_type)
     mpc_b.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.2), W)
-    mpcs = [mpc_a, mpc_b, dolfinx_mpc.MultiPointConstraint(W)]
+    mpcs = [mpc_a, mpc_b, dolfinx_mpc.MultiPointConstraint(W, dtype=default_scalar_type)]
     dolfinx_mpc.finalize_multipointconstraints(mpcs)
 
     def a(V):
@@ -334,8 +510,92 @@ def test_spider_joins_two_meshes(kind):
     t, theta = values[:3], values[3:]
     assert abs(t[2]) > 0
 
+    # The rigid motion is exact up to the rounding of the solve
+    tol = 1e4 * np.finfo(default_real_type).eps
     for u, V, side in ((u_a, V_a, 1.0), (u_b, V_b, 1.2)):
         dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], side))
         r = V.tabulate_dof_coordinates()[dofs] - centre
         expected = t + np.cross(theta, r) if len(dofs) > 0 else np.zeros((0, 3))
-        np.testing.assert_allclose(u.x.array.reshape(-1, 3)[dofs], expected, atol=_atol)
+        np.testing.assert_allclose(u.x.array.reshape(-1, 3)[dofs], expected, atol=tol)
+
+
+def _held_spider(bcs_on_constraint: bool):
+    """A cube whose face x = 1 is tied to a spider, the spider held by a Dirichlet condition.
+
+    Only the constraint couples the spider to the cube, so no form has the spider's space. The
+    condition is always given to the problem, and to the spider's constraint if
+    `bcs_on_constraint`.
+    """
+    comm = MPI.COMM_WORLD
+    cube = mesh.create_box(
+        comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [3, 3, 3], mesh.CellType.tetrahedron, dtype=default_real_type
+    )
+    V = fem.functionspace(cube, ("Lagrange", 1, (3,)))
+    centre = np.array([1.2, 0.5, 0.5], dtype=default_real_type)
+    spiders = _spiders([centre])
+    W = _body_space(spiders, 6)
+    # A rigid motion with a translation and a rotation, so that the eliminated masters carry a
+    # nonzero offset
+    held = np.array([0.1, -0.05, 0.02, 0.0, 0.1, -0.2], dtype=default_scalar_type)
+    cells = np.arange(spiders.topology.index_map(0).size_local, dtype=np.int32)
+    bc = fem.dirichletbc(held, fem.locate_dofs_topological(W, 0, cells), W)
+
+    mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=default_scalar_type)
+    mpc.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0), W)
+    mpc_spider = dolfinx_mpc.MultiPointConstraint(W, dtype=default_scalar_type, bcs=[bc] if bcs_on_constraint else None)
+    dolfinx_mpc.finalize_multipointconstraints([mpc, mpc_spider])
+
+    u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
+    a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx
+    L = ufl.inner(fem.Constant(cube, np.array([0.0, 0.0, -1.0], dtype=default_scalar_type)), v) * ufl.dx
+    return V, centre, held, bc, [mpc, mpc_spider], a, L
+
+
+@pytest.mark.skipif(not PETSc.Sys.hasExternalPackage("mumps"), reason="PETSc was not built with MUMPS")
+@pytest.mark.parametrize("kind", ["nest", "mpi"])
+def test_spider_held_by_dirichlet_condition(kind):
+    """A Dirichlet condition on a spider, whose space has no form, holds the face it is tied to: the
+    solution is that of the cube with the face held at the spider's rigid motion. Regression test:
+    the diagonal of a block without a form was not set, a singular system."""
+    V, centre, held, bc, mpcs, a, L = _held_spider(bcs_on_constraint=True)
+    options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+    problem = dolfinx_mpc.LinearProblem(
+        [[fem.form(a, dtype=default_scalar_type), None], [None, None]],
+        [fem.form(L, dtype=default_scalar_type), None],
+        mpcs,
+        bcs=[bc],
+        kind=kind,
+        petsc_options_prefix=f"test_held_spider_{kind}_",
+        petsc_options=options,
+    )
+    u, body = problem.solve()
+    np.testing.assert_allclose(dolfinx_mpc.spider_values(body, 0), held)
+
+    # The same face held directly
+    t, theta = held[:3], held[3:]
+    face_motion = fem.Function(V, dtype=default_scalar_type)
+    face_motion.interpolate(lambda x: t[:, None] + np.cross(theta, (x - centre[:, None]).T).T)
+    face = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1.0))
+    reference = dolfinx.fem.petsc.LinearProblem(
+        a,
+        L,
+        bcs=[fem.dirichletbc(face_motion, face)],
+        petsc_options_prefix=f"test_held_spider_reference_{kind}_",
+        petsc_options=options,
+    ).solve()
+    num_owned = V.dofmap.index_map.size_local * 3
+    tol = 1e4 * np.finfo(default_real_type).eps
+    np.testing.assert_allclose(u.x.array[:num_owned], reference.x.array[:num_owned], atol=tol)
+
+
+@pytest.mark.parametrize("kind", ["nest", "mpi"])
+def test_dirichlet_condition_on_kept_master_raises(kind):
+    """A Dirichlet condition given to the assembly but not to the constraint of the master's space
+    leaves the master in the constraint, and assembly would add the slave's entries to a
+    constrained row. Regression test: this gave a wrong solution silently; it raises on every
+    process."""
+    V, _, _, bc, mpcs, a, _ = _held_spider(bcs_on_constraint=False)
+    with pytest.raises(ValueError, match="constrains a master"):
+        dolfinx_mpc.assemble_matrix(
+            [[fem.form(a, dtype=default_scalar_type), None], [None, None]], mpcs, bcs=[bc], kind=kind
+        )

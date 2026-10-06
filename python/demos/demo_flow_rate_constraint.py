@@ -40,6 +40,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from mpi4py import MPI
 
@@ -421,8 +422,12 @@ if pieces is not None:  # only the root process received the grids
         )
     plotter.view_xy()
     plotter.camera.tight(padding=0.6, view="xy", adjust_render_window=False)
+    # The figure is named after the demo, as the gallery of the documentation expects
+    figure = Path("demo_flow_rate_constraint.py")
     if pyvista.OFF_SCREEN:
-        plotter.screenshot("demo_flow_rate_constraint.png")
+        plotter.screenshot(figure.with_suffix(".png"))
     else:
-        plotter.show()
+        # The interactive scene, for the gallery
+        plotter.export_html(figure.with_suffix(".html"))
+        plotter.show(screenshot=figure.with_suffix(".png"))
 # -

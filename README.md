@@ -6,34 +6,43 @@
 
 Author: Jørgen S. Dokken
 
-This library contains an add-on to FEniCSx enabling the possibilities
-of enforce multi-point constraints, such as 
+This library is an add-on to [DOLFINx](https://github.com/FEniCS/dolfinx) for imposing
+multi-point constraints, linear relations between degrees of freedom,
 
-$$u_i =\sum_{j=0,i \neq j}^n \alpha_j u_j, i\in I_N,$$
+$$
+u_s = \sum_j c_{sj}\, u_{m_j} + g_s,
+$$
 
-where $I_N$ is the set of degrees of freedom to constrain.
+where each constrained, *slave*, degree of freedom $u_s$ is given by *master* degrees of freedom
+$u_{m_j}$, with known coefficients $c_{sj}$ and an offset $g_s$. A master may carry a Dirichlet
+condition, and its value is then part of the offset. The constraints are eliminated from the
+system as it is assembled, so the solution satisfies them exactly.
 
-This can be used to for instance enforce slip conditions strongly.
+<!-- The book's front page, index.md, shows its gallery here -->
 
-Consider a linear system of the form 
-$Au=b$, with the additional constraints written on the form ${K\hat{u}=u}$, where $K$ is a prolongation matrix, $\hat{u}$ is the vector of unknowns excluding the $I_N$ entries. 
+The library provides:
 
-We then solve the system 
-${K^T A K \hat{u} = K^T b}$, where $K^T A K$ is symmetric if $A$ was symmetric.
-For complex numbers, we use the Hermitian transpose and solve the system ${\overline{K^T} A K \hat{u} = \overline{K^T} b}$, where $\overline{K^T}$ is the complex conjugate of $K^T$, and $\overline{K^T} A K$ is Hermitian if $A$ was Hermitian.
+- **Slip conditions**, $u\cdot n = 0$ on boundaries not aligned with the axes;
+- **Periodic conditions**, also with a phase, as in Floquet–Bloch conditions;
+- **Contact** conditions between non-matching interfaces, with or without slip;
+- **Integral conditions**, such as a prescribed mean value, boundary average or flow rate;
+- **Spiders**, which tie degrees of freedom to a point, rigidly (RBE2) or as a weighted average
+  (RBE3);
+- **Constraints between spaces and meshes**, with masters in another block of the system, such as
+  a field on a submesh tied to the trace of its parent;
+- **General constraints**, from a map between degrees of freedom, or from slaves, masters and
+  coefficients given directly.
 
-If we include boundary conditions on the form $u=g$, we 
-assemble the system
-${K^TAK\hat{u} = K^T(b-A\hat{g})}$ where ${A\hat{g}}$ is an extension of the boundary condition $g$ to all degrees of freedom.
+The constraints apply to linear and nonlinear problems, to block systems, assembled as nest or
+single matrices, for real and complex scalars, in serial and in parallel. The assembly is written in
+C++, with a Python interface. How the constraints are eliminated is described in the theory section
+of the [documentation](https://jorgensd.github.io/dolfinx_mpc/docs/elimination.html).
 
-The library performs custom matrix and vector assembly adding the extra constraints to the set of linear equations.
-All assemblies are local to the process, and no MPI communication except when setting up the multi point constraints.
-
-These assemblers are written in C++, but have a Python interface.
-There are also pure Python-based assemblers in the optional {py:mod}`dolfinx_mpc.numba` module.
 
 # Documentation
 Documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.github.io/dolfinx_mpc)
+
+<!-- The book's front page, index.md, continues from here: it is the documentation itself -->
 
 # Installation
 

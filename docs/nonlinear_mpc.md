@@ -1,62 +1,8 @@
 # Multi-point constraints for nonlinear problems
 
-The aim of this section is to explain how an (affine) multi-point constraint is applied to a nonlinear problem in DOLFINx_MPC. 
-Furthermore, it explains why the treatment of the inhomogeneity $g$ differs between the linear and the nonlinear solver paths.
-
-A multi-point constraint relates each *slave* degree of freedom $s$ to a set of
-*master* degrees of freedom $m_j$,
-
-$$
-u_s \;=\; \sum_{j} c_{sj}\, u_{m_j} \;+\; g_s .
-$$
-
-Collecting the unconstrained degrees of freedom into the reduced vector
-$\hat{u}\in\mathbb{R}^{m}$, this is the affine map
-
-$$
-u \;=\; K\hat{u} + g, \qquad K \in \mathbb{R}^{n\times m},\quad g\in\mathbb{R}^{n},
-$$
-
-where $K$ has a unit row for every unconstrained dof, the coefficients
-$c_{sj}$ in the row of each slave, and $g$ is supported on the slave dofs only.
-A purely linear constraint is the special case $g = 0$.
-
-Two sources contribute to $g$:
-
-1. a user-supplied inhomogeneity, passed as `rhs_coeffs`;
-2. Dirichlet-constrained masters. If master $m_j$ of slave $s$ carries a
-   Dirichlet condition with value $g_{m_j}$, it is *eliminated* from the
-   relation and its contribution folded into the offset,
-
-$$
-u_s \;=\; \sum_{j \notin \mathcal{D}} c_{sj} u_{m_j}
-        \;+\; \underbrace{\sum_{j \in \mathcal{D}} c_{sj}\, g_{m_j}}_{\text{folded into } g_s} .
-$$
-
-Because $g_{m_j}$ is read from the {py:class}`dolfinx.fem.DirichletBC` each time
-{py:meth}`dolfinx_mpc.MultiPointConstraint.update_constants` is called, time-dependent boundary data
-is supported.
-
-We can rephrase a Dirichlet condition as an MPC
-with an *empty* master list and $g_s$ equal to the prescribed value, so that
-$u_s = g_s$. Its row of $K$ is identically zero.
-
-## The linear problem
-
-For $A u = b$, substituting $u = K\hat{u} + g$ and projecting the equations with
-$K^{H}$ (the Hermitian transpose; the plain transpose for real scalars) gives
-
-$$
-K^{H} A K\, \hat{u} \;=\; K^{H}\!\left(b - A g\right).
-$$
-
-The term $-K^{H} A g$ is what {py:func}`dolfinx_mpc.apply_mpc_lifting` computes. It is
-structurally identical to Dirichlet lifting, and {py:class}`dolfinx_mpc.LinearProblem` applies it
-automatically. After solving, the full vector is recovered by *backsubstitution*,
-
-$$
-u \;=\; K\hat{u} + g .
-$$
+This section explains how an affine multi-point constraint, $u = K\hat{u} + g$, is applied to a
+nonlinear problem, and why the inhomogeneity $g$ is treated differently than in the linear problem.
+The constraint, the reduced linear system and its assembly are described in {doc}`elimination`.
 
 ## The nonlinear problem
 
@@ -79,11 +25,11 @@ $$
 since $g$ is constant in $\hat{u}$. One Newton step is therefore
 
 $$
-K^{H} J(u)\, K \,\delta\hat{u} \;=\; -\,K^{H} F(u),
-\qquad
-\hat{u} \leftarrow \hat{u} + \delta\hat{u},
-\qquad
-u = K\hat{u} + g .
+\begin{aligned}
+K^{H} J(u)\, K \,\delta\hat{u} &= -\,K^{H} F(u),\\
+\hat{u} &\leftarrow \hat{u} + \delta\hat{u},\\
+u &= K\hat{u} + g .
+\end{aligned}
 $$
 
 ### The increment is homogeneous, the iterate is affine
@@ -91,9 +37,10 @@ $$
 Equivalently, in the full space the update is
 
 $$
-\delta u \;=\; K\,\delta\hat{u},
-\qquad\text{so}\qquad
-u^{(k+1)} = u^{(k)} + \delta u .
+\begin{aligned}
+\delta u &= K\,\delta\hat{u},\\
+u^{(k+1)} &= u^{(k)} + \delta u .
+\end{aligned}
 $$
 
 Note the absence of $g$ in the increment: two iterates both satisfying the
@@ -131,7 +78,7 @@ r(\hat{u}) \;=\; K^{H}\!\left(A(K\hat{u}+g) - b\right)
              \;+\; \underbrace{K^{H} A g \;-\; K^{H} b}_{\text{reduced load}} ,
 $$
 
-and setting $r=0$ recovers exactly the linear system of the previous section.
+and setting $r=0$ recovers exactly the linear system of {doc}`elimination`.
 
 ### Handling of non-MPC Dirichlet conditions
 

@@ -64,14 +64,16 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from mpi4py import MPI
 
 import dolfinx.fem.petsc
 import numpy as np
 import pandas
+import pyvista
 import ufl
-from dolfinx import default_real_type, fem, mesh
+from dolfinx import default_real_type, fem, mesh, plot
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
@@ -244,6 +246,62 @@ for kind in ("nest", "mpi"):
     if msh.comm.rank == 0:
         print(f"kind={kind!s:5}  max |u - u_ref| = {differences[0]:.2e},  max |u_G - u_ref_G| = {differences[1]:.2e}")
     assert max(differences) < tol * u_max
+# -
+
+# The bulk solution, raised by its value, and the surface field, drawn as a tube on its
+# top edge, where it lies on the trace of the bulk solution. Each process draws the cells
+# it owns, which are gathered on the first process.
+
+# +
+pyvista.global_theme.allow_empty_mesh = True
+
+
+def gathered_grid(u, V, name):
+    """The cells this process owns as a PyVista grid with the values of `u`, gathered on the first process.
+
+    `u` may live in the extended space of a constraint, whose leading entries are those of `V`.
+    """
+    tdim = V.mesh.topology.dim
+    owned = np.arange(V.mesh.topology.index_map(tdim).size_local, dtype=np.int32)
+    grid = pyvista.UnstructuredGrid(*plot.vtk_mesh(V, entities=owned))
+    grid.point_data[name] = u.x.array.real[: grid.n_points]
+    pieces = V.mesh.comm.gather(grid, root=0)
+    # A process may own no cells, as of an interface, and its grid then holds no values
+    return None if pieces is None else [piece for piece in pieces if piece.n_points > 0]
+
+
+def value_range(pieces, name):
+    return [min(p[name].min(initial=np.inf) for p in pieces), max(p[name].max(initial=-np.inf) for p in pieces)]
+
+
+bulk_pieces = gathered_grid(uh, V, "u")
+surface_pieces = gathered_grid(uh_G, V_G, "u")
+if bulk_pieces is not None:  # only the first process received the grids
+    u_range = value_range(bulk_pieces + surface_pieces, "u")
+    plotter = pyvista.Plotter(window_size=[800, 600])
+    for piece in bulk_pieces:
+        warped = piece.warp_by_scalar("u", factor=0.2, normal=(0.0, 0.0, 1.0))
+        plotter.add_mesh(
+            warped,
+            scalars="u",
+            cmap="viridis",
+            clim=u_range,
+            show_edges=True,
+            edge_color="gray",
+            scalar_bar_args={"vertical": True, "position_x": 0.85, "position_y": 0.2},
+        )
+    for piece in surface_pieces:
+        warped = piece.warp_by_scalar("u", factor=0.2, normal=(0.0, 0.0, 1.0))
+        plotter.add_mesh(warped, color="red", line_width=8, render_lines_as_tubes=True)
+    plotter.view_isometric()
+    # The figure is named after the demo, as the gallery of the documentation expects
+    figure = Path("demo_bulk_surface.py")
+    if pyvista.OFF_SCREEN:
+        plotter.screenshot(figure.with_suffix(".png"))
+    else:
+        # The interactive scene, for the gallery
+        plotter.export_html(figure.with_suffix(".html"))
+        plotter.show(screenshot=figure.with_suffix(".png"))
 # -
 
 # ## Cost and conditioning

@@ -35,10 +35,29 @@
   once, as when two periodic conditions share a corner, which previously failed on the offsets in serial
   and hung in parallel. A master without a local index in the extended space, which would previously
   have given wrong results silently, is also rejected.
+- **New feature**: `MultiPointConstraint.input_space`, the function space a constraint was created with, on which forms
+  and Dirichlet conditions are stated, while `function_space` is its extension by the masters after finalizing.
+  `ufl.MixedFunctionSpace(*(mpc.input_space for mpc in mpcs))` gives the spaces in the order of the blocks.
+- **Fix**: a Dirichlet condition on a block that no form touches, such as a spider tied to a body only by a constraint,
+  now gets its diagonal and its value in the right-hand side. The sparsity pattern reserves the whole owned diagonal of
+  such a block, and the assembly and `LinearProblem`/`NonlinearProblem` take the block's space from its constraint.
+  The diagonal was missing before, which made the system singular, and no error was raised.
+- **Error handling**: assembly raises `ValueError` on every process if a Dirichlet condition given to it constrains a
+  master that the constraint kept. Give the condition to the constraint of the master's space as well,
+  `MultiPointConstraint(V, bcs=...)`, so that the master is eliminated into the offset. Previously the slave's entries
+  were added to the constrained row, a silently wrong solution.
 - **New feature**: rigid spiders (RBE2). `MultiPointConstraint.add_rbe2_topological` and `add_rbe2_geometrical` tie
   dofs to the rigid-body motion of points of a spider mesh (`dolfinx_mpc.create_spider_mesh`), and `update_rbe2`
   recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe2`, `update_rbe2` and
-  `locate_spiders`. Blocked vector assembly skips a block without a linear form. New demo: `python/demos/demo_spider.py`.
+  `locate_spiders`. Blocked vector assembly skips a block without a linear form. New demos:
+  `python/demos/demo_spider.py`, and `python/demos/demo_spider_hinge.py`, a double pendulum of two beams on two pins,
+  each pin a pair of spiders joined by a spring stiff in all but rotation about the pin.
+  The spider utilities are in `dolfinx_mpc.spider`: `create_spider_mesh` takes the points on the first process (the
+  others pass none or the same, checked on every process), keeps coinciding points as distinct spiders and agrees on one
+  coordinate type; `create_spider_pair` relates spider k of two spider meshes of the same size, as an entity map for
+  forms coupling them, such as springs; `move(mesh, u)` moves a mesh, or the spiders by their translations, by a
+  displacement. The scalar type of a constraint is set once, by `MultiPointConstraint(V, dtype=...)`, which defaults
+  to the precision of the mesh.
 - **New feature**: flexible spiders (RBE3). `MultiPointConstraint.add_rbe3_topological` and `add_rbe3_geometrical`, on
   the constraint of a spider mesh, tie each spider to the weighted least-squares rigid fit of its feet, which may be on
   several meshes; `update_rbe3` recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe3` and

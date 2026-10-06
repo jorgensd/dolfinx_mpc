@@ -1,0 +1,41 @@
+/* Copyright (C) 2026 Jørgen S. Dokken
+ *
+ * This file is part of DOLFINX_MPC
+ *
+ * SPDX-License-Identifier:    MIT
+ *
+ * A gallery card is a link, drawn as a layer over the whole card. The button and the
+ * interactive scene sit above that layer, so that they get the clicks and the drags.
+ */
+
+.gallery-figure {
+  position: relative;
+}
+
+.gallery-figure iframe {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  border: 0;
+}
+
+.gallery-3d {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 3;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--pst-color-border, #ccc);
+  border-radius: 0.25rem;
+  background: var(--pst-color-background, #fff);
+  color: var(--pst-color-text-base, #222);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.gallery-3d:hover,
+.gallery-3d:focus-visible {
+  border-color: var(--pst-color-primary, #0a7d91);
+  color: var(--pst-color-primary, #0a7d91);
+}
