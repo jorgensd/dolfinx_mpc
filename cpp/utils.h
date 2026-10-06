@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Scatterer.h>
 #include <dolfinx/common/sort.h>
@@ -26,11 +27,14 @@
 #include <dolfinx/la/petsc.h>
 #include <dolfinx/mesh/MeshTags.h>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <numeric>
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace impl
 {
@@ -1281,6 +1285,45 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   MPI_Wait(&ghost_requests[4], &ghost_status[4]);
   ghost_data.coeffs = recv_coeffs;
   return ghost_data;
+}
+
+/// @brief Complete the rows of owned slaves with the rows of the slaves that
+/// are ghosts on this process.
+/// @param[in] slaves The owned slaves (local, unrolled)
+/// @param[in] masters The masters of each slave (global, unrolled)
+/// @param[in] coeffs The coefficient of each master
+/// @param[in] owners The process owning each master
+/// @param[in] num_masters The number of masters of each slave
+/// @param[in] imap The index map of the slaves' space
+/// @param[in] bs The block size of `imap`
+/// @return The constraint, owned slaves first
+/// @note Collective.
+template <typename T>
+mpc_data<T>
+add_ghost_rows(std::vector<std::int32_t>&& slaves,
+               std::vector<std::int64_t>&& masters, std::vector<T>&& coeffs,
+               std::vector<std::int32_t>&& owners,
+               std::vector<std::int32_t>&& num_masters,
+               std::shared_ptr<const dolfinx::common::IndexMap> imap, int bs)
+{
+  mpc_data<T> ghosts = distribute_ghost_data<T>(slaves, masters, coeffs, owners,
+                                                num_masters, imap, bs);
+  slaves.insert(slaves.end(), ghosts.slaves.begin(), ghosts.slaves.end());
+  masters.insert(masters.end(), ghosts.masters.begin(), ghosts.masters.end());
+  coeffs.insert(coeffs.end(), ghosts.coeffs.begin(), ghosts.coeffs.end());
+  owners.insert(owners.end(), ghosts.owners.begin(), ghosts.owners.end());
+  num_masters.insert(num_masters.end(), ghosts.offsets.begin(),
+                     ghosts.offsets.end());
+
+  mpc_data<T> out;
+  out.offsets.assign(num_masters.size() + 1, 0);
+  std::partial_sum(num_masters.begin(), num_masters.end(),
+                   std::next(out.offsets.begin()));
+  out.slaves = std::move(slaves);
+  out.masters = std::move(masters);
+  out.coeffs = std::move(coeffs);
+  out.owners = std::move(owners);
+  return out;
 }
 
 //-----------------------------------------------------------------------------
