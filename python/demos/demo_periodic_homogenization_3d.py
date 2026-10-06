@@ -478,7 +478,7 @@ def strain_from_corners(uh_) -> np.ndarray:
 
 # +
 uh_sc = ConstrainedSolver(a, Lform + point_forces, mpc_sc, bcs_sc).solve()
-lam0, mu0 = float(lmbda_uniform.value), float(mu_uniform.value)
+lam0, mu0 = float(lmbda_uniform.value.real), float(mu_uniform.value.real)
 E_exact = (S_bar - lam0 / (3 * lam0 + 2 * mu0) * np.trace(S_bar) * np.eye(gdim)) / (2 * mu0)
 diff = uh_sc - ufl.dot(ufl.as_tensor(upper_triangular(E_exact)), x)
 error_sc = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(diff, diff) * ufl.dx)), op=MPI.SUM))

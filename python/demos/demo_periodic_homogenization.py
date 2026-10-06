@@ -741,7 +741,7 @@ def value_at(uh, point) -> np.ndarray:
 
 # +
 uh_sc = solve_stress_control(a, Lform)
-lam0, mu0 = float(lmbda_uniform.value), float(mu_uniform.value)
+lam0, mu0 = float(lmbda_uniform.value.real), float(mu_uniform.value.real)
 E_11_exact, E_22_exact = np.linalg.solve([[lam0 + 2 * mu0, lam0], [lam0, lam0 + 2 * mu0]], [S_B[0], S_D[1]])
 E_12_exact = S_D[0] / (2 * mu0)
 H_exact = np.array([[E_11_exact, 2 * E_12_exact], [0.0, E_22_exact]])
