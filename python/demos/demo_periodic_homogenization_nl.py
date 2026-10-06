@@ -162,6 +162,10 @@ mpc.create_periodic_constraint_geometrical(V, top_edge, to_bottom, bcs, scale=dt
 
 # +
 xdt = domain.geometry.x.dtype
+# Tolerance of the checks below, from the precision of the mesh coordinates
+atol = 50 * np.sqrt(np.finfo(xdt).resolution)
+# Largest distance between a dof and the point it is located at, from the rounding of the coordinates
+point_tol = 500 * np.finfo(xdt).eps * L
 B_coord = np.array([L, 0.0, 0.0], dtype=xdt)
 C_coord = np.array([L, L, 0.0], dtype=xdt)
 D_coord = np.array([0.0, L, 0.0], dtype=xdt)
@@ -225,7 +229,7 @@ x_dofs = V.tabulate_dof_coordinates()
 
 def value_at(u: fem.Function, point) -> np.ndarray:
     nloc = V.dofmap.index_map.size_local
-    i = np.flatnonzero(np.linalg.norm(x_dofs[:nloc, :2] - np.asarray(point), axis=1) < 1e-12)
+    i = np.flatnonzero(np.linalg.norm(x_dofs[:nloc, :2] - np.asarray(point), axis=1) < point_tol)
     local = u.x.array[gdim * i[0] : gdim * i[0] + gdim].copy() if len(i) else None
     return next(w for w in comm.allgather(local) if w is not None)
 
@@ -334,7 +338,7 @@ diff = uh_homogeneous - ufl.dot(ufl.as_tensor(F_bar - np.eye(gdim)), x)
 error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(diff, diff) * ufl.dx)), op=MPI.SUM))
 if comm.rank == 0:
     print(f"----Homogeneous unit cell----\n  L2(u_h - affine) = {error:.3e}  (fluctuation should vanish)")
-assert error < 1e-10
+assert error < atol
 # -
 
 # ## A heterogeneous microstructure
@@ -353,7 +357,7 @@ set_young_modulus(50.0 * E_uniform)
 _, S_zero = homogenized_stress(np.eye(gdim), n_steps=1)
 if comm.rank == 0:
     print(f"----No macroscopic deformation----\n  S_bar = {S_zero.tolist()}  (should vanish)")
-assert np.abs(S_zero).max() < 1e-10
+assert np.abs(S_zero).max() < atol
 
 # #### Test case 2: Isotropic macroscopic stretch
 
@@ -638,7 +642,7 @@ diff = uh_sc - ufl.dot(ufl.as_tensor(F_exact - np.eye(gdim)), x)
 error_sc = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(diff, diff) * ufl.dx)), op=MPI.SUM))
 if comm.rank == 0:
     print(f"----Stress control, homogeneous cell----\n  L2(u_h - u_exact) = {error_sc:.3e}  (should be round-off)")
-assert error_sc < 1e-10
+assert error_sc < atol
 # -
 
 # **Heterogeneous cell.** $\bar{\mathbf{F}}$ is read from the free masters $B$ and $D$ through
@@ -670,7 +674,9 @@ plot_cell(
     [f"Deformed cell, stress control\n{stress_load}", "Periodic fluctuation\nu* = u - (F - I) X"],
     "demo_periodic_homogenization_nl_stress_control.png",
 )
+# -
 
+# ## References
 # ```{bibliography}
 #    :filter: cited
 #    :labelprefix:

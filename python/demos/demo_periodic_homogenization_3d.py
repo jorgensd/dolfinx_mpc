@@ -113,8 +113,11 @@ V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
 #   `create_general_constraint`, one call per component.
 
 # +
-tol = 1e-10 * L
 xdt = domain.geometry.x.dtype
+# Tolerance of the checks below, from the precision of the mesh coordinates
+atol = 50 * np.sqrt(np.finfo(xdt).resolution)
+# Largest distance between a dof and the point it is located at, from the rounding of the coordinates
+point_tol = 500 * np.finfo(xdt).eps * L
 A_pt, B_pt, D_pt, E_pt = (np.array(p, dtype=xdt) for p in ([0, 0, 0], [L, 0, 0], [0, L, 0], [0, 0, L]))
 corner_of = {0: B_pt, 1: D_pt, 2: E_pt}  # corner carrying the jump in direction i
 
@@ -310,7 +313,7 @@ diff = uh - ufl.dot(ufl.as_tensor(upper_triangular(E_bar)), x)
 error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(diff, diff) * ufl.dx)), op=MPI.SUM))
 if comm.rank == 0:
     print(f"----Homogeneous unit cell----\n  L2(u_h - affine) = {error:.3e}  (fluctuation should vanish)")
-assert error < 1e-10
+assert error < atol
 # -
 
 # ### Heterogeneous cell
@@ -414,7 +417,7 @@ forces += [(component_dofs(E_pt, c), area * S_bar[c, 2]) for c in (0, 1, 2)]  # 
 
 def value_at(uh_, p) -> np.ndarray:
     nloc = V.dofmap.index_map.size_local
-    i = np.flatnonzero(np.linalg.norm(x_dofs[:nloc] - p, axis=1) < tol)
+    i = np.flatnonzero(np.linalg.norm(x_dofs[:nloc] - p, axis=1) < point_tol)
     local = uh_.x.array[gdim * i[0] : gdim * i[0] + gdim].copy() if len(i) else None
     return next(v for v in comm.allgather(local) if v is not None)
 
@@ -441,7 +444,7 @@ diff = uh_sc - ufl.dot(ufl.as_tensor(upper_triangular(E_exact)), x)
 error_sc = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(diff, diff) * ufl.dx)), op=MPI.SUM))
 if comm.rank == 0:
     print(f"----Stress control, homogeneous cell----\n  L2(u_h - u_exact) = {error_sc:.3e}  (should be round-off)")
-assert error_sc < 1e-10
+assert error_sc < atol
 # -
 
 # ### Heterogeneous cell

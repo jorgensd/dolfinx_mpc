@@ -3,8 +3,12 @@
 #
 # **License** MIT
 
-# +
+# We import the required modules
+
+# + tags=["hide-input"]
 from __future__ import annotations
+
+from pathlib import Path
 
 from mpi4py import MPI
 
@@ -124,7 +128,7 @@ bc_D, dofs_D = dirichletbc_at_point(V, corner(0, L), u_D)
 bcs = [bc_A, bc_B, bc_D]
 # -
 
-# ### Periodic constraints with non-zero constants
+# ## Periodic constraints with non-zero constants
 # {eq}`eq:homog-right` and {eq}`eq:homog-top` are periodic constraints with a nonzero constant
 # in the equation. We handle these by supplying a {py:class}`dolfinx.fem.Function` `g` to
 # the {py:class}`dolfinx_mpc.MultiPointConstraint` constructor, which is added to the
@@ -208,6 +212,10 @@ mpc.create_periodic_constraint_geometrical(V, top_edge, to_bottom, bcs, scale=dt
 
 gdim = domain.geometry.dim
 xdt = domain.geometry.x.dtype
+# Tolerance of the checks below, from the precision of the mesh coordinates
+atol = 50 * np.sqrt(np.finfo(xdt).resolution)
+# Largest distance between a dof and the point it is located at, from the rounding of the coordinates
+point_tol = 500 * np.finfo(xdt).eps * L
 B_coord = np.array([L, 0.0, 0.0], dtype=xdt)
 C_coord = np.array([L, L, 0.0], dtype=xdt)
 D_coord = np.array([0.0, L, 0.0], dtype=xdt)
@@ -270,18 +278,22 @@ uh_homogeneous = problem.solve()
 # reproduces it to floating-point roundoff regardless of $N$; anything larger,
 # such as an error that shrinks with mesh refinement or scales with $\bar H$,
 # would mean a real bug in the corner or edge constraint, not insufficient
-# resolution. `assert error < 1e-10` is deliberately loose around that
-# roundoff floor (measured $10^{-15}$ range) rather than tight to it, so the
-# check stays robust to the roundoff growing slightly with rank count from
-# reduction-order effects in `comm.allreduce`.
+# resolution. The bound `atol`, $50$ times the square root of the resolution of
+# the coordinate type of the mesh, is deliberately loose around that roundoff
+# floor (measured in the $10^{-15}$ range in double precision) rather than tight
+# to it, so the check stays robust to the roundoff growing slightly with rank
+# count from reduction-order effects in
+# {py:meth}`comm.allreduce<mpi4py.MPI.Commm.allreduce>`s.
+# and holds in single precision as well.
 
+# +
 x = ufl.SpatialCoordinate(domain)
 u_affine = ufl.dot(ufl.as_tensor(H_bar), x)
 diff = uh_homogeneous - u_affine
 error = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(diff, diff) * ufl.dx)), op=MPI.SUM))
 if comm.rank == 0:
     print(f"----Homogeneous unit cell----\n  L2(u_h - affine) = {error:.3e}  (fluctuation should vanish)")
-assert error < 1e-10
+assert error < atol
 # -
 
 # ## A heterogeneous microstructure
@@ -371,14 +383,14 @@ def homogenized_stress(H_bar_case: np.ndarray) -> tuple[fem.Function, np.ndarray
     return uh, sigma_avg
 
 
-# #### Test case 1: No macroscopic strain
+# ### Test case 1: No macroscopic strain
 
 _, sigma_zero = homogenized_stress(np.zeros((2, 2)))
 if comm.rank == 0:
     print(f"----No macroscopic strain----\n  sigma_avg = {sigma_zero}  (should vanish)")
-assert np.abs(sigma_zero).max() < 1e-10
+assert np.abs(sigma_zero).max() < atol
 
-# #### Test case 2: Isotropic macroscopic strain
+# ### Test case 2: Isotropic macroscopic strain
 
 _, sigma_iso = homogenized_stress(0.02 * np.eye(2))
 if comm.rank == 0:
@@ -389,7 +401,7 @@ if comm.rank == 0:
 assert abs(sigma_iso[0] - sigma_iso[1]) < 5e-3 * abs(sigma_iso[0])
 assert abs(sigma_iso[2]) < 5e-3 * abs(sigma_iso[0])
 
-# #### Test case 3: General macroscopic strain
+# ### Test case 3: General macroscopic strain
 
 uh_general, sigma_general = homogenized_stress(H_bar)
 if comm.rank == 0:
@@ -472,10 +484,11 @@ w_plot.interpolate(lambda x: H_bar @ x[:2])
 w_plot.x.array[:] = u_plot.x.array - w_plot.x.array  # periodic fluctuation u* = u - H_bar X
 fluct_pieces, fluct_clim = gather_grids(w_plot, V, "w")
 
+figure = Path("demo_periodic_homogenization.py").with_suffix(".png")
 if comm.rank == 0:
     outline = pyvista.Rectangle([(0.0, 0.0, 0.0), (L, 0.0, 0.0), (L, L, 0.0)])
     bar = {"fmt": "%.1e", "n_labels": 3, "position_x": 0.2, "width": 0.6}
-    plotter = pyvista.Plotter(shape=(1, 3), window_size=[1500, 520])
+    plotter = pyvista.Plotter(shape=(1, 3), window_size=[780, 420])
     plotter.subplot(0, 0)
     plotter.add_text(f"Microstructure\nE = {E_uniform:g} (matrix), {50 * E_uniform:g} (inclusion)", font_size=10)
     for piece in material_pieces:
@@ -510,9 +523,9 @@ if comm.rank == 0:
         plotter.add_mesh(outline, style="wireframe", color="black", line_width=2)
         plotter.view_xy()
     if pyvista.OFF_SCREEN:
-        plotter.screenshot("demo_periodic_homogenization.png")
+        plotter.screenshot(figure)
     else:
-        plotter.show()
+        plotter.show(screenshot=figure)
 # -
 
 
@@ -673,7 +686,7 @@ def average_stress(uh, mu_, lmbda_) -> np.ndarray:
 
 def value_at(uh, point) -> np.ndarray:
     nloc = V.dofmap.index_map.size_local
-    i = np.flatnonzero(np.linalg.norm(x_dofs[:nloc, :2] - np.asarray(point), axis=1) < 1e-12)
+    i = np.flatnonzero(np.linalg.norm(x_dofs[:nloc, :2] - np.asarray(point), axis=1) < point_tol)
     local = uh.x.array[gdim * i[0] : gdim * i[0] + gdim].copy() if len(i) else None
     return next(v for v in comm.allgather(local) if v is not None)
 
@@ -706,7 +719,7 @@ diff = uh_sc - u_exact
 error_sc = np.sqrt(comm.allreduce(fem.assemble_scalar(fem.form(ufl.inner(diff, diff) * ufl.dx)), op=MPI.SUM))
 if comm.rank == 0:
     print(f"----Stress control, homogeneous cell----\n  L2(u_h - u_exact) = {error_sc:.3e}  (should be round-off)")
-assert error_sc < 1e-10
+assert error_sc < atol
 # -
 
 # **Heterogeneous cell.** The strain is read from the free masters through
@@ -756,7 +769,7 @@ material_pieces_sc, _ = gather_cell_data(E, "E")
 if comm.rank == 0:
     outline = pyvista.Rectangle([(0.0, 0.0, 0.0), (L, 0.0, 0.0), (L, L, 0.0)])
     bar = {"fmt": "%.1e", "n_labels": 3, "position_x": 0.2, "width": 0.6}
-    plotter = pyvista.Plotter(shape=(1, 3), window_size=[1500, 520])
+    plotter = pyvista.Plotter(shape=(1, 3), window_size=[750, 520])
     plotter.subplot(0, 0)
     plotter.add_text(f"Microstructure\nE = {E_uniform:g} (matrix), {50 * E_uniform:g} (inclusion)", font_size=10)
     for piece in material_pieces_sc:
@@ -790,10 +803,12 @@ if comm.rank == 0:
         plotter.add_mesh(outline, style="wireframe", color="black", line_width=2)
         plotter.view_xy()
     if pyvista.OFF_SCREEN:
-        plotter.screenshot("demo_periodic_homogenization_stress_control.png")
+        plotter.screenshot()
     else:
         plotter.show()
+# -
 
+# ## References
 # ```{bibliography}
 #    :filter: cited
 #    :labelprefix:

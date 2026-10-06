@@ -577,7 +577,9 @@ if pyvista is not None:
             plotter.screenshot(f"demo_periodic_layer_{args.load}{suffix}.png")
         else:
             plotter.show()
+# -
 
+# ## References
 # ```{bibliography}
 #    :filter: cited
 #    :labelprefix:

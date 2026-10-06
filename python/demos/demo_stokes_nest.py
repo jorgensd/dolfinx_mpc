@@ -144,11 +144,10 @@ Q = dolfinx.fem.functionspace(mesh, Qe)
 
 # ## Defining boundary conditions
 
-# +
-
 # ### Inlet velocity Dirichlet BC
 
 
+# +
 def inlet_velocity_expression(x):
     return np.stack(
         (
@@ -441,6 +440,6 @@ ksp.destroy()
 
 # Expand the cell below to inspect timings of various functions
 
-# +tags=["hide-output"]
+# + tags=["hide-output"]
 dolfinx.common.list_timings(MPI.COMM_WORLD)
 # -
