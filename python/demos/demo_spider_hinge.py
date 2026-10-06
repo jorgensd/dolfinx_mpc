@@ -442,8 +442,13 @@ F = [
     ufl.ZeroBaseForm((z_B,)),
 ]
 
+# The stiffness of the springs, large next to that of the beams. In single precision it is
+# smaller, so that its rounding, k times the machine epsilon, stays small next to the weights
+
+double_precision = np.finfo(default_real_type).bits == 64
+k = (1e3 if double_precision else 1e1) * max(materials["E"])
+
 # The lower pin's spring, on spider mesh A, and the fixed pin's, on spider mesh P, locked
-k = 1e3 * max(materials["E"])
 K_locked = (fem.Constant(spiders_A, spring_stiffness(k)), fem.Constant(spiders_P, torsion(k)))
 s_locked = springs(K_locked, trials[2:], tests[2:])
 
@@ -1179,8 +1184,20 @@ PETSc.garbage_cleanup(comm)
 
 # The energy is conserved up to the rounding of the solves, which the stiff springs next to
 # the mass make large.
+#
+# ```{admonition} Verification invalid in single precision
+# :class: dropdown
+# The checks of the swing, here and against the rigid pendulums below, are only made in
+# double precision. In single precision (`float32` and `complex64`) the swing cannot be
+# resolved. Its displacement is close to a large rigid turn, whose strain at a quadrature
+# point is the sum of terms of size $|u| / h$ that nearly cancel. Their rounding leaves a
+# strain of order $10^{-4}$, and so an elastic stress $E \cdot 10^{-4}$ as large as the
+# prestress $\sigma_0$ that drives the swing. The demo still runs, but the swing it computes
+# is not accurate.
+# ```
 
-assert drift < min(1e-2, 1e8 * np.finfo(default_real_type).eps)
+if double_precision:
+    assert drift < min(1e-2, 1e8 * np.finfo(default_real_type).eps)
 
 # (demo-spider-hinge-rigid-pendulums)=
 # ## Verification against rigid double pendulums
@@ -1344,11 +1361,13 @@ if comm.rank == 0:
 # -
 
 # The masses agree to rounding, the stiffnesses to the order of $r / h$, and the beams
-# follow the rigid pendulum of the finite element model to a few percent.
+# follow the rigid pendulum of the finite element model to a few percent. As noted above,
+# the last two are only checked in double precision.
 
 assert mass_difference < 1e4 * np.finfo(default_real_type).eps
-assert np.all(np.abs(stiffness_difference) < radius / min(h))
-assert mismatch["ritz"] < 0.1
+if double_precision:
+    assert np.all(np.abs(stiffness_difference) < radius / min(h))
+    assert mismatch["ritz"] < 0.1
 
 # Finally, the static problem's PETSc objects are released and cleaned up in the same way.
 
