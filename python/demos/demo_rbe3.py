@@ -24,9 +24,9 @@
 # $$
 #
 # The unknowns of the body are the slaves, and every component of every foot is
-# one of their masters. Unlike the rigid spider (RBE2, see
-# [the spider demo](./demo_spider.py)), an RBE3 spider adds no stiffness: the feet
-# move freely, and a load on the body is spread over them.
+# one of their masters. Unlike the rigid spider (RBE2, see {doc}`demo_spider`), an
+# RBE3 spider adds no stiffness: the feet move freely, and a load on the body is
+# spread over them.
 #
 # This demo applies a force and a moment to a spider between two separately
 # meshed elastic cubes, one of tetrahedra and one of hexahedra, each clamped at
@@ -34,6 +34,7 @@
 
 # +
 from mpi4py import MPI
+from petsc4py import PETSc
 
 import basix.ufl
 import numpy as np
@@ -47,19 +48,27 @@ import dolfinx_mpc
 
 # ## The two cubes and the spider
 # The tetrahedral cube occupies $[0, 1]^3$, the hexahedral one
-# $[1.2, 2.2] \times [0, 1]^2$. The spider sits in the gap between them, on a
-# point mesh made by
-# {py:func}`create_spider_mesh<dolfinx_mpc.create_spider_mesh>`. The space on it
-# has six components: the translation $t$ and the rotation $\theta$.
+# $[1.2, 2.2] \times [0, 1]^2$. The spider sits in the gap between them.
 
 # +
 comm = MPI.COMM_WORLD
 N = 6
-cube_tet = mesh.create_box(comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [N, N, N], mesh.CellType.tetrahedron)
-cube_hex = mesh.create_box(comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [N, N, N], mesh.CellType.hexahedron)
+cube_tet = mesh.create_box(
+    comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [N, N, N], mesh.CellType.tetrahedron, dtype=default_real_type
+)
+cube_hex = mesh.create_box(
+    comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [N, N, N], mesh.CellType.hexahedron, dtype=default_real_type
+)
 V_tet = fem.functionspace(cube_tet, ("Lagrange", 1, (3,)))
 V_hex = fem.functionspace(cube_hex, ("Lagrange", 1, (3,)))
+# -
 
+# The body of the spider is a point of a mesh made by
+# {py:func}`create_spider_mesh<dolfinx_mpc.create_spider_mesh>`, as in
+# {doc}`demo_spider`. The space on it has six components: the translation $t$ and
+# the rotation $\theta$.
+
+# +
 x_c = np.array([1.1, 0.5, 0.5], dtype=default_real_type)
 spiders = dolfinx_mpc.create_spider_mesh(comm, x_c.reshape(1, 3) if comm.rank == 0 else np.zeros((0, 3)))
 W = fem.functionspace(spiders, basix.ufl.element("DG", "point", 0, shape=(6,), dtype=default_real_type))
@@ -78,9 +87,9 @@ W = fem.functionspace(spiders, basix.ufl.element("DG", "point", 0, shape=(6,), d
 # +
 tol = 1e3 * np.finfo(default_real_type).eps
 facets = mesh.locate_entities_boundary(cube_hex, 2, lambda x: np.isclose(x[0], 1.2, atol=tol))
-mpc_tet = dolfinx_mpc.MultiPointConstraint(V_tet)
-mpc_hex = dolfinx_mpc.MultiPointConstraint(V_hex)
-mpc_body = dolfinx_mpc.MultiPointConstraint(W)
+mpc_tet = dolfinx_mpc.MultiPointConstraint(V_tet, dtype=default_scalar_type)
+mpc_hex = dolfinx_mpc.MultiPointConstraint(V_hex, dtype=default_scalar_type)
+mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=default_scalar_type)
 mpc_body.add_rbe3_geometrical(V_tet, lambda x: np.isclose(x[0], 1.0, atol=tol))
 mpc_body.add_rbe3_topological(V_hex, 2, facets)
 mpcs = [mpc_tet, mpc_hex, mpc_body]
@@ -122,12 +131,21 @@ clamped_tet = fem.locate_dofs_geometrical(V_tet, lambda x: np.isclose(x[0], 0.0,
 clamped_hex = fem.locate_dofs_geometrical(V_hex, lambda x: np.isclose(x[0], 2.2, atol=tol))
 zero = np.zeros(3, dtype=default_scalar_type)
 bcs = [fem.dirichletbc(zero, clamped_tet, V_tet), fem.dirichletbc(zero, clamped_hex, V_hex)]
-petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+petsc_options = {
+    "ksp_type": "preonly",
+    "pc_type": "lu",
+    "pc_factor_mat_solver_type": "mumps",
+    "ksp_error_if_not_converged": True,
+}
+# -
+
+# ## Solve
+# The blocks are assembled into one matrix and solved directly.
+
 problem = dolfinx_mpc.LinearProblem(
     a, L, mpcs, bcs=bcs, kind="mpi", petsc_options_prefix="demo_rbe3_", petsc_options=petsc_options
 )
 u_tet, u_hex, spider = problem.solve()
-# -
 
 # ## Checks
 # The spider moves with the least-squares rigid fit of its feet. The feet of both
@@ -171,11 +189,11 @@ assert np.allclose(values, fit, atol=atol)
 
 def clamp_reaction(V, u, clamped):
     """Force and moment about `x_c` that a clamp exerts on its cube."""
-    u_ref = fem.Function(V)
+    u_ref = fem.Function(V, dtype=default_scalar_type)
     n_owned = V.dofmap.index_map.size_local * 3
     u_ref.x.array[:n_owned] = u.x.array[:n_owned]
     u_ref.x.scatter_forward()
-    residual = fem.assemble_vector(fem.form(ufl.action(elasticity(V), u_ref)))
+    residual = fem.assemble_vector(fem.form(ufl.action(elasticity(V), u_ref), dtype=default_scalar_type))
     residual.scatter_reverse(la.InsertMode.add)
     owned = clamped[clamped < V.dofmap.index_map.size_local]
     f = residual.array.reshape(-1, 3)[owned]
@@ -201,11 +219,11 @@ assert np.allclose(reaction_moment, -moment, atol=100 * atol)
 # work of the load, $F \cdot t + M \cdot \theta$, is smaller for RBE2.
 
 # +
-mpc_tet2 = dolfinx_mpc.MultiPointConstraint(V_tet)
+mpc_tet2 = dolfinx_mpc.MultiPointConstraint(V_tet, dtype=default_scalar_type)
 mpc_tet2.add_rbe2_geometrical(lambda x: np.isclose(x[0], 1.0, atol=tol), W)
-mpc_hex2 = dolfinx_mpc.MultiPointConstraint(V_hex)
+mpc_hex2 = dolfinx_mpc.MultiPointConstraint(V_hex, dtype=default_scalar_type)
 mpc_hex2.add_rbe2_topological(2, facets, W)
-mpcs2 = [mpc_tet2, mpc_hex2, dolfinx_mpc.MultiPointConstraint(W)]
+mpcs2 = [mpc_tet2, mpc_hex2, dolfinx_mpc.MultiPointConstraint(W, dtype=default_scalar_type)]
 dolfinx_mpc.finalize_multipointconstraints(mpcs2)
 problem2 = dolfinx_mpc.LinearProblem(
     a, L, mpcs2, bcs=bcs, kind="mpi", petsc_options_prefix="demo_rbe3_rigid_", petsc_options=petsc_options
@@ -228,35 +246,20 @@ assert load @ values2 < load @ values
 # increment, move both cubes and the spider by it, and recompute the coefficients
 # about the new positions with
 # {py:meth}`update_rbe3<dolfinx_mpc.MultiPointConstraint.update_rbe3>`. The feet
-# are masters for every configuration, so the matrix layout is reused. A mesh is
-# moved through the space of its coordinate element, whose dofs per cell are the
-# cell's geometry nodes.
+# are masters for every configuration, so the matrix layout is reused.
+#
+# {py:func}`dolfinx_mpc.spider.move` moves a mesh by a displacement, through the
+# space of its coordinate element, whose dofs in each cell are the cell's geometry
+# nodes. Given the increment on the spider space, it moves each spider by its
+# translation.
 
 # +
-
-
-def move(domain, du):
-    """Add the displacement `du` to the geometry of `domain`."""
-    V_x = fem.functionspace(domain, domain.ufl_domain().ufl_coordinate_element())
-    du_x = fem.Function(V_x)
-    du_x.interpolate(du)
-    gdim = domain.geometry.dim
-    nodes = domain.geometry.dofmaps[0].reshape(-1)
-    domain.geometry.x[nodes, :gdim] += du_x.x.array.reshape(-1, gdim)[V_x.dofmap.list.reshape(-1)]
-
-
-def move_spiders(W, body):
-    """Move each point of the spider mesh by the translation of its spider."""
-    num_points = spiders.topology.index_map(0).size_local
-    nodes = spiders.geometry.dofmaps[0][:num_points, 0]
-    dofs = W.dofmap.list[:num_points, 0]
-    bs = W.dofmap.index_map_bs
-    spiders.geometry.x[nodes] += body.x.array.reshape(-1, bs)[dofs, :3]
-
-
 num_steps = 10
 spider_load.value[:] = np.concatenate([[0.0, 0.0, -8.0], [0.0, -1.0, 0.0]])
-u_total = [np.zeros((V.dofmap.index_map.size_local + V.dofmap.index_map.num_ghosts, 3)) for V in (V_tet, V_hex)]
+u_total = [
+    np.zeros((V.dofmap.index_map.size_local + V.dofmap.index_map.num_ghosts, 3), dtype=default_scalar_type)
+    for V in (V_tet, V_hex)
+]
 x_spider = x_c.copy()
 frames = []
 # -
@@ -299,10 +302,10 @@ for step in range(num_steps + 1):
         values = dolfinx_mpc.spider_values(du_spider, 0)
         assert np.allclose(values, fit, atol=atol), f"Spider off the fit of its feet at step {step}"
         for domain, du, total in ((cube_tet, du_tet, u_total[0]), (cube_hex, du_hex, u_total[1])):
-            move(domain, du)
+            dolfinx_mpc.spider.move(domain, du)
             total += du.x.array.reshape(-1, 3)[: len(total)]
-        move_spiders(W, du_spider)
-        x_spider += values[:3]
+        dolfinx_mpc.spider.move(spiders, du_spider)
+        x_spider += values[:3].real
         mpc_body.update_rbe3()
     # Collective: every process gathers, only the root draws
     frame = comm.gather(pieces(x_spider), root=0)
@@ -316,7 +319,7 @@ assert x_spider[2] < x_c[2] - 0.05
 
 # The facing sides bend under the spider, which follows their average motion.
 
-# +
+# + tags=["hide-input"]
 if comm.rank == 0:
     clim = [0.0, max(max(g["|u|"].max(initial=0.0) for g in grids) for grids, _ in frames[-1])]
     plotter = pyvista.Plotter(off_screen=True, window_size=[800, 500])
@@ -339,5 +342,11 @@ if comm.rank == 0:
         plotter.write_frame()
     plotter.close()
 # -
+
+# The PETSc objects of the problems are freed, and those the garbage collector
+# has released are cleaned up on every process together.
+
+del problem, problem2
+PETSc.garbage_cleanup(comm)
 
 # <img src="./demo_rbe3.gif" alt="gif" class="bg-primary mb-1" width="800px">
