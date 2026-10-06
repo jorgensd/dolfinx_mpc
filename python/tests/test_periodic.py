@@ -37,12 +37,12 @@ def test_periodic_mixed_space(cell_type, ghost_mode, geometrical):
 
     if geometrical:
         condition = dolfinx_mpc.MultiPointConstraint(W)
-        condition.create_periodic_constraint_geometrical(W.sub(0), left, periodic_map, [], tol=tol)
+        condition.create_periodic_constraint_geometrical(W.sub(0), left, periodic_map, [])
         condition.finalize()
 
         condition_sub = dolfinx_mpc.MultiPointConstraint(W)
-        condition_sub.create_periodic_constraint_geometrical(W.sub(0).sub(0), left, periodic_map, [], tol=tol)
-        condition_sub.create_periodic_constraint_geometrical(W.sub(0).sub(1), left, periodic_map, [], tol=tol)
+        condition_sub.create_periodic_constraint_geometrical(W.sub(0).sub(0), left, periodic_map, [])
+        condition_sub.create_periodic_constraint_geometrical(W.sub(0).sub(1), left, periodic_map, [])
         condition_sub.finalize()
 
     else:
@@ -56,12 +56,12 @@ def test_periodic_mixed_space(cell_type, ghost_mode, geometrical):
         ft = dolfinx.mesh.meshtags(mesh, mesh.topology.dim - 1, np.arange(num_facets_local, dtype=np.int32), marker)
 
         condition = dolfinx_mpc.MultiPointConstraint(W)
-        condition.create_periodic_constraint_topological(W.sub(0), ft, 1, periodic_map, [], tol=tol)
+        condition.create_periodic_constraint_topological(W.sub(0), ft, 1, periodic_map, [])
         condition.finalize()
 
         condition_sub = dolfinx_mpc.MultiPointConstraint(W)
-        condition_sub.create_periodic_constraint_topological(W.sub(0).sub(0), ft, 1, periodic_map, [], tol=tol)
-        condition_sub.create_periodic_constraint_topological(W.sub(0).sub(1), ft, 1, periodic_map, [], tol=tol)
+        condition_sub.create_periodic_constraint_topological(W.sub(0).sub(0), ft, 1, periodic_map, [])
+        condition_sub.create_periodic_constraint_topological(W.sub(0).sub(1), ft, 1, periodic_map, [])
         condition_sub.finalize()
 
     np.testing.assert_allclose(condition.slaves, condition_sub.slaves)

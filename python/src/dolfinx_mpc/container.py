@@ -1,4 +1,5 @@
-from typing import Callable, Union
+import warnings
+from typing import Callable, Optional, Union
 
 import dolfinx
 import numpy
@@ -33,6 +34,35 @@ _type_names = {
     numpy.complex64: "complex_float",
     numpy.complex128: "complex_double",
 }
+
+
+class _Unset:
+    """The default of a deprecated argument, to tell whether it was passed."""
+
+    def __repr__(self) -> str:
+        return "<unset>"
+
+
+_UNSET = _Unset()
+
+
+def _deprecated(old: str, new: str, stacklevel: int = 3):
+    """Warn that the argument `old` is deprecated in favour of `new`, at the caller of the public
+    function `stacklevel - 2` frames up."""
+    warnings.warn(f"`{old}` is deprecated, use {new} instead.", DeprecationWarning, stacklevel=stacklevel)
+
+
+def _default_tolerance(dtype: npt.DTypeLike) -> float:
+    """The default distance and coefficient tolerance: 500 machine epsilon of the real type of `dtype`.
+
+    Mirrors `dolfinx_mpc::default_tolerance` in C++.
+    """
+    return float(500 * numpy.finfo(dtype).eps)
+
+
+def _tolerance(value: Optional[float], dtype: npt.DTypeLike) -> float:
+    """`value` as a Python float, by default :func:`_default_tolerance` of `dtype`."""
+    return _default_tolerance(dtype) if value is None else float(value)
 
 
 def _cpp_function(name: str, dtype: npt.DTypeLike) -> Callable:

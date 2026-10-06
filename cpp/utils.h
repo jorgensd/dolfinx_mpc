@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Scatterer.h>
@@ -30,6 +31,7 @@
 #include <exception>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -1288,6 +1290,49 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   MPI_Wait(&ghost_requests[4], &ghost_status[4]);
   ghost_data.coeffs = recv_coeffs;
   return ghost_data;
+}
+
+/// @brief The default distance and coefficient tolerance of the constraints:
+/// 500 machine epsilon of `U`.
+template <std::floating_point U>
+constexpr U default_tolerance()
+{
+  return 500 * std::numeric_limits<U>::epsilon();
+}
+
+/// @brief Append the masters of one slave, without those whose coefficient is
+/// below `coefficient_tol` times the largest in magnitude.
+/// @param[in] row_masters The candidate masters of the slave (global)
+/// @param[in] row_coeffs The coefficient of each candidate
+/// @param[in] row_owners The process owning each candidate
+/// @param[in] coefficient_tol The relative tolerance. 0 keeps every master.
+/// @param[in,out] masters The masters, appended to
+/// @param[in,out] coeffs The coefficients, appended to
+/// @param[in,out] owners The owners, appended to
+/// @return The number of masters appended
+template <typename T, std::floating_point U>
+std::int32_t append_significant_masters(
+    std::span<const std::int64_t> row_masters, std::span<const T> row_coeffs,
+    std::span<const std::int32_t> row_owners, U coefficient_tol,
+    std::vector<std::int64_t>& masters, std::vector<T>& coeffs,
+    std::vector<std::int32_t>& owners)
+{
+  U largest = 0;
+  for (const T& c : row_coeffs)
+    largest = std::max<U>(largest, std::abs(c));
+  const U cut = coefficient_tol * largest;
+  std::int32_t num = 0;
+  for (std::size_t j = 0; j < row_coeffs.size(); ++j)
+  {
+    if (std::abs(row_coeffs[j]) >= cut)
+    {
+      masters.push_back(row_masters[j]);
+      coeffs.push_back(row_coeffs[j]);
+      owners.push_back(row_owners[j]);
+      ++num;
+    }
+  }
+  return num;
 }
 
 /// @brief Complete the rows of owned slaves with the rows of the slaves that

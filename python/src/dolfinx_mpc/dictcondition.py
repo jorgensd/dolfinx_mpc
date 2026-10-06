@@ -18,10 +18,14 @@ import numpy as np
 import numpy.typing as npt
 from dolfinx import default_scalar_type
 
+from .container import _deprecated, _tolerance
+
 
 def close_to(
     point: np.typing.NDArray[np.float64 | np.float32],
-    atol=1000 * np.finfo(dolfinx.default_real_type).resolution,
+    atol: float | None = None,
+    *,
+    distance_tol: float | None = None,
 ):
     """
     Convenience function for locating a point [x,y,z]
@@ -29,8 +33,18 @@ def close_to(
 
     Args:
         point: The point should be padded to 3D
+        atol: Deprecated, use `distance_tol`.
+        distance_tol: Every component of a located point is within ``distance_tol + 1e-5 |point|``
+            of the point's. Defaults to `500` machine epsilon of the type of `point`, or of
+            ``dolfinx.default_real_type`` if it is not a floating point type.
     """
-    return lambda x: np.isclose(x, point, atol=atol).all(axis=0)
+    if atol is not None:
+        _deprecated("atol", "`distance_tol`")
+        distance_tol = atol if distance_tol is None else distance_tol
+    point = np.asarray(point)
+    real_type = point.dtype if np.issubdtype(point.dtype, np.floating) else dolfinx.default_real_type
+    tol = _tolerance(distance_tol, real_type)
+    return lambda x: np.isclose(x, point, atol=tol).all(axis=0)
 
 
 def _close_pairs(
@@ -126,6 +140,7 @@ def create_dictionary_constraint(
     subspace_slave: int | None = None,
     subspace_master: int | None = None,
     dtype: npt.DTypeLike | None = None,
+    distance_tol: float | None = None,
 ):
     """
     Returns a multi point constraint for a given function space
@@ -141,6 +156,9 @@ def create_dictionary_constraint(
             a sub space as slave add index here.
         subspace_master: Subspace index for mixed or vector spaces
         dtype: The scalar type of the coefficients. Defaults to the default scalar type.
+        distance_tol: Every component of the coordinate of a dof is within
+            ``distance_tol + 1e-5 |x|`` of that of its key. Defaults to `500` machine epsilon of the
+            coordinate type of the mesh.
 
     Returns:
         The slaves on this process, owned first and then ghosts, in the order of the dictionary,
@@ -173,7 +191,7 @@ def create_dictionary_constraint(
     bs = V.dofmap.index_map_bs
     index_map = V.dofmap.index_map
     local_size = index_map.size_local * bs
-    atol = 1000 * np.finfo(real_type).resolution
+    atol = _tolerance(distance_tol, real_type)
 
     def dof_table(subspace):
         """The coordinates of the dofs of `V`, or of its sub space, and their indices in `V`, local

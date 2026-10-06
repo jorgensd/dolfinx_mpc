@@ -101,7 +101,6 @@ def _problem(degree=1, mixed=False):
         lambda x: np.isclose(x[1], 1.0),
         lambda x: np.vstack((x[0], x[1] - 1.0, x[2])),
         [],
-        tol=_tol,
     )
     mpcs = [mpc_v, mpc_q]
     dolfinx_mpc.finalize_multipointconstraints(mpcs)

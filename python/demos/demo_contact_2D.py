@@ -122,7 +122,7 @@ def demo_stacked_cubes(
     mpc = MultiPointConstraint(V)
 
     with Timer("~Contact: Create contact constraint"):
-        mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=tol, allow_missing_masters=True)
+        mpc.create_contact_inelastic_condition(mt, 4, 9, allow_missing_masters=True)
     with Timer("~Contact: Add non-slip condition at bottom interface"):
         bottom_normal = facet_normal_approximation(V, mt, 5)
         mpc.create_slip_constraint(V, (mt, 5), bottom_normal, bcs=bcs)

@@ -39,8 +39,12 @@ namespace dolfinx_mpc
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
 /// @param[in] nh Function containing the normal at the slave marker interface
-/// @param[in] eps2 The tolerance for the squared distance to be considered a
-/// collision
+/// @param[in] distance_tol The largest distance from a slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master.
 /// @param[in] num_threads The number of threads to use for certain operations.
 /// @note Collective. Throws `std::runtime_error` on every process if a slave
 /// is in no cell attached to the master facets.
@@ -49,8 +53,9 @@ mpc_data<T> create_contact_slip_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
     std::int32_t slave_marker, std::int32_t master_marker,
-    const dolfinx::fem::Function<T, U>& nh, const U eps2 = 1e-20,
-    std::size_t num_threads = 1)
+    const dolfinx::fem::Function<T, U>& nh,
+    U distance_tol = default_tolerance<U>(),
+    U coefficient_tol = default_tolerance<U>(), std::size_t num_threads = 1)
 {
   dolfinx::common::Timer timer("~MPC: Create slip constraint");
   std::shared_ptr<const dolfinx::mesh::Mesh<U>> mesh = V.mesh();
@@ -111,7 +116,8 @@ mpc_data<T> create_contact_slip_condition(
           *meshtags.topology(), meshtags.find(master_marker), meshtags.dim(),
           meshtags.topology()->dim());
   const point_basis<U> basis = evaluate_basis_at_points<U>(
-      V, master_cells, points, std::sqrt(eps2), eps2, {}, V, num_threads);
+      V, master_cells, points, distance_tol, distance_tol * distance_tol, {}, V,
+      num_threads);
 
   // A slave has at most the other components of its block, and every
   // component-matched dof of its master cell, as masters
@@ -125,47 +131,53 @@ mpc_data<T> create_contact_slip_condition(
   std::vector<std::int32_t> owners;
   owners.reserve(max_masters);
   std::vector<std::int32_t> num_masters(local_slaves.size(), 0);
+  std::vector<std::int64_t> row_masters;
+  row_masters.reserve(block_size - 1 + width);
+  std::vector<T> row_coeffs;
+  row_coeffs.reserve(block_size - 1 + width);
+  std::vector<std::int32_t> row_owners;
+  row_owners.reserve(block_size - 1 + width);
   std::int32_t num_missing = 0;
   for (std::size_t i = 0; i < local_slaves.size(); ++i)
   {
-    std::span<const U, 3> normal(std::next(normals.begin(), 3 * i), 3);
-    for (int b = 0; b < block_size; ++b)
-    {
-      if (b != local_rems[i] and std::abs(normal[b]) > 1e-6)
-      {
-        masters.push_back(global_slave_blocks[i] * block_size + b);
-        coeffs.push_back(-normal[b] / normal[local_rems[i]]);
-        owners.push_back(rank);
-        ++num_masters[i];
-      }
-    }
     if (!basis.found[i])
     {
       ++num_missing;
       continue;
     }
+    row_masters.clear();
+    row_coeffs.clear();
+    row_owners.clear();
+    std::span<const U, 3> normal(std::next(normals.begin(), 3 * i), 3);
+    for (int b = 0; b < block_size; ++b)
+    {
+      if (b != local_rems[i])
+      {
+        row_masters.push_back(global_slave_blocks[i] * block_size + b);
+        row_coeffs.push_back(-normal[b] / normal[local_rems[i]]);
+        row_owners.push_back(rank);
+      }
+    }
     for (int j = 0; j < basis.num_dofs; ++j)
     {
       for (int b = 0; b < block_size; ++b)
       {
-        if (const T val = normal[b] / normal[local_rems[i]]
-                          * basis.values[i * basis.num_dofs + j];
-            std::abs(val) > 1e-6)
-        {
-          masters.push_back(basis.dofs[i * width + j * block_size + b]);
-          coeffs.push_back(val);
-          owners.push_back(basis.owners[i * width + j * block_size + b]);
-          ++num_masters[i];
-        }
+        row_masters.push_back(basis.dofs[i * width + j * block_size + b]);
+        row_coeffs.push_back(normal[b] / normal[local_rems[i]]
+                             * basis.values[i * basis.num_dofs + j]);
+        row_owners.push_back(basis.owners[i * width + j * block_size + b]);
       }
     }
+    num_masters[i] = append_significant_masters<T, U>(
+        row_masters, row_coeffs, row_owners, coefficient_tol, masters, coeffs,
+        owners);
   }
   MPI_Allreduce(MPI_IN_PLACE, &num_missing, 1, MPI_INT32_T, MPI_SUM, comm);
   if (num_missing > 0)
   {
     throw std::runtime_error(std::format(
         "No masters found on the contact surface for {} slave(s). Make sure "
-        "that the surfaces are in contact, or increase eps2.",
+        "that the surfaces are in contact, or increase distance_tol.",
         num_missing));
   }
   return add_ghost_rows<T>(std::move(local_slaves), std::move(masters),
@@ -177,15 +189,18 @@ mpc_data<T> create_contact_slip_condition(
 /// slave equals the solution at its coordinate on the master side.
 ///
 /// It is the periodic condition with the identity relation, its masters
-/// searched among the cells attached to the master facets, and coefficients
-/// of magnitude at most 1e-6 dropped.
+/// searched among the cells attached to the master facets.
 ///
 /// @param[in] V The mpc function space
 /// @param[in] meshtags The meshtag
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
-/// @param[in] eps2 The largest squared distance from a slave to a master cell
-/// for the slave to be in the cell
+/// @param[in] distance_tol The largest distance from a slave point to a
+/// master cell for the point to be in the cell, and the padding of the bounding
+/// boxes of the cells
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// master.
 /// @param[in] allow_missing_masters If true, a slave in no cell attached to the
 /// master facets is left unconstrained. Else it is an error.
 /// @param[in] num_threads The number of threads to use for certain operations.
@@ -195,7 +210,9 @@ template <typename T, std::floating_point U>
 mpc_data<T> create_contact_inelastic_condition(
     const dolfinx::fem::FunctionSpace<U>& V,
     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
-    std::int32_t slave_marker, std::int32_t master_marker, const U eps2 = 1e-20,
+    std::int32_t slave_marker, std::int32_t master_marker,
+    U distance_tol = default_tolerance<U>(),
+    U coefficient_tol = default_tolerance<U>(),
     bool allow_missing_masters = false, std::size_t num_threads = 1)
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
@@ -213,7 +230,7 @@ mpc_data<T> create_contact_inelastic_condition(
   return impl::_create_periodic_condition<T, U>(
       V, locate_tagged_blocks<U>(V, meshtags, slave_marker),
       [](std::span<const U> x) { return std::vector<U>(x.begin(), x.end()); },
-      T(1), {}, V, master_cells, std::sqrt(eps2), eps2, U(1e-6),
+      T(1), {}, V, master_cells, distance_tol, coefficient_tol,
       allow_missing_masters, num_threads);
 }
 } // namespace dolfinx_mpc
