@@ -1340,7 +1340,6 @@ def swing(M_phi: np.ndarray, K_phi: np.ndarray) -> np.ndarray:
     turns = [phi]
     for _ in range(num_steps):
         phi_new = step_matrix @ (4 / dt**2 * M_phi @ phi + 4 / dt * M_phi @ phi_dot - K_phi @ phi)
-        phi_dot = 2 / dt * (phi_new - phi) - phi_dot
         phi = phi_new
         turns.append(phi)
     return np.array(turns)
