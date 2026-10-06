@@ -799,7 +799,7 @@ class MultiPointConstraint:
                         numpy.array([f0, f1], dtype=mesh.geometry.x.dtype).tobytes(): beta}}
         """
         slaves, masters, coeffs, owners, offsets = create_dictionary_constraint(
-            self.V, slave_master_dict, subspace_slave, subspace_master
+            self.V, slave_master_dict, subspace_slave, subspace_master, dtype=self._dtype
         )
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
