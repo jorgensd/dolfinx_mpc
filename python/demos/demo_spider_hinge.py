@@ -183,7 +183,6 @@ def pyvista_ugrid(input: dolfinx.mesh.Mesh | dolfinx.fem.FunctionSpace) -> pyvis
         return pyvista.UnstructuredGrid(*plot.vtk_mesh(input, 3, owned))
     else:
         return pyvista.UnstructuredGrid(*plot.vtk_mesh(input, owned))
-    return
 
 
 # The first order cell with the vertices of each Lagrange cell
