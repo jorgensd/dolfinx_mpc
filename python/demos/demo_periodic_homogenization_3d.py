@@ -168,46 +168,47 @@ def masters_of(p) -> dict[bytes, float]:
 # ## Solver
 #
 # The constrained stiffness matrix does not depend on the values of the Dirichlet conditions, so
-# it is assembled and factorized once per material. Each solve updates the constraint offsets
-# with {py:meth}`update_constants <dolfinx_mpc.MultiPointConstraint.update_constants>`, assembles
-# the right-hand side as {py:class}`dolfinx_mpc.LinearProblem` does, and adds the nodal forces of
-# stress control, if any, at the dofs of the process that owns them.
+# it is assembled and factorized once per material. `ConstrainedSolver` is a
+# {py:class}`dolfinx_mpc.LinearProblem` that assembles its matrix when it is created, and whose
+# `solve` only updates the constraint offsets with
+# {py:meth}`update_constants <dolfinx_mpc.MultiPointConstraint.update_constants>` and assembles
+# the right-hand side. The nodal forces of stress control are part of the linear form, as vertex
+# integrals.
 
 
 # +
-class ConstrainedSolver:
-    def __init__(self, a_ufl, L_ufl, mpc: MultiPointConstraint, bcs: list[fem.DirichletBC], forces=()):
-        self.a, self.L = fem.form(a_ufl), fem.form(L_ufl)
-        self.mpc, self.bcs, self.forces = mpc, bcs, forces
-        self.A = dolfinx_mpc.assemble_matrix(self.a, mpc, bcs=bcs)
+class ConstrainedSolver(dolfinx_mpc.LinearProblem):
+    """A {py:class}`dolfinx_mpc.LinearProblem` whose matrix is assembled, and factorized, once:
+    each solve assembles the right-hand side only."""
+
+    def __init__(self, a_ufl, L_ufl, mpc: MultiPointConstraint, bcs: list[fem.DirichletBC]):
+        petsc_options = {
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+        }
+        super().__init__(a_ufl, L_ufl, mpc, bcs=bcs, petsc_options=petsc_options)
+        self.constraint = mpc
+        dolfinx_mpc.assemble_matrix(self.a, mpc, bcs=bcs, A=self.A)
         self.A.assemble()
-        self.b = dolfinx_mpc.assemble_vector(self.L, mpc)
-        self.ksp = PETSc.KSP().create(comm)
-        self.ksp.setOperators(self.A)
-        self.ksp.setType("preonly")
-        self.ksp.getPC().setType("lu")
-        self.ksp.getPC().setFactorSolverType("mumps")
-        self.ksp.setErrorIfNotConverged(True)
-        self.n_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
 
     def solve(self) -> fem.Function:
-        self.mpc.update_constants()
+        self.constraint.update_constants()
         with self.b.localForm() as b_local:
             b_local.set(0.0)
-        dolfinx_mpc.assemble_vector(self.L, self.mpc, self.b)
-        dolfinx_mpc.apply_lifting(self.b, [self.a], bcs=[self.bcs], constraint=self.mpc)
-        dolfinx_mpc.apply_mpc_lifting(self.b, [self.a], constraint=self.mpc)
+        dolfinx_mpc.assemble_vector(self.L, self.constraint, self.b)
+        dolfinx_mpc.apply_lifting(self.b, [self.a], bcs=[self.bcs], constraint=self.constraint)
+        dolfinx_mpc.apply_mpc_lifting(self.b, [self.a], constraint=self.constraint)
         self.b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
         dolfinx.fem.petsc.set_bc(self.b, self.bcs)
-        for dofs, f in self.forces:
-            self.b.array[dofs[dofs < self.n_owned]] += f
         self.b.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
-        uh_ = fem.Function(self.mpc.function_space)
-        self.ksp.solve(self.b, uh_.x.petsc_vec)
-        uh_.x.scatter_forward()
-        self.mpc.homogenize(uh_)
-        self.mpc.backsubstitution(uh_)
-        return uh_
+        self.solver.solve(self.b, self.x)
+        self.x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+        dolfinx.fem.petsc.assign(self.x, self.u)
+        self.constraint.homogenize(self.u)
+        self.constraint.backsubstitution(self.u)
+        return self.u
 
 
 def sigma(w, mu_, lmbda_):
@@ -330,9 +331,10 @@ assert error < atol
 solver_het = ConstrainedSolver(a_het, L_het, mpc, bcs)
 
 
-def homogenized_stress(E_case: np.ndarray) -> tuple[fem.Function, np.ndarray]:
+def homogenized_stress(E_case: np.ndarray, solver: ConstrainedSolver = solver_het) -> tuple[fem.Function, np.ndarray]:
     set_strain(E_case)
-    uh_case = solver_het.solve()
+    # The solver returns its own solution, which the next solve overwrites
+    uh_case = solver.solve().copy()
     return uh_case, average_stress(uh_case, mu_field, lmbda_field)
 
 
@@ -423,10 +425,6 @@ def component_bc(p, c) -> fem.DirichletBC:
     return fem.dirichletbc(fem.Function(Vc), fem.locate_dofs_geometrical((V.sub(c), Vc), point(p)), V.sub(c))
 
 
-def component_dofs(p, c) -> np.ndarray:
-    return fem.locate_dofs_geometrical((V.sub(c), V.sub(c).collapse()[0]), point(p))[0]
-
-
 bcs_sc = [point_bc(A_pt)[0], component_bc(B_pt, 1), component_bc(B_pt, 2), component_bc(D_pt, 2)]
 mpc_sc = MultiPointConstraint(V, dtype=dtype, bcs=bcs_sc)
 x_dofs = V.tabulate_dof_coordinates()
@@ -439,9 +437,22 @@ for c in range(gdim):
     mpc_sc.create_general_constraint({key(p): masters_of(p) for p in slave_points}, subspace_slave=c, subspace_master=c)
 mpc_sc.finalize()  # collective: every rank must reach this
 
-forces = [(component_dofs(B_pt, 0), area * S_bar[0, 0])]  # A S_11 on u^B_1
-forces += [(component_dofs(D_pt, c), area * S_bar[c, 1]) for c in (0, 1)]  # A S_12, A S_22 on u^D_1, u^D_2
-forces += [(component_dofs(E_pt, c), area * S_bar[c, 2]) for c in (0, 1, 2)]  # A S_i3 on u^E_i
+# The nodal forces as vertex integrals: the force on the corner of direction j, B, D or E, is
+# A S_bar[:, j]. Its components on the rotation constraints are removed by their Dirichlet
+# conditions.
+vertices = [mesh.locate_entities_boundary(domain, 0, point(p)) for p in (B_pt, D_pt, E_pt)]
+order = np.argsort(np.hstack(vertices))
+corner_tags = mesh.meshtags(
+    domain,
+    0,
+    np.hstack(vertices)[order],
+    np.hstack([np.full(len(v), j, dtype=np.int32) for j, v in enumerate(vertices)])[order],
+)
+dP = ufl.Measure("dP", domain=domain, subdomain_data=corner_tags)
+S = fem.Constant(domain, np.asarray(S_bar, dtype=dtype))
+A_face = fem.Constant(domain, dtype.type(area))
+w = ufl.TestFunction(V)
+point_forces = A_face * sum(ufl.inner(S[:, j], w) * dP(j) for j in range(gdim))
 
 
 def value_at(uh_, p) -> np.ndarray:
@@ -466,7 +477,7 @@ def strain_from_corners(uh_) -> np.ndarray:
 # \operatorname{tr}\bar{\mathbf{S}}\,\boldsymbol{\delta}\right)$. It must be reproduced to round-off.
 
 # +
-uh_sc = ConstrainedSolver(a, Lform, mpc_sc, bcs_sc, forces).solve()
+uh_sc = ConstrainedSolver(a, Lform + point_forces, mpc_sc, bcs_sc).solve()
 lam0, mu0 = float(lmbda_uniform.value), float(mu_uniform.value)
 E_exact = (S_bar - lam0 / (3 * lam0 + 2 * mu0) * np.trace(S_bar) * np.eye(gdim)) / (2 * mu0)
 diff = uh_sc - ufl.dot(ufl.as_tensor(upper_triangular(E_exact)), x)
@@ -485,7 +496,7 @@ assert error_sc < atol
 # solved with $\bar{\boldsymbol\sigma}=\bar{\mathbf{S}}$.
 
 # +
-uh_sc = ConstrainedSolver(a_het, L_het, mpc_sc, bcs_sc, forces).solve()
+uh_sc = ConstrainedSolver(a_het, L_het + point_forces, mpc_sc, bcs_sc).solve()
 sigma_sc = average_stress(uh_sc, mu_field, lmbda_field)
 E_bar_sc = strain_from_corners(uh_sc)
 
@@ -601,6 +612,12 @@ plot_cell(
     "demo_periodic_homogenization_3d_stress_control.png",
 )
 # -
+
+# The PETSc objects of the solver are freed, and those the garbage collector has released are
+# cleaned up on every process together.
+
+del solver_het
+PETSc.garbage_cleanup(comm)
 
 # ```{bibliography}
 #    :filter: cited
