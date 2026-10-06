@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Scatterer.h>
+#include <dolfinx/common/local_range.h>
 #include <dolfinx/common/sort.h>
 #include <dolfinx/fem/CoordinateElement.h>
 #include <dolfinx/fem/DirichletBC.h>
@@ -26,6 +27,7 @@
 #include <dolfinx/la/SparsityPattern.h>
 #include <dolfinx/la/petsc.h>
 #include <dolfinx/mesh/MeshTags.h>
+#include <exception>
 #include <functional>
 #include <iterator>
 #include <memory>
@@ -33,6 +35,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1425,123 +1428,31 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   using mdspan3_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 3>>;
 
-  // Create buffer for coordinate dofs and point in physical space
-  std::vector<U> coord_dofs_b(num_dofs_g * gdim);
-  mdspan2_t coord_dofs(coord_dofs_b.data(), num_dofs_g, gdim);
-  std::vector<U> xp_b(1 * gdim);
-  mdspan2_t xp(xp_b.data(), 1, gdim);
-
   // Evaluate geometry basis at point (0, 0, 0) on the reference cell.
   // Used in affine case.
-  std::array<std::size_t, 4> phi0_shape = cmap.tabulate_shape(1, 1);
-  std::vector<U> phi0_b(
-      std::reduce(phi0_shape.begin(), phi0_shape.end(), 1, std::multiplies{}));
-  cmdspan4_t phi0(phi0_b.data(), phi0_shape);
+  const std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
+  const std::size_t phi_size
+      = std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{});
+  std::vector<U> phi0_b(phi_size);
+  cmdspan4_t phi0(phi0_b.data(), phi_shape);
   cmap.tabulate(1, std::vector<U>(tdim, 0), {1, tdim}, phi0_b);
   auto dphi0 = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
       phi0, std::pair(1, tdim + 1), 0,
       MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
-  // Data structure for evaluating geometry basis at specific points.
-  // Used in non-affine case.
-  std::array<std::size_t, 4> phi_shape = cmap.tabulate_shape(1, 1);
-  std::vector<U> phi_b(
-      std::reduce(phi_shape.begin(), phi_shape.end(), 1, std::multiplies{}));
-  cmdspan4_t phi(phi_b.data(), phi_shape);
-  auto dphi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-      phi, std::pair(1, tdim + 1), 0,
-      MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
-
-  // Reference coordinates for each point
-  std::vector<U> pull_back_scratch(
-      cmap.is_affine() ? 0 : cmap.pull_back_working_size(gdim));
+  // Reference coordinates and geometry data at each point
   std::vector<U> Xb(num_points * tdim);
   mdspan2_t X(Xb.data(), num_points, tdim);
-
-  // Geometry data at each point
   std::vector<U> J_b(num_points * gdim * tdim);
   mdspan3_t J(J_b.data(), num_points, gdim, tdim);
   std::vector<U> K_b(num_points * tdim * gdim);
   mdspan3_t K(K_b.data(), num_points, tdim, gdim);
   std::vector<U> detJ(num_points);
-  std::vector<U> det_scratch(2 * gdim * tdim);
 
-  // Prepare geometry data in each cell
-  for (std::size_t p = 0; p < cells.size(); ++p)
-  {
-    const int cell_index = cells[p];
-
-    // Skip negative cell indices
-    if (cell_index < 0)
-      continue;
-
-    // Get cell geometry (coordinate dofs)
-    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        x_dofmap, cell_index, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    for (std::size_t i = 0; i < num_dofs_g; ++i)
-    {
-      const int pos = 3 * x_dofs[i];
-      for (std::size_t j = 0; j < gdim; ++j)
-        coord_dofs(i, j) = x_g[pos + j];
-    }
-
-    for (std::size_t j = 0; j < gdim; ++j)
-      xp(0, j) = x[3 * p + j];
-
-    auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-
-    std::array<U, 3> Xpb = {0, 0, 0};
-    MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
-        U, MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
-               std::size_t, 1, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>
-        Xp(Xpb.data(), 1, tdim);
-
-    // Compute reference coordinates X, and J, detJ and K
-    if (cmap.is_affine())
-    {
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi0, coord_dofs,
-                                                           _J);
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
-      std::array<U, 3> x0 = {0, 0, 0};
-      for (std::size_t i = 0; i < coord_dofs.extent(1); ++i)
-        x0[i] += coord_dofs(0, i);
-      dolfinx::fem::CoordinateElement<U>::pull_back_affine(Xp, _K, x0, xp);
-      detJ[p]
-          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
-              _J, det_scratch);
-    }
-    else
-    {
-      // Pull-back physical point xp to reference coordinate Xp
-      cmap.pull_back_nonaffine(Xp, xp, coord_dofs, pull_back_scratch, tol, 15);
-
-      cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
-                                                           _J);
-      dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
-      detJ[p]
-          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
-              _J, det_scratch);
-    }
-
-    for (std::size_t j = 0; j < X.extent(1); ++j)
-      X(p, j) = Xpb[j];
-  }
-
-  // Compute basis on reference element
-  std::vector<U> reference_basisb(std::reduce(
-      basis_shape.begin(), basis_shape.end(), 1, std::multiplies{}));
-  element->tabulate(reference_basisb, Xb, {X.extent(0), X.extent(1)}, 0);
-
-  // Data structure to hold basis for transformation
-  const std::size_t num_basis_values = basis_shape[2] * basis_shape[3];
-  std::vector<U> basis_valuesb(num_basis_values);
-  mdspan2_t basis_values(basis_valuesb.data(), basis_shape[2], basis_shape[3]);
+  // Basis on the reference element at each point
+  const std::size_t num_reference_dofs = basis_shape[2];
+  const std::size_t num_basis_values = num_reference_dofs * basis_shape[3];
+  std::vector<U> reference_basisb(num_points * num_basis_values);
 
   using xu_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>;
@@ -1559,33 +1470,175 @@ evaluate_basis_functions(const dolfinx::fem::FunctionSpace<U>& V,
   const bool transform_set
       = dolfinx::fem::is_transform_set(apply_dof_transformation);
   mdspan3_t full_basis(output_basis.data(), reference_shape);
-  for (std::size_t p = 0; p < cells.size(); ++p)
-  {
-    const int cell_index = cells[p];
-    // Skip negative cell indices
-    if (cell_index < 0)
-      continue;
 
-    // Permute the reference values to account for the cell's orientation
-    std::ranges::copy_n(
-        std::next(reference_basisb.begin(), num_basis_values * p),
-        num_basis_values, basis_valuesb.begin());
-    if (transform_set)
+  // Evaluate the basis at the points [p0, p1). Each call has its own scratch
+  // and writes only to the data of its points, so calls can run concurrently.
+  auto evaluate_points
+      = [&cells, &x, &x_dofmap, &x_g, &cmap, &dphi0, &X, &Xb, &J, &K, &detJ,
+         &reference_basisb, &element, &cell_info, &apply_dof_transformation,
+         &push_forward_fn, &full_basis, &phi_shape, num_dofs_g, gdim, tdim,
+         phi_size, num_reference_dofs, num_basis_values, transform_set,
+         reference_value_size, tol](std::size_t p0, std::size_t p1)
+  {
+    std::vector<U> coord_dofs_b(num_dofs_g * gdim);
+    mdspan2_t coord_dofs(coord_dofs_b.data(), num_dofs_g, gdim);
+    std::vector<U> xp_b(gdim);
+    mdspan2_t xp(xp_b.data(), 1, gdim);
+
+    // Geometry basis at a point, used in non-affine case
+    std::vector<U> phi_b(phi_size);
+    cmdspan4_t phi(phi_b.data(), phi_shape);
+    auto dphi = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+        phi, std::pair(1, tdim + 1), 0,
+        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
+    std::vector<U> pull_back_scratch(
+        cmap.is_affine() ? 0 : cmap.pull_back_working_size(gdim));
+    std::vector<U> det_scratch(2 * gdim * tdim);
+
+    for (std::size_t p = p0; p < p1; ++p)
     {
-      apply_dof_transformation(basis_valuesb, cell_info, cell_index,
-                               (int)reference_value_size);
+      const std::int32_t cell_index = cells[p];
+
+      // Skip negative cell indices
+      if (cell_index < 0)
+        continue;
+
+      // Get cell geometry (coordinate dofs)
+      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          x_dofmap, cell_index, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      for (std::size_t i = 0; i < num_dofs_g; ++i)
+      {
+        const std::int32_t pos = 3 * x_dofs[i];
+        for (std::size_t j = 0; j < gdim; ++j)
+          coord_dofs(i, j) = x_g[pos + j];
+      }
+
+      for (std::size_t j = 0; j < gdim; ++j)
+        xp(0, j) = x[3 * p + j];
+
+      auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+
+      std::array<U, 3> Xpb = {0, 0, 0};
+      MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
+          U,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::extents<
+              std::size_t, 1, MDSPAN_IMPL_STANDARD_NAMESPACE::dynamic_extent>>
+          Xp(Xpb.data(), 1, tdim);
+
+      // Compute reference coordinates X, and J, detJ and K
+      if (cmap.is_affine())
+      {
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi0, coord_dofs,
+                                                             _J);
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
+        std::array<U, 3> x0 = {0, 0, 0};
+        for (std::size_t i = 0; i < coord_dofs.extent(1); ++i)
+          x0[i] += coord_dofs(0, i);
+        dolfinx::fem::CoordinateElement<U>::pull_back_affine(Xp, _K, x0, xp);
+      }
+      else
+      {
+        // Pull-back physical point xp to reference coordinate Xp
+        cmap.pull_back_nonaffine(Xp, xp, coord_dofs, pull_back_scratch, tol,
+                                 15);
+        cmap.tabulate(1, std::span(Xpb.data(), tdim), {1, tdim}, phi_b);
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian(dphi, coord_dofs,
+                                                             _J);
+        dolfinx::fem::CoordinateElement<U>::compute_jacobian_inverse(_J, _K);
+      }
+      detJ[p]
+          = dolfinx::fem::CoordinateElement<U>::compute_jacobian_determinant(
+              _J, det_scratch);
+
+      for (std::size_t j = 0; j < X.extent(1); ++j)
+        X(p, j) = Xpb[j];
     }
 
-    auto _U = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        full_basis, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
-        MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    push_forward_fn(_U, basis_values, _J, detJ[p], _K);
+    // Compute basis on reference element
+    std::span<U> reference_basis
+        = std::span(reference_basisb)
+              .subspan(p0 * num_basis_values, (p1 - p0) * num_basis_values);
+    element->tabulate(
+        reference_basis,
+        std::span<const U>(Xb).subspan(p0 * tdim, (p1 - p0) * tdim),
+        {p1 - p0, tdim}, 0);
+
+    // Data structure to hold basis for transformation
+    std::vector<U> basis_valuesb(num_basis_values);
+    mdspan2_t basis_values(basis_valuesb.data(), num_reference_dofs,
+                           reference_value_size);
+    for (std::size_t p = p0; p < p1; ++p)
+    {
+      const std::int32_t cell_index = cells[p];
+      // Skip negative cell indices
+      if (cell_index < 0)
+        continue;
+
+      // Permute the reference values to account for the cell's orientation
+      std::ranges::copy_n(
+          std::next(reference_basis.begin(), num_basis_values * (p - p0)),
+          num_basis_values, basis_valuesb.begin());
+      if (transform_set)
+      {
+        apply_dof_transformation(basis_valuesb, cell_info, cell_index,
+                                 (int)reference_value_size);
+      }
+
+      auto _U = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          full_basis, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      auto _J = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          J, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      auto _K = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          K, p, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
+          MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      push_forward_fn(_U, basis_values, _J, detJ[p], _K);
+    }
+  };
+
+  const int num_chunks = std::max<std::size_t>(
+      1, std::min<std::size_t>(num_threads, num_points));
+  if (num_chunks < 2)
+    evaluate_points(0, num_points);
+  else
+  {
+    // An exception must not escape a spawned thread: each stores its own,
+    // which is rethrown once all have joined
+    auto try_evaluate_points
+        = [&evaluate_points](std::size_t p0, std::size_t p1,
+                             std::exception_ptr& error)
+    {
+      try
+      {
+        evaluate_points(p0, p1);
+      }
+      catch (...)
+      {
+        error = std::current_exception();
+      }
+    };
+
+    std::vector<std::exception_ptr> errors(num_chunks - 1);
+    {
+      std::vector<std::jthread> threads;
+      for (int i = 1; i < num_chunks; ++i)
+      {
+        auto [p0, p1] = dolfinx::common::local_range(i, num_points, num_chunks);
+        threads.emplace_back(try_evaluate_points, p0, p1,
+                             std::ref(errors[i - 1]));
+      }
+      auto [p0, p1] = dolfinx::common::local_range(0, num_points, num_chunks);
+      evaluate_points(p0, p1);
+    }
+    for (const std::exception_ptr& error : errors)
+      if (error)
+        std::rethrow_exception(error);
   }
   return {output_basis, reference_shape};
 }

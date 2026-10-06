@@ -25,6 +25,7 @@ from dolfinx.io import gmsh as gmshio
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
+from dolfinx_mpc.container import _cpp_function
 
 theta = np.pi / 5
 
@@ -306,7 +307,7 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
 def test_contact_missing_masters():
     """A slave in no cell of the master side raises on every process, unless allowed."""
     comm = MPI.COMM_WORLD
-    mesh = dolfinx.mesh.create_unit_square(comm, 4, 4, dolfinx.mesh.CellType.quadrilateral)
+    mesh = dolfinx.mesh.create_unit_square(comm, 4, 4, dolfinx.mesh.CellType.quadrilateral, dtype=default_real_type)
     V = fem.functionspace(mesh, ("Lagrange", 1, (2,)))
     bs = V.dofmap.index_map_bs
 
@@ -328,7 +329,8 @@ def test_contact_missing_masters():
         dolfinx_mpc.MultiPointConstraint(V).create_contact_inelastic_condition(mt, 1, 2)
 
     eps2 = float(500 * np.finfo(default_real_type).resolution)
-    data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt._cpp_object, 1, 2, eps2, True, 1)
+    create_inelastic = _cpp_function("create_contact_inelastic_condition", default_real_type)
+    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, eps2, True, 1)
     slaves = np.asarray(data.slaves)
     owned = slaves[slaves < V.dofmap.index_map.size_local * bs]
     x = V.tabulate_dof_coordinates()[owned // bs]
@@ -362,7 +364,8 @@ def test_contact_pull_back_on_quadrilaterals():
     # slave at the corner is also a master, so the constraint is not finalized.
     eps2 = 1e-20
     bs = V.dofmap.index_map_bs
-    data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(V._cpp_object, mt._cpp_object, 1, 2, eps2, True, 1)
+    create_inelastic = _cpp_function("create_contact_inelastic_condition", np.float64)
+    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, eps2, True, 1)
     slaves = np.asarray(data.slaves)
     assert comm.allreduce(np.sum(slaves < V.dofmap.index_map.size_local * bs), op=MPI.SUM) == 3 * bs
 

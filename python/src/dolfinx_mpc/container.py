@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Callable, Union
 
 import dolfinx
 import numpy
@@ -26,6 +26,18 @@ _mpc_classes = Union[
     dolfinx_mpc.cpp.mpc.MultiPointConstraint_complex_float,
 ]
 _float_classes = Union[numpy.float32, numpy.float64, numpy.complex128, numpy.complex64]
+
+_type_names = {
+    numpy.float32: "float",
+    numpy.float64: "double",
+    numpy.complex64: "complex_float",
+    numpy.complex128: "complex_double",
+}
+
+
+def _cpp_function(name: str, dtype: npt.DTypeLike) -> Callable:
+    """The C++ function `name` for constraints of scalar type `dtype`, bound as `name_<type>`."""
+    return getattr(dolfinx_mpc.cpp.mpc, f"{name}_{_type_names[numpy.dtype(dtype).type]}")
 
 
 def _scalar_type(real_type: npt.DTypeLike, dtype: npt.DTypeLike | None = None) -> type:

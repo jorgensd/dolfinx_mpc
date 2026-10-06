@@ -15,11 +15,19 @@ import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
 import ufl
-from dolfinx import default_real_type, default_scalar_type
+from dolfinx import default_real_type
 
 import dolfinx_mpc.cpp
 
-from .container import MPCData, _float_array_types, _float_classes, _mpc_classes, _mpc_data_classes, _scalar_type
+from .container import (
+    MPCData,
+    _cpp_function,
+    _float_array_types,
+    _float_classes,
+    _mpc_classes,
+    _mpc_data_classes,
+    _scalar_type,
+)
 from .dictcondition import create_dictionary_constraint
 from .integralcondition import create_integral_constraint
 from .rbe import create_rbe2, create_rbe3
@@ -327,7 +335,7 @@ class MultiPointConstraint:
         tag: int,
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+        scale: Union[_float_classes, float, complex] = 1.0,
         tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
         num_threads: Optional[int] = 1,
     ):
@@ -341,7 +349,7 @@ class MultiPointConstraint:
             tag: Tag indicating which entities should be slaves
             relation: Lambda-function describing the geometrical relation
             bcs: Dirichlet boundary conditions for the problem (Periodic constraints will be ignored for these dofs)
-            scale: Float for scaling bc
+            scale: Factor of the masters, of the scalar type of the constraint
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
                 collision searches to determine periodic degrees of freedom. With `None`, every basis value is
@@ -354,32 +362,20 @@ class MultiPointConstraint:
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
         tol_ = None if tol is None else float(tol)
-        if V is self.V:
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object,
-                meshtag._cpp_object,
-                tag,
-                relation,
-                bcs_,
-                scale,
-                False,
-                tol_,
-                num_threads=num_threads,
-            )
-        elif self.V.contains(V):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object,
-                meshtag._cpp_object,
-                tag,
-                relation,
-                bcs_,
-                scale,
-                True,
-                tol_,
-                num_threads=num_threads,
-            )
-        else:
+        is_input_space = V is self.V
+        if not (is_input_space or self.V.contains(V)):
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+        mpc_data = _cpp_function("create_periodic_constraint_topological", self._dtype)(
+            V._cpp_object,
+            meshtag._cpp_object,
+            tag,
+            relation,
+            bcs_,
+            scale,
+            not is_input_space,
+            tol_,
+            num_threads=num_threads,
+        )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_periodic_constraint_geometrical(
@@ -388,7 +384,7 @@ class MultiPointConstraint:
         indicator: Callable[[numpy.ndarray], numpy.ndarray],
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+        scale: Union[_float_classes, float, complex] = 1.0,
         tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
         num_threads: Optional[int] = 1,
     ):
@@ -403,7 +399,7 @@ class MultiPointConstraint:
             relation: Lambda-function describing the geometrical relation to master dofs
             bcs: Dirichlet boundary conditions for the problem
                  (Periodic constraints will be ignored for these dofs)
-            scale: Float for scaling bc
+            scale: Factor of the masters, of the scalar type of the constraint
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
                 collision searches to determine periodic degrees of freedom. With `None`, every basis value is
@@ -416,16 +412,12 @@ class MultiPointConstraint:
             scale = scale.item()  # type: ignore
         tol_ = None if tol is None else float(tol)
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
-        if V is self.V:
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                self.V._cpp_object, indicator, relation, bcs, scale, False, tol_, num_threads
-            )
-        elif self.V.contains(V):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                V._cpp_object, indicator, relation, bcs, scale, True, tol_, num_threads
-            )
-        else:
+        is_input_space = V is self.V
+        if not (is_input_space or self.V.contains(V)):
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+        mpc_data = _cpp_function("create_periodic_constraint_geometrical", self._dtype)(
+            V._cpp_object, indicator, relation, bcs, scale, not is_input_space, tol_, num_threads
+        )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def _add_rbe2(self, dofs: list[npt.NDArray[numpy.int32]], W: _fem.FunctionSpace, x=None):
@@ -759,7 +751,7 @@ class MultiPointConstraint:
             sub_space = True
         else:
             raise ValueError("Input space has to be a sub space of the MPC space")
-        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(
+        mpc_data = _cpp_function("create_slip_condition", self._dtype)(
             space._cpp_object,
             facet_marker[0]._cpp_object,
             facet_marker[1],
@@ -837,7 +829,7 @@ class MultiPointConstraint:
                 as the distance is computed in that precision.
             num_threads: The number of threads to use for certain operations
         """
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
+        mpc_data = _cpp_function("create_contact_slip_condition", self._dtype)(
             self.V._cpp_object,
             meshtags._cpp_object,
             slave_marker,
@@ -875,7 +867,7 @@ class MultiPointConstraint:
                 of freedom.
             num_threads: The number of threads to use for certain operations
         """
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
+        mpc_data = _cpp_function("create_contact_inelastic_condition", self._dtype)(
             self.V._cpp_object,
             meshtags._cpp_object,
             slave_marker,
