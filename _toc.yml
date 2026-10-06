@@ -15,6 +15,10 @@ parts:
     - file: "python/demos/demo_spider_hinge.py"
     - file: "python/demos/demo_stokes_nest.py"
     - file: "python/demos/demo_scaling_coefficients.py"
+    - file: "python/demos/demo_periodic_homogenization.py"
+    - file: "python/demos/demo_periodic_homogenization_nl.py"
+    - file: "python/demos/demo_periodic_homogenization_3d.py"
+    - file: "python/demos/demo_periodic_layer.py"
   - caption: "Theory"
     chapters:
     - file: "docs/nonlinear_mpc"
