@@ -1723,15 +1723,7 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
   using mdspan2_t = MDSPAN_IMPL_STANDARD_NAMESPACE::mdspan<
       U, MDSPAN_IMPL_STANDARD_NAMESPACE::dextents<std::size_t, 2>>;
 
-  // Loop over cells and tabulate dofs
   assert(space_dimension == X_shape[0]);
-  std::vector<U> xb(space_dimension * gdim);
-  mdspan2_t x(xb.data(), space_dimension, gdim);
-
-  // Create buffer for coordinate dofs and point in physical space
-  std::vector<U> coordinate_dofs_b(num_dofs_g * gdim);
-  mdspan2_t coordinate_dofs(coordinate_dofs_b.data(), num_dofs_g, gdim);
-
   std::span<const std::uint32_t> cell_info;
   if (element->needs_dof_transformations())
   {
@@ -1755,49 +1747,64 @@ std::pair<std::vector<U>, std::array<std::size_t, 2>> tabulate_dof_coordinates(
       phi_full, 0, MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent,
       MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent, 0);
 
-  // Create insertion function
-  std::function<void(std::size_t, std::size_t, std::ptrdiff_t)> inserter;
-  if (transposed)
+  // Tabulate the coordinates of the dofs [c0, c1). Each call has its own
+  // scratch and writes only the coordinates of its dofs.
+  auto tabulate
+      = [&dofs, &cells, &x_dofmap, &x_g, &phi, &dofmap, &cell_info,
+         &apply_dof_transformation, &coordsb, num_dofs_g, gdim, space_dimension,
+         transform_set, transposed](std::size_t c0, std::size_t c1)
   {
-    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
-                                                  std::ptrdiff_t loc)
-    { coordsb[j * coord_shape[1] + c] = xb[loc * gdim + j]; };
-  }
+    std::vector<U> xb(space_dimension * gdim);
+    mdspan2_t x(xb.data(), space_dimension, gdim);
+    std::vector<U> coordinate_dofs_b(num_dofs_g * gdim);
+    mdspan2_t coordinate_dofs(coordinate_dofs_b.data(), num_dofs_g, gdim);
+    for (std::size_t c = c0; c < c1; ++c)
+    {
+      // Fetch the coordinates of the cell
+      auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
+          x_dofmap, cells[c], MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
+      for (std::size_t i = 0; i < num_dofs_g; ++i)
+      {
+        const std::int32_t pos = 3 * x_dofs[i];
+        for (std::size_t j = 0; j < gdim; ++j)
+          coordinate_dofs(i, j) = x_g[pos + j];
+      }
+      // Tabulate dof coordinates on cell
+      dolfinx::fem::CoordinateElement<U>::push_forward(x, coordinate_dofs, phi);
+      if (transform_set)
+      {
+        apply_dof_transformation(xb, cell_info, cells[c],
+                                 static_cast<int>(gdim));
+      }
+
+      // Copy the coordinates of the dof
+      std::span<const std::int32_t> cell_dofs = dofmap->cell_dofs(cells[c]);
+      const std::size_t loc = std::ranges::distance(
+          cell_dofs.begin(), std::ranges::find(cell_dofs, dofs[c]));
+      for (std::size_t j = 0; j < gdim; ++j)
+      {
+        if (transposed)
+          coordsb[j * dofs.size() + c] = x(loc, j);
+        else
+          coordsb[c * 3 + j] = x(loc, j);
+      }
+    }
+  };
+
+  const int num_chunks = std::max<std::size_t>(
+      1, std::min<std::size_t>(num_threads, cells.size()));
+  if (num_chunks < 2)
+    tabulate(0, cells.size());
   else
   {
-    inserter = [&coordsb, &xb, gdim, coord_shape](std::size_t c, std::size_t j,
-                                                  std::ptrdiff_t loc)
-    { coordsb[c * coord_shape[1] + j] = xb[loc * gdim + j]; };
-  }
-
-  for (std::size_t c = 0; c < cells.size(); ++c)
-  {
-    // Fetch the coordinates of the cell
-    auto x_dofs = MDSPAN_IMPL_STANDARD_NAMESPACE::submdspan(
-        x_dofmap, cells[c], MDSPAN_IMPL_STANDARD_NAMESPACE::full_extent);
-    for (std::size_t i = 0; i < num_dofs_g; ++i)
+    std::vector<std::jthread> threads;
+    for (int i = 1; i < num_chunks; ++i)
     {
-      const int pos = 3 * x_dofs[i];
-      for (std::size_t j = 0; j < gdim; ++j)
-        coordinate_dofs(i, j) = x_g[pos + j];
+      auto [c0, c1] = dolfinx::common::local_range(i, cells.size(), num_chunks);
+      threads.emplace_back(tabulate, c0, c1);
     }
-    // Tabulate dof coordinates on cell
-    dolfinx::fem::CoordinateElement<U>::push_forward(x, coordinate_dofs, phi);
-    if (transform_set)
-    {
-      apply_dof_transformation(std::span(xb.data(), x.size()),
-                               std::span(cell_info.data(), cell_info.size()),
-                               (std::int32_t)c, (int)gdim);
-    }
-
-    // Get cell dofmap
-    auto cell_dofs = dofmap->cell_dofs(cells[c]);
-    auto it = std::ranges::find(cell_dofs, dofs[c]);
-    auto loc = std::ranges::distance(cell_dofs.begin(), it);
-
-    // Copy dof coordinates into vector
-    for (std::size_t j = 0; j < gdim; ++j)
-      inserter(c, j, loc);
+    auto [c0, c1] = dolfinx::common::local_range(0, cells.size(), num_chunks);
+    tabulate(c0, c1);
   }
 
   return {coordsb, coord_shape};
