@@ -318,13 +318,14 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     mesh->topology_mutable()->create_connectivity(tdim - 1, tdim);
   }
 
-  auto extract_cells = [](std::span<const std::int32_t> facets)
+  // The cells of (cell, local entity) pairs
+  auto extract_cells = [](std::span<const std::int32_t> entities)
   {
-    assert(facets.size() % 2 == 0);
+    assert(entities.size() % 2 == 0);
     std::vector<std::int32_t> cells;
-    cells.reserve(facets.size() / 2);
-    for (std::size_t i = 0; i < facets.size(); i += 2)
-      cells.push_back(facets[i]);
+    cells.reserve(entities.size() / 2);
+    for (std::size_t i = 0; i < entities.size(); i += 2)
+      cells.push_back(entities[i]);
     return cells;
   };
 
@@ -356,6 +357,8 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
+    case dolfinx::fem::IntegralType::ridge:
+    case dolfinx::fem::IntegralType::vertex:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         std::vector<std::int32_t> cells0
@@ -554,15 +557,21 @@ void populate_mpc_pattern(
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
+    case dolfinx::fem::IntegralType::ridge:
+    case dolfinx::fem::IntegralType::vertex:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
-        // Entities are (cell, local_facet) pairs
-        std::span<const std::int32_t> facets_row = a.domain_arg(type, 0, i, 0);
-        std::span<const std::int32_t> facets_col = a.domain_arg(type, 1, i, 0);
-        assert(facets_row.size() == facets_col.size());
-        assert(facets_row.size() % 2 == 0);
-        for (std::size_t e = 0; e < facets_row.size(); e += 2)
-          insert_entity(facets_row.subspan(e, 1), facets_col.subspan(e, 1));
+        // Entities are (cell, local entity) pairs
+        std::span<const std::int32_t> entities_row
+            = a.domain_arg(type, 0, i, 0);
+        std::span<const std::int32_t> entities_col
+            = a.domain_arg(type, 1, i, 0);
+        assert(entities_row.size() == entities_col.size());
+        assert(entities_row.size() % 2 == 0);
+        for (std::size_t e = 0; e < entities_row.size(); e += 2)
+        {
+          insert_entity(entities_row.subspan(e, 1), entities_col.subspan(e, 1));
+        }
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
