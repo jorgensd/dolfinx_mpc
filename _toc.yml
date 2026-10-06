@@ -24,9 +24,11 @@ parts:
     - file: "python/demos/demo_mean_value_constraint.py"
     - file: "python/demos/demo_boundary_average_constraint.py"
     - file: "python/demos/demo_flow_rate_constraint.py"
+
   - caption: "Slip conditions"
     chapters:
     - file: "python/demos/demo_stokes.py"
+
     - file: "python/demos/demo_stokes_nest.py"
   - caption: "Theory"
     chapters:

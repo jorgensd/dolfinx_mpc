@@ -9,11 +9,6 @@ Below you will find several examples of how to use the libary:
 ```{demo-gallery}
 ```
 
-```{include} README.md
-:start-after: <!-- The book's front page, index.md, continues from here: it is the documentation itself -->
-:end-before: "# Installation"
-```
-
 ## References
 ```{bibliography}
 :filter: cited

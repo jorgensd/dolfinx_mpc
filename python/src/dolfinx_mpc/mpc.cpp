@@ -344,14 +344,19 @@ void declare_functions(nb::module_& m)
       "Create the multi point constraints of several function spaces together");
 
   m.def("create_sparsity_pattern", &dolfinx_mpc::create_sparsity_pattern<T, U>);
+}
 
-  m.def("create_contact_slip_condition",
+template <typename T, std::floating_point U>
+void declare_mpc_data(nb::module_& m, std::string type)
+{
+  m.def(("create_contact_slip_condition_" + type).c_str(),
         &dolfinx_mpc::create_contact_slip_condition<T, U>);
-  m.def("create_slip_condition", &dolfinx_mpc::create_slip_condition<T, U>);
-  m.def("create_contact_inelastic_condition",
+  m.def(("create_slip_condition_" + type).c_str(),
+        &dolfinx_mpc::create_slip_condition<T, U>);
+  m.def(("create_contact_inelastic_condition_" + type).c_str(),
         &dolfinx_mpc::create_contact_inelastic_condition<T, U>);
   m.def(
-      "create_periodic_constraint_geometrical",
+      ("create_periodic_constraint_geometrical_" + type).c_str(),
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>> V,
          const std::function<nb::ndarray<bool, nb::ndim<1>, nb::c_contig>(
              nb::ndarray<const U, nb::ndim<2>, nb::numpy>&)>& indicator,
@@ -389,11 +394,10 @@ void declare_functions(nb::module_& m)
         return dolfinx_mpc::create_periodic_condition_geometrical(
             V, _indicator, _relation, bcs, scale, collapse, tol, num_threads);
       },
-      "V"_a, "indicator"_a, "relation"_a, "bcs"_a, nb::arg("scale").noconvert(),
-      nb::arg("collapse").noconvert(), nb::arg("tol").noconvert(),
-      nb::arg("num_threads").noconvert());
+      "V"_a, "indicator"_a, "relation"_a, "bcs"_a, "scale"_a, "collapse"_a,
+      "tol"_a, "num_threads"_a);
   m.def(
-      "create_periodic_constraint_topological",
+      ("create_periodic_constraint_topological_" + type).c_str(),
       [](std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>& V,
          std::shared_ptr<const dolfinx::mesh::MeshTags<std::int32_t>>& meshtags,
          const int dim,
@@ -415,29 +419,9 @@ void declare_functions(nb::module_& m)
             V, meshtags, dim, _relation, bcs, scale, collapse, tol,
             num_threads);
       },
-      "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a,
-      nb::arg("scale").noconvert(), nb::arg("collapse").noconvert(),
-      nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert());
-  m.def(
-      "create_submesh_constraint",
-      [](const dolfinx::fem::FunctionSpace<U>& V,
-         const dolfinx::fem::FunctionSpace<U>& W,
-         const dolfinx::mesh::EntityMap& entity_map,
-         const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
-             bcs,
-         T scale, std::optional<U> tol, std::size_t num_threads)
-      {
-        return dolfinx_mpc::create_submesh_constraint<T, U>(
-            V, W, entity_map, bcs, scale, tol, num_threads);
-      },
-      "V"_a, "W"_a, "entity_map"_a, "bcs"_a, nb::arg("scale").noconvert(),
-      nb::arg("tol").noconvert(), nb::arg("num_threads").noconvert(),
-      "Tie the dofs of V to W on a related mesh, through an entity map");
-}
+      "V"_a, "meshtags"_a, "dim"_a, "relation"_a, "bcs"_a, "scale"_a,
+      "collapse"_a, "tol"_a, "num_threads"_a);
 
-template <typename T, std::floating_point U>
-void declare_mpc_data(nb::module_& m, std::string type)
-{
   // The scalar type cannot be deduced from the arguments, so it is in the name
   m.def(
       ("create_rbe2_" + type).c_str(),

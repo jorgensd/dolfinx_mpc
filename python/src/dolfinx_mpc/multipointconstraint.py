@@ -19,7 +19,15 @@ from dolfinx import default_real_type, default_scalar_type
 
 import dolfinx_mpc.cpp
 
-from .container import MPCData, _float_array_types, _float_classes, _mpc_classes, _mpc_data_classes, _scalar_type
+from .container import (
+    MPCData,
+    _cpp_function,
+    _float_array_types,
+    _float_classes,
+    _mpc_classes,
+    _mpc_data_classes,
+    _scalar_type,
+)
 from .dictcondition import create_dictionary_constraint
 from .integralcondition import create_integral_constraint
 from .rbe import create_rbe2, create_rbe3
@@ -328,7 +336,7 @@ class MultiPointConstraint:
         tag: int,
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+        scale: Union[_float_classes, float, complex] = 1.0,
         tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
         num_threads: Optional[int] = 1,
     ):
@@ -342,7 +350,7 @@ class MultiPointConstraint:
             tag: Tag indicating which entities should be slaves
             relation: Lambda-function describing the geometrical relation
             bcs: Dirichlet boundary conditions for the problem (Periodic constraints will be ignored for these dofs)
-            scale: Float for scaling bc
+            scale: Factor of the masters, of the scalar type of the constraint
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
                 collision searches to determine periodic degrees of freedom. With `None`, every basis value is
@@ -355,32 +363,20 @@ class MultiPointConstraint:
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
         tol_ = None if tol is None else float(tol)
-        if V is self.V:
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object,
-                meshtag._cpp_object,
-                tag,
-                relation,
-                bcs_,
-                scale,
-                False,
-                tol_,
-                num_threads=num_threads,
-            )
-        elif self.V.contains(V):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object,
-                meshtag._cpp_object,
-                tag,
-                relation,
-                bcs_,
-                scale,
-                True,
-                tol_,
-                num_threads=num_threads,
-            )
-        else:
+        is_input_space = V is self.V
+        if not (is_input_space or self.V.contains(V)):
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+        mpc_data = _cpp_function("create_periodic_constraint_topological", self._dtype)(
+            V._cpp_object,
+            meshtag._cpp_object,
+            tag,
+            relation,
+            bcs_,
+            scale,
+            not is_input_space,
+            tol_,
+            num_threads=num_threads,
+        )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_periodic_constraint_geometrical(
@@ -389,7 +385,7 @@ class MultiPointConstraint:
         indicator: Callable[[numpy.ndarray], numpy.ndarray],
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
+        scale: Union[_float_classes, float, complex] = 1.0,
         tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
         num_threads: Optional[int] = 1,
     ):
@@ -404,7 +400,7 @@ class MultiPointConstraint:
             relation: Lambda-function describing the geometrical relation to master dofs
             bcs: Dirichlet boundary conditions for the problem
                  (Periodic constraints will be ignored for these dofs)
-            scale: Float for scaling bc
+            scale: Factor of the masters, of the scalar type of the constraint
             tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
                 is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
                 collision searches to determine periodic degrees of freedom. With `None`, every basis value is
@@ -417,16 +413,12 @@ class MultiPointConstraint:
             scale = scale.item()  # type: ignore
         tol_ = None if tol is None else float(tol)
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
-        if V is self.V:
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                self.V._cpp_object, indicator, relation, bcs, scale, False, tol_, num_threads
-            )
-        elif self.V.contains(V):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                V._cpp_object, indicator, relation, bcs, scale, True, tol_, num_threads
-            )
-        else:
+        is_input_space = V is self.V
+        if not (is_input_space or self.V.contains(V)):
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+        mpc_data = _cpp_function("create_periodic_constraint_geometrical", self._dtype)(
+            V._cpp_object, indicator, relation, bcs, scale, not is_input_space, tol_, num_threads
+        )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_submesh_constraint(
@@ -817,7 +809,7 @@ class MultiPointConstraint:
             sub_space = True
         else:
             raise ValueError("Input space has to be a sub space of the MPC space")
-        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(
+        mpc_data = _cpp_function("create_slip_condition", self._dtype)(
             space._cpp_object,
             facet_marker[0]._cpp_object,
             facet_marker[1],
@@ -857,9 +849,18 @@ class MultiPointConstraint:
                         numpy.array([f0, f1], dtype=mesh.geometry.x.dtype).tobytes(): beta}}
         """
         slaves, masters, coeffs, owners, offsets = create_dictionary_constraint(
-            self.V, slave_master_dict, subspace_slave, subspace_master
+            self.V, slave_master_dict, subspace_slave, subspace_master, dtype=self._dtype
         )
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+
+    def _squared_distance_tolerance(self, eps2: float | numpy.generic | None) -> float:
+        """`eps2`, or by default 500 times the resolution of the coordinate type of the mesh."""
+        if eps2 is None:
+            return float(500 * numpy.finfo(self.V.mesh.geometry.x.dtype).resolution)
+        elif isinstance(eps2, float):
+            return eps2
+        else:
+            return eps2.item()
 
     def create_contact_slip_condition(
         self,
@@ -867,7 +868,7 @@ class MultiPointConstraint:
         slave_marker: int,
         master_marker: int,
         normal: _fem.Function,
-        eps2: float = 1e-20,
+        eps2: Optional[float] = None,
         num_threads: Optional[int] = 1,
     ):
         """
@@ -881,13 +882,19 @@ class MultiPointConstraint:
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
             normal: The function used in the dot-product of the constraint
-            eps2: The tolerance for the squared distance between cells to be considered as a collision
+            eps2: The largest squared distance from a slave point to a master cell for the point to
+                be in the cell. Defaults to 500 times the resolution of the coordinate type of the mesh,
+                as the distance is computed in that precision.
             num_threads: The number of threads to use for certain operations
         """
-        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
-            eps2 = eps2.item()  # type: ignore
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, normal._cpp_object, eps2, num_threads
+        mpc_data = _cpp_function("create_contact_slip_condition", self._dtype)(
+            self.V._cpp_object,
+            meshtags._cpp_object,
+            slave_marker,
+            master_marker,
+            normal._cpp_object,
+            self._squared_distance_tolerance(eps2),
+            num_threads,
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
@@ -896,7 +903,7 @@ class MultiPointConstraint:
         meshtags: _cpp.mesh.MeshTags_int32,
         slave_marker: int,
         master_marker: int,
-        eps2: float = 1e-20,
+        eps2: Optional[float] = None,
         allow_missing_masters: bool = False,
         num_threads: Optional[int] = 1,
     ):
@@ -910,20 +917,20 @@ class MultiPointConstraint:
             meshtags: The meshtags of the set of facets to tie together
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
-            eps2: The tolerance for the squared distance between cells to be considered as a collision
+            eps2: The largest squared distance from a slave point to a master cell for the point to
+                be in the cell. Defaults to 500 times the resolution of the coordinate type of the mesh,
+                as the distance is computed in that precision.
             allow_missing_masters: If true, the function will not throw an error if a degree of freedom
                 in the closure of the master entities does not have a corresponding set of slave degree
                 of freedom.
             num_threads: The number of threads to use for certain operations
         """
-        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
-            eps2 = eps2.item()  # type: ignore
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
+        mpc_data = _cpp_function("create_contact_inelastic_condition", self._dtype)(
             self.V._cpp_object,
             meshtags._cpp_object,
             slave_marker,
             master_marker,
-            eps2,
+            self._squared_distance_tolerance(eps2),
             allow_missing_masters,
             num_threads,
         )

@@ -159,7 +159,12 @@ problem = dolfinx_mpc.LinearProblem(
     bcs=[bc],
     kind="mpi",
     petsc_options_prefix="demo_spider_",
-    petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
+    petsc_options={
+        "ksp_type": "preonly",
+        "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps",
+        "ksp_error_if_not_converged": True,
+    },
 )
 u_tet, u_hex, spider = problem.solve()
 
@@ -200,11 +205,11 @@ x_clamp = np.array([0.0, 0.5, 0.5])
 
 def clamp_reaction(u):
     """Force and moment about `x_clamp` that the clamp exerts on the tetrahedral cube."""
-    u_ref = fem.Function(V_tet)
+    u_ref = fem.Function(V_tet, dtype=default_scalar_type)
     n_owned = V_tet.dofmap.index_map.size_local * 3
     u_ref.x.array[:n_owned] = u.x.array[:n_owned]
     u_ref.x.scatter_forward()
-    residual = fem.assemble_vector(fem.form(ufl.action(elasticity(V_tet), u_ref)))
+    residual = fem.assemble_vector(fem.form(ufl.action(elasticity(V_tet), u_ref), dtype=default_scalar_type))
     residual.scatter_reverse(la.InsertMode.add)
     owned_clamped = clamped[clamped < V_tet.dofmap.index_map.size_local]
     f = residual.array.reshape(-1, 3)[owned_clamped]
@@ -365,5 +370,11 @@ if comm.rank == 0:
         plotter.write_frame()
     plotter.close()
 # -
+
+# The PETSc objects of the problem are freed, and those the garbage collector
+# has released are cleaned up on every process together.
+
+del problem
+PETSc.garbage_cleanup(comm)
 
 # <img src="./demo_spider.gif" alt="gif" class="bg-primary mb-1" width="800px">

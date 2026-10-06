@@ -11,8 +11,7 @@ dolfinx_mpc.egg-info
 debug
 *.png
 *.gif
-# Interactive scenes the demos export for the gallery of the documentation
-python/demos/*.html
+
 *results*
 *.msh
 CMakeFiles
@@ -25,3 +24,4 @@ CMakeFiles
 **/_build/**
 .coverage
 .coverage.*
+*.html

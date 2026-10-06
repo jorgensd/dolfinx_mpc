@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, Union
 
 from mpi4py import MPI
+from petsc4py import PETSc
 
 import dolfinx.fem as fem
 import numpy as np
@@ -117,7 +118,12 @@ def demo_periodic3D(celltype: CellType):
     rhs = inner(f, v) * dx
     petsc_options: Dict[str, Union[str, float, int]]
     if complex_mode or default_scalar_type == np.float32:
-        petsc_options = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+        petsc_options = {
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+        }
     else:
         petsc_options = {
             "ksp_type": "cg",
@@ -127,6 +133,7 @@ def demo_periodic3D(celltype: CellType):
             "pc_hypre_boomeramg_max_iter": 1,
             "pc_hypre_boomeramg_cycle_type": "v",
             "pc_hypre_boomeramg_print_statistics": 1,
+            "ksp_error_if_not_converged": True,
         }
 
     problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options)
@@ -188,6 +195,11 @@ def demo_periodic3D(celltype: CellType):
             # Back substitution to full solution vector
             uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
             assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, rtol=tol, atol=tol)
+
+    # Destroying a solver is collective, so it must not be left to the garbage collector, which
+    # runs at different times on different processes
+    del problem, org_problem
+    PETSc.garbage_cleanup(mesh.comm)
 
 
 if __name__ == "__main__":

@@ -51,6 +51,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mpi4py import MPI
+from petsc4py import PETSc
 
 import numpy as np
 import pyvista
@@ -386,6 +387,12 @@ for degree in (1, 2):
     assert last_rate is not None
     assert last_rate > degree + 0.9
 # -
+
+# The PETSc objects of the problem are freed, and those the garbage collector
+# has released are cleaned up on every process together.
+
+del problem
+PETSc.garbage_cleanup(MPI.COMM_WORLD)
 
 # ```{bibliography}
 #    :filter: cited

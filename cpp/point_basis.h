@@ -18,12 +18,18 @@
 #include <dolfinx/geometry/BoundingBoxTree.h>
 #include <dolfinx/geometry/utils.h>
 #include <dolfinx/mesh/Mesh.h>
+#include <exception>
+#include <format>
 #include <iterator>
+#include <limits>
+#include <memory>
 #include <mpi.h>
 #include <numeric>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -111,6 +117,44 @@ send_rows(MPI_Comm comm, std::span<const int> dest, std::span<const I> rows,
   for (std::size_t s = 0; s < src.size(); ++s)
     source.insert(source.end(), recv_counts[s], src[s]);
   return {std::move(recv_rows), std::move(recv_values), std::move(source)};
+}
+
+/// @brief Call `fn`, and throw on every process if it threw on any.
+///
+/// A local failure must not skip a collective call that the other processes
+/// still make, or they deadlock. A process on which `fn` threw rethrows its
+/// exception, the others throw `std::runtime_error`, as DOLFINx's
+/// `mesh::impl::mpi_check` does.
+/// @param[in] comm The communicator of the processes calling `fn`
+/// @param[in] op_name Name of the operation, for the error on the other
+/// processes
+/// @param[in] fn The operation
+/// @return The result of `fn`
+/// @note Collective.
+template <typename F>
+std::invoke_result_t<F> fail_together(MPI_Comm comm, std::string_view op_name,
+                                      F&& fn)
+{
+  std::invoke_result_t<F> result;
+  std::exception_ptr error;
+  try
+  {
+    result = fn();
+  }
+  catch (...)
+  {
+    error = std::current_exception();
+  }
+  int failed = error ? 1 : 0;
+  MPI_Allreduce(MPI_IN_PLACE, &failed, 1, MPI_INT, MPI_MAX, comm);
+  if (error)
+    std::rethrow_exception(error);
+  if (failed)
+  {
+    throw std::runtime_error(
+        std::format("{} failed on another process.", op_name));
+  }
+  return result;
 }
 } // namespace impl
 
@@ -241,8 +285,8 @@ evaluate_basis_in_cells(const dolfinx::fem::FunctionSpace<U>& V,
 /// @param[in] cells The cells (local to the process) to search
 /// @param[in] points The points, shape `(num_points, 3)`, row major
 /// @param[in] padding Padding of the bounding boxes of the cells
-/// @param[in] eps2 Largest squared distance from a point to its cell. Also
-/// the tolerance of the pull-back on non-affine cells.
+/// @param[in] eps2 Largest squared distance from a point to its cell. The
+/// pull-back on non-affine cells stops at `max(eps2, 500 eps)`.
 /// @param[in] to_parent The dof in `parent` of each (unrolled) local dof of
 /// `V`. Empty if `parent` is `V`.
 /// @param[in] parent The space numbering the dofs
@@ -263,14 +307,28 @@ point_basis<U> evaluate_basis_at_points(
   const dolfinx::geometry::BoundingBoxTree<U> process_tree
       = tree.create_global_tree(comm);
 
+  // The pull-back stops when its Newton step, in reference coordinates, is
+  // below this. Rounding keeps the step above a multiple of the machine
+  // epsilon, which a squared distance such as eps2 = 1e-20 is below.
+  const U pull_back_tol
+      = std::max(eps2, 500 * std::numeric_limits<U>::epsilon());
+
   const std::vector<std::int32_t> local
       = find_local_collisions<U>(mesh, tree, points, eps2);
-  point_basis<U> out = evaluate_basis_in_cells<U>(V, points, local, to_parent,
-                                                  parent, eps2, num_threads);
+  point_basis<U> out = impl::fail_together(
+      comm, "Evaluating the basis at the points",
+      [&V, &points, &local, &to_parent, &parent, pull_back_tol, num_threads]
+      {
+        return evaluate_basis_in_cells<U>(V, points, local, to_parent, parent,
+                                          pull_back_tol, num_threads);
+      });
 
   // Ask the processes whose cells' bounding box holds a point not found here
+  const std::size_t num_missing = std::ranges::count(out.found, 0);
   std::vector<std::int32_t> missing;
+  missing.reserve(num_missing);
   std::vector<U> missing_x;
+  missing_x.reserve(3 * num_missing);
   for (std::size_t i = 0; i < out.found.size(); ++i)
   {
     if (!out.found[i])
@@ -282,9 +340,14 @@ point_basis<U> evaluate_basis_at_points(
   }
   const dolfinx::graph::AdjacencyList<std::int32_t> candidates
       = dolfinx::geometry::compute_collisions<U>(process_tree, missing_x);
+  // At most one query per candidate process of each point
+  const std::size_t max_queries = candidates.array().size();
   std::vector<int> dest;
+  dest.reserve(max_queries);
   std::vector<std::int64_t> query;
+  query.reserve(max_queries);
   std::vector<U> query_x;
+  query_x.reserve(3 * max_queries);
   for (std::size_t i = 0; i < missing.size(); ++i)
   {
     for (std::int32_t p : candidates.links(i))
@@ -303,12 +366,22 @@ point_basis<U> evaluate_basis_at_points(
   // Answer with the basis in a local cell: [point, dofs, owners], values
   const std::vector<std::int32_t> recv_cells
       = find_local_collisions<U>(mesh, tree, recv_x, eps2);
-  const point_basis<U> remote = evaluate_basis_in_cells<U>(
-      V, recv_x, recv_cells, to_parent, parent, eps2, num_threads);
+  const point_basis<U> remote = impl::fail_together(
+      comm, "Evaluating the basis at the points of other processes",
+      [&V, &recv_x, &recv_cells, &to_parent, &parent, pull_back_tol,
+       num_threads]
+      {
+        return evaluate_basis_in_cells<U>(V, recv_x, recv_cells, to_parent,
+                                          parent, pull_back_tol, num_threads);
+      });
   const int width = out.num_dofs * out.bs;
+  // At most one reply per query received
   std::vector<int> reply_dest;
+  reply_dest.reserve(recv_query.size());
   std::vector<std::int64_t> reply;
+  reply.reserve(recv_query.size() * (1 + 2 * width));
   std::vector<U> reply_values;
+  reply_values.reserve(recv_query.size() * out.num_dofs);
   for (std::size_t j = 0; j < recv_query.size(); ++j)
   {
     if (!remote.found[j])
@@ -342,45 +415,6 @@ point_basis<U> evaluate_basis_at_points(
     std::copy_n(std::next(answer_values.begin(), r * out.num_dofs),
                 out.num_dofs, std::next(out.values.begin(), i * out.num_dofs));
   }
-  return out;
-}
-
-/// @brief Complete the rows of owned slaves with the rows of the slaves that
-/// are ghosts on this process.
-/// @param[in] slaves The owned slaves (local, unrolled)
-/// @param[in] masters The masters of each slave (global, unrolled)
-/// @param[in] coeffs The coefficient of each master
-/// @param[in] owners The process owning each master
-/// @param[in] num_masters The number of masters of each slave
-/// @param[in] imap The index map of the slaves' space
-/// @param[in] bs The block size of `imap`
-/// @return The constraint, owned slaves first
-/// @note Collective.
-template <typename T>
-mpc_data<T>
-add_ghost_rows(std::vector<std::int32_t>&& slaves,
-               std::vector<std::int64_t>&& masters, std::vector<T>&& coeffs,
-               std::vector<std::int32_t>&& owners,
-               std::vector<std::int32_t>&& num_masters,
-               std::shared_ptr<const dolfinx::common::IndexMap> imap, int bs)
-{
-  mpc_data<T> ghosts = distribute_ghost_data<T>(slaves, masters, coeffs, owners,
-                                                num_masters, imap, bs);
-  slaves.insert(slaves.end(), ghosts.slaves.begin(), ghosts.slaves.end());
-  masters.insert(masters.end(), ghosts.masters.begin(), ghosts.masters.end());
-  coeffs.insert(coeffs.end(), ghosts.coeffs.begin(), ghosts.coeffs.end());
-  owners.insert(owners.end(), ghosts.owners.begin(), ghosts.owners.end());
-  num_masters.insert(num_masters.end(), ghosts.offsets.begin(),
-                     ghosts.offsets.end());
-
-  mpc_data<T> out;
-  out.offsets.assign(num_masters.size() + 1, 0);
-  std::partial_sum(num_masters.begin(), num_masters.end(),
-                   std::next(out.offsets.begin()));
-  out.slaves = std::move(slaves);
-  out.masters = std::move(masters);
-  out.coeffs = std::move(coeffs);
-  out.owners = std::move(owners);
   return out;
 }
 } // namespace dolfinx_mpc

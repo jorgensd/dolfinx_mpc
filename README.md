@@ -39,10 +39,10 @@ C++, with a Python interface. How the constraints are eliminated is described in
 of the [documentation](https://jorgensd.github.io/dolfinx_mpc/docs/elimination.html).
 
 
+<!-- The book's front page, index.md, leaves out from here: it is the documentation -->
+
 # Documentation
 Documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.github.io/dolfinx_mpc)
-
-<!-- The book's front page, index.md, continues from here: it is the documentation itself -->
 
 # Installation
 
