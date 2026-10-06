@@ -15,11 +15,22 @@ import dolfinx.mesh as _mesh
 import numpy
 import numpy.typing as npt
 import ufl
-from dolfinx import default_real_type, default_scalar_type
 
 import dolfinx_mpc.cpp
 
-from .container import MPCData, _float_array_types, _float_classes, _mpc_classes, _mpc_data_classes, _scalar_type
+from .container import (
+    _UNSET,
+    MPCData,
+    _cpp_function,
+    _deprecated,
+    _float_array_types,
+    _float_classes,
+    _mpc_classes,
+    _mpc_data_classes,
+    _scalar_type,
+    _tolerance,
+    _Unset,
+)
 from .dictcondition import create_dictionary_constraint
 from .integralcondition import create_integral_constraint
 from .rbe import create_rbe2, create_rbe3
@@ -172,6 +183,8 @@ class MultiPointConstraint:
         value,
         bcs: Optional[List[_fem.DirichletBC]] = None,
         rtol: numpy.floating | float | None = None,
+        *,
+        coefficient_tol: Optional[float] = None,
     ):
         r"""Constrain a scalar integral of the solution, :math:`L(u) = \gamma`.
 
@@ -192,18 +205,24 @@ class MultiPointConstraint:
                 to the constructor to have a constrained *master* folded into
                 the constraint offset. Defaults to the conditions given to the
                 constructor.
-            rtol: Discard a master whose coefficient is below this fraction of
-                the largest one. Defaults to
-                :func:`dolfinx_mpc.create_integral_constraint`'s own default,
-                which scales with the runtime scalar type's precision.
+            rtol: Deprecated, use `coefficient_tol`.
+            coefficient_tol: A master whose coefficient is below
+                `coefficient_tol` times the largest one is dropped. Defaults to
+                `500` machine epsilon of the real type of the constraint.
 
         Note:
             Collective. Must be called by every process.
         """
         self._raise_if_finalized()
-        kwargs = {} if rtol is None else {"rtol": rtol}
+        if rtol is not None:
+            _deprecated("rtol", "`coefficient_tol`")
+            coefficient_tol = rtol if coefficient_tol is None else coefficient_tol
         slaves, masters, coeffs, owners, offsets, rhs = create_integral_constraint(
-            self.V, weight_form, value, self._bcs if bcs is None else bcs, **kwargs
+            self.V,
+            weight_form,
+            value,
+            self._bcs if bcs is None else bcs,
+            coefficient_tol=_tolerance(coefficient_tol, self._dtype),
         )
         if self._rhs_coeffs is None:
             self._rhs_coeffs = rhs
@@ -327,9 +346,12 @@ class MultiPointConstraint:
         tag: int,
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
-        tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
+        scale: Union[_float_classes, float, complex] = 1.0,
+        tol: Union[_float_classes, float, None, _Unset] = _UNSET,
         num_threads: Optional[int] = 1,
+        *,
+        distance_tol: Optional[float] = None,
+        coefficient_tol: Optional[float] = None,
     ):
         """
         Create periodic condition for all closure dofs of on all entities in `meshtag` with value `tag`.
@@ -341,45 +363,37 @@ class MultiPointConstraint:
             tag: Tag indicating which entities should be slaves
             relation: Lambda-function describing the geometrical relation
             bcs: Dirichlet boundary conditions for the problem (Periodic constraints will be ignored for these dofs)
-            scale: Float for scaling bc
-            tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
-                is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
-                collision searches to determine periodic degrees of freedom. With `None`, every basis value is
-                kept, so that the coefficients can later be changed with :func:`scale_coefficients` or
-                :func:`update_coefficients` without having lost masters. The padding then defaults to
-                `500` machine epsilon.
+            scale: Factor of the masters, of the scalar type of the constraint
+            tol: Deprecated, use `distance_tol` and `coefficient_tol`: a value sets both, `None` sets
+                `coefficient_tol=0`.
             num_threads: The number of threads to use for certain operations
+            distance_tol: The largest distance from a mapped slave point to a master cell for the point to
+                be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
+                machine epsilon of the coordinate type of the mesh.
+            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                its slave is dropped. `0` keeps every master, so that the coefficients can later be changed
+                with :func:`scale_coefficients` or :func:`update_coefficients`. Defaults to `500`
+                machine epsilon of the real type of the constraint.
         """
         bcs_ = [bc._cpp_object for bc in bcs]
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
-        tol_ = None if tol is None else float(tol)
-        if V is self.V:
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                self.V._cpp_object,
-                meshtag._cpp_object,
-                tag,
-                relation,
-                bcs_,
-                scale,
-                False,
-                tol_,
-                num_threads=num_threads,
-            )
-        elif self.V.contains(V):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_topological(
-                V._cpp_object,
-                meshtag._cpp_object,
-                tag,
-                relation,
-                bcs_,
-                scale,
-                True,
-                tol_,
-                num_threads=num_threads,
-            )
-        else:
+        distance_tol, coefficient_tol = self._tolerances(distance_tol, coefficient_tol, tol=tol)
+        is_input_space = V is self.V
+        if not (is_input_space or self.V.contains(V)):
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+        mpc_data = _cpp_function("create_periodic_constraint_topological", self._dtype)(
+            V._cpp_object,
+            meshtag._cpp_object,
+            tag,
+            relation,
+            bcs_,
+            scale,
+            not is_input_space,
+            distance_tol,
+            coefficient_tol,
+            num_threads,
+        )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def create_periodic_constraint_geometrical(
@@ -388,9 +402,12 @@ class MultiPointConstraint:
         indicator: Callable[[numpy.ndarray], numpy.ndarray],
         relation: Callable[[numpy.ndarray], numpy.ndarray],
         bcs: List[_fem.DirichletBC],
-        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
-        tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
+        scale: Union[_float_classes, float, complex] = 1.0,
+        tol: Union[_float_classes, float, None, _Unset] = _UNSET,
         num_threads: Optional[int] = 1,
+        *,
+        distance_tol: Optional[float] = None,
+        coefficient_tol: Optional[float] = None,
     ):
         """
         Create a periodic condition for all degrees of freedom whose physical location satisfies
@@ -403,29 +420,36 @@ class MultiPointConstraint:
             relation: Lambda-function describing the geometrical relation to master dofs
             bcs: Dirichlet boundary conditions for the problem
                  (Periodic constraints will be ignored for these dofs)
-            scale: Float for scaling bc
-            tol: Tolerance for adding scaled basis values to MPC. Any contribution that is less than this value
-                is ignored. The tolerance is also added as padding for the bounding box trees and corresponding
-                collision searches to determine periodic degrees of freedom. With `None`, every basis value is
-                kept, so that the coefficients can later be changed with :func:`scale_coefficients` or
-                :func:`update_coefficients` without having lost masters. The padding then defaults to
-                `500` machine epsilon.
+            scale: Factor of the masters, of the scalar type of the constraint
+            tol: Deprecated, use `distance_tol` and `coefficient_tol`: a value sets both, `None` sets
+                `coefficient_tol=0`.
             num_threads: The number of threads to use for certain operations.
+            distance_tol: The largest distance from a mapped slave point to a master cell for the point to
+                be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
+                machine epsilon of the coordinate type of the mesh.
+            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                its slave is dropped. `0` keeps every master, so that the coefficients can later be changed
+                with :func:`scale_coefficients` or :func:`update_coefficients`. Defaults to `500`
+                machine epsilon of the real type of the constraint.
         """
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
-        tol_ = None if tol is None else float(tol)
+        distance_tol, coefficient_tol = self._tolerances(distance_tol, coefficient_tol, tol=tol)
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
-        if V is self.V:
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                self.V._cpp_object, indicator, relation, bcs, scale, False, tol_, num_threads
-            )
-        elif self.V.contains(V):
-            mpc_data = dolfinx_mpc.cpp.mpc.create_periodic_constraint_geometrical(
-                V._cpp_object, indicator, relation, bcs, scale, True, tol_, num_threads
-            )
-        else:
+        is_input_space = V is self.V
+        if not (is_input_space or self.V.contains(V)):
             raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+        mpc_data = _cpp_function("create_periodic_constraint_geometrical", self._dtype)(
+            V._cpp_object,
+            indicator,
+            relation,
+            bcs,
+            scale,
+            not is_input_space,
+            distance_tol,
+            coefficient_tol,
+            num_threads,
+        )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data)
 
     def _add_rbe2(self, dofs: list[npt.NDArray[numpy.int32]], W: _fem.FunctionSpace, x=None):
@@ -759,7 +783,7 @@ class MultiPointConstraint:
             sub_space = True
         else:
             raise ValueError("Input space has to be a sub space of the MPC space")
-        mpc_data = dolfinx_mpc.cpp.mpc.create_slip_condition(
+        mpc_data = _cpp_function("create_slip_condition", self._dtype)(
             space._cpp_object,
             facet_marker[0]._cpp_object,
             facet_marker[1],
@@ -774,6 +798,8 @@ class MultiPointConstraint:
         slave_master_dict: Dict[bytes, Dict[bytes, float]],
         subspace_slave: Optional[int] = None,
         subspace_master: Optional[int] = None,
+        *,
+        distance_tol: Optional[float] = None,
     ):
         """
         Args:
@@ -785,6 +811,8 @@ class MultiPointConstraint:
             subspace_slave: If using mixed or vector space, and only want to use dofs from a sub space
                 as slave add index here
             subspace_master: Subspace index for mixed or vector spaces
+            distance_tol: The largest distance between the coordinate of a key and that of its dof.
+                Defaults to `500` machine epsilon of the coordinate type of the mesh.
 
         Example:
             If the dof `D` located at `[d0, d1]` should be constrained to the dofs
@@ -799,9 +827,42 @@ class MultiPointConstraint:
                         numpy.array([f0, f1], dtype=mesh.geometry.x.dtype).tobytes(): beta}}
         """
         slaves, masters, coeffs, owners, offsets = create_dictionary_constraint(
-            self.V, slave_master_dict, subspace_slave, subspace_master, dtype=self._dtype
+            self.V,
+            slave_master_dict,
+            subspace_slave,
+            subspace_master,
+            dtype=self._dtype,
+            distance_tol=_tolerance(distance_tol, self.V.mesh.geometry.x.dtype),
         )
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
+
+    def _tolerances(
+        self,
+        distance_tol: Optional[float],
+        coefficient_tol: Optional[float],
+        tol: Union[_float_classes, float, None, _Unset] = _UNSET,
+        eps2: Optional[float] = None,
+    ) -> tuple[float, float]:
+        """The distance and coefficient tolerance, by default `500` machine epsilon of the coordinate
+        type of the mesh and of the real type of the constraint.
+
+        The deprecated `tol` of the periodic constraints sets both, or with `None` keeps every
+        master. The deprecated `eps2` of the contact constraints is a squared distance.
+        """
+        if not isinstance(tol, _Unset):
+            _deprecated("tol", "`distance_tol` and `coefficient_tol`", stacklevel=4)
+            if tol is None:
+                coefficient_tol = 0.0 if coefficient_tol is None else coefficient_tol
+            else:
+                distance_tol = tol if distance_tol is None else distance_tol
+                coefficient_tol = tol if coefficient_tol is None else coefficient_tol
+        if eps2 is not None:
+            _deprecated("eps2", "`distance_tol`, a distance rather than a squared distance,", stacklevel=4)
+            distance_tol = float(numpy.sqrt(eps2)) if distance_tol is None else distance_tol
+        return (
+            _tolerance(distance_tol, self.V.mesh.geometry.x.dtype),
+            _tolerance(coefficient_tol, self._dtype),
+        )
 
     def create_contact_slip_condition(
         self,
@@ -809,8 +870,11 @@ class MultiPointConstraint:
         slave_marker: int,
         master_marker: int,
         normal: _fem.Function,
-        eps2: float = 1e-20,
+        eps2: Optional[float] = None,
         num_threads: Optional[int] = 1,
+        *,
+        distance_tol: Optional[float] = None,
+        coefficient_tol: Optional[float] = None,
     ):
         """
         Create a slip condition between two sets of facets marker with individual markers.
@@ -823,13 +887,23 @@ class MultiPointConstraint:
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
             normal: The function used in the dot-product of the constraint
-            eps2: The tolerance for the squared distance between cells to be considered as a collision
+            eps2: Deprecated, use `distance_tol`, which is `sqrt(eps2)`.
             num_threads: The number of threads to use for certain operations
+            distance_tol: The largest distance from a slave point to a master cell for the point to
+                be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
+                machine epsilon of the coordinate type of the mesh.
+            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                its slave is dropped. `0` keeps every master. Defaults to `500`
+                machine epsilon of the real type of the constraint.
         """
-        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
-            eps2 = eps2.item()  # type: ignore
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, normal._cpp_object, eps2, num_threads
+        mpc_data = _cpp_function("create_contact_slip_condition", self._dtype)(
+            self.V._cpp_object,
+            meshtags._cpp_object,
+            slave_marker,
+            master_marker,
+            normal._cpp_object,
+            *self._tolerances(distance_tol, coefficient_tol, eps2=eps2),
+            num_threads,
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
@@ -838,9 +912,12 @@ class MultiPointConstraint:
         meshtags: _cpp.mesh.MeshTags_int32,
         slave_marker: int,
         master_marker: int,
-        eps2: float = 1e-20,
+        eps2: Optional[float] = None,
         allow_missing_masters: bool = False,
         num_threads: Optional[int] = 1,
+        *,
+        distance_tol: Optional[float] = None,
+        coefficient_tol: Optional[float] = None,
     ):
         """
         Create a contact inelastic condition between two sets of facets marker with individual markers.
@@ -852,20 +929,24 @@ class MultiPointConstraint:
             meshtags: The meshtags of the set of facets to tie together
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
-            eps2: The tolerance for the squared distance between cells to be considered as a collision
+            eps2: Deprecated, use `distance_tol`, which is `sqrt(eps2)`.
             allow_missing_masters: If true, the function will not throw an error if a degree of freedom
                 in the closure of the master entities does not have a corresponding set of slave degree
                 of freedom.
             num_threads: The number of threads to use for certain operations
+            distance_tol: The largest distance from a slave point to a master cell for the point to
+                be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
+                machine epsilon of the coordinate type of the mesh.
+            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                its slave is dropped. `0` keeps every master. Defaults to `500`
+                machine epsilon of the real type of the constraint.
         """
-        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
-            eps2 = eps2.item()  # type: ignore
-        mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
+        mpc_data = _cpp_function("create_contact_inelastic_condition", self._dtype)(
             self.V._cpp_object,
             meshtags._cpp_object,
             slave_marker,
             master_marker,
-            eps2,
+            *self._tolerances(distance_tol, coefficient_tol, eps2=eps2),
             allow_missing_masters,
             num_threads,
         )
@@ -951,9 +1032,9 @@ class MultiPointConstraint:
         Replace the coefficient of every master, including masters eliminated by a Dirichlet
         condition, and recompute the constraint offset :math:`g`.
 
-        The masters are fixed at creation. A master dropped by `tol` or by the `filter` of
-        :func:`finalize` cannot be given a coefficient, so create the constraint with `tol=None`
-        and no filter if the coefficients are to be changed.
+        The masters are fixed at creation. A master dropped by `coefficient_tol` or by the `filter`
+        of :func:`finalize` cannot be given a coefficient, so create the constraint with
+        `coefficient_tol=0` and no filter if the coefficients are to be changed.
 
         Args:
             coeffs: The new coefficients, in the layout of :func:`all_coefficients`, for all degrees

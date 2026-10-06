@@ -33,7 +33,9 @@ _atol = 5e3 * np.finfo(default_real_type).eps
 
 def _periodic(V, indicator, relation, bcs=()):
     mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc.create_periodic_constraint_geometrical(V, indicator, relation, list(bcs), tol=_atol)
+    mpc.create_periodic_constraint_geometrical(
+        V, indicator, relation, list(bcs), distance_tol=_atol, coefficient_tol=_atol
+    )
     mpc.finalize()
     return mpc
 

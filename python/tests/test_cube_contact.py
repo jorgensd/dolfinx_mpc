@@ -12,20 +12,24 @@ from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx.fem as fem
+import dolfinx.mesh
 import gmsh
 import numpy as np
 import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
 from dolfinx.io import gmsh as gmshio
 
 import dolfinx_mpc
 import dolfinx_mpc.utils
+from dolfinx_mpc.container import _cpp_function
 
 theta = np.pi / 5
+# The gap between the boxes, so that gmsh meshes them separately rather than fusing them
+_gap = 1e-12
 
 
 @pytest.fixture
@@ -56,7 +60,7 @@ def generate_hex_boxes():
 
         # Set mesh size at point
         gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0, numElements=[int(1 / (2 * res))], recombine=True)
-        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12, numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - _gap, numElements=[int(1 / (2 * res))], recombine=True)
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
@@ -235,13 +239,15 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
 
     # Create MPC contact condition and assemble matrices
     mpc = dolfinx_mpc.MultiPointConstraint(V)
+    # The slaves are at most the gap from the master cells, up to rounding
+    distance_tol = max(100 * _gap, 500 * np.finfo(mesh.geometry.x.dtype).eps)
     if nonslip:
         with Timer("~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9, eps2=500 * np.finfo(default_scalar_type).resolution)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, distance_tol=distance_tol)
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh, eps2=500 * np.finfo(default_scalar_type).resolution)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, distance_tol=distance_tol)
 
     mpc.finalize()
 
@@ -300,3 +306,79 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
     solver.destroy()
 
     list_timings(comm)
+
+
+def test_contact_missing_masters():
+    """A slave in no cell of the master side raises on every process, unless allowed."""
+    comm = MPI.COMM_WORLD
+    mesh = dolfinx.mesh.create_unit_square(comm, 4, 4, dolfinx.mesh.CellType.quadrilateral, dtype=default_real_type)
+    V = fem.functionspace(mesh, ("Lagrange", 1, (2,)))
+    bs = V.dofmap.index_map_bs
+
+    # Slaves on the bottom edge, masters in the cells along the left edge: only the slave
+    # blocks at x = 0 and x = 0.25 are in such a cell
+    fdim = mesh.topology.dim - 1
+    bottom = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[1], 0))
+    left = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 0))
+    facets = np.hstack([bottom, left])
+    values = np.hstack([np.full(len(bottom), 1), np.full(len(left), 2)]).astype(np.int32)
+    order = np.argsort(facets)
+    mt = dolfinx.mesh.meshtags(mesh, fdim, facets[order], values[order])
+
+    # The default distance tolerance follows the precision of the mesh
+    nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 1)
+    with pytest.raises(RuntimeError, match="No masters found"):
+        dolfinx_mpc.MultiPointConstraint(V).create_contact_slip_condition(mt, 1, 2, nh)
+    with pytest.raises(RuntimeError, match="No masters found"):
+        dolfinx_mpc.MultiPointConstraint(V).create_contact_inelastic_condition(mt, 1, 2)
+
+    tol = float(500 * np.finfo(default_real_type).eps)
+    create_inelastic = _cpp_function("create_contact_inelastic_condition", default_real_type)
+    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, tol, tol, True, 1)
+    slaves = np.asarray(data.slaves)
+    owned = slaves[slaves < V.dofmap.index_map.size_local * bs]
+    x = V.tabulate_dof_coordinates()[owned // bs]
+    assert comm.allreduce(len(owned), op=MPI.SUM) == 2 * bs
+    # The coordinates of the dofs are rounded in the precision of the mesh
+    tol = 100 * np.finfo(default_real_type).eps
+    assert np.allclose(x[:, 1], 0, atol=tol)
+    assert np.all(np.isclose(x[:, 0], 0, atol=tol) | np.isclose(x[:, 0], 0.25, atol=tol))
+
+
+def test_contact_pull_back_on_quadrilaterals():
+    """The pull-back of a slave point into a non-affine master cell converges for any distance_tol.
+
+    The squared distance tolerance used to be the tolerance of the pull-back's Newton steps as
+    well, which rounding can keep them from reaching: distance_tol = 1e-10, a squared distance of
+    1e-20, then failed to converge. It did for the P2 dof at the middle of a cell's edge. The mesh
+    is in double precision, where a distance of 1e-10 still finds the cells.
+    """
+    comm = MPI.COMM_WORLD
+    mesh = dolfinx.mesh.create_unit_square(comm, 4, 4, dolfinx.mesh.CellType.quadrilateral, dtype=np.float64)
+    V = fem.functionspace(mesh, ("Lagrange", 2, (2,)))
+    fdim = mesh.topology.dim - 1
+    bottom = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[1], 0))
+    left = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 0))
+    facets = np.hstack([bottom, left])
+    values = np.hstack([np.full(len(bottom), 1), np.full(len(left), 2)]).astype(np.int32)
+    order = np.argsort(facets)
+    mt = dolfinx.mesh.meshtags(mesh, fdim, facets[order], values[order])
+
+    # The slaves at x = 0, 0.125 and 0.25 are in cells along the left edge, the others in none. The
+    # slave at the corner is also a master, so the constraint is not finalized.
+    distance_tol = 1e-10
+    coefficient_tol = float(500 * np.finfo(np.float64).eps)
+    bs = V.dofmap.index_map_bs
+    create_inelastic = _cpp_function("create_contact_inelastic_condition", np.float64)
+    data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, distance_tol, coefficient_tol, True, 1)
+    slaves = np.asarray(data.slaves)
+    assert comm.allreduce(np.sum(slaves < V.dofmap.index_map.size_local * bs), op=MPI.SUM) == 3 * bs
+
+    # A slip condition allows no missing masters, so it reports them, rather than a failed pull-back.
+    # The normal of the slaves, on the bottom edge, is (0, -1).
+    nh = fem.Function(V, dtype=np.float64)
+    nh.x.array.reshape(-1, 2)[:, 1] = -1.0
+    with pytest.raises(RuntimeError, match="No masters found"):
+        dolfinx_mpc.MultiPointConstraint(V, dtype=np.float64).create_contact_slip_condition(
+            mt, 1, 2, nh, distance_tol=distance_tol
+        )
