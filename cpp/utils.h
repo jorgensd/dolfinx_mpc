@@ -1801,6 +1801,31 @@ find_local_collisions(const dolfinx::mesh::Mesh<U>& mesh,
   return collisions;
 }
 
+/// @brief The dof blocks of `V` on the closure of the entities tagged with
+/// `marker`.
+///
+/// A wrapper of `dolfinx::fem::locate_dofs_topological` on the dofmap of `V`.
+/// For a blocked space, such as a vector space, it returns blocks, not
+/// unrolled dofs: block `b` holds the dofs `b * bs + c` of every component
+/// `c`, with `bs` the block size of `V`'s index map.
+///
+/// @param[in] V The function space
+/// @param[in] meshtags Tags on entities, of any dimension, of the mesh of `V`
+/// @param[in] marker The value of the tagged entities
+/// @return The blocks, local to the process, ghosts included
+/// @pre The connectivities between the tagged entities and the cells of the
+/// mesh have been computed.
+template <std::floating_point U>
+std::vector<std::int32_t>
+locate_tagged_blocks(const dolfinx::fem::FunctionSpace<U>& V,
+                     const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
+                     std::int32_t marker)
+{
+  assert(V.mesh()->topology() == meshtags.topology());
+  return dolfinx::fem::locate_dofs_topological(
+      *meshtags.topology(), *V.dofmap(), meshtags.dim(), meshtags.find(marker));
+}
+
 /// Given an input array of dofs from a function space, return an array with
 /// true/false if the degree of freedom is in a DirichletBC
 /// @param[in] V The function space

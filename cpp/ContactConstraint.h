@@ -9,6 +9,7 @@
 #include "point_basis.h"
 #include "utils.h"
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
@@ -31,65 +32,6 @@
 
 namespace impl
 {
-
-/// @brief The cells attached to the entities of a mesh tag with a given value.
-/// @param[in] mesh The mesh
-/// @param[in] meshtags The meshtags for a set of entities
-/// @param[in] marker The value in meshtags to extract entities for
-template <std::floating_point U>
-std::vector<std::int32_t>
-incident_cells(const dolfinx::mesh::Mesh<U>& mesh,
-               const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
-               std::int32_t marker)
-{
-  assert(mesh.topology() == meshtags.topology());
-  return dolfinx::mesh::compute_incident_entities(
-      *mesh.topology(), meshtags.find(marker), meshtags.dim(),
-      mesh.topology()->dim());
-}
-
-/// Find slave dofs topologically
-/// @param[in] V The function space
-/// @param[in] meshtags The meshtags for the set of entities
-/// @param[in] marker The marker values in the mesh tag
-/// @returns The degrees of freedom located on all entities of V that are
-/// tagged with the marker
-template <std::floating_point U>
-std::vector<std::int32_t>
-locate_slave_dofs(const dolfinx::fem::FunctionSpace<U>& V,
-                  const dolfinx::mesh::MeshTags<std::int32_t>& meshtags,
-                  std::int32_t slave_marker)
-{
-  const std::int32_t edim = meshtags.dim();
-  // Extract slave_facets
-  std::vector<std::int32_t> slave_facets;
-  slave_facets.reserve(meshtags.indices().size());
-  for (std::size_t i = 0; i < meshtags.indices().size(); ++i)
-    if (meshtags.values()[i] == slave_marker)
-      slave_facets.push_back(meshtags.indices()[i]);
-
-  // Find all dofs on slave facets
-  if (V.element()->num_sub_elements() == 0)
-  {
-    std::vector<std::int32_t> slave_dofs
-        = dolfinx::fem::locate_dofs_topological(
-            *V.mesh()->topology(), *V.dofmap(), edim, std::span(slave_facets));
-    return slave_dofs;
-  }
-  else
-  {
-    // NOTE: Assumption that we are only working with vector spaces, which is
-    // ordered as xyz,xyzgeometry
-    auto V_sub = V.sub({0});
-    auto [V0, map] = V_sub.collapse();
-    auto sub_dofmap = V_sub.dofmap();
-    std::array<std::vector<std::int32_t>, 2> slave_dofs
-        = dolfinx::fem::locate_dofs_topological(*V.mesh()->topology(),
-                                                {*sub_dofmap, *V0.dofmap()},
-                                                edim, std::span(slave_facets));
-    return slave_dofs[0];
-  }
-}
 
 /// Compute contributions to slip MPC from slave facet side, i.e. dot(u,
 /// n)|_slave_facet
@@ -210,9 +152,10 @@ mpc_data<T> create_contact_slip_condition(
 
   // Owned slave blocks
   std::vector<std::int32_t> local_slave_blocks;
-  for (std::int32_t dof : impl::locate_slave_dofs<U>(V, meshtags, slave_marker))
-    if (const std::int32_t block = dof / block_size; block < size_local)
-      local_slave_blocks.push_back(block);
+  std::ranges::copy_if(locate_tagged_blocks<U>(V, meshtags, slave_marker),
+                       std::back_inserter(local_slave_blocks),
+                       [size_local](std::int32_t block)
+                       { return block < size_local; });
 
   // The slave of a block is its component with the largest normal component,
   // to avoid dividing by zero in the constraint
@@ -241,9 +184,13 @@ mpc_data<T> create_contact_slip_condition(
       *mesh->topology(), *V.dofmap(), local_slave_blocks);
   const std::vector<U> points
       = tabulate_dof_coordinates<U>(V, local_slave_blocks, slave_cells).first;
+  assert(mesh->topology() == meshtags.topology());
+  const std::vector<std::int32_t> master_cells
+      = dolfinx::mesh::compute_incident_entities(
+          *meshtags.topology(), meshtags.find(master_marker), meshtags.dim(),
+          meshtags.topology()->dim());
   const point_basis<U> basis = evaluate_basis_at_points<U>(
-      V, impl::incident_cells(*mesh, meshtags, master_marker), points,
-      std::sqrt(eps2), eps2, {}, V, num_threads);
+      V, master_cells, points, std::sqrt(eps2), eps2, {}, V, num_threads);
 
   std::vector<std::int64_t> masters;
   std::vector<T> coeffs;
@@ -330,18 +277,23 @@ mpc_data<T> create_contact_inelastic_condition(
 
   // Owned slave blocks
   std::vector<std::int32_t> local_blocks;
-  for (std::int32_t dof : impl::locate_slave_dofs<U>(V, meshtags, slave_marker))
-    if (const std::int32_t block = dof / block_size; block < size_local)
-      local_blocks.push_back(block);
+  std::ranges::copy_if(locate_tagged_blocks<U>(V, meshtags, slave_marker),
+                       std::back_inserter(local_blocks),
+                       [size_local](std::int32_t block)
+                       { return block < size_local; });
 
   // The masters are at the slave's coordinate on the master side
   const std::vector<std::int32_t> slave_cells
       = create_block_to_cell_map(*mesh->topology(), *V.dofmap(), local_blocks);
   const std::vector<U> points
       = tabulate_dof_coordinates<U>(V, local_blocks, slave_cells).first;
+  assert(mesh->topology() == meshtags.topology());
+  const std::vector<std::int32_t> master_cells
+      = dolfinx::mesh::compute_incident_entities(
+          *meshtags.topology(), meshtags.find(master_marker), meshtags.dim(),
+          meshtags.topology()->dim());
   const point_basis<U> basis = evaluate_basis_at_points<U>(
-      V, impl::incident_cells(*mesh, meshtags, master_marker), points,
-      std::sqrt(eps2), eps2, {}, V, num_threads);
+      V, master_cells, points, std::sqrt(eps2), eps2, {}, V, num_threads);
 
   // Component j of a slave is tied to component j of the masters
   std::vector<std::int32_t> slaves;

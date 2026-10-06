@@ -19,7 +19,7 @@ import numpy.testing as nt
 import pytest
 import scipy.sparse.linalg
 import ufl
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
 from dolfinx.io import gmsh as gmshio
 
@@ -331,5 +331,7 @@ def test_contact_missing_masters():
     owned = slaves[slaves < V.dofmap.index_map.size_local * bs]
     x = V.tabulate_dof_coordinates()[owned // bs]
     assert comm.allreduce(len(owned), op=MPI.SUM) == 2 * bs
-    assert np.allclose(x[:, 1], 0)
-    assert np.all(np.isclose(x[:, 0], 0) | np.isclose(x[:, 0], 0.25))
+    # The coordinates of the dofs are rounded in the precision of the mesh
+    tol = 100 * np.finfo(default_real_type).eps
+    assert np.allclose(x[:, 1], 0, atol=tol)
+    assert np.all(np.isclose(x[:, 0], 0, atol=tol) | np.isclose(x[:, 0], 0.25, atol=tol))
