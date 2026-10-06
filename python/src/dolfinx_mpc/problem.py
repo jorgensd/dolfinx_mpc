@@ -28,6 +28,15 @@ from .dirichletbc import BCData
 from .multipointconstraint import MultiPointConstraint
 
 
+def _row_spaces(L, mpc) -> list:
+    """The space of each block row of a linear form, or of its constraint where the block has none.
+
+    A block without a linear form still has rows, on which its Dirichlet conditions are set.
+    """
+    spaces = _fem.forms.extract_function_spaces(L)
+    return [c.input_space if V is None else V for V, c in zip(spaces, mpc)]
+
+
 def _backsubstitute(
     mpc: MultiPointConstraint | Sequence[MultiPointConstraint],
     u: _fem.Function | Sequence[_fem.Function],
@@ -165,7 +174,7 @@ def assemble_residual_mpc(
         bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(jacobian, 1), bcs)  # type: ignore
         apply_lifting(F, jacobian, bcs=bcs1, constraint=mpc, x0=x, scale=-1.0, bc_data=bc_data)  # type: ignore
         _ghost_update(F, PETSc.InsertMode.ADD, PETSc.ScatterMode.REVERSE)  # type: ignore
-        bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(residual), bcs)  # type: ignore
+        bcs0 = _fem.bcs.bcs_by_block(_row_spaces(residual, mpc), bcs)  # type: ignore
         _fem.petsc.set_bc(F, bcs0, x0=x, alpha=-1.0)
     else:
         apply_lifting(F, [jacobian], bcs=[bcs], constraint=mpc, x0=[x], scale=-1.0, bc_data=bc_data)  # type: ignore
@@ -625,7 +634,7 @@ class LinearProblem(dolfinx.fem.petsc.LinearProblem):
         # branch and apply the lifting twice
         try:
             bcs1 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(self._a, 1), self.bcs)  # type: ignore
-            bcs0 = _fem.bcs.bcs_by_block(_fem.forms.extract_function_spaces(self._L), self.bcs)  # type: ignore
+            bcs0 = _fem.bcs.bcs_by_block(_row_spaces(self._L, self._mpc), self.bcs)  # type: ignore
             blocked = True
         except ValueError:
             blocked = False

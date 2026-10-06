@@ -3,7 +3,11 @@
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
-"""Flexible spiders (RBE3): the dofs of a spider tied to the least-squares rigid fit of its feet."""
+"""Flexible spiders (RBE3): the dofs of a spider tied to the least-squares rigid fit of its feet.
+
+The tests that only build constraints run for every scalar type; the one that solves uses the
+scalar type of PETSc.
+"""
 
 from __future__ import annotations
 
@@ -18,23 +22,33 @@ from dolfinx import default_real_type, default_scalar_type, fem, la, mesh
 
 import dolfinx_mpc
 
-_atol = 1e4 * np.finfo(default_real_type).eps
+scalar_types = [np.float32, np.float64, np.complex64, np.complex128]
 
 
-def _spiders(points):
-    """A spider mesh of `points`, split in contiguous chunks over the processes.
+def _real_type(dtype):
+    """The coordinate type of a mesh carrying a constraint of `dtype`."""
+    return np.finfo(dtype).dtype.type
 
-    The input index of `points[k]` is then `k`.
-    """
-    comm = MPI.COMM_WORLD
-    points = np.asarray(points, dtype=default_real_type).reshape(-1, 3)
-    return dolfinx_mpc.create_spider_mesh(comm, np.array_split(points, comm.size)[comm.rank])
+
+def _tol(dtype):
+    """The tolerance of the coefficients, which come from solving the normal equations of the fit."""
+    return 1e3 * np.finfo(dtype).eps
+
+
+def _on(x, value):
+    """Whether the coordinates `x` equal `value`, to the rounding of their type."""
+    return np.isclose(x, value, atol=100 * np.finfo(x.dtype).eps)
+
+
+def _spiders(points, real_type=default_real_type):
+    """A spider mesh of `points`, given on every process. The input index of `points[k]` is `k`."""
+    points = np.asarray(points, dtype=real_type).reshape(-1, 3)
+    return dolfinx_mpc.create_spider_mesh(MPI.COMM_WORLD, points)
 
 
 def _body_space(spiders, num_components):
-    return fem.functionspace(
-        spiders, basix.ufl.element("DG", "point", 0, shape=(num_components,), dtype=default_real_type)
-    )
+    element = basix.ufl.element("DG", "point", 0, shape=(num_components,), dtype=spiders.geometry.x.dtype)
+    return fem.functionspace(spiders, element)
 
 
 def _rigid_map(r, gdim, num_body):
@@ -64,6 +78,7 @@ def _global_rows(mpc_body, mpcs):
     bs_W = W.dofmap.index_map_bs
     rows = {}
     coeffs = cpp.coefficients()[0]
+    assert coeffs.dtype == mpc_body.dtype
     for slave in cpp.slaves[: cpp.num_local_slaves]:
         start, end = cpp.masters.offsets[slave], cpp.masters.offsets[slave + 1]
         row = {}
@@ -79,30 +94,32 @@ def _global_rows(mpc_body, mpcs):
     return rows
 
 
+@pytest.mark.parametrize("dtype", scalar_types)
 @pytest.mark.parametrize("gdim, rotations", [(3, True), (3, False), (2, True), (2, False)])
-def test_rbe3_coefficients(gdim, rotations):
+def test_rbe3_coefficients(gdim, rotations, dtype):
     """The rows of the spider are A^{-1} w_i B_i^T, from all feet, with position-dependent weights."""
     comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
     if gdim == 3:
-        domain = mesh.create_unit_cube(comm, 3, 3, 3)
-        centre = np.array([1.5, 0.4, 0.6])
+        domain = mesh.create_unit_cube(comm, 3, 3, 3, dtype=real_type)
+        centre = np.array([1.5, 0.4, 0.6], dtype=real_type)
     else:
-        domain = mesh.create_unit_square(comm, 4, 4)
-        centre = np.array([1.5, 0.4, 0.0])
+        domain = mesh.create_unit_square(comm, 4, 4, dtype=real_type)
+        centre = np.array([1.5, 0.4, 0.0], dtype=real_type)
     V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
     num_body = (6 if gdim == 3 else 3) if rotations else gdim
-    W = _body_space(_spiders([centre]), num_body)
+    W = _body_space(_spiders([centre], real_type), num_body)
 
     def weights(x):
         return 1.0 + x[1]
 
-    mpc = dolfinx_mpc.MultiPointConstraint(V)
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
-    mpc_body.add_rbe3_geometrical(V, lambda x: np.isclose(x[0], 1.0), weights)
+    mpc = dolfinx_mpc.MultiPointConstraint(V, dtype=dtype)
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)
+    mpc_body.add_rbe3_geometrical(V, lambda x: _on(x[0], 1.0), weights)
     mpcs = [mpc, mpc_body]
     dolfinx_mpc.finalize_multipointconstraints(mpcs)
 
-    feet, x, w = _gather_feet(V, fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], 1.0)), weights)
+    feet, x, w = _gather_feet(V, fem.locate_dofs_geometrical(V, lambda x: _on(x[0], 1.0)), weights)
     B = [_rigid_map(x_i[:gdim] - centre[:gdim], gdim, num_body) for x_i in x]
     A = sum(w_i * B_i.T @ B_i for w_i, B_i in zip(w, B))
     C = [np.linalg.solve(A, w_i * B_i.T) for w_i, B_i in zip(w, B)]
@@ -114,49 +131,55 @@ def test_rbe3_coefficients(gdim, rotations):
         expected = {(0, int(f * gdim + j)): C_i[c, j] for f, C_i in zip(feet, C) for j in range(gdim)}
         assert set(row) == set(expected)
         for key, value in expected.items():
-            assert np.isclose(row[key], value, atol=_atol)
+            assert np.isclose(row[key], value, atol=_tol(dtype))
 
 
-def test_rbe3_feet_on_one_line():
+@pytest.mark.parametrize("dtype", scalar_types)
+def test_rbe3_feet_on_one_line(dtype):
     """Feet on one line do not determine the rotation about it: an error on every process."""
     comm = MPI.COMM_WORLD
-    V = fem.functionspace(mesh.create_unit_cube(comm, 2, 2, 2), ("Lagrange", 1, (3,)))
-    W = _body_space(_spiders([[1.5, 0.5, 0.5]]), 6)
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
-    mpc_body.add_rbe3_geometrical(V, lambda x: np.isclose(x[0], 1.0) & np.isclose(x[1], 0.0))
+    real_type = _real_type(dtype)
+    V = fem.functionspace(mesh.create_unit_cube(comm, 2, 2, 2, dtype=real_type), ("Lagrange", 1, (3,)))
+    W = _body_space(_spiders([[1.5, 0.5, 0.5]], real_type), 6)
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)
+    mpc_body.add_rbe3_geometrical(V, lambda x: _on(x[0], 1.0) & _on(x[1], 0.0))
     with pytest.raises(RuntimeError, match="on one line"):
-        dolfinx_mpc.finalize_multipointconstraints([dolfinx_mpc.MultiPointConstraint(V), mpc_body])
+        dolfinx_mpc.finalize_multipointconstraints([dolfinx_mpc.MultiPointConstraint(V, dtype=dtype), mpc_body])
     assert comm.allreduce(1, op=MPI.SUM) == comm.size
 
 
-def test_rbe3_invalid_input():
+@pytest.mark.parametrize("dtype", scalar_types)
+def test_rbe3_invalid_input(dtype):
     """Negative weights, and feet in a space not finalized together, raise on every process."""
     comm = MPI.COMM_WORLD
-    V = fem.functionspace(mesh.create_unit_square(comm, 2, 2), ("Lagrange", 1, (2,)))
-    W = _body_space(_spiders([[1.5, 0.5, 0.0]]), 3)
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
-    mpc_body.add_rbe3_geometrical(V, lambda x: np.isclose(x[0], 1.0), -1.0)
+    real_type = _real_type(dtype)
+    V = fem.functionspace(mesh.create_unit_square(comm, 2, 2, dtype=real_type), ("Lagrange", 1, (2,)))
+    W = _body_space(_spiders([[1.5, 0.5, 0.0]], real_type), 3)
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)
+    mpc_body.add_rbe3_geometrical(V, lambda x: _on(x[0], 1.0), -1.0)
     with pytest.raises(ValueError, match="non-negative weight"):
-        dolfinx_mpc.finalize_multipointconstraints([dolfinx_mpc.MultiPointConstraint(V), mpc_body])
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
-    mpc_body.add_rbe3_geometrical(V, lambda x: np.isclose(x[0], 1.0))
+        dolfinx_mpc.finalize_multipointconstraints([dolfinx_mpc.MultiPointConstraint(V, dtype=dtype), mpc_body])
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)
+    mpc_body.add_rbe3_geometrical(V, lambda x: _on(x[0], 1.0))
     with pytest.raises(ValueError, match="exactly one of the constraints"):
         dolfinx_mpc.finalize_multipointconstraints([mpc_body])
     assert comm.allreduce(1, op=MPI.SUM) == comm.size
 
 
+@pytest.mark.parametrize("dtype", scalar_types)
 @pytest.mark.parametrize("gdim", [2, 3])
-def test_update_rbe3(gdim):
+def test_update_rbe3(gdim, dtype):
     """After the meshes move, the updated coefficients are those of a constraint built anew."""
     comm = MPI.COMM_WORLD
+    real_type = _real_type(dtype)
     if gdim == 3:
-        domain = mesh.create_unit_cube(comm, 3, 3, 3)
+        domain = mesh.create_unit_cube(comm, 3, 3, 3, dtype=real_type)
         points = [[1.5, 0.5, 0.5], [-0.5, 0.5, 0.5]]
     else:
-        domain = mesh.create_unit_square(comm, 4, 4)
+        domain = mesh.create_unit_square(comm, 4, 4, dtype=real_type)
         points = [[1.5, 0.5, 0.0], [-0.5, 0.5, 0.0]]
     V = fem.functionspace(domain, ("Lagrange", 1, (gdim,)))
-    W = _body_space(_spiders(points), 6 if gdim == 3 else 3)
+    W = _body_space(_spiders(points, real_type), 6 if gdim == 3 else 3)
 
     # The feet are found before the mesh moves, so that both constraints tie the same dofs. The
     # weights are evaluated when the feet are added, so they must not change with the motion
@@ -165,10 +188,10 @@ def test_update_rbe3(gdim):
         return 1.0 + x[2] ** 2 if gdim == 3 else np.full(x.shape[1], 2.0)
 
     fdim = gdim - 1
-    facets = [mesh.locate_entities_boundary(domain, fdim, lambda x, s=s: np.isclose(x[0], s)) for s in (1.0, 0.0)]
+    facets = [mesh.locate_entities_boundary(domain, fdim, lambda x, s=s: _on(x[0], s)) for s in (1.0, 0.0)]
 
     def build():
-        mpcs = [dolfinx_mpc.MultiPointConstraint(V), dolfinx_mpc.MultiPointConstraint(W)]
+        mpcs = [dolfinx_mpc.MultiPointConstraint(V, dtype=dtype), dolfinx_mpc.MultiPointConstraint(W, dtype=dtype)]
         mpcs[1].add_rbe3_topological(V, fdim, facets, weights)
         dolfinx_mpc.finalize_multipointconstraints(mpcs)
         return mpcs
@@ -178,7 +201,7 @@ def test_update_rbe3(gdim):
     x = domain.geometry.x
     x[:, 0] += 0.2 * x[:, 1] ** 2
     x[:, 1] += 0.1 * x[:, 0]
-    W.mesh.geometry.x[:, :gdim] += np.array([0.05, -0.1, 0.2][:gdim])
+    W.mesh.geometry.x[:, :gdim] += np.array([0.05, -0.1, 0.2][:gdim], dtype=real_type)
     mpcs[1].update_rbe3()
     updated = _global_rows(mpcs[1], mpcs)
     # Compared by global master: two constraints may number their ghosts differently
@@ -189,18 +212,18 @@ def test_update_rbe3(gdim):
     for key, row in updated.items():
         assert set(row) == set(expected[key])
         for m, value in row.items():
-            assert np.isclose(value, expected[key][m], atol=_atol)
+            assert np.isclose(value, expected[key][m], atol=_tol(dtype))
             change = max(change, abs(value - before[key][m]))
     assert comm.allreduce(change, op=MPI.MAX) > 0.01
 
 
 def _reaction(V, a, u, dofs):
     """The force with which the condition on `dofs` holds the solution `u`."""
-    u_ref = fem.Function(V)
+    u_ref = fem.Function(V, dtype=default_scalar_type)
     n = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
     u_ref.x.array[:n] = u.x.array[:n]
     u_ref.x.scatter_forward()
-    residual = fem.assemble_vector(fem.form(ufl.action(a, u_ref)))
+    residual = fem.assemble_vector(fem.form(ufl.action(a, u_ref), dtype=default_scalar_type))
     residual.scatter_reverse(la.InsertMode.add)
     owned = dofs[dofs < V.dofmap.index_map.size_local]
     return V.mesh.comm.allreduce(residual.array.reshape(-1, 3)[owned].sum(axis=0), op=MPI.SUM)
@@ -214,18 +237,27 @@ def test_rbe3_joins_two_meshes(kind):
     The spider moves with the least-squares rigid fit of its feet, and the clamps balance the force.
     """
     comm = MPI.COMM_WORLD
-    cube_a = mesh.create_box(comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [3, 3, 3], mesh.CellType.tetrahedron)
-    cube_b = mesh.create_box(comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [3, 3, 3], mesh.CellType.hexahedron)
+    tol = 1e4 * np.finfo(default_real_type).eps
+    cube_a = mesh.create_box(
+        comm, [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]], [3, 3, 3], mesh.CellType.tetrahedron, dtype=default_real_type
+    )
+    cube_b = mesh.create_box(
+        comm, [[1.2, 0.0, 0.0], [2.2, 1.0, 1.0]], [3, 3, 3], mesh.CellType.hexahedron, dtype=default_real_type
+    )
     V_a = fem.functionspace(cube_a, ("Lagrange", 1, (3,)))
     V_b = fem.functionspace(cube_b, ("Lagrange", 1, (3,)))
-    centre = np.array([1.1, 0.5, 0.5])
+    centre = np.array([1.1, 0.5, 0.5], dtype=default_real_type)
     spiders = _spiders([centre])
     W = _body_space(spiders, 6)
 
-    mpc_body = dolfinx_mpc.MultiPointConstraint(W)
-    mpc_body.add_rbe3_geometrical(V_a, lambda x: np.isclose(x[0], 1.0))
-    mpc_body.add_rbe3_geometrical(V_b, lambda x: np.isclose(x[0], 1.2))
-    mpcs = [dolfinx_mpc.MultiPointConstraint(V_a), dolfinx_mpc.MultiPointConstraint(V_b), mpc_body]
+    mpc_body = dolfinx_mpc.MultiPointConstraint(W, dtype=default_scalar_type)
+    mpc_body.add_rbe3_geometrical(V_a, lambda x: _on(x[0], 1.0))
+    mpc_body.add_rbe3_geometrical(V_b, lambda x: _on(x[0], 1.2))
+    mpcs = [
+        dolfinx_mpc.MultiPointConstraint(V_a, dtype=default_scalar_type),
+        dolfinx_mpc.MultiPointConstraint(V_b, dtype=default_scalar_type),
+        mpc_body,
+    ]
     dolfinx_mpc.finalize_multipointconstraints(mpcs)
 
     def a(V):
@@ -234,8 +266,8 @@ def test_rbe3_joins_two_meshes(kind):
 
     force = np.array([0.1, -0.2, -1.0])
     load = fem.Constant(spiders, np.concatenate([force, [0.05, 0.1, 0.0]]).astype(default_scalar_type))
-    clamped_a = fem.locate_dofs_geometrical(V_a, lambda x: np.isclose(x[0], 0.0))
-    clamped_b = fem.locate_dofs_geometrical(V_b, lambda x: np.isclose(x[0], 2.2))
+    clamped_a = fem.locate_dofs_geometrical(V_a, lambda x: _on(x[0], 0.0))
+    clamped_b = fem.locate_dofs_geometrical(V_b, lambda x: _on(x[0], 2.2))
     zero = np.zeros(3, dtype=default_scalar_type)
     bcs = [fem.dirichletbc(zero, clamped_a, V_a), fem.dirichletbc(zero, clamped_b, V_b)]
     problem = dolfinx_mpc.LinearProblem(
@@ -249,22 +281,27 @@ def test_rbe3_joins_two_meshes(kind):
         bcs=bcs,
         kind=kind,
         petsc_options_prefix=f"test_rbe3_{kind}_",
-        petsc_options={"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"},
+        petsc_options={
+            "ksp_type": "preonly",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+            "ksp_error_if_not_converged": True,
+        },
     )
     u_a, u_b, body = problem.solve()
 
     # The spider's motion is the least-squares rigid fit of the feet of both cubes
     feet = []
     for V, u, side in ((V_a, u_a, 1.0), (V_b, u_b, 1.2)):
-        dofs = fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[0], side))
+        dofs = fem.locate_dofs_geometrical(V, lambda x: _on(x[0], side))
         dofs = dofs[dofs < V.dofmap.index_map.size_local]
         feet.extend(comm.allgather((V.tabulate_dof_coordinates()[dofs], u.x.array.reshape(-1, 3)[dofs])))
     x = np.vstack([f[0] for f in feet])
     u = np.vstack([f[1] for f in feet])
     B = np.vstack([_rigid_map(x_i - centre, 3, 6) for x_i in x])
     fit = np.linalg.lstsq(B, u.reshape(-1), rcond=None)[0]
-    np.testing.assert_allclose(dolfinx_mpc.spider_values(body, 0), fit, atol=_atol)
+    np.testing.assert_allclose(dolfinx_mpc.spider_values(body, 0), fit, atol=tol)
     assert np.abs(fit[:3]).max() > 1e-3
 
     reaction = _reaction(V_a, a(V_a), u_a, clamped_a) + _reaction(V_b, a(V_b), u_b, clamped_b)
-    np.testing.assert_allclose(reaction, -force, atol=100 * _atol)
+    np.testing.assert_allclose(reaction, -force, atol=100 * tol)

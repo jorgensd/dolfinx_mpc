@@ -32,8 +32,12 @@ All assemblies are local to the process, and no MPI communication except when se
 These assemblers are written in C++, but have a Python interface.
 There are also pure Python-based assemblers in the optional {py:mod}`dolfinx_mpc.numba` module.
 
+<!-- The book's front page, index.md, leaves out from here: it is the documentation -->
+
 # Documentation
 Documentation at [https://jorgensd.github.io/dolfinx_mpc](https://jorgensd.github.io/dolfinx_mpc)
+
+<!-- The book's front page, index.md, shows its gallery here -->
 
 # Installation
 
