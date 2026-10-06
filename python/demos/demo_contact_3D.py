@@ -24,7 +24,7 @@ from dolfinx.io import XDMFFile
 from dolfinx.mesh import CellType
 from ufl import Identity, TestFunction, TrialFunction, dx, grad, inner, sym, tr
 
-from create_and_export_mesh import gmsh_3D_stacked, mesh_3D_dolfin
+from create_and_export_mesh import CONTACT_GAP, gmsh_3D_stacked, mesh_3D_dolfin
 from dolfinx_mpc import MultiPointConstraint, apply_lifting, assemble_matrix, assemble_vector
 from dolfinx_mpc.utils import (
     compare_mpc_lhs,
@@ -125,14 +125,17 @@ def demo_stacked_cubes(
     bilinear_form = fem.form(a)
     linear_form = fem.form(rhs)
     mpc = MultiPointConstraint(V)
+    # The gmsh boxes are CONTACT_GAP apart, so that gmsh meshes them separately: the largest distance
+    # from a slave to a master cell must exceed the gap as well as the rounding of the coordinates
+    distance_tol = max(100 * CONTACT_GAP, 500 * np.finfo(default_real_type).eps)
     if noslip:
         with Timer("~~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9, allow_missing_masters=True)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, allow_missing_masters=True, distance_tol=distance_tol)
 
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, distance_tol=distance_tol)
 
     with Timer("~~Contact: Add data and finialize MPC"):
         mpc.finalize()

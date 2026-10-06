@@ -19,6 +19,9 @@ from dolfinx.io import gmsh as gmshio
 
 import dolfinx_mpc.utils as _utils
 
+# The gap between the stacked boxes, so that gmsh meshes them separately rather than fusing them
+CONTACT_GAP = 1e-12
+
 
 def gmsh_3D_stacked(
     celltype: str, theta: float, res: float = 0.1, verbose: bool = False, offset: float = 0.0
@@ -185,10 +188,8 @@ def generate_tet_boxes(
         # is in master
         gmsh.option.setNumber("Mesh.RecombineAll", 0)
 
-        # Added tolerance to ensure that gmsh separates boxes
-        tol = 1e-12
         gmsh.model.occ.addBox(x0 + offset, y0, z0, x1 - x0, y1 - y0, z1 - z0)
-        gmsh.model.occ.addBox(x0, y0, z1 + tol, x1 - x0, y1 - y0, z2 - z1)
+        gmsh.model.occ.addBox(x0, y0, z1 + CONTACT_GAP, x1 - x0, y1 - y0, z2 - z1)
 
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
@@ -249,7 +250,9 @@ def generate_hex_boxes(
 
         # Set mesh size at point
         gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0, numElements=[int(1 / (2 * res))], recombine=True)
-        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12, numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude(
+            [(2, top)], 0, 0, z1 - z2 - CONTACT_GAP, numElements=[int(1 / (2 * res))], recombine=True
+        )
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
@@ -304,7 +307,9 @@ def gmsh_2D_stacked(
         bottom = gmsh.model.occ.addLine(points[0], points[1])
         top = gmsh.model.occ.addLine(points[2], points[3])
         gmsh.model.occ.extrude([(1, bottom)], 0, y1 - y0, 0, numElements=[int(1 / (res))], recombine=recombine)
-        gmsh.model.occ.extrude([(1, top)], 0, y1 - y2 - 1e-12, 0, numElements=[int(1 / (2 * res))], recombine=recombine)
+        gmsh.model.occ.extrude(
+            [(1, top)], 0, y1 - y2 - CONTACT_GAP, 0, numElements=[int(1 / (2 * res))], recombine=recombine
+        )
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 

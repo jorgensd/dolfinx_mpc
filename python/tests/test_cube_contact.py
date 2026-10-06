@@ -28,6 +28,8 @@ import dolfinx_mpc.utils
 from dolfinx_mpc.container import _cpp_function
 
 theta = np.pi / 5
+# The gap between the boxes, so that gmsh meshes them separately rather than fusing them
+_gap = 1e-12
 
 
 @pytest.fixture
@@ -58,7 +60,7 @@ def generate_hex_boxes():
 
         # Set mesh size at point
         gmsh.model.occ.extrude([(2, bottom)], 0, 0, z1 - z0, numElements=[int(1 / (2 * res))], recombine=True)
-        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - 1e-12, numElements=[int(1 / (2 * res))], recombine=True)
+        gmsh.model.occ.extrude([(2, top)], 0, 0, z1 - z2 - _gap, numElements=[int(1 / (2 * res))], recombine=True)
         # Syncronize to be able to fetch entities
         gmsh.model.occ.synchronize()
 
@@ -237,13 +239,15 @@ def test_cube_contact(generate_hex_boxes, nonslip, get_assemblers):
 
     # Create MPC contact condition and assemble matrices
     mpc = dolfinx_mpc.MultiPointConstraint(V)
+    # The slaves are at most the gap from the master cells, up to rounding
+    distance_tol = max(100 * _gap, 500 * np.finfo(mesh.geometry.x.dtype).eps)
     if nonslip:
         with Timer("~Contact: Create non-elastic constraint"):
-            mpc.create_contact_inelastic_condition(mt, 4, 9)
+            mpc.create_contact_inelastic_condition(mt, 4, 9, distance_tol=distance_tol)
     else:
         with Timer("~Contact: Create contact constraint"):
             nh = dolfinx_mpc.utils.create_normal_approximation(V, mt, 4)
-            mpc.create_contact_slip_condition(mt, 4, 9, nh)
+            mpc.create_contact_slip_condition(mt, 4, 9, nh, distance_tol=distance_tol)
 
     mpc.finalize()
 
