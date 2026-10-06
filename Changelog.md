@@ -50,14 +50,19 @@
 - **New feature**: rigid spiders (RBE2). `MultiPointConstraint.add_rbe2_topological` and `add_rbe2_geometrical` tie
   dofs to the rigid-body motion of points of a spider mesh (`dolfinx_mpc.create_spider_mesh`), and `update_rbe2`
   recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe2`, `update_rbe2` and
-  `locate_spiders`. Blocked vector assembly skips a block without a linear form. New demos: `python/demos/demo_spider.py`, and `python/demos/demo_spider_hinge.py`, a double pendulum of two
-  beams on two pins, each pin a pair of spiders joined by a spring stiff in all but rotation about the pin.
+  `locate_spiders`. Blocked vector assembly skips a block without a linear form. New demos:
+  `python/demos/demo_spider.py`, and `python/demos/demo_spider_hinge.py`, a double pendulum of two beams on two pins,
+  each pin a pair of spiders joined by a spring stiff in all but rotation about the pin.
   The spider utilities are in `dolfinx_mpc.spider`: `create_spider_mesh` takes the points on the first process (the
   others pass none or the same, checked on every process), keeps coinciding points as distinct spiders and agrees on one
   coordinate type; `create_spider_pair` relates spider k of two spider meshes of the same size, as an entity map for
   forms coupling them, such as springs; `move(mesh, u)` moves a mesh, or the spiders by their translations, by a
-  displacement. The scalar type
-  of a constraint is set once, by `MultiPointConstraint(V, dtype=...)`, which defaults to the precision of the mesh.
+  displacement. The scalar type of a constraint is set once, by `MultiPointConstraint(V, dtype=...)`, which defaults
+  to the precision of the mesh.
+- **New feature**: flexible spiders (RBE3). `MultiPointConstraint.add_rbe3_topological` and `add_rbe3_geometrical`, on
+  the constraint of a spider mesh, tie each spider to the weighted least-squares rigid fit of its feet, which may be on
+  several meshes; `update_rbe3` recomputes the coefficients after the meshes move. C++: `dolfinx_mpc::create_rbe3` and
+  `update_rbe3`. New demo: `python/demos/demo_rbe3.py`.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to
   `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are

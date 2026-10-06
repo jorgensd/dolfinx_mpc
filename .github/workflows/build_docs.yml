@@ -22,8 +22,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: release
+        # with:
+        #   ref: release
 
       - name: Install OpenGL libraries for pyvista
         run: |
@@ -33,10 +33,10 @@ jobs:
       - name: Install DOLFINx
         uses: jorgensd/actions/install-dolfinx@v0.4
         with:
-          dolfinx: v0.11.0.post0
-          ufl: 2026.1.0
-          ffcx: v0.11.0
-          basix: v0.11.0
+          dolfinx: main #v0.11.0.post0
+          ufl: main #2026.1.0
+          ffcx: main #v0.11.0
+          basix: main #v0.11.0
           petsc_arch: ${{ env.PETSC_ARCH }}
 
       - name: Install DOLFINx-MPC (C++)

@@ -1,9 +1,7 @@
-# Copyright (C) 2026 Jørgen S. Dokken
-#
 # This file is part of DOLFINX_MPC
 #
 # SPDX-License-Identifier:    MIT
-"""Constraints tying dofs to spiders (RBE2): points of a spider mesh, see :mod:`dolfinx_mpc.spider`."""
+"""Constraints tying dofs to spiders (RBE2, RBE3): points of a spider mesh, see :mod:`dolfinx_mpc.spider`."""
 
 from __future__ import annotations
 
@@ -14,7 +12,7 @@ import numpy.typing as npt
 from .container import _mpc_data_classes, _scalar_type
 from .cpp import mpc as _cpp_mpc
 
-__all__ = ["create_rbe2"]
+__all__ = ["create_rbe2", "create_rbe3"]
 
 
 _type_names = {
@@ -68,4 +66,47 @@ def create_rbe2(
         np.ascontiguousarray(spiders, dtype=np.int64),
         W._cpp_object,
         None if x is None else np.ascontiguousarray(x, dtype=real_type),
+    )
+
+
+def create_rbe3(
+    W: _fem.FunctionSpace,
+    V: list[_fem.FunctionSpace],
+    dofs: list[npt.NDArray[np.int32]],
+    spiders: list[npt.NDArray[np.int64]],
+    weights: list[npt.NDArray[np.floating]],
+    dtype: npt.DTypeLike | None = None,
+) -> tuple[_mpc_data_classes, npt.NDArray[np.int32]]:
+    r"""The constraint tying the dofs of spiders to the motion of their feet (RBE3).
+
+    Each spider moves with the rigid motion that best fits its feet,
+    :math:`\min_{t, \theta} \sum_i w_i |u_i - t - \theta \times (x_i - x_c)|^2`. Without rotations,
+    :math:`t` is the weighted mean of the feet. Wraps `dolfinx_mpc::create_rbe3`.
+
+    Args:
+        W: The space on the spider mesh, holding the slaves
+        V: The spaces of the feet, with one component per dimension
+        dofs: The feet in each space, blocked dofs local to the process
+        spiders: The spider of each foot, its input index (see :func:`create_spider_mesh`)
+        weights: The weight of each foot, non-negative
+        dtype: The scalar type of the coefficients. Defaults to the default scalar type of
+            DOLFINx, real or complex, at the precision of the meshes.
+
+    Returns:
+        The slaves, masters, coefficients, owners and offsets, and the position in `V` of the
+        space of each master.
+
+    Note:
+        Collective.
+    """
+    real_type = W.mesh.geometry.x.dtype
+    if any(V_s.mesh.geometry.x.dtype != real_type for V_s in V):
+        raise ValueError("The meshes of the feet and the spider mesh must have the same coordinate type")
+    create = getattr(_cpp_mpc, f"create_rbe3_{_type_names[_scalar_type(real_type, dtype)]}")
+    return create(
+        W._cpp_object,
+        [V_s._cpp_object for V_s in V],
+        [np.ascontiguousarray(d, dtype=np.int32) for d in dofs],
+        [np.ascontiguousarray(k, dtype=np.int64) for k in spiders],
+        [np.ascontiguousarray(w, dtype=real_type) for w in weights],
     )
