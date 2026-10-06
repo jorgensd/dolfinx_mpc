@@ -459,9 +459,11 @@ class MultiPointConstraint:
         master_space: _fem.FunctionSpace,
         entity_map: _mesh.EntityMap,
         bcs: Optional[List[_fem.DirichletBC]] = None,
-        scale: _float_classes = default_scalar_type(1.0),  # type: ignore
-        tol: Optional[_float_classes] = 500 * numpy.finfo(default_real_type).eps,
+        scale: Union[_float_classes, float, complex] = 1.0,
+        tol: Union[_float_classes, float, None, _Unset] = _UNSET,
         num_threads: int = 1,
+        *,
+        coefficient_tol: Optional[float] = None,
     ):
         r"""
         Tie the degrees of freedom of `V` to `master_space` on a related mesh: a submesh and its
@@ -485,10 +487,14 @@ class MultiPointConstraint:
                 codimension 0 or 1
             bcs: Dirichlet conditions on the space of the constraint. Their degrees of freedom
                 are not made slaves.
-            scale: Scaling of the masters
-            tol: A master whose coefficient is not larger than `tol` in magnitude is left out.
-                With `None`, every basis function of the related cell is kept.
+            scale: Factor of the masters, of the scalar type of the constraint
+            tol: Deprecated, use `coefficient_tol`: a value sets it, `None` sets `coefficient_tol=0`.
             num_threads: The number of threads to use
+            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                its slave is dropped. `0` keeps every basis function of the related cell, so that the
+                coefficients can later be changed with :func:`scale_coefficients` or
+                :func:`update_coefficients`. Defaults to `500` machine epsilon of the real type of the
+                constraint. No distance tolerance is needed, as the related cell is not searched for.
 
         Raises:
             ValueError: If `entity_map` does not relate the two meshes, relates entities other
@@ -503,10 +509,19 @@ class MultiPointConstraint:
             raise ValueError("V must be the space of the constraint or a subspace of it")
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
-        tol_ = None if tol is None else float(tol)
+        if not isinstance(tol, _Unset):
+            _deprecated("tol", "`coefficient_tol`")
+            if coefficient_tol is None:
+                coefficient_tol = 0.0 if tol is None else tol
         bcs_ = [] if bcs is None else [bc._cpp_object for bc in bcs]
-        mpc_data = dolfinx_mpc.cpp.mpc.create_submesh_constraint(
-            V._cpp_object, master_space._cpp_object, entity_map._cpp_object, bcs_, scale, tol_, num_threads
+        mpc_data = _cpp_function("create_submesh_constraint", self._dtype)(
+            V._cpp_object,
+            master_space._cpp_object,
+            entity_map._cpp_object,
+            bcs_,
+            scale,
+            _tolerance(coefficient_tol, self._dtype),
+            num_threads,
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data=mpc_data, master_space=master_space)
 

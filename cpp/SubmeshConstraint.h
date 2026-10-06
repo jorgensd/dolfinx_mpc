@@ -9,7 +9,6 @@
 #include "point_basis.h"
 #include "utils.h"
 #include <algorithm>
-#include <cmath>
 #include <concepts>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
@@ -22,7 +21,6 @@
 #include <dolfinx/mesh/Topology.h>
 #include <format>
 #include <iterator>
-#include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -51,8 +49,9 @@ namespace dolfinx_mpc
 /// @param[in] bcs Dirichlet conditions on the root space of `V`. Their dofs
 /// are not made slaves.
 /// @param[in] scale Scaling of the masters
-/// @param[in] tol A master whose coefficient is not larger than `tol` in
-/// magnitude is left out. If unset, every basis function of the cell is kept.
+/// @param[in] coefficient_tol A master whose coefficient is below
+/// `coefficient_tol` times the largest of its slave is dropped. 0 keeps every
+/// basis function of the cell.
 /// @param[in] num_threads The number of threads to use
 /// @return The constraint, the masters numbered in the root space of `W`
 /// @note Collective.
@@ -62,7 +61,8 @@ mpc_data<T> create_submesh_constraint(
     const dolfinx::fem::FunctionSpace<U>& W,
     const dolfinx::mesh::EntityMap& entity_map,
     const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>& bcs,
-    T scale, std::optional<U> tol, std::size_t num_threads = 1)
+    T scale, U coefficient_tol = default_tolerance<U>(),
+    std::size_t num_threads = 1)
 {
   // A subspace is collapsed; its dofs are numbered in its root space
   std::optional<dolfinx::fem::FunctionSpace<U>> V_collapsed;
@@ -212,8 +212,7 @@ mpc_data<T> create_submesh_constraint(
   const std::vector<U> points
       = tabulate_dof_coordinates<U>(Vs, blocks, V_cells).first;
   const point_basis<U> basis = evaluate_basis_in_cells<U>(
-      Ws, points, W_cells, W_to_root, W,
-      500 * std::numeric_limits<U>::epsilon(), num_threads);
+      Ws, points, W_cells, W_to_root, W, default_tolerance<U>(), num_threads);
 
   // Send the basis of each slave block to its owner, itself included:
   // [global block, dofs, owners], values
@@ -274,6 +273,9 @@ mpc_data<T> create_submesh_constraint(
   std::vector<T> coeffs;
   std::vector<std::int32_t> owners;
   std::vector<std::int32_t> num_masters;
+  std::vector<std::int64_t> row_masters(basis.num_dofs);
+  std::vector<T> row_coeffs(basis.num_dofs);
+  std::vector<std::int32_t> row_owners(basis.num_dofs);
   for (std::int32_t block = 0; block < size_local; ++block)
   {
     const std::int32_t r = chosen[block];
@@ -288,19 +290,15 @@ mpc_data<T> create_submesh_constraint(
       if (bc_marker[slave])
         continue;
       slaves.push_back(slave);
-      std::int32_t num = 0;
       for (int j = 0; j < basis.num_dofs; ++j)
       {
-        if (const T val = scale * recv_values[r * basis.num_dofs + j];
-            !tol or std::abs(val) > *tol)
-        {
-          masters.push_back(row[j * bs + b]);
-          owners.push_back(static_cast<std::int32_t>(row[width + j * bs + b]));
-          coeffs.push_back(val);
-          ++num;
-        }
+        row_masters[j] = row[j * bs + b];
+        row_coeffs[j] = scale * recv_values[r * basis.num_dofs + j];
+        row_owners[j] = static_cast<std::int32_t>(row[width + j * bs + b]);
       }
-      num_masters.push_back(num);
+      num_masters.push_back(append_significant_masters<T, U>(
+          row_masters, row_coeffs, row_owners, coefficient_tol, masters, coeffs,
+          owners));
     }
   }
   return add_ghost_rows<T>(std::move(slaves), std::move(masters),

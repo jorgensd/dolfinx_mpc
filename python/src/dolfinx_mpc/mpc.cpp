@@ -349,6 +349,22 @@ void declare_functions(nb::module_& m)
 template <typename T, std::floating_point U>
 void declare_mpc_data(nb::module_& m, std::string type)
 {
+  m.def(
+      ("create_submesh_constraint_" + type).c_str(),
+      [](const dolfinx::fem::FunctionSpace<U>& V,
+         const dolfinx::fem::FunctionSpace<U>& W,
+         const dolfinx::mesh::EntityMap& entity_map,
+         const std::vector<std::shared_ptr<const dolfinx::fem::DirichletBC<T>>>&
+             bcs,
+         T scale, U coefficient_tol, std::size_t num_threads)
+      {
+        return dolfinx_mpc::create_submesh_constraint<T, U>(
+            V, W, entity_map, bcs, scale, coefficient_tol, num_threads);
+      },
+      "V"_a, "W"_a, "entity_map"_a, "bcs"_a, "scale"_a, "coefficient_tol"_a,
+      "num_threads"_a,
+      "Tie the dofs of V to W on a related mesh, through an entity map");
+
   m.def(("create_contact_slip_condition_" + type).c_str(),
         &dolfinx_mpc::create_contact_slip_condition<T, U>);
   m.def(("create_slip_condition_" + type).c_str(),
