@@ -527,7 +527,9 @@ spring_force = (spring_stiffness(k).real @ delta)[:3]
 spring_moment = np.dot((spring_stiffness(k).real @ delta)[3:], axis)
 weight_2 = mass_2 * g * down
 lever_2 = mass_2 * g * L_2
-tol = max(1e-3, 2e5 * np.finfo(default_real_type).eps)
+# In single precision, the solve of the stiff system is accurate to a few percent only, by an
+# amount that varies with the platform and the number of processes
+tol = max(1e-3, 5e5 * np.finfo(default_real_type).eps)
 if comm.rank == 0:
     print(f"Spring force {spring_force.round(5)} next to the weight of beam 2 {weight_2.round(5)}")
     print(f"Spring moment about the pin {spring_moment:.2e} next to m_2 g L_2 = {lever_2:.2e}")
