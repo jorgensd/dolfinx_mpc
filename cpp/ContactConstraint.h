@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "PeriodicConstraint.h"
 #include "point_basis.h"
 #include "utils.h"
 #include <algorithm>
@@ -25,90 +26,9 @@
 #include <iterator>
 #include <memory>
 #include <mpi.h>
-#include <numeric>
 #include <span>
 #include <stdexcept>
 #include <vector>
-
-namespace impl
-{
-
-/// Compute contributions to slip MPC from slave facet side, i.e. dot(u,
-/// n)|_slave_facet
-/// @param[in] local_slaves The slave dofs (local index)
-/// @param[in] local_slave_blocks The corresponding blocks for each slave
-/// @param[in] normals The normal vectors, shape (local_slaves.size(), 3).
-/// Storage flattened row major.
-/// @param[in] imap The index map
-/// @param[in] block_size The block size of the index map
-/// @param[in] rank The rank of current process
-/// @returns A mpc_data struct with slaves, masters, coeffs and owners
-template <typename T, std::floating_point U>
-dolfinx_mpc::mpc_data<T> compute_block_contributions(
-    const std::vector<std::int32_t>& local_slaves,
-    const std::vector<std::int32_t>& local_slave_blocks,
-    std::span<const U> normals,
-    const std::shared_ptr<const dolfinx::common::IndexMap> imap,
-    std::int32_t block_size, int rank)
-{
-  assert(normals.size() % 3 == 0);
-  assert(normals.size() / 3 == local_slave_blocks.size());
-  std::vector<std::int32_t> dofs(block_size);
-  // Count number of masters for each local slave (only contributions from)
-  // the same block as the actual slave dof
-  std::vector<std::int32_t> num_masters_in_cell(local_slaves.size());
-  for (std::size_t i = 0; i < local_slaves.size(); ++i)
-  {
-    std::iota(dofs.begin(), dofs.end(), local_slave_blocks[i] * block_size);
-    const std::int32_t local_slave = local_slaves[i];
-    for (std::int32_t j = 0; j < block_size; ++j)
-      if ((dofs[j] != local_slave) && std::abs(normals[3 * i + j]) > 1e-6)
-        num_masters_in_cell[i]++;
-  }
-  std::vector<std::int32_t> masters_offsets(local_slaves.size() + 1);
-  masters_offsets[0] = 0;
-  std::inclusive_scan(num_masters_in_cell.begin(), num_masters_in_cell.end(),
-                      masters_offsets.begin() + 1);
-
-  // Reuse num masters as fill position array
-  std::ranges::fill(num_masters_in_cell, 0);
-
-  // Compute coeffs and owners for local cells
-  std::vector<std::int64_t> global_slave_blocks(local_slaves.size());
-  imap->local_to_global(local_slave_blocks, global_slave_blocks);
-  std::vector<std::int64_t> masters_in_cell(masters_offsets.back());
-  std::vector<T> coefficients_in_cell(masters_offsets.back());
-  const std::vector<std::int32_t> owners_in_cell(masters_offsets.back(), rank);
-  for (std::size_t i = 0; i < local_slaves.size(); ++i)
-  {
-    const std::int32_t local_slave = local_slaves[i];
-    std::iota(dofs.begin(), dofs.end(), local_slave_blocks[i] * block_size);
-    auto local_max = std::ranges::find(dofs, local_slave);
-    const auto max_index = std::ranges::distance(dofs.begin(), local_max);
-    for (std::int32_t j = 0; j < block_size; j++)
-    {
-      if ((dofs[j] != local_slave) && std::abs(normals[3 * i + j]) > 1e-6)
-      {
-        T coeff_j = -normals[3 * i + j] / normals[3 * i + max_index];
-        coefficients_in_cell[masters_offsets[i] + num_masters_in_cell[i]]
-            = coeff_j;
-        masters_in_cell[masters_offsets[i] + num_masters_in_cell[i]]
-            = global_slave_blocks[i] * block_size + j;
-        num_masters_in_cell[i]++;
-      }
-    }
-  }
-
-  dolfinx_mpc::mpc_data<T> mpc;
-  mpc.slaves = local_slaves;
-  mpc.masters = masters_in_cell;
-  mpc.coeffs = coefficients_in_cell;
-  mpc.offsets = masters_offsets;
-  mpc.owners = owners_in_cell;
-  return mpc;
-}
-
-} // namespace impl
 
 namespace dolfinx_mpc
 {
@@ -175,11 +95,10 @@ mpc_data<T> create_contact_slip_condition(
     local_slaves[i] = local_slave_blocks[i] * block_size + local_rems[i];
   }
 
-  // dot(u, n) on the slave side: the other components of the slave's block
-  const mpc_data<T> in_block = impl::compute_block_contributions<T, U>(
-      local_slaves, local_slave_blocks, normals, imap, block_size, rank);
-
-  // and on the master side, at the slave's coordinate
+  // dot(u, n) on the slave side involves the other components of the slave's
+  // block, and on the master side the dofs at the slave's coordinate
+  std::vector<std::int64_t> global_slave_blocks(local_slave_blocks.size());
+  imap->local_to_global(local_slave_blocks, global_slave_blocks);
   const std::vector<std::int32_t> slave_cells = create_block_to_cell_map(
       *mesh->topology(), *V.dofmap(), local_slave_blocks);
   const std::vector<U> points
@@ -200,12 +119,16 @@ mpc_data<T> create_contact_slip_condition(
   std::int32_t num_missing = 0;
   for (std::size_t i = 0; i < local_slaves.size(); ++i)
   {
-    for (std::int32_t k = in_block.offsets[i]; k < in_block.offsets[i + 1]; ++k)
+    std::span<const U, 3> normal(std::next(normals.begin(), 3 * i), 3);
+    for (int b = 0; b < block_size; ++b)
     {
-      masters.push_back(in_block.masters[k]);
-      coeffs.push_back(in_block.coeffs[k]);
-      owners.push_back(in_block.owners[k]);
-      ++num_masters[i];
+      if (b != local_rems[i] and std::abs(normal[b]) > 1e-6)
+      {
+        masters.push_back(global_slave_blocks[i] * block_size + b);
+        coeffs.push_back(-normal[b] / normal[local_rems[i]]);
+        owners.push_back(rank);
+        ++num_masters[i];
+      }
     }
     if (!basis.found[i])
     {
@@ -216,7 +139,7 @@ mpc_data<T> create_contact_slip_condition(
     {
       for (int b = 0; b < block_size; ++b)
       {
-        if (const T val = normals[3 * i + b] / normals[3 * i + local_rems[i]]
+        if (const T val = normal[b] / normal[local_rems[i]]
                           * basis.values[i * basis.num_dofs + j];
             std::abs(val) > 1e-6)
         {
@@ -241,13 +164,19 @@ mpc_data<T> create_contact_slip_condition(
                            std::move(num_masters), imap, block_size);
 }
 
-/// Create a contact condition between two sets of facets
+/// Create an inelastic contact condition between two sets of facets: each
+/// slave equals the solution at its coordinate on the master side.
+///
+/// It is the periodic condition with the identity relation, its masters
+/// searched among the cells attached to the master facets, and coefficients
+/// of magnitude at most 1e-6 dropped.
+///
 /// @param[in] V The mpc function space
 /// @param[in] meshtags The meshtag
 /// @param[in] slave_marker Tag for the first interface
 /// @param[in] master_marker Tag for the other interface
-/// @param[in] eps2 The tolerance for the squared distance to be considered a
-/// collision
+/// @param[in] eps2 The largest squared distance from a slave to a master cell
+/// for the slave to be in the cell
 /// @param[in] allow_missing_masters If true, a slave in no cell attached to the
 /// master facets is left unconstrained. Else it is an error.
 /// @param[in] num_threads The number of threads to use for certain operations.
@@ -262,85 +191,20 @@ mpc_data<T> create_contact_inelastic_condition(
 {
   dolfinx::common::Timer timer("~MPC: Inelastic condition");
   std::shared_ptr<const dolfinx::mesh::Mesh<U>> mesh = V.mesh();
-  MPI_Comm comm = mesh->comm();
-
-  const std::shared_ptr<const dolfinx::common::IndexMap> imap
-      = V.dofmap()->index_map;
   const int tdim = mesh->topology()->dim();
-  const int fdim = tdim - 1;
-  const int block_size = V.dofmap()->index_map_bs();
-  const std::int32_t size_local = imap->size_local();
-
   mesh->topology_mutable()->create_entity_permutations(num_threads);
-  mesh->topology_mutable()->create_connectivity(fdim, tdim);
+  mesh->topology_mutable()->create_connectivity(tdim - 1, tdim);
   mesh->topology_mutable()->create_connectivity(tdim, tdim);
 
-  // Owned slave blocks
-  std::vector<std::int32_t> local_blocks;
-  std::ranges::copy_if(locate_tagged_blocks<U>(V, meshtags, slave_marker),
-                       std::back_inserter(local_blocks),
-                       [size_local](std::int32_t block)
-                       { return block < size_local; });
-
-  // The masters are at the slave's coordinate on the master side
-  const std::vector<std::int32_t> slave_cells
-      = create_block_to_cell_map(*mesh->topology(), *V.dofmap(), local_blocks);
-  const std::vector<U> points
-      = tabulate_dof_coordinates<U>(V, local_blocks, slave_cells).first;
   assert(mesh->topology() == meshtags.topology());
   const std::vector<std::int32_t> master_cells
       = dolfinx::mesh::compute_incident_entities(
           *meshtags.topology(), meshtags.find(master_marker), meshtags.dim(),
           meshtags.topology()->dim());
-  const point_basis<U> basis = evaluate_basis_at_points<U>(
-      V, master_cells, points, std::sqrt(eps2), eps2, {}, V, num_threads);
-
-  // Component j of a slave is tied to component j of the masters
-  std::vector<std::int32_t> slaves;
-  std::vector<std::int64_t> masters;
-  std::vector<T> coeffs;
-  std::vector<std::int32_t> owners;
-  std::vector<std::int32_t> num_masters;
-  const int width = basis.num_dofs * block_size;
-  std::int32_t num_missing = 0;
-  for (std::size_t i = 0; i < local_blocks.size(); ++i)
-  {
-    if (!basis.found[i])
-    {
-      ++num_missing;
-      continue;
-    }
-    for (int j = 0; j < block_size; ++j)
-    {
-      slaves.push_back(local_blocks[i] * block_size + j);
-      std::int32_t num = 0;
-      for (int k = 0; k < basis.num_dofs; ++k)
-      {
-        if (const T c = basis.values[i * basis.num_dofs + k];
-            std::abs(c) > 1e-6)
-        {
-          masters.push_back(basis.dofs[i * width + k * block_size + j]);
-          coeffs.push_back(c);
-          owners.push_back(basis.owners[i * width + k * block_size + j]);
-          ++num;
-        }
-      }
-      num_masters.push_back(num);
-    }
-  }
-  if (!allow_missing_masters)
-  {
-    MPI_Allreduce(MPI_IN_PLACE, &num_missing, 1, MPI_INT32_T, MPI_SUM, comm);
-    if (num_missing > 0)
-    {
-      throw std::runtime_error(std::format(
-          "No masters found on the contact surface for {} slave block(s). "
-          "Make sure that the surfaces are in contact, or increase eps2.",
-          num_missing));
-    }
-  }
-  return add_ghost_rows<T>(std::move(slaves), std::move(masters),
-                           std::move(coeffs), std::move(owners),
-                           std::move(num_masters), imap, block_size);
+  return _create_periodic_condition<T, U>(
+      V, locate_tagged_blocks<U>(V, meshtags, slave_marker),
+      [](std::span<const U> x) { return std::vector<U>(x.begin(), x.end()); },
+      T(1), {}, V, master_cells, std::sqrt(eps2), eps2, U(1e-6),
+      allow_missing_masters, num_threads);
 }
 } // namespace dolfinx_mpc

@@ -803,13 +803,22 @@ class MultiPointConstraint:
         )
         self.add_constraint(self.V, slaves, masters, coeffs, owners, offsets)
 
+    def _squared_distance_tolerance(self, eps2: float | numpy.generic | None) -> float:
+        """`eps2`, or by default 500 times the resolution of the coordinate type of the mesh."""
+        if eps2 is None:
+            return float(500 * numpy.finfo(self.V.mesh.geometry.x.dtype).resolution)
+        elif isinstance(eps2, float):
+            return eps2
+        else:
+            return eps2.item()
+
     def create_contact_slip_condition(
         self,
         meshtags: _mesh.MeshTags,
         slave_marker: int,
         master_marker: int,
         normal: _fem.Function,
-        eps2: float = 1e-20,
+        eps2: Optional[float] = None,
         num_threads: Optional[int] = 1,
     ):
         """
@@ -823,13 +832,19 @@ class MultiPointConstraint:
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
             normal: The function used in the dot-product of the constraint
-            eps2: The tolerance for the squared distance between cells to be considered as a collision
+            eps2: The largest squared distance from a slave point to a master cell for the point to
+                be in the cell. Defaults to 500 times the resolution of the coordinate type of the mesh,
+                as the distance is computed in that precision.
             num_threads: The number of threads to use for certain operations
         """
-        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
-            eps2 = eps2.item()  # type: ignore
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_slip_condition(
-            self.V._cpp_object, meshtags._cpp_object, slave_marker, master_marker, normal._cpp_object, eps2, num_threads
+            self.V._cpp_object,
+            meshtags._cpp_object,
+            slave_marker,
+            master_marker,
+            normal._cpp_object,
+            self._squared_distance_tolerance(eps2),
+            num_threads,
         )
         self.add_constraint_from_mpc_data(self.V, mpc_data)
 
@@ -838,7 +853,7 @@ class MultiPointConstraint:
         meshtags: _cpp.mesh.MeshTags_int32,
         slave_marker: int,
         master_marker: int,
-        eps2: float = 1e-20,
+        eps2: Optional[float] = None,
         allow_missing_masters: bool = False,
         num_threads: Optional[int] = 1,
     ):
@@ -852,20 +867,20 @@ class MultiPointConstraint:
             meshtags: The meshtags of the set of facets to tie together
             slave_marker: The marker of the slave facets
             master_marker: The marker of the master facets
-            eps2: The tolerance for the squared distance between cells to be considered as a collision
+            eps2: The largest squared distance from a slave point to a master cell for the point to
+                be in the cell. Defaults to 500 times the resolution of the coordinate type of the mesh,
+                as the distance is computed in that precision.
             allow_missing_masters: If true, the function will not throw an error if a degree of freedom
                 in the closure of the master entities does not have a corresponding set of slave degree
                 of freedom.
             num_threads: The number of threads to use for certain operations
         """
-        if isinstance(eps2, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
-            eps2 = eps2.item()  # type: ignore
         mpc_data = dolfinx_mpc.cpp.mpc.create_contact_inelastic_condition(
             self.V._cpp_object,
             meshtags._cpp_object,
             slave_marker,
             master_marker,
-            eps2,
+            self._squared_distance_tolerance(eps2),
             allow_missing_masters,
             num_threads,
         )

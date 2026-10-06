@@ -73,6 +73,11 @@
   inelastic one raised on one process and hung the others. Removed from the C++ API: `recv_data`,
   `send_master_data_to_owner`, `append_master_data`, `create_neighborhood_comms` and the vector overload of
   `create_owner_to_ghost_comm`.
+- **Change**: `create_contact_slip_condition` and `create_contact_inelastic_condition` default `eps2`, the largest
+  squared distance from a slave point to a master cell, to 500 times the resolution of the mesh's coordinate type
+  instead of `1e-20`, which a distance computed in single precision cannot reach, so that no slave found a cell. The
+  pull-back of a slave point into a non-affine cell no longer takes `eps2` as its Newton tolerance, which rounding
+  could keep it from reaching: it stops at `max(eps2, 500 eps)`.
 - **New feature**: masters in another block. `MultiPointConstraint.add_constraint` takes `master_space` (all masters in
   that space) or `master_blocks` (a block per master, its position in the list given to
   `finalize_multipointconstraints`), and the masters are in the global numbering of their block. The constraints are
