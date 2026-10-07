@@ -56,6 +56,12 @@ def assemble_matrix(
             "The numba assemblers do not support an inhomogeneous multi point constraint "
             "(x = K x_red + g). Use the C++ assemblers in `dolfinx_mpc` instead."
         )
+    unsupported = set(form._cpp_object.integral_types) - {_fem.IntegralType.cell, _fem.IntegralType.exterior_facet}
+    if unsupported:
+        raise NotImplementedError(
+            "The numba assemblers support cell and exterior facet integrals, not "
+            f"{', '.join(sorted(t.name for t in unsupported))}. Use the C++ assemblers in `dolfinx_mpc` instead."
+        )
     timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 
     V = constraint.function_space
