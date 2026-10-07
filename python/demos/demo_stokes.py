@@ -414,7 +414,7 @@ if velocity_pieces is not None:  # only the root process received the grids
         plotter.screenshot(figure.with_suffix(".png"))
     else:
         # The interactive scene, for the gallery
-        plotter.export_html(figure.with_suffix(".html"))
+        plotter.export_vtksz(figure.with_suffix(".vtksz"))
         plotter.show(screenshot=figure.with_suffix(".png"))
 # -
 
