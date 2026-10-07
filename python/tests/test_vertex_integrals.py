@@ -79,7 +79,13 @@ def test_vertex_integrals(element):
     vector = V.dofmap.index_map_bs > 1
 
     # Vertices on the slave edge, the master edge and the Dirichlet edge
-    tags = _tags(domain, 0, lambda x: np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0) | np.isclose(x[1], 0.0))
+    tags = _tags(
+        domain,
+        0,
+        lambda x: (
+            np.isclose(x[0], 0.0, atol=_atol) | np.isclose(x[0], 1.0, atol=_atol) | np.isclose(x[1], 0.0, atol=_atol)
+        ),
+    )
     dP = ufl.Measure("dP", domain=domain, subdomain_data=tags)
     weight = 2 + x[1]
     a = ufl.inner(ufl.grad(u), ufl.grad(v)) * ufl.dx + weight * ufl.inner(u, v) * dP(1)
@@ -101,7 +107,7 @@ def test_point_forces():
     """A point force on a master vertex reaches the reduced system in full."""
     domain = mesh.create_unit_square(MPI.COMM_WORLD, 4, 4)
     V = fem.functionspace(domain, ("Lagrange", 1, (2,)))
-    tags = _tags(domain, 0, lambda x: np.isclose(x[0], 0.0) & np.isclose(x[1], 0.5))
+    tags = _tags(domain, 0, lambda x: np.isclose(x[0], 0.0, atol=_atol) & np.isclose(x[1], 0.5, atol=_atol))
     dP = ufl.Measure("dP", domain=domain, subdomain_data=tags)
     force = fem.Constant(domain, np.array([2.0, 3.0], dtype=default_scalar_type))
     mpc = _periodic(V, [])
@@ -126,8 +132,10 @@ def test_ridge_integrals(cell_type, element):
     # The lines along y on the slave face x = 1 and the master face x = 0 at z = 0, and the
     # line y = z = 0 on the Dirichlet face y = 0
     def on_lines(x):
-        along_y = (np.isclose(x[0], 0.0) | np.isclose(x[0], 1.0)) & np.isclose(x[2], 0.0)
-        return along_y | (np.isclose(x[1], 0.0) & np.isclose(x[2], 0.0))
+        along_y = (np.isclose(x[0], 0.0, atol=_atol) | np.isclose(x[0], 1.0, atol=_atol)) & np.isclose(
+            x[2], 0.0, atol=_atol
+        )
+        return along_y | (np.isclose(x[1], 0.0, atol=_atol) & np.isclose(x[2], 0.0, atol=_atol))
 
     tags = _tags(domain, 1, on_lines)
     dr = ufl.Measure("dr", domain=domain, subdomain_data=tags)
@@ -142,7 +150,7 @@ def test_ridge_integrals(cell_type, element):
 
     u_bc = fem.Function(V)
     u_bc.interpolate(fem.Expression(g, V.element.interpolation_points))
-    bcs = [fem.dirichletbc(u_bc, fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 0.0)))]
+    bcs = [fem.dirichletbc(u_bc, fem.locate_dofs_geometrical(V, lambda x: np.isclose(x[1], 0.0, atol=_atol)))]
     _compare(a, L, _periodic(V, bcs), bcs)
 
 
@@ -150,7 +158,7 @@ def test_line_forces():
     """A force per unit length on a line of slaves reaches the reduced system in full."""
     domain = mesh.create_unit_cube(MPI.COMM_WORLD, 3, 3, 3)
     V = fem.functionspace(domain, ("Lagrange", 1, (3,)))
-    tags = _tags(domain, 1, lambda x: np.isclose(x[0], 1.0) & np.isclose(x[2], 1.0 / 3.0))
+    tags = _tags(domain, 1, lambda x: np.isclose(x[0], 1.0, atol=_atol) & np.isclose(x[2], 1.0 / 3.0, atol=_atol))
     dr = ufl.Measure("dr", domain=domain, subdomain_data=tags)
     force = fem.Constant(domain, np.array([2.0, 3.0, 4.0], dtype=default_scalar_type))
     mpc = _periodic(V, [])
