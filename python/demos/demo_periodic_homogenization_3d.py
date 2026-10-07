@@ -508,7 +508,7 @@ for i, j in voigt:
     s_unit = homogenized_stress(1e-2 * E_unit)[1] / 1e-2
     columns.append([s_unit[k, m] for k, m in voigt])
 e_sup = np.linalg.solve(np.column_stack(columns), [S_bar[i, j] for i, j in voigt])
-E_sup = np.zeros((gdim, gdim))
+E_sup = np.zeros((gdim, gdim), dtype=e_sup.dtype)
 for (i, j), value in zip(voigt, e_sup):
     E_sup[i, j] = E_sup[j, i] = value
 if comm.rank == 0:

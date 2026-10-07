@@ -526,7 +526,7 @@ if pyvista is not None:
     grids_u, umax = to_grid(u_plot, "u")
     grids_w, wmax = to_grid(w_plot, "w")
     phase = pyvista.UnstructuredGrid(*plot.vtk_mesh(domain, tdim, owned))
-    phase.cell_data["E"] = E.x.array[: owned.size]
+    phase.cell_data["E"] = E.x.array.real[: owned.size]
     phases = comm.gather(phase, root=0)
     suffix = "" if args.inclusion == "circle" else "_ellipse"
     load_title = {
