@@ -7,6 +7,7 @@
 #pragma once
 
 #include "MultiPointConstraint.h"
+#include "mpi_utils.h"
 #include "point_basis.h"
 #include "utils.h"
 #include <algorithm>

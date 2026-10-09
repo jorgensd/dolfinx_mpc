@@ -306,7 +306,8 @@ void declare_functions(nb::module_& m)
              std::shared_ptr<const dolfinx::fem::DirichletBC<T, U>>>>& bcs,
          const std::vector<nb::ndarray<nb::numpy, std::int32_t, nb::ndim<1>>>&
              master_blocks,
-         std::optional<U> filter)
+         std::optional<U> filter, bool resolve_chains,
+         std::optional<std::int64_t> round_limit)
       {
         const std::size_t nb = V.size();
         if (slaves.size() != nb or masters.size() != nb or coeffs.size() != nb
@@ -336,11 +337,13 @@ void declare_functions(nb::module_& m)
                std::span<const std::int32_t>(master_blocks[k].data(),
                                              master_blocks[k].size())});
         }
-        return dolfinx_mpc::create_multipointconstraints<T, U>(V, data, filter);
+        return dolfinx_mpc::create_multipointconstraints<T, U>(
+            V, data, filter, resolve_chains, round_limit);
       },
       nb::arg("V"), nb::arg("slaves"), nb::arg("masters"), nb::arg("coeffs"),
       nb::arg("owners"), nb::arg("offsets"), nb::arg("rhs_coeffs"),
       nb::arg("bcs"), nb::arg("master_blocks"), nb::arg("filter").none(),
+      nb::arg("resolve_chains"), nb::arg("round_limit").none(),
       "Create the multi point constraints of several function spaces together");
 
   m.def("create_sparsity_pattern", &dolfinx_mpc::create_sparsity_pattern<T, U>);

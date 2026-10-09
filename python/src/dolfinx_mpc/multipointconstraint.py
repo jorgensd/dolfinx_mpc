@@ -253,7 +253,12 @@ class MultiPointConstraint:
             master_space=master_space,
         )
 
-    def finalize(self, filter: Optional[numpy.floating] = None) -> None:
+    def finalize(
+        self,
+        filter: Optional[numpy.floating] = None,
+        resolve_chains: bool = False,
+        round_limit: Optional[int] = None,
+    ) -> None:
         """
         Finializes the multi point constraint. After this function is called, no new constraints can be added
         to the constraint. This function creates a map from the cells (local to index) to the slave degrees of
@@ -269,15 +274,31 @@ class MultiPointConstraint:
                 :math:`K^HAK` substantially. With `None` (the default) every
                 master supplied is kept.
 
+            resolve_chains: If `True`, a master that is itself a slave is replaced by the masters
+                of that slave, :math:`u_s = \\sum_m c_{sm}u_m + g_s` with
+                :math:`u_m = \\sum_n c_{mn}u_n + g_m` becoming
+                :math:`u_s = \\sum_n c_{sm}c_{mn}u_n + c_{sm}g_m + g_s`, until no master is a
+                slave. If `False` (the default), such a master raises a `ValueError`, as a
+                chain is usually unintended.
+            round_limit: The largest number of rounds of substitution, one per link of the longest
+                chain. `None` uses the global number of slaves. A cycle never resolves, and raises
+                once the limit is reached, so a small limit reports it sooner.
+
         Note:
             Filtering changes the constraint that is enforced, by exactly the
             terms that are dropped. It is local and adds no communication.
 
         Note:
+            With `resolve_chains=True`, :func:`all_coefficients`, :func:`update_coefficients` and
+            :func:`scale_coefficients` act on the rows supplied, before substitution, and each
+            update substitutes the chains again. This is collective, and updates the rows of every
+            constraint finalized together with this one.
+
+        Note:
             To finalize the constraints of several function spaces, for instance the blocks of a
             :class:`ufl.MixedFunctionSpace`, use :func:`finalize_multipointconstraints`.
         """
-        finalize_multipointconstraints([self], filter)
+        finalize_multipointconstraints([self], filter, resolve_chains, round_limit)
 
     def update_constants(self) -> None:
         """
@@ -1264,7 +1285,10 @@ class MultiPointConstraint:
 
 
 def finalize_multipointconstraints(
-    mpcs: Sequence[MultiPointConstraint], filter: Optional[numpy.floating] = None
+    mpcs: Sequence[MultiPointConstraint],
+    filter: Optional[numpy.floating] = None,
+    resolve_chains: bool = False,
+    round_limit: Optional[int] = None,
 ) -> None:
     """
     Finalize the multi point constraints of several function spaces together.
@@ -1278,11 +1302,15 @@ def finalize_multipointconstraints(
         mpcs: The constraints to finalize. None may be finalized already, and they must all use the
             same ``dtype``.
         filter: See :meth:`MultiPointConstraint.finalize`. Applied to every constraint.
+        resolve_chains: See :meth:`MultiPointConstraint.finalize`. A chain may pass through the
+            slaves of any of the constraints.
+        round_limit: See :meth:`MultiPointConstraint.finalize`.
 
     Raises:
         ValueError: If the input is inconsistent, or if a dof is both a slave and constrained by a
-            Dirichlet condition, a master is also a slave, or the meshes are on communicators
-            of different size or rank order. Raised on every process.
+            Dirichlet condition, a master is also a slave (without `resolve_chains`), a chain does
+            not resolve within `round_limit` rounds, or the meshes are on communicators of
+            different size or rank order. Raised on every process.
 
     Note:
         Collective. Must be called by every process, with the constraints in the same order.
@@ -1352,6 +1380,8 @@ def finalize_multipointconstraints(
         [[bc._cpp_object for bc in mpc._bcs] for mpc in mpcs],
         master_blocks,
         filter,
+        resolve_chains,
+        round_limit,
     )
 
     # The block of each space on a spider mesh, matched before the spaces are replaced

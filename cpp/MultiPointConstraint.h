@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "ConstraintChains.h"
 #include "mpc_helpers.h"
 #include <algorithm>
 #include <cassert>
@@ -13,6 +14,7 @@
 #include <complex>
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
+#include <dolfinx/common/MPI.h>
 #include <dolfinx/common/Timer.h>
 #include <dolfinx/common/log.h>
 #include <dolfinx/fem/DirichletBC.h>
@@ -65,6 +67,12 @@ struct mpc_block_view
 /// congruent communicators.
 /// @param[in] data Constraint of each block.
 /// @param[in] filter See `MultiPointConstraint`; applied to every block.
+/// @param[in] resolve_chains If true, a master that is itself a slave, in any
+/// block, is replaced by the masters of its slave row, until no master is a
+/// slave (see `resolve_chains`). If false, such a master is an error.
+/// @param[in] round_limit The largest number of rounds of substitution, which
+/// is the length of the longest chain. Unset is the global number of slaves.
+/// A cycle, which never resolves, raises once the limit is reached.
 /// @throws std::invalid_argument On a bad argument, identically on every
 /// process.
 template <typename T, std::floating_point U>
@@ -72,7 +80,8 @@ std::vector<std::shared_ptr<MultiPointConstraint<T, U>>>
 create_multipointconstraints(
     const std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
     const std::vector<mpc_block_view<T>>& data,
-    std::optional<U> filter = std::nullopt);
+    std::optional<U> filter = std::nullopt, bool resolve_chains = false,
+    std::optional<std::int64_t> round_limit = std::nullopt);
 
 template <typename T, std::floating_point U>
 class MultiPointConstraint
@@ -200,6 +209,13 @@ public:
       if (_bc_blocks_used[j])
         g[j] = gather_bc_values(*_V_all[j], _bcs_all[j]);
 
+    // The user offsets of the slaves substituted into the rows by chain
+    // resolution, in the blocks that hold one (reduced at construction)
+    std::vector<std::vector<T>> r(_V_all.size());
+    for (std::size_t j = 0; j < _V_all.size() and _chains; ++j)
+      if (_chain_rhs_blocks_used[j])
+        r[j] = gather_rhs_values(*_V_all[j], _chains->rhs[j]);
+
     // g_s + c_i g_i for every master i that is constrained by a Dirichlet
     // condition
     const std::vector<std::int32_t>& offsets = _bc_master_map->offsets();
@@ -213,6 +229,15 @@ public:
       {
         const std::int32_t block = _bc_master_blocks[offsets[slave] + k];
         val += coeffs[k] * g[block][masters[k]];
+      }
+      if (!_chain_rhs_offsets.empty())
+      {
+        for (std::int32_t k = _chain_rhs_offsets[slave];
+             k < _chain_rhs_offsets[slave + 1]; ++k)
+        {
+          val += (*_chain_rhs_coeffs)[k]
+                 * r[_chain_rhs_blocks[k]][_chain_rhs_dofs[k]];
+        }
       }
       _mpc_constants[slave] = val;
     }
@@ -239,17 +264,25 @@ public:
                       rhs_coeffs.size(), _rhs_coeffs.size()));
     }
     std::ranges::copy(rhs_coeffs, _rhs_coeffs.begin());
+    if (_chains)
+      _chains->rhs[_block] = _rhs_coeffs;
   }
 
   /// @brief Coefficients of all masters per local dof, including masters
   /// eliminated by a Dirichlet condition, in the order supplied at
   /// construction.
   ///
-  /// This is the layout taken by `update_coefficients`.
+  /// This is the layout taken by `update_coefficients`. With chains resolved,
+  /// these are the rows supplied, before substitution.
   /// @return (coefficients, offsets), where the coefficients of dof `i` are
   /// `coefficients[offsets[i]:offsets[i+1]]`
   std::pair<std::vector<T>, std::vector<std::int32_t>> all_coefficients() const
   {
+    if (_chains)
+    {
+      const constraint_rows<T>& gen = _chains->generators[_block];
+      return {gen.coeffs, gen.offsets};
+    }
     if (_all_to_split.empty())
       return {_coeff_map->array(), _coeff_map->offsets()};
 
@@ -266,6 +299,8 @@ public:
   /// `all_coefficients`.
   std::vector<std::int32_t> all_masters() const
   {
+    if (_chains)
+      return _generator_masters;
     if (_all_to_split.empty())
       return _master_map->array();
 
@@ -281,6 +316,8 @@ public:
   /// @brief Block of each master in the layout of `all_coefficients`.
   std::vector<std::int32_t> all_master_blocks() const
   {
+    if (_chains)
+      return _chains->generators[_block].blocks;
     if (_all_to_split.empty())
       return _master_blocks;
 
@@ -301,9 +338,24 @@ public:
   /// @param[in] coeffs New coefficients in the layout of `all_coefficients`,
   /// for all dofs local to the process (owned and ghost)
   /// @note Collective if the constraint has an inhomogeneity and Dirichlet
-  /// conditions.
+  /// conditions, or if chains were resolved. The chains are then substituted
+  /// again, which updates the rows of every block finalized together with
+  /// this one; call `update_constants` on the others.
   void update_coefficients(std::span<const T> coeffs)
   {
+    if (_chains)
+    {
+      std::vector<T>& gen = _chains->generators[_block].coeffs;
+      if (coeffs.size() != gen.size())
+      {
+        throw std::invalid_argument(std::format(
+            "coeffs has {} entries, expected {}", coeffs.size(), gen.size()));
+      }
+      std::ranges::copy(coeffs, gen.begin());
+      _chains->resolve();
+      update_constants();
+      return;
+    }
     std::vector<T>& keep = _coeff_map->array();
     if (_all_to_split.empty())
     {
@@ -343,7 +395,7 @@ public:
   /// @param[in] factors Factor for every dof local to the process (owned and
   /// ghost). Only entries of slaves are read.
   /// @note Collective if the constraint has an inhomogeneity and Dirichlet
-  /// conditions.
+  /// conditions, or if chains were resolved, as in `update_coefficients`.
   void scale_coefficients(std::span<const T> factors)
   {
     if (factors.size() != _is_slave.size())
@@ -352,6 +404,17 @@ public:
           std::format("factors has {} entries, expected {} (one per dof local "
                       "to the process, owned and ghost)",
                       factors.size(), _is_slave.size()));
+    }
+    if (_chains)
+    {
+      constraint_rows<T>& gen = _chains->generators[_block];
+      for (std::int32_t slave : _slaves)
+        for (std::int32_t j = gen.offsets[slave]; j < gen.offsets[slave + 1];
+             ++j)
+          gen.coeffs[j] *= factors[slave];
+      _chains->resolve();
+      update_constants();
+      return;
     }
     for (std::int32_t slave : _slaves)
     {
@@ -468,7 +531,8 @@ private:
   create_multipointconstraints(
       const std::vector<
           std::shared_ptr<const dolfinx::fem::FunctionSpace<U2>>>&,
-      const std::vector<mpc_block_view<T2>>&, std::optional<U2>);
+      const std::vector<mpc_block_view<T2>>&, std::optional<U2>, bool,
+      std::optional<std::int64_t>);
 
   /// Empty constraint, filled in by `create_multipointconstraints`
   MultiPointConstraint() = default;
@@ -487,14 +551,7 @@ private:
   /// The masters of the local dofs, ordered as in `_master_map`, between the
   /// stages of `create_multipointconstraints`. `global` is in the numbering
   /// of the master's own block.
-  struct pending_masters
-  {
-    std::vector<std::int64_t> global;
-    std::vector<T> coeffs;
-    std::vector<std::int32_t> owners;
-    std::vector<std::int32_t> blocks;
-    std::vector<std::int32_t> offsets;
-  };
+  using pending_masters = constraint_rows<T>;
 
   /// @brief First stage of construction: the slaves of this block, and its
   /// masters in global numbering. Local; the masters cannot be given local
@@ -767,14 +824,107 @@ private:
     return flags;
   }
 
+  /// @brief Record the chains resolved for this block: the local index of
+  /// every master supplied and of every offset term, and share the
+  /// coefficient arrays with `chains`. Local.
+  /// @param[in] chains The chains of every block
+  /// @param[in] rows The resolved rows of this block
+  /// @param[in] has_rhs Whether each block has a user offset
+  /// @return Whether a dof has no local index, and whether an offset term is a
+  /// user offset
+  std::pair<int, int> complete_chains(std::shared_ptr<chain_group<T>> chains,
+                                      const constraint_rows<T>& rows,
+                                      const std::vector<int>& has_rhs)
+  {
+    _chains = std::move(chains);
+    _chains->coeffs[_block] = _coeff_map;
+    _chains->bc_coeffs[_block] = _bc_coeff_map;
+    _chains->resolved_to_split[_block] = _all_to_split;
+    _chain_rhs_coeffs = std::make_shared<std::vector<T>>(rows.rhs_coeffs);
+    _chains->rhs_coeffs[_block] = _chain_rhs_coeffs;
+    _chain_rhs_offsets = rows.rhs_offsets;
+    _chain_rhs_blocks = rows.rhs_blocks;
+
+    // Local index of each dof in the extended space of its block
+    auto to_local = [this](std::span<const std::int64_t> global,
+                           std::span<const std::int32_t> blocks)
+    {
+      std::vector<std::int32_t> local(global.size(), -1);
+      for (std::size_t j = 0; j < _V_all.size(); ++j)
+      {
+        std::vector<std::int64_t> g;
+        std::vector<std::size_t> position;
+        for (std::size_t i = 0; i < global.size(); ++i)
+        {
+          if (blocks[i] == static_cast<std::int32_t>(j))
+          {
+            g.push_back(global[i]);
+            position.push_back(i);
+          }
+        }
+        if (g.empty())
+          continue;
+        std::vector<std::int32_t> l
+            = map_dofs_global_to_local<U>(*_V_all[j], g);
+        for (std::size_t i = 0; i < position.size(); ++i)
+          local[position[i]] = l[i];
+      }
+      return local;
+    };
+    const constraint_rows<T>& gen = _chains->generators[_block];
+    _generator_masters = to_local(gen.global, gen.blocks);
+    _chain_rhs_dofs = to_local(rows.rhs_global, rows.rhs_blocks);
+
+    _chain_rhs_blocks_used.assign(_V_all.size(), 0);
+    for (std::int32_t b : _chain_rhs_blocks)
+      _chain_rhs_blocks_used[b] = 1;
+    auto unmapped = [](std::int32_t l) { return l < 0; };
+    const int is_unmapped
+        = std::ranges::any_of(_generator_masters, unmapped)
+                  or std::ranges::any_of(_chain_rhs_dofs, unmapped)
+              ? 1
+              : 0;
+    const int user_offset
+        = std::ranges::any_of(_chain_rhs_blocks, [&has_rhs](std::int32_t b)
+                              { return has_rhs[b] != 0; })
+              ? 1
+              : 0;
+    return {is_unmapped, user_offset};
+  }
+
   /// Record the globally reduced verdicts, and compute the offsets
   void finalize_offsets(bool has_inhomogeneity, bool cross_block,
-                        std::span<const int> bc_blocks_used)
+                        std::span<const int> bc_blocks_used,
+                        std::span<const int> chain_rhs_blocks_used)
   {
     _has_inhomogeneity = has_inhomogeneity;
     _cross_block = cross_block;
     std::ranges::copy(bc_blocks_used, _bc_blocks_used.begin());
+    if (_chains)
+      std::ranges::copy(chain_rhs_blocks_used, _chain_rhs_blocks_used.begin());
     update_constants();
+  }
+
+  /// @brief Gather a user offset on an extended function space.
+  ///
+  /// The owned entries are copied, and a forward scatter supplies the ghosts.
+  /// @param[in] V The extended space
+  /// @param[in] rhs The offset of the owned and ghost dofs of the original
+  /// space, or empty for zero
+  static std::vector<T>
+  gather_rhs_values(const dolfinx::fem::FunctionSpace<U>& V,
+                    std::span<const T> rhs)
+  {
+    const dolfinx::fem::DofMap& dofmap = *V.dofmap();
+    dolfinx::la::Vector<T> r(dofmap.index_map, dofmap.index_map_bs());
+    if (!rhs.empty())
+    {
+      const std::size_t num_owned
+          = dofmap.index_map->size_local() * dofmap.index_map_bs();
+      std::copy_n(rhs.begin(), num_owned, r.array().begin());
+    }
+    r.scatter_fwd();
+    return std::vector<T>(r.array().begin(), r.array().end());
   }
 
   /// @brief Gather Dirichlet values on an extended function space.
@@ -891,13 +1041,31 @@ private:
   std::shared_ptr<dolfinx::graph::AdjacencyList<T>> _coeff_map;
   // Map from slave( local to process) to rank of process owning master
   std::shared_ptr<const dolfinx::graph::AdjacencyList<std::int32_t>> _owner_map;
+
+  // The chains of the constraints finalized together, if resolved. Then the
+  // rows supplied are kept there, `all_coefficients` and the updates use
+  // them, and every update substitutes the chains again.
+  std::shared_ptr<chain_group<T>> _chains;
+  // Local index (in the extended space of its block) of every master supplied,
+  // in the layout of `all_coefficients`
+  std::vector<std::int32_t> _generator_masters;
+  // Per local dof, the offset terms of the resolved rows: the slave whose
+  // user offset contributes (local index in the extended space of its block),
+  // its block and coefficient. Empty without chains.
+  std::vector<std::int32_t> _chain_rhs_offsets;
+  std::vector<std::int32_t> _chain_rhs_dofs;
+  std::vector<std::int32_t> _chain_rhs_blocks;
+  std::shared_ptr<std::vector<T>> _chain_rhs_coeffs;
+  // Per block, whether any process has an offset term in it (reduced)
+  std::vector<int> _chain_rhs_blocks_used;
 };
 
 template <typename T, std::floating_point U>
 std::vector<std::shared_ptr<MultiPointConstraint<T, U>>>
 create_multipointconstraints(
     const std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
-    const std::vector<mpc_block_view<T>>& data, std::optional<U> filter)
+    const std::vector<mpc_block_view<T>>& data, std::optional<U> filter,
+    bool resolve_chains, std::optional<std::int64_t> round_limit)
 {
   const std::size_t nb = V.size();
   if (nb == 0 or data.size() != nb)
@@ -929,6 +1097,11 @@ create_multipointconstraints(
   {
     throw std::invalid_argument(
         std::format("filter must be finite and non-negative, got {}", *filter));
+  }
+  if (round_limit.has_value() and *round_limit < 0)
+  {
+    throw std::invalid_argument(
+        std::format("round_limit must be non-negative, got {}", *round_limit));
   }
 
   for (std::size_t k = 0; k < nb; ++k)
@@ -1059,26 +1232,77 @@ create_multipointconstraints(
                                            master_blocks, d.rhs_coeffs));
   }
 
+  // Stage 1b, collective and only if asked: substitute the chained masters.
+  // The rows supplied are kept, for the updates to substitute them again.
+  MPI_Comm comm = V[0]->mesh()->comm();
+  std::shared_ptr<chain_group<T>> chains;
+  if (resolve_chains)
+  {
+    chains = std::make_shared<chain_group<T>>(comm);
+    chains->generators = pending;
+    chains->coeffs.resize(nb);
+    chains->bc_coeffs.resize(nb);
+    chains->resolved_to_split.resize(nb);
+    chains->rhs_coeffs.resize(nb);
+    std::int64_t num_slaves = 0;
+    for (std::size_t k = 0; k < nb; ++k)
+    {
+      chains->is_slave.push_back(mpcs[k]->_is_slave);
+      const dolfinx::common::IndexMap& imap = *V[k]->dofmap()->index_map;
+      const int bs = V[k]->dofmap()->index_map_bs();
+      chains->owned.push_back(
+          {imap.local_range()[0] * bs, imap.local_range()[1] * bs});
+      chains->rhs.emplace_back(data[k].rhs_coeffs.begin(),
+                               data[k].rhs_coeffs.end());
+      num_slaves += mpcs[k]->_num_local_slaves;
+    }
+    // A chain without cycles has at most one round per slave
+    if (round_limit.has_value())
+      chains->round_limit = *round_limit;
+    else
+    {
+      MPI_Allreduce(&num_slaves, &chains->round_limit, 1, MPI_INT64_T, MPI_SUM,
+                    comm);
+    }
+    std::vector<std::span<const std::int8_t>> markers(chains->is_slave.begin(),
+                                                      chains->is_slave.end());
+    std::vector<constraint_rows<T>> resolved = dolfinx_mpc::resolve_chains<T>(
+        comm, chains->generators, markers, chains->owned, chains->round_limit);
+    for (std::size_t k = 0; k < nb; ++k)
+      pending[k] = std::move(resolved[k]);
+  }
+
   // Stage 2, collective and in block order: the extended space of each block,
-  // with every master that lives in it, whichever block its slave is in. Never
-  // skip a block, even one without masters on this process.
+  // with every master that lives in it, whichever block its slave is in. With
+  // chains, the masters supplied and the slaves of the offset terms as well.
+  // Never skip a block, even one without masters on this process.
   std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>> V_ext;
   V_ext.reserve(nb);
   for (std::size_t j = 0; j < nb; ++j)
   {
     std::vector<std::int64_t> global;
     std::vector<std::int32_t> owners;
-    for (const auto& p : pending)
+    auto add = [j, &global, &owners](std::span<const std::int64_t> g,
+                                     std::span<const std::int32_t> o,
+                                     std::span<const std::int32_t> b)
     {
-      for (std::size_t i = 0; i < p.global.size(); ++i)
+      for (std::size_t i = 0; i < g.size(); ++i)
       {
-        if (p.blocks[i] == static_cast<std::int32_t>(j))
+        if (b[i] == static_cast<std::int32_t>(j))
         {
-          global.push_back(p.global[i]);
-          owners.push_back(p.owners[i]);
+          global.push_back(g[i]);
+          owners.push_back(o[i]);
         }
       }
+    };
+    for (const auto& p : pending)
+    {
+      add(p.global, p.owners, p.blocks);
+      add(p.rhs_global, p.rhs_owners, p.rhs_blocks);
     }
+    if (chains)
+      for (const constraint_rows<T>& p : chains->generators)
+        add(p.global, p.owners, p.blocks);
     V_ext.push_back(std::make_shared<const dolfinx::fem::FunctionSpace<U>>(
         create_extended_functionspace(*V[j], global, owners)));
   }
@@ -1100,14 +1324,36 @@ create_multipointconstraints(
   // duplicate slave, slave is a Dirichlet dof, master is a slave, master
   // unmapped, inhomogeneous, cross-block masters, bad master block, then one
   // flag per block for whether an eliminated master lives there.
-  const std::size_t stride = 7 + nb;
+  // With chains, one more flag per block for whether an offset term lives
+  // there.
+  const std::size_t stride = 7 + 2 * nb;
   std::vector<int> local_flags(stride * nb, 0);
+  std::vector<int> has_rhs(nb);
+  for (std::size_t k = 0; k < nb; ++k)
+    has_rhs[k] = data[k].rhs_coeffs.empty() ? 0 : 1;
   for (std::size_t k = 0; k < nb; ++k)
   {
-    const typename MultiPointConstraint<T, U>::checks flags
+    // The offset terms are not part of the masters, and are kept for chains
+    constraint_rows<T> offset_terms;
+    if (chains)
+    {
+      offset_terms.rhs_offsets = std::move(pending[k].rhs_offsets);
+      offset_terms.rhs_global = std::move(pending[k].rhs_global);
+      offset_terms.rhs_coeffs = std::move(pending[k].rhs_coeffs);
+      offset_terms.rhs_blocks = std::move(pending[k].rhs_blocks);
+    }
+    typename MultiPointConstraint<T, U>::checks flags
         = mpcs[k]->complete(V_ext, bcs_all, bc_markers, slave_markers,
-                            std::move(pending[k]), !data[k].rhs_coeffs.empty());
+                            std::move(pending[k]), has_rhs[k] != 0);
     int* f = local_flags.data() + stride * k;
+    if (chains)
+    {
+      const auto [unmapped, user_offset]
+          = mpcs[k]->complete_chains(chains, offset_terms, has_rhs);
+      flags.unmapped_master = std::max(flags.unmapped_master, unmapped);
+      flags.inhomogeneous = std::max(flags.inhomogeneous, user_offset);
+      std::ranges::copy(mpcs[k]->_chain_rhs_blocks_used, f + 7 + nb);
+    }
     f[0] = duplicate_slave[k];
     f[1] = flags.slave_is_bc;
     f[2] = flags.master_is_slave;
@@ -1121,8 +1367,7 @@ create_multipointconstraints(
   // One reduction for every verdict of every block
   std::vector<int> global_flags(local_flags.size());
   MPI_Allreduce(local_flags.data(), global_flags.data(),
-                static_cast<int>(local_flags.size()), MPI_INT, MPI_MAX,
-                V[0]->mesh()->comm());
+                static_cast<int>(local_flags.size()), MPI_INT, MPI_MAX, comm);
   for (std::size_t k = 0; k < nb; ++k)
   {
     const int* f = global_flags.data() + stride * k;
@@ -1153,8 +1398,9 @@ create_multipointconstraints(
     {
       throw std::invalid_argument(std::format(
           "A master of the multi point constraint (block {}) is also a "
-          "slave. Constraints cannot be chained: express the slave in terms "
-          "of masters that are not constrained.",
+          "slave. Finalize with resolve_chains=True to substitute the chain, "
+          "or express the slave in terms of masters that are not "
+          "constrained.",
           k));
     }
     if (f[3] != 0)
@@ -1169,7 +1415,8 @@ create_multipointconstraints(
   {
     const int* f = global_flags.data() + stride * k;
     mpcs[k]->finalize_offsets(f[4] != 0, f[5] != 0,
-                              std::span<const int>(f + 7, nb));
+                              std::span<const int>(f + 7, nb),
+                              std::span<const int>(f + 7 + nb, nb));
   }
   return mpcs;
 }
