@@ -19,6 +19,7 @@ parts:
     - file: "python/demos/demo_mortar.py"
     - file: "python/demos/demo_mortar_subdomains.py"
     - file: "python/demos/demo_bulk_surface.py"
+    - file: "python/demos/demo_hanging_nodes.py"
   - caption: "Integral constraints"
     chapters:
     - file: "python/demos/demo_mean_value_constraint.py"

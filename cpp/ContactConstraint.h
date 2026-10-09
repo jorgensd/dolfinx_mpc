@@ -204,6 +204,10 @@ mpc_data<T> create_contact_slip_condition(
 /// @param[in] allow_missing_masters If true, a slave in no cell attached to the
 /// master facets is left unconstrained. Else it is an error.
 /// @param[in] num_threads The number of threads to use for certain operations.
+/// @note Dofs in the closure of both the slave and the master facets are
+/// shared by the two sides, hence already continuous, and are not constrained.
+/// This ties the fine facets of a hanging-node interface to the coarse facet
+/// they subdivide.
 /// @note Collective. Throws `std::runtime_error` on every process for a
 /// missing master, unless `allow_missing_masters`.
 template <typename T, std::floating_point U>
@@ -227,10 +231,24 @@ mpc_data<T> create_contact_inelastic_condition(
       = dolfinx::mesh::compute_incident_entities(
           *meshtags.topology(), meshtags.find(master_marker), meshtags.dim(),
           meshtags.topology()->dim());
+
+  // A slave on a master facet would be its own master. The located blocks
+  // include those of facets marked on other processes only.
+  std::vector<std::int32_t> slave_blocks
+      = locate_tagged_blocks<U>(V, meshtags, slave_marker);
+  std::vector<std::int32_t> master_blocks
+      = locate_tagged_blocks<U>(V, meshtags, master_marker);
+  std::ranges::sort(slave_blocks);
+  std::ranges::sort(master_blocks);
+  std::vector<std::int32_t> blocks;
+  blocks.reserve(slave_blocks.size());
+  std::ranges::set_difference(slave_blocks, master_blocks,
+                              std::back_inserter(blocks));
+
+  auto identity
+      = [](std::span<const U> x) { return std::vector<U>(x.begin(), x.end()); };
   return impl::_create_periodic_condition<T, U>(
-      V, locate_tagged_blocks<U>(V, meshtags, slave_marker),
-      [](std::span<const U> x) { return std::vector<U>(x.begin(), x.end()); },
-      T(1), {}, V, master_cells, distance_tol, coefficient_tol,
-      allow_missing_masters, num_threads);
+      V, blocks, identity, T(1), {}, V, master_cells, distance_tol,
+      coefficient_tol, allow_missing_masters, num_threads);
 }
 } // namespace dolfinx_mpc

@@ -982,7 +982,7 @@ class MultiPointConstraint:
 
     def create_contact_inelastic_condition(
         self,
-        meshtags: _cpp.mesh.MeshTags_int32,
+        meshtags: _mesh.MeshTags,
         slave_marker: int,
         master_marker: int,
         eps2: Optional[float] = None,
@@ -997,6 +997,10 @@ class MultiPointConstraint:
         The interfaces should be within machine precision of eachother, but the vertices does not need to align.
         The condition created is :math:`u_s = u_m` where `s` is the restriction to the
         slave facets, `m` to the master facets.
+        Degrees of freedom in the closure of both the slave and the master facets are shared by the
+        two sides, hence already continuous, and are not constrained. Tagging the fine facets of a
+        hanging-node interface as slaves and the coarse facet they subdivide as master therefore
+        gives a conforming space.
 
         Args:
             meshtags: The meshtags of the set of facets to tie together

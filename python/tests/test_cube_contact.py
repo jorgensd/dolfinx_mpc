@@ -316,7 +316,7 @@ def test_contact_missing_masters():
     bs = V.dofmap.index_map_bs
 
     # Slaves on the bottom edge, masters in the cells along the left edge: only the slave
-    # blocks at x = 0 and x = 0.25 are in such a cell
+    # block at x = 0.25 is in such a cell. The one at x = 0 is on both edges, so not a slave.
     fdim = mesh.topology.dim - 1
     bottom = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[1], 0))
     left = dolfinx.mesh.locate_entities_boundary(mesh, fdim, lambda x: np.isclose(x[0], 0))
@@ -338,11 +338,11 @@ def test_contact_missing_masters():
     slaves = np.asarray(data.slaves)
     owned = slaves[slaves < V.dofmap.index_map.size_local * bs]
     x = V.tabulate_dof_coordinates()[owned // bs]
-    assert comm.allreduce(len(owned), op=MPI.SUM) == 2 * bs
+    assert comm.allreduce(len(owned), op=MPI.SUM) == bs
     # The coordinates of the dofs are rounded in the precision of the mesh
     tol = 100 * np.finfo(default_real_type).eps
     assert np.allclose(x[:, 1], 0, atol=tol)
-    assert np.all(np.isclose(x[:, 0], 0, atol=tol) | np.isclose(x[:, 0], 0.25, atol=tol))
+    assert np.allclose(x[:, 0], 0.25, atol=tol)
 
 
 def test_contact_pull_back_on_quadrilaterals():
@@ -364,15 +364,15 @@ def test_contact_pull_back_on_quadrilaterals():
     order = np.argsort(facets)
     mt = dolfinx.mesh.meshtags(mesh, fdim, facets[order], values[order])
 
-    # The slaves at x = 0, 0.125 and 0.25 are in cells along the left edge, the others in none. The
-    # slave at the corner is also a master, so the constraint is not finalized.
+    # The slaves at x = 0.125 and 0.25 are in cells along the left edge, the others in none. The
+    # dof at the corner is on both edges, so not a slave.
     distance_tol = 1e-10
     coefficient_tol = float(500 * np.finfo(np.float64).eps)
     bs = V.dofmap.index_map_bs
     create_inelastic = _cpp_function("create_contact_inelastic_condition", np.float64)
     data = create_inelastic(V._cpp_object, mt._cpp_object, 1, 2, distance_tol, coefficient_tol, True, 1)
     slaves = np.asarray(data.slaves)
-    assert comm.allreduce(np.sum(slaves < V.dofmap.index_map.size_local * bs), op=MPI.SUM) == 3 * bs
+    assert comm.allreduce(np.sum(slaves < V.dofmap.index_map.size_local * bs), op=MPI.SUM) == 2 * bs
 
     # A slip condition allows no missing masters, so it reports them, rather than a failed pull-back.
     # The normal of the slaves, on the bottom edge, is (0, -1).
