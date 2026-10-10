@@ -1,9 +1,9 @@
-# This demo program solves Poisson's equation
+# This demo program solves the vector-valued Poisson equation
 #
-#     - div grad u(x, y) = f(x, y)
+#     - div grad u(x, y) = f(x, y),   u = (u_1, u_2)
 #
 # on the unit square with homogeneous Dirichlet boundary conditions
-# at y = 0, 1 and periodic boundary conditions at x = 0, 1.
+# at y = 0, 1 and periodic boundary conditions, on both components, at x = 0, 1.
 #
 # Copyright (C) Jørgen S. Dokken 2020-2022.
 #
@@ -13,15 +13,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
 
 from mpi4py import MPI
 from petsc4py import PETSc
 
 import dolfinx.fem as fem
+import dolfinx.fem.petsc
 import numpy as np
 import scipy.sparse.linalg
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
 from dolfinx.fem import Function
 from dolfinx.io import XDMFFile
@@ -48,9 +48,10 @@ complex_mode = True if np.dtype(default_scalar_type).kind == "c" else False
 # Create mesh and finite element
 NX = 50
 NY = 100
-mesh = create_unit_square(MPI.COMM_WORLD, NX, NY)
+comm = MPI.COMM_WORLD
+mesh = create_unit_square(comm, NX, NY, dtype=default_real_type)
 V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
-tol = 250 * np.finfo(default_scalar_type).resolution
+tol = 250 * np.finfo(default_real_type).resolution
 
 
 def dirichletboundary(x):
@@ -95,17 +96,7 @@ f = as_vector((x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_) 
 rhs = inner(f, v) * dx
 
 
-# Setup MPC system
-with Timer("~PERIODIC: Initialize varitional problem"):
-    problem = LinearProblem(a, rhs, mpc, bcs=bcs)
-
-solver = problem.solver
-
-# Give PETSc solver options a unique prefix
-solver_prefix = "dolfinx_mpc_solve_{}".format(id(solver))
-solver.setOptionsPrefix(solver_prefix)
-
-petsc_options: dict[str, Union[str, int, float]]
+petsc_options: dict[str, str | int | float | bool]
 if complex_mode or default_scalar_type == np.float32:
     petsc_options = {"ksp_type": "preonly", "pc_type": "lu"}
 else:
@@ -115,63 +106,48 @@ else:
         "pc_type": "hypre",
         "pc_hypre_type": "boomeramg",
         "pc_hypre_boomeramg_max_iter": 1,
-        "pc_hypre_boomeramg_cycle_type": "v",  # ,
-        # "pc_hypre_boomeramg_print_statistics": 1
+        "pc_hypre_boomeramg_cycle_type": "v",
     }
+petsc_options["ksp_error_if_not_converged"] = True
 
-# Set PETSc options
-opts = PETSc.Options()
-opts.prefixPush(solver_prefix)
-if petsc_options is not None:
-    for k, v in petsc_options.items():
-        opts.setValue(k, v)
-opts.prefixPop()
-solver.setFromOptions()
-
+# Setup MPC system
+with Timer("~PERIODIC: Initialize varitional problem"):
+    problem = LinearProblem(a, rhs, mpc, bcs=bcs, petsc_options=petsc_options, petsc_options_prefix="periodic_mpc_")
 
 with Timer("~PERIODIC: Assemble and solve MPC problem"):
     uh = problem.solve()
     assert isinstance(uh, Function)
-
-    # solver.view()
-    it = solver.getIterationNumber()
+    it = problem.solver.getIterationNumber()
+if comm.rank == 0:
     print("Constrained solver iterations {0:d}".format(it))
 
-# Write solution to file
+# --------------------VERIFICATION-------------------------
+# The same problem without the constraint, with a solver of its own
+problem_org = dolfinx.fem.petsc.LinearProblem(
+    a, rhs, bcs=bcs, petsc_options=petsc_options, petsc_options_prefix="periodic_unconstrained_"
+)
+u_ = problem_org.solve()
+assert isinstance(u_, Function)
+it = problem_org.solver.getIterationNumber()
+if comm.rank == 0:
+    print("----Verification----")
+    print("Unconstrained solver iterations {0:d}".format(it))
+A_org, L_org = problem_org.A, problem_org.b
+
+# Write solutions to file
 outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
-
 uh.name = "u_mpc"
-outfile = XDMFFile(mesh.comm, outdir / "demo_periodic_geometrical.xdmf", "w")
-outfile.write_mesh(mesh)
-outfile.write_function(uh)
-
-print("----Verification----")
-# --------------------VERIFICATION-------------------------
-bilinear_form = fem.form(a)
-A_org = fem.petsc.assemble_matrix(bilinear_form, bcs)
-A_org.assemble()
-
-linear_form = fem.form(rhs)
-L_org = fem.petsc.assemble_vector(linear_form)
-fem.petsc.apply_lifting(L_org, [bilinear_form], [bcs])
-L_org.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)  # type: ignore
-fem.petsc.set_bc(L_org, bcs)
-solver.setOperators(A_org)
-u_ = fem.Function(V)
-solver.solve(L_org, u_.x.petsc_vec)
-
-it = solver.getIterationNumber()
-print("Unconstrained solver iterations {0:d}".format(it))
-u_.x.scatter_forward()
 u_.name = "u_unconstrained"
-outfile.write_function(u_)
+with XDMFFile(comm, outdir / "demo_periodic_geometrical.xdmf", "w") as outfile:
+    outfile.write_mesh(mesh)
+    outfile.write_function(uh)
+    outfile.write_function(u_)
 
 root = 0
-comm = mesh.comm
 with Timer("~Demo: Verification"):
-    dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem._A, mpc, root=root)
-    dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem._b, mpc, root=root)
+    dolfinx_mpc.utils.compare_mpc_lhs(A_org, problem.A, mpc, root=root)
+    dolfinx_mpc.utils.compare_mpc_rhs(L_org, problem.b, mpc, root=root)
     is_complex = np.issubdtype(default_scalar_type, np.complexfloating)  # type: ignore
     scipy_dtype = np.complex128 if is_complex else np.float64
     # Gather LHS, RHS and solution on one process
@@ -180,7 +156,7 @@ with Timer("~Demo: Verification"):
     L_np = dolfinx_mpc.utils.gather_PETScVector(L_org, root=root)
     u_mpc = dolfinx_mpc.utils.gather_PETScVector(uh.x.petsc_vec, root=root)
 
-    if MPI.COMM_WORLD.rank == root:
+    if comm.rank == root:
         KTAK = K.T.astype(scipy_dtype) * A_csr.astype(scipy_dtype) * K.astype(scipy_dtype)
         reduced_L = K.T.astype(scipy_dtype) @ L_np.astype(scipy_dtype)
         # Solve linear system
@@ -188,5 +164,6 @@ with Timer("~Demo: Verification"):
         # Back substitution to full solution vector
         uh_numpy = K.astype(scipy_dtype) @ d.astype(scipy_dtype)
         assert np.allclose(uh_numpy.astype(u_mpc.dtype), u_mpc, atol=float(tol))
-list_timings(MPI.COMM_WORLD)
-L_org.destroy()
+list_timings(comm)
+del problem, problem_org, A_org, L_org
+PETSc.garbage_cleanup(comm)

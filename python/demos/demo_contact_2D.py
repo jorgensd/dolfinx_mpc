@@ -148,10 +148,9 @@ def demo_stacked_cubes(
         "pc_gamg_square_graph": 2,
         "pc_gamg_threshold": 0.02,
         "pc_gamg_coarse_eq_limit": 1000,
-        "pc_gamg_sym_graph": True,
         "mg_levels_ksp_type": "chebyshev",
         "mg_levels_pc_type": "jacobi",
-        "mg_levels_esteig_ksp_type": "cg",
+        "pc_gamg_esteig_ksp_type": "cg",
         #  , "help": None, "ksp_view": None
     }
 

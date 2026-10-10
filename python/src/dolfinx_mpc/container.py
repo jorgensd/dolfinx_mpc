@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import warnings
 from typing import Callable, Optional, Union
 
@@ -97,6 +99,29 @@ def _scalar_type(real_type: npt.DTypeLike, dtype: npt.DTypeLike | None = None) -
 
 
 class MPCData:
+    r"""The rows of a constraint on one process, before it is finalized.
+
+    Row `i` is the equation :math:`u_s = \sum_j c_j u_{m_j}` of the slave :math:`s` =
+    `slaves[i]`, with :math:`m_j` = `masters[j]` and :math:`c_j` = `coeffs[j]` for
+    `offsets[i] <= j < offsets[i + 1]`.
+
+    Attributes:
+        slaves: The slave of each row: a dof of the space of the slaves, local to the process
+            (owned or ghost) and unrolled
+        masters: The masters of all rows, row after row: global, unrolled dofs of the space of
+            each master
+        coeffs: The coefficient of each master
+        owners: The process owning each master
+        offsets: The masters of row `i` are `masters[offsets[i]:offsets[i + 1]]`, so `offsets`
+            has one entry more than `slaves`
+        master_blocks: The block of each master, in the numbering of whoever made the rows, or
+            `None` if every master is in the space of the slaves. Given on every process or on
+            none. A :class:`MultiPointConstraint` stores codes here until it is finalized (see
+            :meth:`MultiPointConstraint.__init__`).
+
+    The arrays are views of the C++ object, valid while this object is.
+    """
+
     _cpp_object: _mpc_data_classes
 
     def __init__(
@@ -106,17 +131,70 @@ class MPCData:
         coeffs: _float_array_types,
         owners: npt.NDArray[numpy.int32],
         offsets: npt.NDArray[numpy.int32],
+        master_blocks: Optional[npt.NDArray[numpy.int32]] = None,
     ):
+        args = (
+            numpy.asarray(slaves, dtype=numpy.int32),
+            numpy.asarray(masters, dtype=numpy.int64),
+            coeffs,
+            numpy.asarray(owners, dtype=numpy.int32),
+            numpy.asarray(offsets, dtype=numpy.int32),
+            None if master_blocks is None else numpy.asarray(master_blocks, dtype=numpy.int32),
+        )
         if coeffs.dtype.type == numpy.float32:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_float(slaves, masters, coeffs, owners, offsets)
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_float(*args)
         elif coeffs.dtype.type == numpy.float64:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_double(slaves, masters, coeffs, owners, offsets)
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_double(*args)
         elif coeffs.dtype.type == numpy.complex64:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_float(slaves, masters, coeffs, owners, offsets)
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_float(*args)
         elif coeffs.dtype.type == numpy.complex128:
-            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_double(slaves, masters, coeffs, owners, offsets)
+            self._cpp_object = dolfinx_mpc.cpp.mpc.mpc_data_complex_double(*args)
         else:
-            raise ValueError("Unsupported dtype {coeffs.dtype.type} for coefficients")
+            raise ValueError(f"Unsupported dtype {coeffs.dtype.type} for coefficients")
+
+    @classmethod
+    def empty(cls, dtype: npt.DTypeLike, master_blocks: bool = False) -> MPCData:
+        """No rows, with coefficients of `dtype`, and with (empty) blocks if `master_blocks`."""
+        return cls(
+            numpy.zeros(0, dtype=numpy.int32),
+            numpy.zeros(0, dtype=numpy.int64),
+            numpy.zeros(0, dtype=dtype),
+            numpy.zeros(0, dtype=numpy.int32),
+            numpy.zeros(1, dtype=numpy.int32),
+            numpy.zeros(0, dtype=numpy.int32) if master_blocks else None,
+        )
+
+    @classmethod
+    def from_cpp(cls, cpp_object: _mpc_data_classes) -> MPCData:
+        """Wrap rows made in C++, such as the result of a constraint generator."""
+        data = cls.__new__(cls)
+        data._cpp_object = cpp_object
+        return data
+
+    def append(
+        self,
+        slaves: npt.NDArray[numpy.int32],
+        masters: npt.NDArray[numpy.int64],
+        coeffs: _float_array_types,
+        owners: npt.NDArray[numpy.int32],
+        offsets: npt.NDArray[numpy.int32],
+        master_blocks: Optional[npt.NDArray[numpy.int32]] = None,
+    ) -> MPCData:
+        """These rows followed by the rows given, as new data with the coefficient type of these.
+
+        The blocks are kept if either has them; missing ones must then be given by the caller.
+        """
+        if (self.master_blocks is None) != (master_blocks is None):
+            raise ValueError("Either both or neither of the rows must have master blocks")
+        dtype = self.coeffs.dtype
+        return MPCData(
+            numpy.concatenate([self.slaves, slaves]),
+            numpy.concatenate([self.masters, masters]),
+            numpy.concatenate([self.coeffs, numpy.asarray(coeffs, dtype=dtype)]),
+            numpy.concatenate([self.owners, owners]),
+            numpy.concatenate([self.offsets, numpy.asarray(offsets[1:]) + self.offsets[-1]]),
+            None if master_blocks is None else numpy.concatenate([self.master_blocks, master_blocks]),
+        )
 
     @property
     def slaves(self):
@@ -137,3 +215,7 @@ class MPCData:
     @property
     def offsets(self):
         return self._cpp_object.offsets
+
+    @property
+    def master_blocks(self):
+        return self._cpp_object.master_blocks

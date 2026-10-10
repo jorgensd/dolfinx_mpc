@@ -1,4 +1,4 @@
-# Copyright (C) 2020-2023 Jørgen S. Dokken
+# Copyright (C) 2020-2026 Jørgen S. Dokken
 #
 # This file is part of DOLFINX_MPC
 #
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
+from mpi4py import MPI as _MPI
 from petsc4py import PETSc as _PETSc
 
 import dolfinx.cpp as _cpp
@@ -62,12 +63,8 @@ class MultiPointConstraint:
             :math:`u_s = \\sum_j c_j u_{m_j} + g_s`.
     """
 
-    _slaves: npt.NDArray[numpy.int32]
-    _masters: npt.NDArray[numpy.int64]
-    _coeffs: _float_array_types
-    _owners: npt.NDArray[numpy.int32]
-    _offsets: npt.NDArray[numpy.int32]
-    _master_spaces: List[tuple[npt.NDArray[numpy.int32], Optional[_fem.FunctionSpace]]]
+    _data: MPCData
+    _master_spaces: List[_fem.FunctionSpace]
     _bcs: List[_fem.DirichletBC]
     _rhs_coeffs: Optional[_fem.Function]
     _scale_function: Optional[_fem.Function]
@@ -89,11 +86,18 @@ class MultiPointConstraint:
         rhs_coeffs: Optional[_fem.Function] = None,
     ):
         dtype = _scalar_type(V.mesh.geometry.x.dtype, dtype)
-        self._slaves = numpy.array([], dtype=numpy.int32)
-        self._masters = numpy.array([], dtype=numpy.int64)
-        self._coeffs = numpy.array([], dtype=dtype)  # type: ignore
-        self._owners = numpy.array([], dtype=numpy.int32)
-        self._offsets = numpy.array([0], dtype=numpy.int32)
+        # The rows on this process until finalize. Their master_blocks hold a code per master, as
+        # the blocks are known only when the constraints are finalized together:
+        #   code >= 0       the block itself, its position among the constraints finalized together
+        #   code == -1      the block of this constraint: a master in its own space
+        #   code == -2 - s  the block of the space self._master_spaces[s]
+        # finalize_multipointconstraints resolves the codes to blocks.
+        self._data = MPCData.empty(dtype, master_blocks=True)
+        # The spaces of masters outside the space of this constraint, as given to add_constraint,
+        # add_constraint_from_mpc_data or extend_masters (master_space), each once, in the order
+        # first given. Every process appends them in the same order, also without local slaves,
+        # so that a code means the same space on every process. A space must be the space of one
+        # of the constraints finalized together with this one, or an uncollapsed subspace of it.
         self._master_spaces = []
         self._bcs = [] if bcs is None else list(bcs)
         if rhs_coeffs is not None:
@@ -145,7 +149,7 @@ class MultiPointConstraint:
 
             master_space: The function space all masters belong to, if not `V`. It must be the
                 space of another constraint finalized together with this one by
-                :func:`finalize_multipointconstraints`, or a subspace of it, and `masters` is in
+                :func:`finalize_multipointconstraints`, or an uncollapsed subspace of it, and `masters` is in
                 the global numbering of that constraint's space.
                 The masters of a slave may then be in another block of a blocked problem.
             master_blocks: The block of each master, for masters from several spaces: its position
@@ -163,20 +167,132 @@ class MultiPointConstraint:
         if master_blocks is not None and len(master_blocks) != len(masters):
             raise ValueError("master_blocks must have one entry per master")
 
-        # Recorded on every process, also without local slaves, so that every process resolves the
-        # blocks of the masters the same way when the constraints are finalized
         if master_blocks is not None:
-            self._master_spaces.append((numpy.asarray(master_blocks, dtype=numpy.int32), None))
+            codes = numpy.asarray(master_blocks, dtype=numpy.int32)
         elif master_space is not None:
-            self._master_spaces.append((numpy.full(len(masters), -1, dtype=numpy.int32), master_space))
+            codes = numpy.full(len(masters), self._space_code(master_space), dtype=numpy.int32)
         else:
-            self._master_spaces.append((numpy.full(len(masters), -2, dtype=numpy.int32), None))
+            codes = numpy.full(len(masters), -1, dtype=numpy.int32)
         if len(slaves) > 0:
-            self._offsets = numpy.append(self._offsets, offsets[1:] + len(self._masters))
-            self._slaves = numpy.append(self._slaves, slaves)
-            self._masters = numpy.append(self._masters, masters)
-            self._coeffs = numpy.array(numpy.append(self._coeffs, coeffs), dtype=self._dtype)
-            self._owners = numpy.append(self._owners, owners)
+            self._data = self._data.append(slaves, masters, coeffs, owners, offsets, codes)
+
+    def _space_code(self, space: _fem.FunctionSpace) -> int:
+        """The code of the block of the masters in `space`, recorded on every process in the same
+        order so that every process resolves it the same way when the constraints are finalized."""
+        for s, other in enumerate(self._master_spaces):
+            if other is space:
+                return -2 - s
+        self._master_spaces.append(space)
+        return -1 - len(self._master_spaces)
+
+    def extend_masters(
+        self,
+        slaves: npt.NDArray[numpy.int32],
+        masters: npt.NDArray[numpy.int64],
+        coeffs: _float_array_types,
+        owners: npt.NDArray[numpy.int32],
+        master_space: Optional[_fem.FunctionSpace] = None,
+    ):
+        r"""Add a master to the rows of existing slaves.
+
+        A row is the equation :math:`u_s = \sum_j c_j u_{m_j}` of its slave :math:`u_s`, whichever
+        constraint made it. Entry `i` adds a term :math:`k u_d` to its right-hand side, giving
+        :math:`u_s = \sum_j c_j u_{m_j} + k u_d`, with :math:`s` = `slaves[i]`,
+        :math:`u_d` = `masters[i]` and :math:`k` = `coeffs[i]`. If :math:`u_d` is already a master
+        of the row, in the same space, :math:`k` is added to its coefficient. The ghost copies of
+        the rows are extended too.
+
+        A call adds one term per slave. Further terms of the same slave are added by further calls,
+        each with its own `master_space`, so that a row may have masters in several spaces.
+
+        For instance, a periodic condition :math:`u(x) = u(\mathrm{relation}(x))` extended, by one
+        call per entry :math:`\bar H_{bk}` of a macroscopic gradient on a point mesh, with
+        coefficient :math:`d_k = (x - \mathrm{relation}(x))_k` for component :math:`b`, ties `u` to
+        :math:`\bar H x` plus a periodic field.
+
+        Args:
+            slaves: The slave of each entry: owned dofs of the space of the constraint (local,
+                unrolled), each already a slave and each at most once.
+            masters: The master of each entry, in the global (unrolled) numbering of `master_space`
+            coeffs: The coefficient of each entry, of the scalar type of the constraint
+            owners: The process owning each master
+            master_space: The space of the masters if not that of the constraint. It must be the
+                space of another constraint finalized together with this one by
+                :func:`finalize_multipointconstraints`, or an uncollapsed subspace of it.
+
+        Raises:
+            ValueError: On every process, if a slave is not owned, appears twice or has no row yet,
+                or the arrays differ in length.
+
+        Note:
+            Collective. Must be called by every process, with the same `master_space`, before the
+            constraint is finalized.
+        """
+        self._raise_if_finalized()
+        code = -1 if master_space is None else self._space_code(master_space)
+        # Raises ValueError (as the C++ throws std::invalid_argument), identically on every process
+        new_data = _cpp_function("extend_mpc_data", self._dtype)(
+            self._data._cpp_object,
+            -1,
+            numpy.asarray(slaves, dtype=numpy.int32),
+            numpy.asarray(masters, dtype=numpy.int64),
+            numpy.asarray(coeffs, dtype=self._dtype),
+            numpy.asarray(owners, dtype=numpy.int32),
+            code,
+            self.V._cpp_object,
+        )
+        self._data = MPCData.from_cpp(new_data)
+
+    def add_master_from_point(
+        self,
+        V: _fem.FunctionSpace,
+        slave_marker: Callable[[numpy.ndarray], numpy.ndarray],
+        coefficient: Union[Callable[[numpy.ndarray], numpy.ndarray], float, complex],
+        point: npt.ArrayLike,
+        distance_tol: Optional[float] = None,
+    ):
+        r"""Add the dofs at a point as a master of the rows of marked slaves.
+
+        Each slave of `V` at a coordinate :math:`x` marked by `slave_marker` gets the term
+        :math:`k(x)\, u(p)` added to the right-hand side of its row, by :meth:`extend_masters`,
+        with :math:`p` = `point` and :math:`k` = `coefficient`. For a blocked `V`, component
+        :math:`b` of a slave gets component :math:`b` of the dofs at :math:`p`; for a single
+        component pass the uncollapsed subspace, for instance `V.sub(1)`.
+
+        For instance, the periodic cell of the homogenization demos ties the right edge to the left
+        edge plus the corner :math:`B`, :math:`u(L, y) = u(0, y) + u^B`: the periodic constraint
+        gives :math:`u(L, y) = u(0, y)`, and this function, with the right edge marked,
+        coefficient `1` and `point` :math:`B`, adds :math:`u^B`.
+
+        Args:
+            V: The space of this constraint, or an uncollapsed subspace of it
+            slave_marker: Marks the coordinates of the slaves, `(3, n)` to `(n,)`. Each marked dof
+                must already be a slave, and the dofs at `point` must not be marked.
+            coefficient: The coefficient :math:`k` of each slave, from its coordinates, `(3, n)`
+                to `(n,)`, or one value for all.
+            point: The point of the master, of `gdim` or 3 coordinates. Exactly one block of dofs
+                of `V` must be there (see :func:`dofs_at_point`).
+            distance_tol: The largest distance between `point` and its dofs. Defaults to `500`
+                machine epsilon of the coordinate type of the mesh.
+
+        Note:
+            Collective. Must be called by every process, before the constraint is finalized.
+        """
+        dofs_marked, components, x_slaves, _ = _marked_dofs(V, slave_marker)
+        owned = dofs_marked < self.V.dofmap.index_map.size_local * self.V.dofmap.index_map_bs
+        slaves, components, x_slaves = dofs_marked[owned], components[owned], x_slaves[owned]
+
+        if callable(coefficient):
+            coeffs = numpy.asarray(coefficient(x_slaves.T.copy()), dtype=self._dtype).reshape(-1)
+        else:
+            coeffs = numpy.full(len(slaves), coefficient, dtype=self._dtype)
+        dofs, owner = dofs_at_point(V, point, distance_tol)
+        self.extend_masters(
+            slaves.astype(numpy.int32),
+            dofs[components].astype(numpy.int64),
+            coeffs,
+            numpy.full(len(slaves), owner, dtype=numpy.int32),
+        )
 
     def add_integral_constraint(
         self,
@@ -240,7 +356,8 @@ class MultiPointConstraint:
     ):
         """
         Add new constraint given by an `dolfinc_mpc.cpp.mpc.mpc_data`-object. See
-        :meth:`add_constraint` for `master_space`.
+        :meth:`add_constraint` for `master_space`. The `master_blocks` of `mpc_data`, if any,
+        are the `master_blocks` of :meth:`add_constraint`, and exclusive with `master_space`.
         """
         self._raise_if_finalized()
         self.add_constraint(
@@ -251,6 +368,7 @@ class MultiPointConstraint:
             mpc_data.owners,
             mpc_data.offsets,
             master_space=master_space,
+            master_blocks=mpc_data.master_blocks,
         )
 
     def finalize(self, filter: Optional[numpy.floating] = None) -> None:
@@ -359,7 +477,8 @@ class MultiPointConstraint:
         :math:`u(x_i) = scale * u(relation(x_i))` for all of :math:`x_i` on marked entities.
 
         Args:
-            V: The function space to assign the condition to. Should either be the space of the MPC or a sub space.
+            V: The function space to assign the condition to. Should either be the space of the MPC or an uncollapsed
+                subspace of it.
                meshtag: MeshTag for entity to apply the periodic condition on
             tag: Tag indicating which entities should be slaves
             relation: Lambda-function describing the geometrical relation
@@ -382,7 +501,7 @@ class MultiPointConstraint:
         distance_tol, coefficient_tol = self._tolerances(distance_tol, coefficient_tol, tol=tol)
         is_input_space = V is self.V
         if not (is_input_space or self.V.contains(V)):
-            raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+            raise RuntimeError("The input space has to be an uncollapsed subspace (or the full space) of the MPC")
         mpc_data = _cpp_function("create_periodic_constraint_topological", self._dtype)(
             V._cpp_object,
             meshtag._cpp_object,
@@ -416,7 +535,8 @@ class MultiPointConstraint:
         :math:`u(x_i) = scale * u(relation(x_i))` for all :math:`x_i`
 
         Args:
-            V: The function space to assign the condition to. Should either be the space of the MPC or a sub space.
+            V: The function space to assign the condition to. Should either be the space of the MPC or an uncollapsed
+                subspace of it.
             indicator: Lambda-function to locate degrees of freedom that should be slaves
             relation: Lambda-function describing the geometrical relation to master dofs
             bcs: Dirichlet boundary conditions for the problem
@@ -439,7 +559,7 @@ class MultiPointConstraint:
         bcs = [] if bcs is None else [bc._cpp_object for bc in bcs]
         is_input_space = V is self.V
         if not (is_input_space or self.V.contains(V)):
-            raise RuntimeError("The input space has to be a sub space (or the full space) of the MPC")
+            raise RuntimeError("The input space has to be an uncollapsed subspace (or the full space) of the MPC")
         mpc_data = _cpp_function("create_periodic_constraint_geometrical", self._dtype)(
             V._cpp_object,
             indicator,
@@ -479,9 +599,9 @@ class MultiPointConstraint:
         discontinuous `master_space` the side is arbitrary.
 
         Args:
-            V: The space of the constraint, or a subspace of it
+            V: The space of the constraint, or an uncollapsed subspace of it
             master_space: The space of another constraint finalized together with this one by
-                :func:`finalize_multipointconstraints`, or a subspace of it. Its mesh and the mesh
+                :func:`finalize_multipointconstraints`, or an uncollapsed subspace of it. Its mesh and the mesh
                 of `V` are the two meshes of `entity_map`, either way round.
             entity_map: Relates the cells of the submesh to entities of the parent, of
                 codimension 0 or 1
@@ -506,7 +626,7 @@ class MultiPointConstraint:
         """
         self._raise_if_finalized()
         if not (V is self.V or self.V.contains(V)):
-            raise ValueError("V must be the space of the constraint or a subspace of it")
+            raise ValueError("V must be the space of the constraint or an uncollapsed subspace of it")
         if isinstance(scale, numpy.generic):  # nanobind conversion of numpy dtypes to general Python types
             scale = scale.item()  # type: ignore
         if not isinstance(tol, _Unset):
@@ -753,7 +873,7 @@ class MultiPointConstraint:
             return [numpy.concatenate([r[i] for r in self._rbe3 if r[0] is V]) for V in spaces]
 
         data = (self.V, spaces, gather(1), gather(2), gather(3))
-        mpc_data, space = create_rbe3(*data, dtype=self._dtype)
+        mpc_data = create_rbe3(*data, dtype=self._dtype)
         self.add_constraint(
             self.V,
             mpc_data.slaves,
@@ -761,7 +881,7 @@ class MultiPointConstraint:
             mpc_data.coeffs,
             mpc_data.owners,
             mpc_data.offsets,
-            master_blocks=numpy.asarray(blocks, dtype=numpy.int32)[space],
+            master_blocks=numpy.asarray(blocks, dtype=numpy.int32)[mpc_data.master_blocks],
         )
         self._rbe3_data = (*data, blocks)
 
@@ -801,7 +921,7 @@ class MultiPointConstraint:
         Create a slip constraint :math:`u \\cdot v=0` over the entities defined in `facet_marker` with the given index.
 
         Args:
-            space: Function space (possible sub space) for the current constraint
+            space: Function space (possibly an uncollapsed subspace) for the current constraint
             facet_marker: Tuple containomg the mesh tag and marker used to locate degrees of freedom
             v: Function containing the directional vector to dot your slip condition (most commonly a normal vector)
             bcs: List of Dirichlet BCs (slip conditions will be ignored on these dofs)
@@ -855,7 +975,7 @@ class MultiPointConstraint:
         elif self.V.contains(space):
             sub_space = True
         else:
-            raise ValueError("Input space has to be a sub space of the MPC space")
+            raise ValueError("Input space has to be an uncollapsed subspace of the MPC space")
         mpc_data = _cpp_function("create_slip_condition", self._dtype)(
             space._cpp_object,
             facet_marker[0]._cpp_object,
@@ -1263,6 +1383,90 @@ class MultiPointConstraint:
             raise RuntimeError("MultiPointConstraint has not been finalized")
 
 
+def _marked_dofs(
+    V: _fem.FunctionSpace, marker: Callable[[numpy.ndarray], numpy.ndarray]
+) -> tuple[npt.NDArray[numpy.int32], npt.NDArray[numpy.int32], npt.NDArray[numpy.floating], int]:
+    """The dofs of `V` at the coordinates marked by `marker`, owned and ghosts.
+
+    Returns:
+        Their local, unrolled index in the space `V` is an uncollapsed subspace of (or in `V`),
+        their component in `V`, their coordinates `(n, 3)`, and the number of components of `V`.
+        The component is that of `V`, from its collapsed numbering: the block size of the parent
+        need not be that of `V` (a component of a blocked space, or a block of a mixed space).
+    """
+    if len(V.component()) > 0:
+        V_c = V.collapse()[0]
+        bs = V_c.dofmap.index_map_bs
+        parent_dofs, sub_dofs = _fem.locate_dofs_geometrical((V, V_c), marker)
+        x = V_c.tabulate_dof_coordinates()[sub_dofs // bs]
+        return parent_dofs, sub_dofs % bs, x, bs
+    bs = V.dofmap.index_map_bs
+    blocks = _fem.locate_dofs_geometrical(V, marker)
+    x = numpy.repeat(V.tabulate_dof_coordinates()[blocks], bs, axis=0)
+    dofs = (blocks[:, None] * bs + numpy.arange(bs, dtype=numpy.int32)).ravel()
+    return dofs, numpy.tile(numpy.arange(bs, dtype=numpy.int32), len(blocks)), x, bs
+
+
+def dofs_at_point(
+    V: _fem.FunctionSpace, point: npt.ArrayLike, distance_tol: float | None = None
+) -> tuple[npt.NDArray[numpy.int64], int]:
+    """The global dofs of the block of `V` at a point, and the process owning them.
+
+    The dofs are in the global, unrolled numbering of the space `V` is an uncollapsed subspace of
+    (or of `V`), as masters are given to :meth:`MultiPointConstraint.add_constraint` and
+    :meth:`MultiPointConstraint.extend_masters`: one per component of `V`. Works for a space on a
+    point mesh too.
+
+    Args:
+        V: The function space, or an uncollapsed subspace of it
+        point: The point, of `gdim` or 3 coordinates
+        distance_tol: The largest distance from the point to the dof. Defaults to `500` machine
+            epsilon of the coordinate type of the mesh.
+
+    Returns:
+        The dofs, one per component, and the owning process. The same on every process.
+
+    Raises:
+        ValueError: On every process, unless exactly one block of dofs of `V` is at the point:
+            none, or several, as in a discontinuous space or on a point mesh with coinciding
+            points.
+
+    Note:
+        Collective.
+    """
+    mesh = V.mesh
+    comm = mesh.comm
+    gdim = mesh.geometry.dim
+    if distance_tol is None:
+        distance_tol = _tolerance(None, mesh.geometry.x.dtype)
+    p = numpy.zeros(3, dtype=numpy.float64)
+    given = numpy.asarray(point, dtype=numpy.float64).reshape(-1)
+    p[: len(given)] = given
+
+    def at_point(x):
+        return numpy.linalg.norm(x[:gdim].T - p[:gdim], axis=1) <= distance_tol
+
+    imap = V.dofmap.index_map
+    parent_bs = V.dofmap.index_map_bs
+    parent_dofs, components, _, bs = _marked_dofs(V, at_point)
+    owned = parent_dofs < imap.size_local * parent_bs
+
+    # The point must hold exactly one block of V, counted on the process owning it, which holds all
+    # its components. A discontinuous space, or a point mesh with coinciding points, may have several.
+    num_blocks = numpy.array([owned.sum() // bs], dtype=numpy.int64)
+    comm.Allreduce(_MPI.IN_PLACE, num_blocks, op=_MPI.SUM)
+    if num_blocks[0] != 1:
+        raise ValueError(f"{num_blocks[0]} blocks of degrees of freedom of the space at {given}, not one")
+
+    # The dofs and the owner, in one reduction
+    found = numpy.full(bs + 1, -1, dtype=numpy.int64)
+    found[components[owned]] = imap.local_range[0] * parent_bs + parent_dofs[owned]
+    if owned.any():
+        found[bs] = comm.rank
+    comm.Allreduce(_MPI.IN_PLACE, found, op=_MPI.MAX)
+    return found[:bs], int(found[bs])
+
+
 def finalize_multipointconstraints(
     mpcs: Sequence[MultiPointConstraint], filter: Optional[numpy.floating] = None
 ) -> None:
@@ -1315,39 +1519,40 @@ def finalize_multipointconstraints(
             )
             rhs_coeffs.append(mpc._rhs_coeffs.x.array[:num_dofs_local].astype(dtype))
 
-    # The block of each master: -2 marks the constraint's own block, -1 the block of the space
-    # recorded with it, anything else a block given directly. Every process records the same chunks
-    # with the same spaces, so a space that is not one of the blocks raises everywhere.
+    def block_of(space: _fem.FunctionSpace) -> int:
+        matches = [j for j, other in enumerate(mpcs) if other.V is space]
+        if len(matches) == 0:
+            matches = [j for j, other in enumerate(mpcs) if other.V.contains(space)]
+        if len(matches) != 1:
+            raise ValueError(
+                "The master space of a constraint must be the function space, or an uncollapsed subspace of "
+                "the function space, of exactly one of the constraints finalized together with it"
+            )
+        return matches[0]
+
+    # The block of each master, from its code (see MultiPointConstraint.__init__). Every process
+    # records the same spaces in the same order, so a space that is not one of the blocks raises
+    # everywhere.
     master_blocks = []
     for k, mpc in enumerate(mpcs):
-        if all(space is None and (blocks == -2).all() for blocks, space in mpc._master_spaces):
-            master_blocks.append(numpy.zeros(0, dtype=numpy.int32))
-            continue
-        resolved = []
-        for blocks, space in mpc._master_spaces:
-            blocks = blocks.copy()
-            blocks[blocks == -2] = k
-            if space is not None:
-                matches = [j for j, other in enumerate(mpcs) if other.V is space]
-                if len(matches) == 0:
-                    matches = [j for j, other in enumerate(mpcs) if other.V.contains(space)]
-                if len(matches) != 1:
-                    raise ValueError(
-                        "The master space of a constraint must be the function space, or a subspace of "
-                        "the function space, of exactly one of the constraints finalized together with it"
-                    )
-                blocks[blocks == -1] = matches[0]
-            resolved.append(blocks)
-        master_blocks.append(numpy.concatenate(resolved) if resolved else numpy.zeros(0, dtype=numpy.int32))
+        codes = numpy.asarray(mpc._data.master_blocks)
+        blocks = codes.copy()
+        blocks[codes == -1] = k
+        for s, space in enumerate(mpc._master_spaces):
+            blocks[codes == -2 - s] = block_of(space)
+        if len(mpc._master_spaces) == 0 and (codes == -1).all():
+            blocks = numpy.zeros(0, dtype=numpy.int32)
+        master_blocks.append(blocks)
 
     # Raises ValueError (as the C++ throws std::invalid_argument), identically on every process
     cpp_objects = dolfinx_mpc.cpp.mpc.create_multipointconstraints(
         [mpc.V._cpp_object for mpc in mpcs],
-        [mpc._slaves for mpc in mpcs],
-        [mpc._masters for mpc in mpcs],
-        [mpc._coeffs.astype(dtype) for mpc in mpcs],
-        [mpc._owners for mpc in mpcs],
-        [mpc._offsets for mpc in mpcs],
+        # Copies: the arrays of the rows are read-only views of their C++ object
+        [numpy.array(mpc._data.slaves) for mpc in mpcs],
+        [numpy.array(mpc._data.masters) for mpc in mpcs],
+        [mpc._data.coeffs.astype(dtype) for mpc in mpcs],
+        [numpy.array(mpc._data.owners) for mpc in mpcs],
+        [numpy.array(mpc._data.offsets) for mpc in mpcs],
         rhs_coeffs,
         [[bc._cpp_object for bc in mpc._bcs] for mpc in mpcs],
         master_blocks,
@@ -1365,4 +1570,4 @@ def finalize_multipointconstraints(
         mpc.V = _fem.FunctionSpace(mpc.V.mesh, mpc.V.ufl_element(), cpp_object.function_space)
         mpc.finalized = True
         # Delete variables that are no longer required
-        del (mpc._slaves, mpc._masters, mpc._coeffs, mpc._owners, mpc._offsets, mpc._master_spaces)
+        del (mpc._data, mpc._master_spaces)

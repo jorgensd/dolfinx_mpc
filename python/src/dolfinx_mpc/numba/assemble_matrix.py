@@ -13,6 +13,7 @@ import cffi
 import dolfinx
 import dolfinx.cpp as _cpp
 import dolfinx.fem as _fem
+import dolfinx.la as _la
 import numba
 import numpy
 import numpy.typing as npt
@@ -56,6 +57,12 @@ def assemble_matrix(
             "The numba assemblers do not support an inhomogeneous multi point constraint "
             "(x = K x_red + g). Use the C++ assemblers in `dolfinx_mpc` instead."
         )
+    unsupported = set(form._cpp_object.integral_types) - {_fem.IntegralType.cell, _fem.IntegralType.exterior_facet}
+    if unsupported:
+        raise NotImplementedError(
+            "The numba assemblers support cell and exterior facet integrals, not "
+            f"{', '.join(sorted(t.name for t in unsupported))}. Use the C++ assemblers in `dolfinx_mpc` instead."
+        )
     timer_matrix = Timer("~MPC: Assemble matrix (numba)")
 
     V = constraint.function_space
@@ -95,8 +102,7 @@ def assemble_matrix(
         A = _cpp.la.petsc.create_matrix(V.mesh.comm, pattern, None)
 
     # Assemble the matrix with all entries
-    markers = _fem.petsc._matrix_bc_markers(form, bcs)
-    _cpp.fem.petsc.assemble_matrix(A, form._cpp_object, form_consts, form_coeffs, *markers, False)
+    _fem.petsc.assemble_matrix(A, a=form, bcs=bcs, constants=form_consts, coeffs=form_coeffs, diag=diagval)
 
     # General assembly data
     block_size = dofmap.dof_layout.block_size
@@ -133,7 +139,7 @@ def assemble_matrix(
         nptype = "complex128"
     else:
         raise RuntimeError(f"Unsupported scalar type {_PETSc.ScalarType}.")  # type: ignore
-
+    _bc_data = _fem.petsc._matrix_bc_data(form, bcs)
     ufcx_form = form.ufcx_form
     if num_cell_integrals > 0:
         # NOTE: This depends on enum ordering in ufcx.h
@@ -155,12 +161,11 @@ def assemble_matrix(
                 block_size,
                 num_dofs_per_element,
                 mpc_data,
-                markers[0],
+                _bc_data.row_markers[0],
             )
 
     # Assemble over exterior facets
     num_exterior_integrals = form.num_integrals(_fem.IntegralType.exterior_facet, 0)
-
     if num_exterior_integrals > 0:
         V.mesh.topology.create_entities(tdim - 1)
         V.mesh.topology.create_connectivity(tdim - 1, tdim)
@@ -191,7 +196,7 @@ def assemble_matrix(
                 num_dofs_per_element,
                 facet_info,
                 mpc_data,
-                markers[0],
+                _bc_data.row_markers[0],
                 num_facets_per_cell,
             )
 
@@ -211,7 +216,7 @@ def assemble_matrix(
                 dofs, owned = bc.dof_indices()
                 rows_.append(dofs[:owned])
         rows = numpy.concatenate(rows_) if rows_ else numpy.empty(0, dtype=numpy.int32)
-        _cpp.fem.petsc.set_diagonal(A, rows, diagval, _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
+        _la.petsc.set_diagonal(A, rows, diagval, _PETSc.InsertMode.INSERT_VALUES)  # type: ignore
 
     A.assemble()
     timer_matrix.stop()

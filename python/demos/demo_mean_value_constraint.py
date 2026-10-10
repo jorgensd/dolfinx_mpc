@@ -233,7 +233,7 @@ if comm.rank == 0:
     print(f"  L2(u_h - u_ex)        {error:.3e}")
     print(f"  cond(K^TAK)           {cond_mpc:.3e}")
 
-# - tags=["hide-input"]
+# -
 
 tol = 100 * np.finfo(default_scalar_type()).eps
 assert abs(mean_value - gamma) < tol

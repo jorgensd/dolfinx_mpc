@@ -47,6 +47,12 @@ def assemble_vector(
             "(x = K x_red + g). Use the C++ assemblers in `dolfinx_mpc` instead."
         )
 
+    unsupported = set(form._cpp_object.integral_types) - {_fem.IntegralType.cell, _fem.IntegralType.exterior_facet}
+    if unsupported:
+        raise NotImplementedError(
+            "The numba assemblers support cell and exterior facet integrals, not "
+            f"{', '.join(sorted(t.name for t in unsupported))}. Use the C++ assemblers in `dolfinx_mpc` instead."
+        )
     _log.log(_log.LogLevel.INFO, "Assemble MPC vector")
     timer_vector = Timer("~MPC: Assemble vector (numba)")
 

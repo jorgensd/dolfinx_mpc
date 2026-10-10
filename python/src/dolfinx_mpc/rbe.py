@@ -69,7 +69,7 @@ def create_rbe3(
     spiders: list[npt.NDArray[np.int64]],
     weights: list[npt.NDArray[np.floating]],
     dtype: npt.DTypeLike | None = None,
-) -> tuple[_mpc_data_classes, npt.NDArray[np.int32]]:
+) -> _mpc_data_classes:
     r"""The constraint tying the dofs of spiders to the motion of their feet (RBE3).
 
     Each spider moves with the rigid motion that best fits its feet,
@@ -86,8 +86,8 @@ def create_rbe3(
             DOLFINx, real or complex, at the precision of the meshes.
 
     Returns:
-        The slaves, masters, coefficients, owners and offsets, and the position in `V` of the
-        space of each master.
+        The slaves, masters, coefficients, owners and offsets, with the position in `V` of the
+        space of each master as `master_blocks`.
 
     Note:
         Collective.

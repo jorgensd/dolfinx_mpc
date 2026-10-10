@@ -28,7 +28,7 @@ from .assemble_vector import (
     create_vector_nest,
 )
 from .integralcondition import create_integral_constraint
-from .multipointconstraint import MultiPointConstraint, finalize_multipointconstraints
+from .multipointconstraint import MultiPointConstraint, dofs_at_point, finalize_multipointconstraints
 from .problem import LinearProblem, NonlinearProblem, assemble_jacobian_mpc, assemble_residual_mpc
 from . import spider
 from .spider import create_spider_mesh, create_spider_pair, spider_values
@@ -47,6 +47,7 @@ __all__ = [
     "create_vector_nest",
     "MultiPointConstraint",
     "finalize_multipointconstraints",
+    "dofs_at_point",
     "create_integral_constraint",
     "LinearProblem",
     "create_sparsity_pattern",

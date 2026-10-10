@@ -1,9 +1,11 @@
-# This demo program solves Poisson's equation
+# This demo program solves the vector-valued Poisson equation
 #
-#     - div grad u(x, y) = f(x, y)
+#     - div grad u(x, y, z) = f(x, y, z),   u = (u_1, u_2, u_3)
 #
-# on the unit square with homogeneous Dirichlet boundary conditions
-# at y = 0, 1 and periodic boundary conditions at x = 0, 1.
+# on the unit cube with homogeneous Dirichlet boundary conditions on the faces y = 0, 1 and
+# z = 0, 1. The first component u_1 is periodic in x, tied from the face x = 1 to the face x = 0
+# with a topological periodic constraint; the other components have natural boundary conditions
+# at x = 0, 1.
 #
 # Original implementation in DOLFIN by Kristian B. Oelgaard and Anders Logg
 # This implementation can be found at:
@@ -25,7 +27,7 @@ from petsc4py import PETSc
 import dolfinx.fem as fem
 import numpy as np
 import scipy.sparse.linalg
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.common import Timer, list_timings
 from dolfinx.fem import Function
 from dolfinx.io import VTXWriter
@@ -56,14 +58,14 @@ def demo_periodic3D(celltype: CellType):
     if celltype == CellType.tetrahedron:
         # Tet setup
         N = 10
-        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, dtype=default_real_type)
         V = fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
     else:
         # Hex setup
         N = 10
-        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron)
+        mesh = create_unit_cube(MPI.COMM_WORLD, N, N, N, CellType.hexahedron, dtype=default_real_type)
         V = fem.functionspace(mesh, ("Lagrange", 2, (mesh.geometry.dim,)))
-    tol = float(5e2 * np.finfo(default_scalar_type).resolution)
+    tol = float(5e2 * np.finfo(default_real_type).resolution)
 
     def dirichletboundary(x: NDArray[Union[np.float32, np.float64]]) -> NDArray[np.bool_]:
         return np.logical_or(
@@ -78,14 +80,11 @@ def demo_periodic3D(celltype: CellType):
     bcs = [bc]
 
     def PeriodicBoundary(x):
-        """
-        Full surface minus dofs constrained by BCs
-        """
+        """The slave facets, at x = 1"""
         return np.isclose(x[0], 1, atol=tol)
 
     facets = locate_entities_boundary(mesh, mesh.topology.dim - 1, PeriodicBoundary)
-    arg_sort = np.argsort(facets)
-    mt = meshtags(mesh, mesh.topology.dim - 1, facets[arg_sort], np.full(len(facets), 2, dtype=np.int32))
+    mt = meshtags(mesh, mesh.topology.dim - 1, facets, np.full(len(facets), 2, dtype=np.int32))
 
     def periodic_relation(x):
         out_x = np.zeros(x.shape)
@@ -132,7 +131,6 @@ def demo_periodic3D(celltype: CellType):
             "pc_hypre_type": "boomeramg",
             "pc_hypre_boomeramg_max_iter": 1,
             "pc_hypre_boomeramg_cycle_type": "v",
-            "pc_hypre_boomeramg_print_statistics": 1,
             "ksp_error_if_not_converged": True,
         }
 
@@ -141,7 +139,8 @@ def demo_periodic3D(celltype: CellType):
     assert isinstance(u_h, Function)
 
     # --------------------VERIFICATION-------------------------
-    print("----Verification----")
+    if mesh.comm.rank == 0:
+        print("----Verification----")
     u_ = fem.Function(V)
     u_.x.array[:] = 0
     org_problem = fem.petsc.LinearProblem(
@@ -155,7 +154,8 @@ def demo_periodic3D(celltype: CellType):
     with Timer("~Periodic: Unconstrained solve"):
         org_problem.solve()
         it = org_problem.solver.getIterationNumber()
-    print(f"Unconstrained solver iterations: {it}")
+    if mesh.comm.rank == 0:
+        print(f"Unconstrained solver iterations: {it}")
 
     # Write solutions to file
     ext = "tet" if celltype == CellType.tetrahedron else "hex"

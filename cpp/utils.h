@@ -35,9 +35,11 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -124,14 +126,31 @@ create_block_to_facet_map(dolfinx::mesh::Topology& topology,
 namespace dolfinx_mpc
 {
 
+/// @brief The rows of a constraint on one process, before finalization.
+///
+/// Row `i` is the equation @f$u_s = \sum_j c_j u_{m_j}@f$ of the slave
+/// @f$s@f$ = `slaves[i]`, with @f$m_j@f$ = `masters[j]` and @f$c_j@f$ =
+/// `coeffs[j]` for `offsets[i] <= j < offsets[i + 1]`.
 template <typename T>
 struct mpc_data
 {
+  /// The slave of each row: a dof of the slaves' space, local to the process
+  /// (owned or ghost) and unrolled
   std::vector<std::int32_t> slaves;
+  /// The masters of all rows, row after row: global, unrolled dofs of the
+  /// space of each master
   std::vector<std::int64_t> masters;
+  /// The coefficient of each master, aligned with `masters`
   std::vector<T> coeffs;
+  /// The masters of row `i` are `masters[offsets[i]:offsets[i + 1]]`, so
+  /// `offsets` has one entry more than `slaves`
   std::vector<std::int32_t> offsets;
+  /// The process owning each master, aligned with `masters`
   std::vector<std::int32_t> owners;
+  /// The block of each master, aligned with `masters`, in the caller's
+  /// numbering. No value if every master is in the space of the slaves. Has a
+  /// value on every process or on none.
+  std::optional<std::vector<std::int32_t>> master_blocks;
 };
 
 template <typename T, std::floating_point U>
@@ -318,13 +337,14 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
     mesh->topology_mutable()->create_connectivity(tdim - 1, tdim);
   }
 
-  auto extract_cells = [](std::span<const std::int32_t> facets)
+  // The cells of (cell, local entity) pairs
+  auto extract_cells = [](std::span<const std::int32_t> entities)
   {
-    assert(facets.size() % 2 == 0);
+    assert(entities.size() % 2 == 0);
     std::vector<std::int32_t> cells;
-    cells.reserve(facets.size() / 2);
-    for (std::size_t i = 0; i < facets.size(); i += 2)
-      cells.push_back(facets[i]);
+    cells.reserve(entities.size() / 2);
+    for (std::size_t i = 0; i < entities.size(); i += 2)
+      cells.push_back(entities[i]);
     return cells;
   };
 
@@ -356,6 +376,8 @@ void build_standard_pattern(dolfinx::la::SparsityPattern& pattern,
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
+    case dolfinx::fem::IntegralType::ridge:
+    case dolfinx::fem::IntegralType::vertex:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
         std::vector<std::int32_t> cells0
@@ -554,15 +576,21 @@ void populate_mpc_pattern(
       }
       break;
     case dolfinx::fem::IntegralType::exterior_facet:
+    case dolfinx::fem::IntegralType::ridge:
+    case dolfinx::fem::IntegralType::vertex:
       for (int i = 0; i < a.num_integrals(type, 0); ++i)
       {
-        // Entities are (cell, local_facet) pairs
-        std::span<const std::int32_t> facets_row = a.domain_arg(type, 0, i, 0);
-        std::span<const std::int32_t> facets_col = a.domain_arg(type, 1, i, 0);
-        assert(facets_row.size() == facets_col.size());
-        assert(facets_row.size() % 2 == 0);
-        for (std::size_t e = 0; e < facets_row.size(); e += 2)
-          insert_entity(facets_row.subspan(e, 1), facets_col.subspan(e, 1));
+        // Entities are (cell, local entity) pairs
+        std::span<const std::int32_t> entities_row
+            = a.domain_arg(type, 0, i, 0);
+        std::span<const std::int32_t> entities_col
+            = a.domain_arg(type, 1, i, 0);
+        assert(entities_row.size() == entities_col.size());
+        assert(entities_row.size() % 2 == 0);
+        for (std::size_t e = 0; e < entities_row.size(); e += 2)
+        {
+          insert_entity(entities_row.subspan(e, 1), entities_col.subspan(e, 1));
+        }
       }
       break;
     case dolfinx::fem::IntegralType::interior_facet:
@@ -1011,13 +1039,18 @@ typename U::value_type dot(const U& u, const V& v)
 /// @param[in] num_masters_per_slave The number of masters owned by each slave
 /// @param[in] imap The index map
 /// @param[in] bs The index map block size
-/// @returns Data structure holding the received slave->master data
+/// @param[in] master_blocks The block of each master, sent with the rows if it
+/// has a value. Has a value on every process or on none.
+/// @returns Data structure holding the received slave->master data, with
+/// `master_blocks` if given. Unlike elsewhere, its `offsets` holds the number
+/// of masters of each slave, not their cumulative sum.
 template <typename T>
 dolfinx_mpc::mpc_data<T> distribute_ghost_data(
     std::span<const std::int32_t> slaves, std::span<const std::int64_t> masters,
     std::span<const T> coeffs, std::span<const std::int32_t> owners,
     std::span<const std::int32_t> num_masters_per_slave,
-    std::shared_ptr<const dolfinx::common::IndexMap> imap, const int bs)
+    std::shared_ptr<const dolfinx::common::IndexMap> imap, const int bs,
+    std::optional<std::span<const std::int32_t>> master_blocks = std::nullopt)
 {
   std::shared_ptr<const dolfinx::common::IndexMap> slave_to_ghost;
   std::vector<int> parent_to_sub;
@@ -1154,6 +1187,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   std::vector<std::int64_t> masters_out(disp_out_masters.back());
   std::vector<T> coeffs_out(disp_out_masters.back());
   std::vector<std::int32_t> owners_out(disp_out_masters.back());
+  std::vector<std::int32_t> blocks_out(master_blocks ? disp_out_masters.back()
+                                                     : 0);
   std::vector<std::int32_t> slaves_out_loc(disp_out_slaves.back());
   std::vector<std::int64_t> slaves_out(disp_out_slaves.back());
   std::vector<std::int32_t> masters_per_slave(disp_out_slaves.back());
@@ -1187,6 +1222,13 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
       std::ranges::copy(
           coeffs.begin() + master_start, coeffs.begin() + master_end,
           coeffs_out.begin() + disp_out_masters[index] + insert_masters[index]);
+      if (master_blocks)
+      {
+        std::ranges::copy(master_blocks->begin() + master_start,
+                          master_blocks->begin() + master_end,
+                          blocks_out.begin() + disp_out_masters[index]
+                              + insert_masters[index]);
+      }
       insert_masters[index] += num_masters_per_slave[i];
     }
   }
@@ -1218,8 +1260,8 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                    disp_in_masters.begin() + 1);
 
   // Send data to ghost processes
-  std::vector<MPI_Request> ghost_requests(5);
-  std::vector<MPI_Status> ghost_status(5);
+  std::vector<MPI_Request> ghost_requests(6, MPI_REQUEST_NULL);
+  std::vector<MPI_Status> ghost_status(6);
 
   // Receive slaves from owner
   std::vector<std::int64_t> recv_slaves(disp_in_slaves.back());
@@ -1275,6 +1317,16 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
                           recv_coeffs.data(), in_num_masters.data(),
                           disp_in_masters.data(), dolfinx::MPI::mpi_t<T>,
                           local_to_ghost, &ghost_requests[4]);
+  std::vector<std::int32_t> recv_blocks(master_blocks ? disp_in_masters.back()
+                                                      : 0);
+  if (master_blocks)
+  {
+    MPI_Ineighbor_alltoallv(
+        blocks_out.data(), out_num_masters.data(), disp_out_masters.data(),
+        dolfinx::MPI::mpi_t<std::int32_t>, recv_blocks.data(),
+        in_num_masters.data(), disp_in_masters.data(),
+        dolfinx::MPI::mpi_t<std::int32_t>, local_to_ghost, &ghost_requests[5]);
+  }
 
   int err = MPI_Comm_free(&local_to_ghost);
   dolfinx::MPI::check_error(imap->comm(), err);
@@ -1289,6 +1341,9 @@ dolfinx_mpc::mpc_data<T> distribute_ghost_data(
   ghost_data.owners = recv_owners;
   MPI_Wait(&ghost_requests[4], &ghost_status[4]);
   ghost_data.coeffs = recv_coeffs;
+  MPI_Wait(&ghost_requests[5], &ghost_status[5]);
+  if (master_blocks)
+    ghost_data.master_blocks = std::move(recv_blocks);
   return ghost_data;
 }
 
@@ -1344,18 +1399,23 @@ std::int32_t append_significant_masters(
 /// @param[in] num_masters The number of masters of each slave
 /// @param[in] imap The index map of the slaves' space
 /// @param[in] bs The block size of `imap`
+/// @param[in] master_blocks The block of each master (see `mpc_data`). Has a
+/// value on every process or on none.
 /// @return The constraint, owned slaves first
 /// @note Collective.
 template <typename T>
-mpc_data<T>
-add_ghost_rows(std::vector<std::int32_t>&& slaves,
-               std::vector<std::int64_t>&& masters, std::vector<T>&& coeffs,
-               std::vector<std::int32_t>&& owners,
-               std::vector<std::int32_t>&& num_masters,
-               std::shared_ptr<const dolfinx::common::IndexMap> imap, int bs)
+mpc_data<T> add_ghost_rows(
+    std::vector<std::int32_t>&& slaves, std::vector<std::int64_t>&& masters,
+    std::vector<T>&& coeffs, std::vector<std::int32_t>&& owners,
+    std::vector<std::int32_t>&& num_masters,
+    std::shared_ptr<const dolfinx::common::IndexMap> imap, int bs,
+    std::optional<std::vector<std::int32_t>>&& master_blocks = std::nullopt)
 {
-  mpc_data<T> ghosts = distribute_ghost_data<T>(slaves, masters, coeffs, owners,
-                                                num_masters, imap, bs);
+  mpc_data<T> ghosts = distribute_ghost_data<T>(
+      slaves, masters, coeffs, owners, num_masters, imap, bs,
+      master_blocks
+          ? std::optional<std::span<const std::int32_t>>(*master_blocks)
+          : std::nullopt);
   slaves.insert(slaves.end(), ghosts.slaves.begin(), ghosts.slaves.end());
   masters.insert(masters.end(), ghosts.masters.begin(), ghosts.masters.end());
   coeffs.insert(coeffs.end(), ghosts.coeffs.begin(), ghosts.coeffs.end());
@@ -1371,7 +1431,186 @@ add_ghost_rows(std::vector<std::int32_t>&& slaves,
   out.masters = std::move(masters);
   out.coeffs = std::move(coeffs);
   out.owners = std::move(owners);
+  if (master_blocks)
+  {
+    master_blocks->insert(master_blocks->end(), ghosts.master_blocks->begin(),
+                          ghosts.master_blocks->end());
+    out.master_blocks = std::move(master_blocks);
+  }
   return out;
+}
+
+/// @brief Add a master to the rows of existing slaves.
+///
+/// A row is the equation @f$u_s = \sum_j c_j u_{m_j}@f$ of its slave
+/// @f$u_s@f$. Entry `i` adds a term @f$k\,u_d@f$ to the right-hand side of
+/// the row of the owned slave @f$s@f$ = `slaves[i]`, giving
+/// @f$u_s = \sum_j c_j u_{m_j} + k\,u_d@f$, with @f$u_d@f$ = `masters[i]`, a
+/// dof of block `block`, and @f$k@f$ = `coeffs[i]`. If @f$u_d@f$ is already
+/// a master of the row, in the same block, @f$k@f$ is added to its
+/// coefficient; otherwise @f$u_d@f$ is appended as a new master. Each entry is
+/// also sent to the processes that ghost its slave, so the ghost copies of a
+/// row are extended alike. A ghost copy that is not in `existing_data` on such
+/// a process is left out there, as the row itself is.
+///
+/// A call adds one term per slave. Further terms of the same slave, for
+/// instance masters in another block, are added by further calls.
+///
+/// @param[in] existing_data The rows of owned and ghost slaves, as built by a
+/// generator
+/// @param[in] slave_block The block of the masters of `existing_data` if
+/// `existing_data.master_blocks` has no value
+/// @param[in] slaves The owned slave of each entry (local, unrolled), each at
+/// most once
+/// @param[in] masters The master of each entry (global, unrolled, in the
+/// numbering of `block`)
+/// @param[in] coeffs The coefficient of each entry
+/// @param[in] owners The process owning each master
+/// @param[in] block The block of the new masters
+/// @param[in] imap The index map of the slaves' space
+/// @param[in] bs The block size of `imap`
+/// @return The extended rows, in the order of `existing_data`. `master_blocks`
+/// has a value if `existing_data.master_blocks` has one or `block !=
+/// slave_block`.
+/// @throws std::invalid_argument on every process if the entries do not
+/// match, a slave is not owned, appears twice, or has no row.
+/// @note Collective.
+template <typename T>
+mpc_data<T>
+extend_mpc_data(const mpc_data<T>& existing_data, std::int32_t slave_block,
+                std::span<const std::int32_t> slaves,
+                std::span<const std::int64_t> masters,
+                std::span<const T> coeffs, std::span<const std::int32_t> owners,
+                std::int32_t block,
+                std::shared_ptr<const dolfinx::common::IndexMap> imap, int bs)
+{
+  const std::size_t num_rows = existing_data.slaves.size();
+  const std::int32_t num_owned = imap->size_local() * bs;
+  const std::int32_t num_dofs = (imap->size_local() + imap->num_ghosts()) * bs;
+
+  // Row of each local dof, -1 if it is not a slave
+  std::vector<std::int32_t> row_of(num_dofs, -1);
+  for (std::size_t r = 0; r < num_rows; ++r)
+    row_of[existing_data.slaves[r]] = static_cast<std::int32_t>(r);
+
+  assert(!existing_data.master_blocks
+         or existing_data.master_blocks->size()
+                == existing_data.masters.size());
+
+  // One reduction for every check, so that every process throws or none
+  std::array<int, 4> failed
+      = {masters.size() != slaves.size() or coeffs.size() != slaves.size()
+             or owners.size() != slaves.size(),
+         std::ranges::any_of(slaves, [num_owned](std::int32_t dof)
+                             { return dof < 0 or dof >= num_owned; }),
+         0, 0};
+  if (!failed[0] and !failed[1])
+  {
+    std::vector<std::int8_t> seen(num_owned, 0);
+    for (std::int32_t dof : slaves)
+    {
+      failed[2] |= seen[dof];
+      seen[dof] = 1;
+      failed[3] |= row_of[dof] < 0;
+    }
+  }
+  MPI_Allreduce(MPI_IN_PLACE, failed.data(), 4, MPI_INT, MPI_MAX, imap->comm());
+  if (failed[0])
+  {
+    throw std::invalid_argument(
+        "The slaves, masters, coefficients and owners of the extension must "
+        "have one entry each");
+  }
+  if (failed[1])
+    throw std::invalid_argument("A slave of the extension is not owned");
+  if (failed[2])
+  {
+    throw std::invalid_argument(
+        "A slave appears twice in the extension: add one term per call");
+  }
+  if (failed[3])
+  {
+    throw std::invalid_argument(
+        "A slave of the extension has no row: add its constraint first");
+  }
+
+  // The same entries for the ghost copies of the slaves, one master each
+  const std::vector<std::int32_t> one_each(slaves.size(), 1);
+  const mpc_data<T> ghosts = distribute_ghost_data<T>(
+      slaves, masters, coeffs, owners, one_each, imap, bs);
+
+  // The entry of each row, -1 if none: owned entries first, then ghosts
+  std::vector<std::int32_t> entry_of(num_rows, -1);
+  for (std::size_t e = 0; e < slaves.size(); ++e)
+    entry_of[row_of[slaves[e]]] = static_cast<std::int32_t>(e);
+  for (std::size_t e = 0; e < ghosts.slaves.size(); ++e)
+  {
+    if (const std::int32_t r = row_of[ghosts.slaves[e]]; r >= 0)
+      entry_of[r] = static_cast<std::int32_t>(slaves.size() + e);
+  }
+  auto entry = [&slaves, &masters, &coeffs, &owners, &ghosts](
+                   std::int32_t e) -> std::tuple<std::int64_t, T, std::int32_t>
+  {
+    const std::size_t n = slaves.size();
+    if (static_cast<std::size_t>(e) < n)
+      return {masters[e], coeffs[e], owners[e]};
+    return {ghosts.masters[e - n], ghosts.coeffs[e - n], ghosts.owners[e - n]};
+  };
+
+  const bool with_blocks = existing_data.master_blocks or block != slave_block;
+  auto block_of = [&existing_data, slave_block](std::size_t j)
+  {
+    return existing_data.master_blocks ? (*existing_data.master_blocks)[j]
+                                       : slave_block;
+  };
+
+  mpc_data<T> new_data;
+  new_data.slaves = existing_data.slaves;
+  new_data.offsets.reserve(num_rows + 1);
+  new_data.offsets.push_back(0);
+  std::vector<std::int32_t> new_blocks;
+  for (std::size_t r = 0; r < num_rows; ++r)
+  {
+    const std::size_t start = new_data.masters.size();
+    for (std::int32_t j = existing_data.offsets[r];
+         j < existing_data.offsets[r + 1]; ++j)
+    {
+      new_data.masters.push_back(existing_data.masters[j]);
+      new_data.coeffs.push_back(existing_data.coeffs[j]);
+      new_data.owners.push_back(existing_data.owners[j]);
+      if (with_blocks)
+        new_blocks.push_back(block_of(j));
+    }
+    if (entry_of[r] >= 0)
+    {
+      const auto [master, coeff, owner] = entry(entry_of[r]);
+      // A master already in the row, in the same block, is summed
+      auto same = std::views::iota(start, new_data.masters.size())
+                  | std::views::filter(
+                      [&new_data, &new_blocks, master, block, slave_block,
+                       with_blocks](std::size_t j)
+                      {
+                        return new_data.masters[j] == master
+                               and (with_blocks ? new_blocks[j] : slave_block)
+                                       == block;
+                      });
+      if (auto it = same.begin(); it != same.end())
+        new_data.coeffs[*it] += coeff;
+      else
+      {
+        new_data.masters.push_back(master);
+        new_data.coeffs.push_back(coeff);
+        new_data.owners.push_back(owner);
+        if (with_blocks)
+          new_blocks.push_back(block);
+      }
+    }
+    new_data.offsets.push_back(
+        static_cast<std::int32_t>(new_data.masters.size()));
+  }
+  if (with_blocks)
+    new_data.master_blocks = std::move(new_blocks);
+  return new_data;
 }
 
 //-----------------------------------------------------------------------------

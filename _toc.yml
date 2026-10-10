@@ -13,6 +13,10 @@ parts:
   - caption: "Periodic conditions"
     chapters:
     - file: "python/demos/demo_linear_wave_problem.py"
+    - file: "python/demos/demo_periodic_homogenization.py"
+    - file: "python/demos/demo_periodic_homogenization_nl.py"
+    - file: "python/demos/demo_periodic_homogenization_3d.py"
+    - file: "python/demos/demo_periodic_layer.py"
     - file: "python/demos/demo_scaling_coefficients.py"
   - caption: "Several spaces and meshes"
     chapters:

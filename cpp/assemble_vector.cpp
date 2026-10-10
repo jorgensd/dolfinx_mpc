@@ -5,6 +5,7 @@
 // SPDX-License-Identifier:    MIT
 
 #include "assemble_vector.h"
+#include "assemble_utils.h"
 #include <algorithm>
 #include <array>
 #include <concepts>
@@ -222,21 +223,6 @@ void _assemble_vector(
     cell_info0 = std::span(mesh0->topology()->get_cell_permutation_info());
   }
 
-  // Facet permutations of the integration domain. Needed whenever the kernel
-  // asks for them, which happens for instance when an argument space lives on
-  // a different mesh than the integration domain.
-  std::span<const std::uint8_t> perms;
-  int num_facets_per_cell = 0;
-  if (L.needs_facet_permutations())
-  {
-    const dolfinx::mesh::CellType cell_type
-        = mesh->topology()->cell_types().front();
-    const std::size_t fdim = mesh->topology()->dim() - 1;
-    num_facets_per_cell = dolfinx::mesh::cell_num_entities(cell_type, fdim);
-    mesh->topology_mutable()->create_entity_permutations(fdim, num_threads);
-    perms = std::span(mesh->topology()->get_entity_permutations(fdim));
-  }
-
   const std::size_t num_dofs_g = x_dofmap.extent(1);
   std::vector<U> coordinate_dofs(3 * num_dofs_g);
   const int num_cell_types = mesh->topology()->cell_types().size();
@@ -280,53 +266,60 @@ void _assemble_vector(
     _assemble_entities_impl<T, U, 1>(b, cells, cells0, *dofmap, mpc,
                                      assemble_local_cell_vector);
   }
-  // Prepare permutations for exterior and interior facet integrals
-
-  // Assemble exterior facet integral kernels
-  for (int i = 0;
-       i < L.num_integrals(dolfinx::fem::IntegralType::exterior_facet, 0); ++i)
+  // Integrals over one entity of a cell: exterior facets, ridges and vertices.
+  // The kernels take the permutation of the entity whenever they ask for one,
+  // for instance when an argument space lives on another mesh than the
+  // integration domain.
+  for (dolfinx::fem::IntegralType type : dolfinx_mpc::entity_integral_types)
   {
-    const auto& fn = L.kernel(dolfinx::fem::IntegralType::exterior_facet, i, 0);
-    const auto& coeffs
-        = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
-    /// Assemble local exterior facet kernels into a vector
-    /// @param[in] be The local element vector
-    /// @param[in] entity The entity, given as a cell index and the local
-    /// index relative to the cell
-    /// @param[in] index The index of entity in active_facets
-    const auto assemble_local_exterior_facet_vector
-        = [&](std::span<T> be, std::span<const std::int32_t> entity,
-              std::int32_t cell0, std::size_t index)
+    const auto [perms, num_entities_per_cell]
+        = dolfinx_mpc::entity_permutations(*mesh, type,
+                                           L.needs_facet_permutations(),
+                                           static_cast<int>(num_threads));
+    for (int i = 0; i < L.num_integrals(type, 0); ++i)
     {
-      // Fetch the coordinates of the cell
-      const std::int32_t cell = entity[0];
-      const int local_facet = entity[1];
-      dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cell,
-                                           std::span(coordinate_dofs));
+      const auto& fn = L.kernel(type, i, 0);
+      const auto& coeffs = coefficients.at({type, i});
+      /// Assemble the kernel of an entity into a vector
+      /// @param[in] be The local element vector
+      /// @param[in] entity The entity, given as a cell index and the local
+      /// index relative to the cell
+      /// @param[in] cell0 The cell of the test function space
+      /// @param[in] index The index of the entity in the active entities
+      const auto assemble_local_entity_vector
+          = [&](std::span<T> be, std::span<const std::int32_t> entity,
+                std::int32_t cell0, std::size_t index)
+      {
+        const std::int32_t cell = entity[0];
+        const int local_entity = entity[1];
+        dolfinx_mpc::gather_cell_coordinates(x_dofmap, x_g, cell,
+                                             std::span(coordinate_dofs));
 
-      // Tabulate tensor. A kernel that asks for the facet permutation would
-      // dereference a null pointer if it were not supplied.
-      const std::uint8_t perm
-          = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
-      std::ranges::fill(be, 0);
-      fn(be.data(), coeffs.first.data() + index * coeffs.second,
-         constants.data(), coordinate_dofs.data(), &local_facet, &perm,
-         nullptr);
+        // A kernel that asks for the permutation would dereference a null
+        // pointer if it were not supplied
+        const std::uint8_t perm
+            = perms.empty()
+                  ? 0
+                  : perms[cell * num_entities_per_cell + local_entity];
+        std::ranges::fill(be, 0);
+        fn(be.data(), coeffs.first.data() + index * coeffs.second,
+           constants.data(), coordinate_dofs.data(), &local_entity, &perm,
+           nullptr);
 
-      // Apply any required transformations
-      if (transform_set)
-        dof_transform(be, cell_info0, cell0, 1);
-    };
+        if (transform_set)
+          dof_transform(be, cell_info0, cell0, 1);
+      };
 
-    // Assemble over all active cells
-    std::span<const std::int32_t> active_facets
-        = L.domain(dolfinx::fem::IntegralType::exterior_facet, i, 0);
-    std::span cells0
-        = L.domain_arg(dolfinx::fem::IntegralType::exterior_facet, 0, i, 0);
-    _assemble_entities_impl<T, U, 2>(b, active_facets, cells0, *dofmap, mpc,
-                                     assemble_local_exterior_facet_vector);
+      std::span<const std::int32_t> entities = L.domain(type, i, 0);
+      std::span<const std::int32_t> cells0 = L.domain_arg(type, 0, i, 0);
+      _assemble_entities_impl<T, U, 2>(b, entities, cells0, *dofmap, mpc,
+                                       assemble_local_entity_vector);
+    }
   }
 
+  const auto [perms, num_facets_per_cell] = dolfinx_mpc::entity_permutations(
+      *mesh, dolfinx::fem::IntegralType::interior_facet,
+      L.needs_facet_permutations(), static_cast<int>(num_threads));
   for (int i = 0;
        i < L.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0); ++i)
   {

@@ -122,8 +122,7 @@ def facet_normal_approximation(
     # Assemble the matrix with all entries
     form_coeffs = _cpp.fem.pack_coefficients(bilinear_form._cpp_object)
     form_consts = _cpp.fem.pack_constants(bilinear_form._cpp_object)
-    markers = _fem.petsc._matrix_bc_markers(bilinear_form, [bc_deac])
-    _cpp.fem.petsc.assemble_matrix(A, bilinear_form._cpp_object, form_consts, form_coeffs, *markers, False)
+    _fem.petsc.assemble_matrix(A, a=bilinear_form, constants=form_consts, coeffs=form_coeffs, bcs=[bc_deac])
     if bilinear_form.function_spaces[0] is bilinear_form.function_spaces[1]:
         A.assemblyBegin(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
         A.assemblyEnd(PETSc.Mat.AssemblyType.FLUSH)  # type: ignore
@@ -131,7 +130,7 @@ def facet_normal_approximation(
         if bilinear_form.function_spaces[0].contains(bc_deac.function_space):
             dofs, owned = bc_deac.dof_indices()
         rows = np.array(dofs, dtype=np.int32)
-        _cpp.fem.petsc.set_diagonal(A, rows, 1.0, PETSc.InsertMode.INSERT_VALUES)  # type: ignore
+        _la.petsc.set_diagonal(A, rows, 1.0, PETSc.InsertMode.INSERT_VALUES)  # type: ignore
     A.assemble()
     linear_form = _fem.form(L, jit_options=jit_options, form_compiler_options=form_compiler_options)
     b = _fem.petsc.assemble_vector(linear_form)

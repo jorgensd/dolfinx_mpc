@@ -5,6 +5,7 @@
 // SPDX-License-Identifier:    MIT
 
 #include "assemble_matrix.h"
+#include "assemble_utils.h"
 #include <algorithm>
 #include <array>
 #include <assemble_utils.h>
@@ -607,20 +608,6 @@ void assemble_matrix_impl(
     cell_info1 = std::span(mesh1->topology()->get_cell_permutation_info());
   }
 
-  // Facet permutations of the integration domain. Needed whenever the kernel
-  // asks for them, which happens for instance when the two argument spaces
-  // live on different meshes.
-  std::span<const std::uint8_t> perms;
-  int num_facets_per_cell = 0;
-  if (a.needs_facet_permutations())
-  {
-    const dolfinx::mesh::CellType cell_type
-        = mesh->topology()->cell_types().front();
-    const std::size_t fdim = mesh->topology()->dim() - 1;
-    num_facets_per_cell = dolfinx::mesh::cell_num_entities(cell_type, fdim);
-    mesh->topology_mutable()->create_entity_permutations(fdim, num_threads);
-    perms = std::span(mesh->topology()->get_entity_permutations(fdim));
-  }
   // Standard DOLFINx tabulation data shared by all integral types
   if (mesh->geometry().dofmaps().size() != 1)
     throw std::runtime_error(
@@ -672,42 +659,52 @@ void assemble_matrix_impl(
                                tabulate);
   }
 
-  for (int i = 0;
-       i < a.num_integrals(dolfinx::fem::IntegralType::exterior_facet, 0); ++i)
+  // Integrals over one entity of a cell: exterior facets, ridges and vertices.
+  // The kernels take the permutation of the entity whenever they ask for one,
+  // for instance when the two argument spaces live on different meshes.
+  for (dolfinx::fem::IntegralType type : dolfinx_mpc::entity_integral_types)
   {
-    const auto& fn = a.kernel(dolfinx::fem::IntegralType::exterior_facet, i, 0);
-    const auto& [coeffs, cstride]
-        = coefficients.at({dolfinx::fem::IntegralType::exterior_facet, i});
-    std::span<const std::int32_t> facets
-        = a.domain(dolfinx::fem::IntegralType::exterior_facet, i, 0);
-    std::span<const std::int32_t> facets0
-        = a.domain_arg(dolfinx::fem::IntegralType::exterior_facet, 0, i, 0);
-    std::span<const std::int32_t> facets1
-        = a.domain_arg(dolfinx::fem::IntegralType::exterior_facet, 1, i, 0);
-    auto tabulate = [&](std::span<T> Ae, std::size_t e)
+    const auto [perms, num_entities_per_cell]
+        = dolfinx_mpc::entity_permutations(*mesh, type,
+                                           a.needs_facet_permutations(),
+                                           static_cast<int>(num_threads));
+    for (int i = 0; i < a.num_integrals(type, 0); ++i)
     {
-      // Entities are (cell, local facet) pairs
-      const std::int32_t cell = facets[2 * e];
-      const int local_facet = facets[2 * e + 1];
-      gather_coordinates(cell, 0);
-      const std::uint8_t perm
-          = perms.empty() ? 0 : perms[cell * num_facets_per_cell + local_facet];
-      std::ranges::fill(Ae, T(0));
-      fn(Ae.data(), coeffs.data() + e * cstride, constants.data(),
-         coordinate_dofs.data(), &local_facet, &perm, nullptr);
-      if (transform0_set)
-        apply_dof_transformation(Ae, cell_info0, facets0[2 * e], ndim1);
-      if (transform1_set)
+      const auto& fn = a.kernel(type, i, 0);
+      const auto& [coeffs, cstride] = coefficients.at({type, i});
+      std::span<const std::int32_t> entities = a.domain(type, i, 0);
+      std::span<const std::int32_t> entities0 = a.domain_arg(type, 0, i, 0);
+      std::span<const std::int32_t> entities1 = a.domain_arg(type, 1, i, 0);
+      auto tabulate = [&](std::span<T> Ae, std::size_t e)
       {
-        apply_dof_transformation_to_transpose(Ae, cell_info1, facets1[2 * e],
-                                              ndim0);
-      }
-    };
-    assemble_entities<T, U, 2>(mat_add_block_values, mat_add_values, facets0,
-                               facets1, *dofmap0, *dofmap1, bc0, bc1, mpc0,
-                               mpc1, tabulate);
+        // Entities are (cell, local entity) pairs
+        const std::int32_t cell = entities[2 * e];
+        const int local_entity = entities[2 * e + 1];
+        gather_coordinates(cell, 0);
+        const std::uint8_t perm
+            = perms.empty()
+                  ? 0
+                  : perms[cell * num_entities_per_cell + local_entity];
+        std::ranges::fill(Ae, T(0));
+        fn(Ae.data(), coeffs.data() + e * cstride, constants.data(),
+           coordinate_dofs.data(), &local_entity, &perm, nullptr);
+        if (transform0_set)
+          apply_dof_transformation(Ae, cell_info0, entities0[2 * e], ndim1);
+        if (transform1_set)
+        {
+          apply_dof_transformation_to_transpose(Ae, cell_info1,
+                                                entities1[2 * e], ndim0);
+        }
+      };
+      assemble_entities<T, U, 2>(mat_add_block_values, mat_add_values,
+                                 entities0, entities1, *dofmap0, *dofmap1, bc0,
+                                 bc1, mpc0, mpc1, tabulate);
+    }
   }
 
+  const auto [perms, num_facets_per_cell] = dolfinx_mpc::entity_permutations(
+      *mesh, dolfinx::fem::IntegralType::interior_facet,
+      a.needs_facet_permutations(), static_cast<int>(num_threads));
   for (int i = 0;
        i < a.num_integrals(dolfinx::fem::IntegralType::interior_facet, 0); ++i)
   {

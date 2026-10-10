@@ -7,13 +7,13 @@
 #
 #     - div grad u(x, y) = lambda*u(x, y)
 #
-# on the unit square with two sets of boundary conditions:
+# on the unit square with each pair of opposite edges either Dirichlet (u = 0) or periodic, which
+# gives four combinations:
 #
-#   u(x=0) = u(x=1) and u(y=0) = u(y=1) = 0,
-#
-# or
-#
-#   u(x=0) = u(x=1) and u(y=0) = u(y=1).
+#   u(x=0) = u(x=1) = 0 and u(y=0) = u(y=1) = 0,
+#   u(x=0) = u(x=1) = 0 and u(y=0) = u(y=1),
+#   u(x=0) = u(x=1)     and u(y=0) = u(y=1) = 0,
+#   u(x=0) = u(x=1)     and u(y=0) = u(y=1).
 #
 # The weak form reads
 #
@@ -23,7 +23,9 @@
 #
 #       A * U = lambda * B * U,
 #
-# where A and B are real symmetric positive definite matrices. The generalized
+# where A and B are Hermitian (real symmetric in a real build), B is positive definite, and A is
+# positive definite unless both directions are periodic: then the constants are in its kernel, and
+# 0 is an eigenvalue. The generalized
 # eigenvalue problem is solved using SLEPc and the computed eigenvalues are
 # compared to the exact ones.
 from __future__ import annotations
@@ -36,7 +38,7 @@ from petsc4py import PETSc
 
 import dolfinx.fem as fem
 import numpy as np
-from dolfinx import default_scalar_type
+from dolfinx import default_real_type, default_scalar_type
 from dolfinx.io import XDMFFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary, meshtags
 from slepc4py import SLEPc
@@ -104,6 +106,8 @@ def EPS_print_results(EPS: SLEPc.EPS):
             else:
                 pad = " " * 11
                 print0(f" {k.real:2.2e} {pad} {error:1.1e}")
+        vr.destroy()
+        vi.destroy()
 
 
 def EPS_get_spectrum(
@@ -203,6 +207,7 @@ def solve_GEP_shiftinvert(
     ST = EPS.getST()
     ST.setType(SLEPc.ST.Type.SINVERT)
     ST.setShift(shift)
+    ST.getKSP().setErrorIfNotConverged(True)
     EPS.setST(ST)
     # set monitor
     it_skip = 1
@@ -232,7 +237,9 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     comm = MPI.COMM_WORLD
     # Create mesh and finite element
     N = 50
-    mesh = create_unit_square(comm, N, N)
+    mesh = create_unit_square(comm, N, N, dtype=default_real_type)
+    # Largest distance between a node and a point it is located at, from the rounding of the coordinates
+    geom_tol = 500 * np.finfo(default_real_type).eps
     V = fem.functionspace(mesh, ("Lagrange", 1))
     fdim = mesh.topology.dim - 1
 
@@ -253,10 +260,10 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
         return pbc_slave_to_master_map
 
     def generate_pbc_is_slave(i):
-        return lambda x: np.isclose(x[i], 1)
+        return lambda x: np.isclose(x[i], 1, atol=geom_tol)
 
     def generate_pbc_is_master(i):
-        return lambda x: np.isclose(x[i], 0)
+        return lambda x: np.isclose(x[i], 0, atol=geom_tol)
 
     # Parse boundary conditions
     for i, bc_type in enumerate(boundary_condition):
@@ -265,7 +272,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
             u_bc.x.array[:] = 0
 
             def dirichletboundary(x):
-                return np.logical_or(np.isclose(x[i], 0), np.isclose(x[i], 1))
+                return np.logical_or(np.isclose(x[i], 0, atol=geom_tol), np.isclose(x[i], 1, atol=geom_tol))
 
             facets = locate_entities_boundary(mesh, fdim, dirichletboundary)
             topological_dofs = fem.locate_dofs_topological(V, fdim, facets)
@@ -278,15 +285,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
             pbc_slave_to_master_maps.append(generate_pbc_slave_to_master_map(i))
 
             facets = locate_entities_boundary(mesh, fdim, pbc_is_slave[-1])
-            arg_sort = np.argsort(facets)
-            pbc_meshtags.append(
-                meshtags(
-                    mesh,
-                    fdim,
-                    facets[arg_sort],
-                    np.full(len(facets), pbc_slave_tags[-1], dtype=np.int32),
-                )
-            )
+            pbc_meshtags.append(meshtags(mesh, fdim, facets, np.full(len(facets), pbc_slave_tags[-1], dtype=np.int32)))
 
     # Create MultiPointConstraint object
     mpc = MultiPointConstraint(V)
@@ -322,8 +321,8 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     v = TestFunction(V)
     a = inner(grad(u), grad(v)) * dx
     b = inner(u, v) * dx
-    mass_form = fem.form(a)
-    stiffness_form = fem.form(b)
+    stiffness_form = fem.form(a)
+    mass_form = fem.form(b)
 
     # Diagonal values for slave and Dirichlet DoF
     # The generalized eigenvalue problem will have spurious eigenvalues at
@@ -333,8 +332,8 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
     diagval_B = 1e-2
     tol = float(5e2 * np.finfo(default_scalar_type).resolution)
 
-    A = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_A)
-    B = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_B)
+    A = assemble_matrix(stiffness_form, mpc, bcs=bcs, diagval=diagval_A)
+    B = assemble_matrix(mass_form, mpc, bcs=bcs, diagval=diagval_B)
     EPS = solve_GEP_shiftinvert(
         A,
         B,
@@ -347,6 +346,8 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
         shift=1.5,
         comm=comm,
     )
+    if EPS.getConverged() < Nev:
+        raise RuntimeError(f"Only {EPS.getConverged()} of {Nev} eigenpairs converged")
     (eigval, eigvec_r, eigvec_i) = EPS_get_spectrum(EPS, mpc)
     # update slave DoF
     for i in range(len(eigval)):
@@ -354,7 +355,7 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
         mpc.backsubstitution(eigvec_r[i])
         eigvec_i[i].x.scatter_forward()
         mpc.backsubstitution(eigvec_i[i])
-    print0(f"Computed eigenvalues:\n {np.around(eigval, decimals=2)}")
+    print0(f"Computed eigenvalues:\n {np.around(np.real(eigval), decimals=2)}")
 
     # Save all eigenvectors
     suffix = "".join([bc_type[0] for bc_type in boundary_condition])
@@ -364,6 +365,10 @@ def assemble_and_solve(boundary_condition: List[str] = ["dirichlet", "periodic"]
         xdmf.write_mesh(mesh)
         for i, e_vec in enumerate(eigvec_r):
             xdmf.write_function(e_vec, i)
+
+    EPS.destroy()
+    A.destroy()
+    B.destroy()
 
 
 def print_exact_eigenvalues(boundary_condition: List[str], N: int):
@@ -400,3 +405,6 @@ print_exact_eigenvalues(["periodic", "dirichlet"], 10)
 # Periodic boundary condition: {y=0} -> {y=1}
 assemble_and_solve(["periodic", "periodic"], 10)
 print_exact_eigenvalues(["periodic", "periodic"], 10)
+
+# Objects released by the garbage collector are destroyed on every process together
+PETSc.garbage_cleanup(MPI.COMM_WORLD)

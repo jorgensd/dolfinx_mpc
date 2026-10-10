@@ -6,12 +6,18 @@
 
 #pragma once
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <concepts>
 #include <cstdint>
 #include <dolfinx/common/types.h>
+#include <dolfinx/fem/Form.h>
+#include <dolfinx/mesh/Mesh.h>
+#include <dolfinx/mesh/Topology.h>
+#include <dolfinx/mesh/cell_types.h>
 #include <iterator>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace dolfinx_mpc
@@ -40,6 +46,38 @@ void gather_cell_coordinates(
     std::ranges::copy_n(std::next(x_g.begin(), 3 * x_dofs[i]), 3,
                         std::next(coordinate_dofs.begin(), 3 * i));
   }
+}
+
+/// The integral types over one cell-local entity, given as (cell, local
+/// entity) pairs, and assembled alike
+inline constexpr std::array<dolfinx::fem::IntegralType, 3> entity_integral_types
+    = {dolfinx::fem::IntegralType::exterior_facet,
+       dolfinx::fem::IntegralType::ridge, dolfinx::fem::IntegralType::vertex};
+
+/// @brief Permutations of the cell-local entities that an integral of type
+/// `type` is over.
+/// @param[in] mesh The integration domain
+/// @param[in] type The integral type, over facets, ridges or vertices
+/// @param[in] needed Whether the kernels of the form take permutations
+/// @param[in] num_threads The number of threads to compute them with
+/// @return The permutation of entity `e` of cell `c` at `c * n + e`, and `n`,
+/// the number of such entities of a cell. Empty, and `n = 0`, if not needed or
+/// for vertices, which have no orientation.
+template <std::floating_point U>
+std::pair<std::span<const std::uint8_t>, int>
+entity_permutations(const dolfinx::mesh::Mesh<U>& mesh,
+                    dolfinx::fem::IntegralType type, bool needed,
+                    int num_threads)
+{
+  const int tdim = mesh.topology()->dim();
+  const int dim = dolfinx::fem::integral_entity_dim(type, tdim);
+  if (!needed or dim == 0 or dim == tdim)
+    return {{}, 0};
+  mesh.topology_mutable()->create_entity_permutations(dim, num_threads);
+  const dolfinx::mesh::CellType cell_type
+      = mesh.topology()->cell_types().front();
+  return {mesh.topology()->get_entity_permutations(dim),
+          dolfinx::mesh::cell_num_entities(cell_type, dim)};
 }
 
 /// For a set of unrolled dofs (slaves) compute the index (local to the cell

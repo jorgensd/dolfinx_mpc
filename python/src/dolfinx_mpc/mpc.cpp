@@ -474,14 +474,33 @@ void declare_mpc_data(nb::module_& m, std::string type)
          const std::vector<nb::ndarray<const U, nb::ndim<1>, nb::c_contig>>&
              weights)
       {
-        auto [data, spaces] = dolfinx_mpc::create_rbe3<T, U>(
+        return dolfinx_mpc::create_rbe3<T, U>(
             W, V, as_spans(dofs), as_spans(spiders), as_spans(weights));
-        return nb::make_tuple(std::move(data),
-                              dolfinx_wrappers::as_nbarray(std::move(spaces)));
       },
       nb::arg("W"), nb::arg("V"), nb::arg("dofs"), nb::arg("spiders"),
       nb::arg("weights"),
       "Tie the dofs of spiders to the motion of their feet (RBE3)");
+  m.def(("extend_mpc_data_" + type).c_str(),
+        [](const dolfinx_mpc::mpc_data<T>& existing_data,
+           std::int32_t slave_block,
+           nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig> slaves,
+           nb::ndarray<const std::int64_t, nb::ndim<1>, nb::c_contig> masters,
+           nb::ndarray<const T, nb::ndim<1>, nb::c_contig> coeffs,
+           nb::ndarray<const std::int32_t, nb::ndim<1>, nb::c_contig> owners,
+           std::int32_t block, const dolfinx::fem::FunctionSpace<U>& V)
+        {
+          return dolfinx_mpc::extend_mpc_data<T>(
+              existing_data, slave_block,
+              std::span<const std::int32_t>(slaves.data(), slaves.size()),
+              std::span<const std::int64_t>(masters.data(), masters.size()),
+              std::span<const T>(coeffs.data(), coeffs.size()),
+              std::span<const std::int32_t>(owners.data(), owners.size()),
+              block, V.dofmap()->index_map, V.dofmap()->index_map_bs());
+        },
+        nb::arg("existing_data"), nb::arg("slave_block"), nb::arg("slaves"),
+        nb::arg("masters"), nb::arg("coeffs"), nb::arg("owners"),
+        nb::arg("block"), nb::arg("V"),
+        "Add masters to the rows of existing slaves of a space");
   std::string nbclass_name = "mpc_data_" + type;
   nb::class_<dolfinx_mpc::mpc_data<T>>(m, nbclass_name.c_str(),
                                        "Object with data arrays for mpc")
@@ -490,14 +509,17 @@ void declare_mpc_data(nb::module_& m, std::string type)
           [](dolfinx_mpc::mpc_data<T>* self, std::vector<std::int32_t> slaves,
              std::vector<std::int64_t> masters, std::vector<T> coeffs,
              std::vector<std::int32_t> owners,
-             std::vector<std::int32_t> offsets)
+             std::vector<std::int32_t> offsets,
+             std::optional<std::vector<std::int32_t>> master_blocks)
           {
             new (self) dolfinx_mpc::mpc_data<T>{
-                std::move(slaves), std::move(masters), std::move(coeffs),
-                std::move(offsets), std::move(owners)};
+                std::move(slaves), std::move(masters),
+                std::move(coeffs), std::move(offsets),
+                std::move(owners), std::move(master_blocks)};
           },
           nb::arg("slaves"), nb::arg("masters"), nb::arg("coeffs"),
-          nb::arg("owners"), nb::arg("offsets"))
+          nb::arg("owners"), nb::arg("offsets"),
+          nb::arg("master_blocks").none())
       .def_prop_ro(
           "slaves",
           [](dolfinx_mpc::mpc_data<T>& self)
@@ -536,7 +558,21 @@ void declare_mpc_data(nb::module_& m, std::string type)
             const std::vector<std::int32_t>& offsets = self.offsets;
             return nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
                 offsets.data(), {offsets.size()}, nb::handle());
-          });
+          })
+      .def_prop_ro(
+          "master_blocks",
+          [](dolfinx_mpc::mpc_data<T>& self)
+              -> std::optional<
+                  nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>>
+          {
+            if (!self.master_blocks)
+              return std::nullopt;
+            const std::vector<std::int32_t>& blocks = *self.master_blocks;
+            return nb::ndarray<nb::numpy, const std::int32_t, nb::ndim<1>>(
+                blocks.data(), {blocks.size()}, nb::handle());
+          },
+          "The block of each master, or None if every master is in the space "
+          "of the slaves");
 }
 
 /// Position of block `i` among `n` vectors, checked

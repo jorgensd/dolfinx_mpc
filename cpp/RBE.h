@@ -438,12 +438,12 @@ void update_rbe2(MultiPointConstraint<T, U>& mpc,
 /// process. Ghosts are ignored: each foot is sent by its owner.
 /// @param[in] spiders Input index of the spider of each foot.
 /// @param[in] weights Weight of each foot, non-negative.
-/// @return (0) The slaves (dofs of `W`), masters (global dofs of their
-/// space), coefficients, owners and offsets, and (1) the position in `V` of
-/// the space of each master.
+/// @return The slaves (dofs of `W`), masters (global dofs of their space),
+/// coefficients, owners and offsets, with the position in `V` of the space of
+/// each master as `master_blocks`.
 /// @note Collective.
 template <typename T, std::floating_point U>
-std::pair<mpc_data<T>, std::vector<std::int32_t>> create_rbe3(
+mpc_data<T> create_rbe3(
     const dolfinx::fem::FunctionSpace<U>& W,
     const std::vector<std::shared_ptr<const dolfinx::fem::FunctionSpace<U>>>& V,
     const std::vector<std::span<const std::int32_t>>& dofs,
@@ -541,6 +541,7 @@ std::pair<mpc_data<T>, std::vector<std::int32_t>> create_rbe3(
   mpc_data<T> data;
   std::vector<std::int32_t> spaces;
   data.offsets.push_back(0);
+  // Every process has blocks, also without rows
   std::int64_t singular = -1;
   for (std::size_t f0 = 0; f0 < order.size();)
   {
@@ -608,7 +609,8 @@ std::pair<mpc_data<T>, std::vector<std::int32_t>> create_rbe3(
         singular, rotations ? "translation and rotation" : "translation",
         rotations ? "on one line" : "all of weight zero"));
   }
-  return {std::move(data), std::move(spaces)};
+  data.master_blocks = std::move(spaces);
+  return data;
 }
 
 /// @brief Recompute the coefficients of an RBE3 constraint from the current
@@ -632,7 +634,8 @@ void update_rbe3(
     const std::vector<std::span<const std::int64_t>>& spiders,
     const std::vector<std::span<const U>>& weights)
 {
-  const auto [data, spaces] = create_rbe3<T, U>(W, V, dofs, spiders, weights);
+  const mpc_data<T> data = create_rbe3<T, U>(W, V, dofs, spiders, weights);
+  const std::vector<std::int32_t>& spaces = *data.master_blocks;
   auto [coeffs, offsets] = mpc.all_coefficients();
   const std::vector<std::int32_t> masters = mpc.all_masters();
   const std::vector<std::int32_t> master_blocks = mpc.all_master_blocks();
