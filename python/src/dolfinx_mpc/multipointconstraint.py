@@ -1070,30 +1070,24 @@ class MultiPointConstraint:
         coefficient_tol: Optional[float] = None,
     ):
         """
-                Create a slip condition between two sets of facets marker with individual markers.
-                The interfaces should be within machine precision of eachother, but the vertices does not need to align.
-                The condition created is :math:`u_s \\cdot normal_s = u_m \\cdot normal_m` where `s` is the
-                restriction to the slave facets, `m` to the master facets.
+        Create a slip condition between two sets of facets marker with individual markers.
+        The interfaces should be within machine precision of eachother, but the vertices does not need to align.
+        The condition created is :math:`u_s \\cdot normal_s = u_m \\cdot normal_m` where `s` is the
+        restriction to the slave facets, `m` to the master facets.
 
-                Args:
-                    meshtags: The meshtags of the set of facets to tie together
-                    slave_marker: The marker of the slave facets
-                    master_marker: The marker of the master facets
-                    normal: The function used in the dot-product of the constraint
-        <<<<<<< HEAD
-                    eps2: The largest squared distance from a slave point to a master cell for the point to
-                        be in the cell. Defaults to 500 times the resolution of the coordinate type of the mesh,
-                        as the distance is computed in that precision.
-        =======
-                    eps2: Deprecated, use `distance_tol`, which is `sqrt(eps2)`.
-        >>>>>>> main
-                    num_threads: The number of threads to use for certain operations
-                    distance_tol: The largest distance from a slave point to a master cell for the point to
-                        be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
-                        machine epsilon of the coordinate type of the mesh.
-                    coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
-                        its slave is dropped. `0` keeps every master. Defaults to `500`
-                        machine epsilon of the real type of the constraint.
+        Args:
+            meshtags: The meshtags of the set of facets to tie together
+            slave_marker: The marker of the slave facets
+            master_marker: The marker of the master facets
+            normal: The function used in the dot-product of the constraint
+            eps2: Deprecated, use `distance_tol`, which is `sqrt(eps2)`.
+            num_threads: The number of threads to use for certain operations
+            distance_tol: The largest distance from a slave point to a master cell for the point to
+                be in the cell, and the padding of the bounding boxes of the cells. Defaults to `500`
+                machine epsilon of the coordinate type of the mesh.
+            coefficient_tol: A master whose coefficient is below `coefficient_tol` times the largest of
+                its slave is dropped. `0` keeps every master. Defaults to `500`
+                machine epsilon of the real type of the constraint.
         """
         mpc_data = _cpp_function("create_contact_slip_condition", self._dtype)(
             self.V._cpp_object,

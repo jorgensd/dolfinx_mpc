@@ -382,7 +382,9 @@ def homogenized_stress(problem: LinearProblem, H_bar_case: np.ndarray) -> tuple[
 
     The solution is a copy: the problem returns the same function at every solve."""
     set_corner_values(H_bar_case)
-    uh = problem.solve().copy()
+    uh = problem.solve()
+    assert isinstance(uh, fem.Function)
+    uh = uh.copy()
     sigma_avg = average_stress(uh)
     return uh, np.array([sigma_avg[0, 0], sigma_avg[1, 1], sigma_avg[0, 1]])
 

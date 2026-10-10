@@ -416,6 +416,7 @@ mu_uniform = E_uniform / (2 * (1 + nu))
 # +
 set_young_modulus(E_uniform)
 uh = problem.solve()
+assert isinstance(uh, fem.Function)
 k = nu / (1 - nu)
 u_exact = fem.Function(V, dtype=dtype)
 
@@ -453,6 +454,7 @@ assert error < 50 * np.sqrt(np.finfo(domain.geometry.x.dtype).resolution) * norm
 # +
 set_young_modulus(50.0 * E_uniform)
 uh = problem.solve()
+assert isinstance(uh, fem.Function)
 sigma_bar, E_eff = average_stress(uh), average_strain(uh)
 if comm.rank == 0:
     print("---- Heterogeneous cell ----")

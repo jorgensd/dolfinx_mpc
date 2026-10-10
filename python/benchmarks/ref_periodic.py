@@ -119,7 +119,6 @@ def reference_periodic(
         opts.setValue("ksp_rtol", 1.0e-12)
         opts.setValue("pc_type", "gamg")
         opts.setValue("pc_gamg_type", "agg")
-        opts.setValue("pc_gamg_sym_graph", True)
 
         # Use Chebyshev smoothing for multigrid
         opts.setValue("mg_levels_ksp_type", "richardson")

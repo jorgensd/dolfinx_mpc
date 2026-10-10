@@ -82,7 +82,7 @@ def _add_diagonals(
     # they carry a condition, and a master that carries one is eliminated into
     # the constraint offset rather than kept in the master list.
     for A_sub, rows in bc_blocks:
-        _cpp.fem.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.ADD_VALUES)  # type: ignore
+        _cpp.la.petsc.set_diagonal(A_sub, rows, default_scalar_type(diagval), _PETSc.InsertMode.ADD_VALUES)  # type: ignore
 
 
 def _finalize_matrix(

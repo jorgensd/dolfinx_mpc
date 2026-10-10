@@ -25,3 +25,4 @@ CMakeFiles
 .coverage
 .coverage.*
 *.html
+*.vtksz
