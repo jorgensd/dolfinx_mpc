@@ -103,8 +103,9 @@ jobs:
           cmake --build build-dir --parallel 3
           cmake --install build-dir
 
+      # Older tags don't bound jupyter-book, and the book config needs 1.x
       - name: Install DOLFINx-MPC (Python)
-        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation ./python/[docs]
+        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation ./python/[docs] "jupyter-book<2.0"
 
       - name: Build docs
         run: jupyter-book build .
