@@ -1,0 +1,30 @@
+# .github/docs-versions.yml
+#
+# Maps each dolfinx_mpc minor version series to:
+#   - the dolfinx_mpc git tag to build docs from (latest patch of that minor)
+#   - the dolfinx Docker image to use
+#
+# "main" is always built against nightly and is not listed here;
+# it is handled automatically by the workflow.
+#
+# When cutting a new minor release (e.g. v0.12.0):
+#   1. Add a new entry below with the initial tag and matching dolfinx image.
+#   2. Update the tag here whenever a new patch supersedes the previous one.
+#      (Old patch docs are intentionally replaced — only one slot per minor.)
+
+versions:
+  - mpc_tag: "v0.11.0.post0"
+    minor: "v0.11"
+    dolfinx_image: "ghcr.io/fenics/dolfinx/lab:v0.11.0"
+
+  - mpc_tag: "v0.10.5"
+    minor: "v0.10"
+    dolfinx_image: "ghcr.io/fenics/dolfinx/lab:v0.10.0-r1"
+
+  - mpc_tag: "v0.9.3"
+    minor: "v0.9"
+    dolfinx_image: "ghcr.io/fenics/dolfinx/lab:v0.9.0r1"
+
+  - mpc_tag: "v0.8.0"
+    minor: "v0.8"
+    dolfinx_image: "ghcr.io/fenics/dolfinx/lab:v0.8.0"
