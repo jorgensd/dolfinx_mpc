@@ -1,62 +1,240 @@
-name: Github Pages
+name: Build and deploy docs
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main]        # rebuilds nightly/"main" docs on every push
+  schedule:
+    - cron: "0 4 * * *"    # also run nightly in case dolfinx:nightly moved
+  workflow_dispatch:        # manual trigger (e.g. after editing docs-versions.yml)
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write           # to push to gh-pages
 
-# Allow one concurrent deployment, without cancelling one that is in progress
+# Never let two runs push to gh-pages at the same time
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
+  # ── Step 1: read the version config and decide what to build ──────────────
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout gh-pages to check existing builds
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: gh-pages-dir
+          fetch-depth: 1
+        continue-on-error: true   # gh-pages may not exist yet on first run
+
+      - name: Build job matrix
+        id: set-matrix
+        run: |
+          python3 - <<'EOF'
+          import yaml, json, os
+
+          with open(".github/docs-versions.yml") as f:
+              config = yaml.safe_load(f)
+
+          jobs = []
+
+          # Always rebuild main/nightly — it changes on every push
+          jobs.append({
+              "label": "main",
+              "git_ref": "main",
+              "dolfinx_image": "ghcr.io/fenics/dolfinx/lab:nightly",
+              "force_rebuild": True,
+          })
+
+          # For tagged versions: skip rebuild if the directory already exists on gh-pages
+          for v in config["versions"]:
+              slug = v["minor"]   # e.g. "v0.11"
+              marker = f"gh-pages-dir/{slug}/.mpc_tag"
+              already_built = (os.path.isfile(marker)
+                               and open(marker).read().strip() == v["mpc_tag"])
+              jobs.append({
+                  "label": slug,
+                  "git_ref": v["mpc_tag"],
+                  "dolfinx_image": v["dolfinx_image"],
+                  "force_rebuild": not already_built,
+              })
+
+          # Only include jobs where a build is actually needed
+          to_build = [j for j in jobs if j["force_rebuild"]]
+          print("Jobs to build:", [j["label"] for j in to_build])
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"matrix={json.dumps({'include': to_build})}\n")
+          EOF
+
+  # ── Step 2: build each version that needs it ──────────────────────────────
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container: ${{ matrix.dolfinx_image }}
+    strategy:
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+      fail-fast: false    # a broken nightly shouldn't block a tagged build
+    env:
+      PYVISTA_OFF_SCREEN: false
+      PYVISTA_JUPYTER_BACKEND: "html"
+      VTK_DEFAULT_OPENGL_WINDOW: vtkOSOpenGLRenderWindow
+
+    steps:
+      - name: Checkout dolfinx_mpc at ${{ matrix.git_ref }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.git_ref }}
+
+      - name: Install OpenGL libraries for pyvista
+        run: |
+          apt-get update
+          apt-get install -y libgl1-mesa-dev mesa-utils libosmesa6
+
+      - name: Install DOLFINx-MPC (C++)
+        run: |
+          cmake -G Ninja -B build-dir -DCMAKE_BUILD_TYPE=Release -S cpp/
+          cmake --build build-dir --parallel 3
+          cmake --install build-dir
+
+      - name: Install DOLFINx-MPC (Python)
+        run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation ./python/[docs]
+
+      - name: Build docs
+        run: jupyter-book build .
+
+      - name: Record built tag
+        run: echo "${{ matrix.git_ref }}" > _build/html/.mpc_tag
+
+      - name: Upload built HTML as artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-${{ matrix.label }}
+          path: _build/html/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   run-coverage:
     uses: ./.github/workflows/test_mpc.yml
     with:
       # Only the real64 Release run uploads the coverage report used below
       coverage_only: true
 
-  build-docs:
-    uses: ./.github/workflows/build_docs.yml
-
+  # ── Step 3: assemble everything onto gh-pages ─────────────────────────────
   deploy:
-    needs: [run-coverage, build-docs]
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
+    needs: [build, run-coverage]
+    # Publish whatever built, even if one version failed
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Download docs artifact
-        # docs artifact is uploaded by build-docs job
+      - name: Checkout gh-pages
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: gh-pages-dir
+          fetch-depth: 1
+        continue-on-error: true
+
+      - name: Checkout dolfinx_mpc (for the version flyout)
+        uses: actions/checkout@v7
+        with:
+          path: repo
+          sparse-checkout: .github
+
+      - name: Initialise gh-pages if first run
+        run: |
+          if [ ! -d gh-pages-dir/.git ]; then
+            mkdir -p gh-pages-dir
+            git -C gh-pages-dir init -b gh-pages
+            git -C gh-pages-dir remote add origin \
+              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          fi
+
+      - name: Download all freshly built artifacts
         uses: actions/download-artifact@v8
         with:
-          name: documentation
-          path: "./public"
+          pattern: docs-*
+          path: fresh-builds/
 
       - name: Download coverage report
-        # coverage artifact is uploaded by run-coverage job
         uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
           name: code-coverage-report
-          path: "./public/code-coverage-report"
+          path: gh-pages-dir/code-coverage-report
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: "./public"
+      # Read the Docs-style injection: one root script serves every version
+      - name: Inject version flyout
+        run: |
+          cp repo/.github/docs-version-flyout.js gh-pages-dir/version-flyout.js
+          tag='<script defer src="/dolfinx_mpc/version-flyout.js"></script>'
+          find fresh-builds -name '*.html' -print0 \
+            | xargs -0 sed -i "s#</head>#${tag}</head>#"
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
+      # Copy each freshly built version into the gh-pages tree.
+      # For "main" this overwrites; for tagged versions this writes once.
+      - name: Integrate new builds
+        run: |
+          for dir in fresh-builds/docs-*/; do
+            label=$(basename "$dir" | sed 's/^docs-//')
+            echo "Deploying: $label"
+            mkdir -p "gh-pages-dir/${label}"
+            rsync -a --delete "${dir}" "gh-pages-dir/${label}/"
+          done
 
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+      - name: Regenerate switcher.json
+        run: |
+          python3 - <<'EOF'
+          import os, json, re
+
+          base = "https://jorgensd.github.io/dolfinx_mpc"
+          root = "gh-pages-dir"
+
+          # Find all minor-version directories (vX.Y) and sort newest first
+          minors = sorted(
+              [d for d in os.listdir(root)
+               if os.path.isdir(f"{root}/{d}") and re.match(r"^v\d+\.\d+$", d)],
+              key=lambda v: [int(x) for x in v.lstrip("v").split(".")],
+              reverse=True,
+          )
+
+          entries = [{
+              "name": "main (nightly)",
+              "version": "main",
+              "url": f"{base}/main/",
+          }]
+          for m in minors:
+              entries.append({"name": m, "version": m, "url": f"{base}/{m}/"})
+
+          with open(f"{root}/switcher.json", "w") as f:
+              json.dump(entries, f, indent=2)
+          print("switcher.json:", entries)
+          EOF
+
+      - name: Add root redirect to main
+        run: |
+          # Stop GitHub's Jekyll from dropping Sphinx's _static/ and _images/
+          touch gh-pages-dir/.nojekyll
+          cat > gh-pages-dir/index.html <<'EOF'
+          <!DOCTYPE html>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=main/">
+          <link rel="canonical" href="main/">
+          EOF
+
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages-dir
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet \
+            || git commit -m "docs: update ${{ github.sha }}"
+          git push origin gh-pages
