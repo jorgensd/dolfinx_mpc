@@ -11,10 +11,9 @@ on:
     - cron: "0 4 * * *"    # also run nightly in case dolfinx:nightly moved
   workflow_dispatch:        # manual trigger (e.g. after editing docs-versions.yml)
 
+# Read-only by default; only the deploy job gets write access
 permissions:
-  contents: write           # to upload to the docs-archive release
-  pages: write
-  id-token: write
+  contents: read
 
 # Allow one concurrent deployment, without cancelling one that is in progress
 concurrency:
@@ -104,6 +103,10 @@ jobs:
   # ── Step 3: archive new builds, assemble all versions and deploy ──────────
   deploy:
     needs: [plan, build, run-coverage]
+    permissions:
+      contents: write       # to upload to the docs-archive release
+      pages: write          # to deploy to GitHub Pages
+      id-token: write       # to verify the deployment originates from here
     # Publish whatever built, even if one version failed
     if: ${{ !cancelled() && needs.plan.result == 'success' }}
     environment:
