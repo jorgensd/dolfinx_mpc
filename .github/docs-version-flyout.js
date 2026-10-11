@@ -2,6 +2,8 @@
 // Served from the gh-pages root and injected into every built page by
 // .github/workflows/deploy-pages.yml, so it also covers old release builds.
 (function () {
+  // Not inside frames, such as the 3D scene viewer of the gallery
+  if (window.self !== window.top) return;
   const base = "/dolfinx_mpc/";
   const path = window.location.pathname;
   if (!path.startsWith(base)) return;
