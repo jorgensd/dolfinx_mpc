@@ -1,5 +1,9 @@
 name: Build and deploy docs
 
+# Every version is deployed through GitHub Pages' Actions source.
+# Built HTML of each release is kept as an asset of the "docs-archive"
+# release, so tagged versions are built once and the repo never grows.
+
 on:
   push:
     branches: [main]        # rebuilds nightly/"main" docs on every push
@@ -8,12 +12,19 @@ on:
   workflow_dispatch:        # manual trigger (e.g. after editing docs-versions.yml)
 
 permissions:
-  contents: write           # to push to gh-pages
+  contents: write           # to upload to the docs-archive release
+  pages: write
+  id-token: write
 
-# Never let two runs push to gh-pages at the same time
+# Allow one concurrent deployment, without cancelling one that is in progress
 concurrency:
   group: "pages"
   cancel-in-progress: false
+
+env:
+  ARCHIVE: docs-archive     # release (and tag) holding the built HTML
+  GH_REPO: ${{ github.repository }}
+  GH_TOKEN: ${{ github.token }}
 
 jobs:
   # ── Step 1: read the version config and decide what to build ──────────────
@@ -24,53 +35,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Checkout gh-pages to check existing builds
-        uses: actions/checkout@v7
-        with:
-          ref: gh-pages
-          path: gh-pages-dir
-          fetch-depth: 1
-        continue-on-error: true   # gh-pages may not exist yet on first run
+      - name: List archived builds
+        run: |
+          gh release view "$ARCHIVE" --json assets --jq '.assets[].name' > archived.txt \
+            || touch archived.txt   # release doesn't exist before the first run
+          cat archived.txt
 
       - name: Build job matrix
         id: set-matrix
-        run: |
-          python3 - <<'EOF'
-          import yaml, json, os
-
-          with open(".github/docs-versions.yml") as f:
-              config = yaml.safe_load(f)
-
-          jobs = []
-
-          # Always rebuild main/nightly — it changes on every push
-          jobs.append({
-              "label": "main",
-              "git_ref": "main",
-              "dolfinx_image": "ghcr.io/fenics/dolfinx/lab:nightly",
-              "force_rebuild": True,
-          })
-
-          # For tagged versions: skip rebuild if the directory already exists on gh-pages
-          for v in config["versions"]:
-              slug = v["minor"]   # e.g. "v0.11"
-              marker = f"gh-pages-dir/{slug}/.mpc_tag"
-              already_built = (os.path.isfile(marker)
-                               and open(marker).read().strip() == v["mpc_tag"])
-              jobs.append({
-                  "label": slug,
-                  "git_ref": v["mpc_tag"],
-                  "dolfinx_image": v["dolfinx_image"],
-                  "force_rebuild": not already_built,
-              })
-
-          # Only include jobs where a build is actually needed
-          to_build = [j for j in jobs if j["force_rebuild"]]
-          print("Jobs to build:", [j["label"] for j in to_build])
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"matrix={json.dumps({'include': to_build})}\n")
-          EOF
+        run: python3 .github/scripts/docs_site.py matrix archived.txt
 
   # ── Step 2: build each version that needs it ──────────────────────────────
   build:
@@ -110,15 +83,15 @@ jobs:
       - name: Build docs
         run: jupyter-book build .
 
-      - name: Record built tag
-        run: echo "${{ matrix.git_ref }}" > _build/html/.mpc_tag
+      # A tarball keeps hidden files and permissions, and is what gets archived
+      - name: Package HTML
+        run: tar -czf "docs-${{ matrix.git_ref }}.tar.gz" -C _build/html .
 
       - name: Upload built HTML as artifact
         uses: actions/upload-artifact@v7
         with:
           name: docs-${{ matrix.label }}
-          path: _build/html/
-          include-hidden-files: true
+          path: docs-${{ matrix.git_ref }}.tar.gz
           if-no-files-found: error
           retention-days: 1
 
@@ -128,114 +101,79 @@ jobs:
       # Only the real64 Release run uploads the coverage report used below
       coverage_only: true
 
-  # ── Step 3: assemble everything onto gh-pages ─────────────────────────────
+  # ── Step 3: archive new builds, assemble all versions and deploy ──────────
   deploy:
-    needs: [build, run-coverage]
+    needs: [plan, build, run-coverage]
     # Publish whatever built, even if one version failed
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout gh-pages
+      - name: Checkout dolfinx_mpc (version list and flyout)
         uses: actions/checkout@v7
         with:
-          ref: gh-pages
-          path: gh-pages-dir
-          fetch-depth: 1
-        continue-on-error: true
-
-      - name: Checkout dolfinx_mpc (for the version flyout)
-        uses: actions/checkout@v7
-        with:
-          path: repo
           sparse-checkout: .github
 
-      - name: Initialise gh-pages if first run
-        run: |
-          if [ ! -d gh-pages-dir/.git ]; then
-            mkdir -p gh-pages-dir
-            git -C gh-pages-dir init -b gh-pages
-            git -C gh-pages-dir remote add origin \
-              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          fi
-
-      - name: Download all freshly built artifacts
+      - name: Download freshly built versions
         uses: actions/download-artifact@v8
         with:
           pattern: docs-*
-          path: fresh-builds/
+          path: fresh/
+          merge-multiple: true
+
+      # main is archived too, so a failed nightly falls back to the last good one
+      - name: Archive new builds
+        run: |
+          gh release view "$ARCHIVE" > /dev/null 2>&1 \
+            || gh release create "$ARCHIVE" --prerelease --latest=false \
+                 --title "Documentation archive" \
+                 --notes "Built HTML of each documented version, used by the docs deployment. Do not delete."
+          shopt -s nullglob
+          for f in fresh/docs-*.tar.gz; do
+            gh release upload "$ARCHIVE" "$f" --clobber
+          done
+
+      - name: Assemble site
+        run: python3 .github/scripts/docs_site.py assemble fresh site
 
       - name: Download coverage report
         uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: code-coverage-report
-          path: gh-pages-dir/code-coverage-report
+          path: site/code-coverage-report
 
       # Read the Docs-style injection: one root script serves every version
       - name: Inject version flyout
         run: |
-          cp repo/.github/docs-version-flyout.js gh-pages-dir/version-flyout.js
+          cp .github/docs-version-flyout.js site/version-flyout.js
           tag='<script defer src="/dolfinx_mpc/version-flyout.js"></script>'
-          find fresh-builds -name '*.html' -print0 \
-            | xargs -0 sed -i "s#</head>#${tag}</head>#"
-
-      # Copy each freshly built version into the gh-pages tree.
-      # For "main" this overwrites; for tagged versions this writes once.
-      - name: Integrate new builds
-        run: |
-          for dir in fresh-builds/docs-*/; do
-            label=$(basename "$dir" | sed 's/^docs-//')
-            echo "Deploying: $label"
-            mkdir -p "gh-pages-dir/${label}"
-            rsync -a --delete "${dir}" "gh-pages-dir/${label}/"
+          for label in $(python3 .github/scripts/docs_site.py labels site); do
+            find "site/${label}" -name '*.html' -print0 \
+              | xargs -0 sed -i "s#</head>#${tag}</head>#"
           done
 
-      - name: Regenerate switcher.json
+      # Drop archived builds of tags no longer listed in docs-versions.yml
+      - name: Prune archive
         run: |
-          python3 - <<'EOF'
-          import os, json, re
+          keep=$(python3 .github/scripts/docs_site.py assets)
+          for asset in $(gh release view "$ARCHIVE" --json assets --jq '.assets[].name'); do
+            case " ${keep} " in
+              *" ${asset} "*) ;;
+              *) echo "Removing ${asset}"; gh release delete-asset "$ARCHIVE" "$asset" --yes ;;
+            esac
+          done
 
-          base = "https://jorgensd.github.io/dolfinx_mpc"
-          root = "gh-pages-dir"
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
 
-          # Find all minor-version directories (vX.Y) and sort newest first
-          minors = sorted(
-              [d for d in os.listdir(root)
-               if os.path.isdir(f"{root}/{d}") and re.match(r"^v\d+\.\d+$", d)],
-              key=lambda v: [int(x) for x in v.lstrip("v").split(".")],
-              reverse=True,
-          )
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
 
-          entries = [{
-              "name": "main (nightly)",
-              "version": "main",
-              "url": f"{base}/main/",
-          }]
-          for m in minors:
-              entries.append({"name": m, "version": m, "url": f"{base}/{m}/"})
-
-          with open(f"{root}/switcher.json", "w") as f:
-              json.dump(entries, f, indent=2)
-          print("switcher.json:", entries)
-          EOF
-
-      - name: Add root redirect to main
-        run: |
-          # Stop GitHub's Jekyll from dropping Sphinx's _static/ and _images/
-          touch gh-pages-dir/.nojekyll
-          cat > gh-pages-dir/index.html <<'EOF'
-          <!DOCTYPE html>
-          <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=main/">
-          <link rel="canonical" href="main/">
-          EOF
-
-      - name: Push to gh-pages
-        run: |
-          cd gh-pages-dir
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet \
-            || git commit -m "docs: update ${{ github.sha }}"
-          git push origin gh-pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

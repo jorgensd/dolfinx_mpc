@@ -46,6 +46,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -500,7 +501,7 @@ try:
     import pyvista
 except ModuleNotFoundError:
     pyvista = None
-
+filename = Path("demo_periodic_layer.png")
 if pyvista is not None:
     owned = np.arange(domain.topology.index_map(tdim).size_local, dtype=np.int32)
     u_plot = fem.Function(V, dtype=dtype)
@@ -570,9 +571,9 @@ if pyvista is not None:
             plotter.add_mesh(outline, style="wireframe", color="black", line_width=2)
             plotter.view_xy()
         if pyvista.OFF_SCREEN:
-            plotter.screenshot(f"demo_periodic_layer_{args.load}{suffix}.png")
+            plotter.screenshot(filename)
         else:
-            plotter.show()
+            plotter.show(screenshot=filename)
 # -
 
 # ## References

@@ -610,7 +610,7 @@ def plot_cell(uh_: fem.Function, H: np.ndarray, title: str, filename: str):
     if pyvista.OFF_SCREEN:
         plotter.screenshot(filename)
     else:
-        plotter.show()
+        plotter.show(screenshot=filename)
 
 
 strain_load = "prescribed E = [" + ", ".join("[" + ", ".join(f"{v:g}" for v in row) + "]" for row in E_bar) + "]"
