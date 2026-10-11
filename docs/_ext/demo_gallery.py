@@ -66,8 +66,9 @@ LOADER = """<script>
   }
   const script = document.createElement("script");
   script.src = `${scene}.vtksz.js`;
-  script.onload = () =>
-    OfflineLocalView.load(document.querySelector(".content"), { base64Str: window.vtkszBase64 });
+  // Newer trame-vtk viewers have no .content element: fall back to <body>, as the viewer does
+  const root = document.querySelector(".content") || document.body;
+  script.onload = () => OfflineLocalView.load(root, { base64Str: window.vtkszBase64 });
   document.body.appendChild(script);
 })();
 </script>
