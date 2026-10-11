@@ -7,6 +7,9 @@
   if (!path.startsWith(base)) return;
   const [current, ...rest] = path.slice(base.length).split("/");
   const page = rest.join("/");
+  // Same-origin links: the github.io URL redirects to the custom domain, which
+  // breaks the cross-origin existence check below
+  const home = (v) => base + v.version + "/";
 
   const css = `
 #mpc-flyout { position: fixed; right: 1rem; bottom: 1rem; z-index: 1000;
@@ -45,13 +48,13 @@
         if (v.version === current) li.className = "current";
         const a = document.createElement("a");
         a.textContent = v.name;
-        a.href = v.url + page;
+        a.href = home(v) + page + window.location.hash;
         // Same page may not exist in that version: fall back to its front page
         a.addEventListener("click", (e) => {
           e.preventDefault();
-          fetch(a.href, { method: "HEAD" })
-            .then((r) => (window.location.href = r.ok ? a.href : v.url))
-            .catch(() => (window.location.href = v.url));
+          fetch(home(v) + page, { method: "HEAD" })
+            .then((r) => (window.location.href = r.ok ? a.href : home(v)))
+            .catch(() => (window.location.href = home(v)));
         });
         li.appendChild(a);
         list.appendChild(li);
