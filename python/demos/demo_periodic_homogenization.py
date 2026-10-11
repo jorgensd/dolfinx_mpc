@@ -781,6 +781,7 @@ w_sc.interpolate(lambda x: np.outer(u_B_sc, x[0]) / L + np.outer(u_D_sc, x[1]) /
 w_sc.x.array[:] = u_plot_sc.x.array - w_sc.x.array
 sc_pieces, sc_clim = gather_grids(u_plot_sc, V, "u")
 w_pieces, w_clim = gather_grids(w_sc, V, "w")
+filename = Path("demo_periodic_homogenization.png")
 if comm.rank == 0:
     outline = pyvista.Rectangle([(0.0, 0.0, 0.0), (L, 0.0, 0.0), (L, L, 0.0)])
     bar = {"fmt": "%.1e", "n_labels": 3, "position_x": 0.2, "width": 0.6}
@@ -819,9 +820,9 @@ if comm.rank == 0:
         plotter.add_mesh(outline, style="wireframe", color="black", line_width=2)
         plotter.view_xy()
     if pyvista.OFF_SCREEN:
-        plotter.screenshot()
+        plotter.screenshot(filename)
     else:
-        plotter.show()
+        plotter.show(screenshot=filename)
 # -
 
 # +

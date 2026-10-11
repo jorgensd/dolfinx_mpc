@@ -495,7 +495,7 @@ def plot_cell(u: fem.Function, F_case: np.ndarray, titles: list[str], filename: 
     if pyvista.OFF_SCREEN:
         plotter.screenshot(filename)
     else:
-        plotter.show()
+        plotter.show(screenshot=filename)
 
 
 plot_cell(
