@@ -18,7 +18,8 @@ from pathlib import Path
 
 import yaml
 
-BASE_URL = "https://jorgensd.github.io/dolfinx_mpc"
+# Root-relative, so links stay on whichever domain serves the site
+BASE_URL = "/dolfinx_mpc"
 # Release holding the built HTML, set by the workflow
 ARCHIVE = os.environ.get("ARCHIVE", "docs-archive")
 CONFIG = Path(__file__).parents[1] / "docs-versions.yml"
