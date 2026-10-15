@@ -12,6 +12,7 @@ of each version is kept as ``docs-<tag>.tar.gz`` on the ``docs-archive`` release
 import argparse
 import json
 import os
+import re
 import subprocess
 import tarfile
 from pathlib import Path
@@ -24,6 +25,10 @@ BASE_URL = "/dolfinx_mpc"
 ARCHIVE = os.environ.get("ARCHIVE", "docs-archive")
 CONFIG = Path(__file__).parents[1] / "docs-versions.yml"
 MAIN = {"label": "main", "name": "main (nightly)", "tag": "main"}
+FLYOUT = f'<script defer src="{BASE_URL}/version-flyout.js"></script>'
+# The page's own <head> comes first; later ones are inside embedded documents,
+# e.g. the escaped viewer page in a pyvista plot's widget state
+HEAD = re.compile(r"<head(?:\s[^>]*)?>", re.IGNORECASE)
 
 
 def versions() -> list[dict[str, str]]:
@@ -106,10 +111,18 @@ def assemble(args: argparse.Namespace) -> None:
     write_redirects(args.site)
 
 
-def labels(args: argparse.Namespace) -> None:
-    """Print the labels (site subdirectories) of the deployed versions."""
+def inject(args: argparse.Namespace) -> None:
+    """Load the version flyout in every page of the deployed versions."""
     entries = json.loads((args.site / "switcher.json").read_text())
-    print(*(e["version"] for e in entries))
+    for e in entries:
+        for page in (args.site / e["version"]).rglob("*.html"):
+            html = page.read_text(encoding="utf-8")
+            head = HEAD.search(html)
+            if head is None:
+                continue
+            page.write_text(
+                html[: head.end()] + FLYOUT + html[head.end() :], encoding="utf-8"
+            )
 
 
 def assets(args: argparse.Namespace) -> None:
@@ -130,9 +143,9 @@ def main() -> None:
     p.add_argument("site", type=Path, help="output directory")
     p.set_defaults(func=assemble)
 
-    p = sub.add_parser("labels", help=labels.__doc__)
+    p = sub.add_parser("inject", help=inject.__doc__)
     p.add_argument("site", type=Path)
-    p.set_defaults(func=labels)
+    p.set_defaults(func=inject)
 
     p = sub.add_parser("assets", help=assets.__doc__)
     p.set_defaults(func=assets)
