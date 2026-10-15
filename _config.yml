@@ -53,6 +53,9 @@ sphinx:
   config:
     html_theme_options:
       navigation_with_keys: false
+      # pydata-sphinx-theme puts a search button in a top navbar unless this is
+      # set; sphinx-book-theme >= 1.3 no longer hides it, giving two search bars
+      navbar_persistent: []
     nb_custom_formats:
       .py:
         - jupytext.reads

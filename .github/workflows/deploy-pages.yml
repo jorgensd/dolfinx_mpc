@@ -152,11 +152,7 @@ jobs:
       - name: Inject version flyout
         run: |
           cp .github/docs-version-flyout.js site/version-flyout.js
-          tag='<script defer src="/dolfinx_mpc/version-flyout.js"></script>'
-          for label in $(python3 .github/scripts/docs_site.py labels site); do
-            find "site/${label}" -name '*.html' -print0 \
-              | xargs -0 sed -i "s#</head>#${tag}</head>#"
-          done
+          python3 .github/scripts/docs_site.py inject site
 
       # Drop archived builds of tags no longer listed in docs-versions.yml
       - name: Prune archive
