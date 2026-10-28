@@ -45,6 +45,12 @@ jobs:
           cmake --build build-dir --parallel 3
           cmake --install build-dir
 
+      # Workaround: DOLFINx main no longer installs the nanobind wrapper
+      # headers (FEniCS/dolfinx#4686). Use those of the sources checked out by
+      # install-dolfinx. Remove once fixed upstream.
+      - name: Point DOLFINx-MPC at the DOLFINx wrapper headers
+        run: echo "SKBUILD_CMAKE_DEFINE=DOLFINX_PY_DIR=${PWD}/dolfinx/python/dolfinx/wrappers" >> "${GITHUB_ENV}"
+
       - name: Install DOLFINx-MPC (Python)
         run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation  ./python/[docs,test,optional]
 

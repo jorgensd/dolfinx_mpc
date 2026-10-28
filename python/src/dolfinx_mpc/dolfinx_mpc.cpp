@@ -10,6 +10,7 @@ namespace nb = nanobind;
 
 namespace dolfinx_mpc_wrappers
 {
+void log(nb::module_& m);
 void mpc(nb::module_& m);
 } // namespace dolfinx_mpc_wrappers
 
@@ -26,4 +27,8 @@ NB_MODULE(cpp, m)
   // Create mpc submodule [mpc]
   nb::module_ mpc = m.def_submodule("mpc", "General module");
   dolfinx_mpc_wrappers::mpc(mpc);
+
+  // Create log submodule [log]
+  nb::module_ log = m.def_submodule("log", "Logging module");
+  dolfinx_mpc_wrappers::log(log);
 }

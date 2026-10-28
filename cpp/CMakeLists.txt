@@ -50,13 +50,14 @@ include(GNUInstallDirs)
 
 install(FILES dolfinx_mpc.h  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
 
-install(FILES assemble_utils.h mpi_utils.h ContactConstraint.h utils.h MultiPointConstraint.h SlipConstraint.h PeriodicConstraint.h RBE.h point_basis.h SubmeshConstraint.h assemble_matrix.h assemble_vector.h lifting.h mpc_helpers.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
+install(FILES assemble_utils.h log.h mpi_utils.h ContactConstraint.h utils.h MultiPointConstraint.h SlipConstraint.h PeriodicConstraint.h RBE.h point_basis.h SubmeshConstraint.h assemble_matrix.h assemble_vector.h lifting.h mpc_helpers.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/dolfinx_mpc COMPONENT Development)
 # Add source files to the target
 target_sources(dolfinx_mpc PRIVATE
   utils.cpp
   assemble_matrix.cpp
   assemble_vector.cpp
   assemble_utils.cpp
+  log.cpp
   mpi_utils.cpp
   )
 

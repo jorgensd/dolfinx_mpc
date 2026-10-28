@@ -75,6 +75,34 @@ jobs:
           cmake --build build-dir --parallel 3
           cmake --install build-dir
 
+      # Workaround: DOLFINx main no longer installs the nanobind wrapper
+      # headers (FEniCS/dolfinx#4686), so the nightly image lacks them. Fetch
+      # those of the image's DOLFINx commit. Remove once fixed upstream.
+      - name: Check for the DOLFINx wrapper headers
+        id: dolfinx-wrappers
+        run: |
+          python3 - >> "${GITHUB_OUTPUT}" <<'PY'
+          import os
+          import dolfinx
+          import dolfinx.common
+          found = os.path.isdir(os.path.join(dolfinx.get_include(), "dolfinx_wrappers"))
+          print(f"missing={str(not found).lower()}")
+          print(f"sha={dolfinx.common.git_commit_hash}")
+          PY
+
+      - name: Fetch the DOLFINx wrapper headers
+        if: steps.dolfinx-wrappers.outputs.missing == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: FEniCS/dolfinx
+          ref: ${{ steps.dolfinx-wrappers.outputs.sha }}
+          path: dolfinx-src
+          sparse-checkout: python/dolfinx/wrappers
+
+      - name: Point DOLFINx-MPC at the DOLFINx wrapper headers
+        if: steps.dolfinx-wrappers.outputs.missing == 'true'
+        run: echo "SKBUILD_CMAKE_DEFINE=DOLFINX_PY_DIR=${PWD}/dolfinx-src/python/dolfinx/wrappers" >> "${GITHUB_ENV}"
+
       # Older tags don't bound jupyter-book, and the book config needs 1.x
       - name: Install DOLFINx-MPC (Python)
         run: python3 -m pip -v install --config-settings=cmake.build-type="Release" --no-build-isolation ./python/[docs] "jupyter-book<2.0"

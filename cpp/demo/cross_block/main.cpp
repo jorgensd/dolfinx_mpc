@@ -40,6 +40,7 @@
 #include <dolfinx_mpc/MultiPointConstraint.h>
 #include <dolfinx_mpc/assemble_matrix.h>
 #include <dolfinx_mpc/assemble_vector.h>
+#include <dolfinx_mpc/log.h>
 #include <dolfinx_mpc/utils.h>
 #include <format>
 #include <functional>
@@ -56,6 +57,7 @@ using U = typename dolfinx::scalar_value_t<T>;
 int main(int argc, char* argv[])
 {
   dolfinx::init_logging(argc, argv);
+  dolfinx_mpc::init_logging(argc, argv);
   common::petsc::check(PetscInitialize(&argc, &argv, nullptr, nullptr),
                        "PetscInitialize");
   {

@@ -9,4 +9,5 @@
 #include <assemble_matrix.h>
 #include <assemble_vector.h>
 #include <lifting.h>
+#include <log.h>
 #include <utils.h>

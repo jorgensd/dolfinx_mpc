@@ -7,6 +7,7 @@
 #pragma once
 
 #include "MultiPointConstraint.h"
+#include "log.h"
 #include "mpi_utils.h"
 #include <algorithm>
 #include <array>
@@ -633,7 +634,7 @@ dolfinx::la::SparsityPattern create_sparsity_pattern(
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc0,
     const std::shared_ptr<dolfinx_mpc::MultiPointConstraint<T, U>> mpc1)
 {
-  spdlog::info("Generating MPC sparsity pattern");
+  dolfinx_mpc::logger().info("Generating MPC sparsity pattern");
   dolfinx::common::Timer timer("~MPC: Create sparsity pattern");
   if (a.rank() != 2)
   {

@@ -49,6 +49,7 @@ nanobind_add_module(
   NOMINSIZE
   MODULE
   src/dolfinx_mpc/dolfinx_mpc.cpp
+  src/dolfinx_mpc/log.cpp
   src/dolfinx_mpc/mpc.cpp
 )
 
