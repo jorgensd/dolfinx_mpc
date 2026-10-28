@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "log.h"
 #include "mpc_helpers.h"
 #include <algorithm>
 #include <cassert>
@@ -14,7 +15,6 @@
 #include <cstdint>
 #include <dolfinx/common/IndexMap.h>
 #include <dolfinx/common/Timer.h>
-#include <dolfinx/common/log.h>
 #include <dolfinx/fem/DirichletBC.h>
 #include <dolfinx/fem/DofMap.h>
 #include <dolfinx/fem/FunctionSpace.h>
@@ -1021,8 +1021,8 @@ create_multipointconstraints(
         }
         kept_offsets.push_back(static_cast<std::int32_t>(kept_masters.size()));
       }
-      spdlog::debug("MPC filter {}: kept {} of {} masters", *filter,
-                    kept_masters.size(), masters.size());
+      dolfinx_mpc::logger().debug("MPC filter {}: kept {} of {} masters",
+                                  *filter, kept_masters.size(), masters.size());
       masters = kept_masters;
       coeffs = kept_coeffs;
       owners = kept_owners;

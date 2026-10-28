@@ -8,7 +8,11 @@
 # flake8: noqa
 from __future__ import annotations
 
+import sys
+
 import dolfinx_mpc.cpp
+
+dolfinx_mpc.cpp.log.init_logging(sys.argv)
 
 # New local assemblies
 from .dirichletbc import BCData
@@ -30,7 +34,7 @@ from .assemble_vector import (
 from .integralcondition import create_integral_constraint
 from .multipointconstraint import MultiPointConstraint, dofs_at_point, finalize_multipointconstraints
 from .problem import LinearProblem, NonlinearProblem, assemble_jacobian_mpc, assemble_residual_mpc
-from . import spider
+from . import log, spider
 from .spider import create_spider_mesh, create_spider_pair, spider_values
 
 __all__ = [
@@ -58,4 +62,5 @@ __all__ = [
     "create_spider_pair",
     "spider_values",
     "spider",
+    "log",
 ]
