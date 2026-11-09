@@ -48,6 +48,6 @@ jobs:
           cmake --build build-dir --parallel 3
 
       - name: Run sonar-scanner
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
